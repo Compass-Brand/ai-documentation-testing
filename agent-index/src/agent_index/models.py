@@ -87,7 +87,9 @@ class IndexConfig(BaseModel):
     output_file: str = ""
     inject_into: str = ""
     format: str = "tiered"  # "flat" | "tiered" | "yaml-index"
-    file_strategy: str = "colocate"  # "colocate" (.llms.md next to source) | "directory" (.agent-docs/)
+    file_strategy: str = (
+        "colocate"  # "colocate" (.llms.md next to source) | "directory" (.agent-docs/)
+    )
 
     # Transform pipeline (composable steps)
     transform_steps: list[TransformStep] = Field(

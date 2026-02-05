@@ -253,7 +253,9 @@ class TestIndexConfig:
         assert config.index_name == "Docs Index"
         assert config.marker_id == "DOCS"
         assert config.root_path == "./.docs"
-        assert config.instruction == "Prefer retrieval-led reasoning over pre-training-led reasoning."
+        assert (
+            config.instruction == "Prefer retrieval-led reasoning over pre-training-led reasoning."
+        )
         assert config.fallback_command == ""
 
         # Tiers
