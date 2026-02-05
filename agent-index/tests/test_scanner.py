@@ -2,10 +2,9 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
-from textwrap import dedent
 
 import pytest
-from agent_index.models import DocFile, DocTree
+from agent_index.models import DocTree
 from agent_index.scanner import scan_local
 
 

@@ -131,12 +131,11 @@ def _scan_directory(
         elif entry.is_dir():
             # Recurse into subdirectory
             _scan_directory(entry, root, extensions, ignore_patterns, files, visited_dirs)
-        elif entry.is_file():
-            # Check extension and process file
-            if _matches_extension(entry, extensions):
-                doc = _create_docfile(entry, root)
-                if doc is not None:
-                    files[doc.rel_path] = doc
+        elif entry.is_file() and _matches_extension(entry, extensions):
+            # Process file with matching extension
+            doc = _create_docfile(entry, root)
+            if doc is not None:
+                files[doc.rel_path] = doc
 
 
 def _should_ignore(path: Path, root: Path, ignore_patterns: list[str]) -> bool:
@@ -162,11 +161,7 @@ def _should_ignore(path: Path, root: Path, ignore_patterns: list[str]) -> bool:
         return False
 
     # Check each path component against ignore patterns
-    for part in rel_path.parts:
-        if part in ignore_patterns:
-            return True
-
-    return False
+    return any(part in ignore_patterns for part in rel_path.parts)
 
 
 def _matches_extension(path: Path, extensions: set[str]) -> bool:
