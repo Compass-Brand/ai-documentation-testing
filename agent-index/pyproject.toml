@@ -5,6 +5,7 @@ description = "Scans documentation sources, transforms docs into AI-optimized .l
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -12,6 +13,7 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
     "mypy>=1.10",
+    "types-PyYAML>=6.0",
 ]
 
 [build-system]
