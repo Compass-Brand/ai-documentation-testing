@@ -8,6 +8,7 @@ from agent_index.models import (
     TierConfig,
     TransformStep,
 )
+from agent_index.output import inject_into_file, render_index
 from agent_index.scanner import GitHubError, scan_github, scan_local
 from agent_index.tiers import assign_tiers, group_by_section, sort_files_bluf
 
@@ -24,7 +25,9 @@ __all__ = [
     "assign_tiers",
     "find_config",
     "group_by_section",
+    "inject_into_file",
     "load_config",
+    "render_index",
     "scan_github",
     "scan_local",
     "sort_files_bluf",
