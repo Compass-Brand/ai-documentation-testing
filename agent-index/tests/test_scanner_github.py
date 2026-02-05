@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from agent_index.models import DocTree
 from agent_index.scanner import GitHubError, scan_github
 
@@ -270,7 +269,7 @@ class TestScanGitHubBranchAndPath:
         ])
 
         with patch("agent_index.scanner._fetch_file_content", return_value="content"):
-            result = scan_github("owner/repo", path="docs")
+            scan_github("owner/repo", path="docs")
 
         call_url = mock_github_api.call_args[0][0]
         assert "/contents/docs" in call_url
@@ -294,7 +293,7 @@ class TestScanGitHubCaching:
             {"name": "readme.md", "type": "file", "path": "readme.md", "sha": "abc123"}
         ])
 
-        with patch("agent_index.scanner._fetch_file_content", return_value="# Cached Content") as mock_fetch:
+        with patch("agent_index.scanner._fetch_file_content", return_value="# Cached Content"):
             scan_github("owner/repo", cache_dir=tmp_path)
 
         # Check cache file exists
