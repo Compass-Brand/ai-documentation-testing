@@ -8,6 +8,7 @@ from agent_index.models import (
     TierConfig,
     TransformStep,
 )
+from agent_index.scanner import scan_local
 
 __version__ = "0.1.0"
 
@@ -20,5 +21,6 @@ __all__ = [
     "TransformStep",
     "find_config",
     "load_config",
+    "scan_local",
     "__version__",
 ]
