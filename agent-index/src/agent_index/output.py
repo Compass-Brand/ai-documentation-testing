@@ -109,11 +109,11 @@ def inject_into_file(
 
     # If file doesn't exist, create with just content
     if not target_path.exists():
-        target_path.write_text(content)
+        target_path.write_text(content, encoding="utf-8")
         return
 
     # Read existing content
-    existing = target_path.read_text()
+    existing = target_path.read_text(encoding="utf-8")
 
     # Find markers
     start_pos = existing.find(start_marker)
@@ -125,7 +125,7 @@ def inject_into_file(
         if existing and not existing.endswith("\n"):
             existing += "\n"
         new_content = existing + content
-        target_path.write_text(new_content)
+        target_path.write_text(new_content, encoding="utf-8")
         return
 
     # Replace content between markers (keeping markers)
@@ -133,4 +133,4 @@ def inject_into_file(
     after = existing[end_pos:]
 
     new_content = f"{before}\n{content}\n{after}"
-    target_path.write_text(new_content)
+    target_path.write_text(new_content, encoding="utf-8")
