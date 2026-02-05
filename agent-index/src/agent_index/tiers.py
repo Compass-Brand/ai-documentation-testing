@@ -1,0 +1,239 @@
+"""Tier system for assigning files to documentation tiers.
+
+This module handles:
+- Matching files to tiers via glob patterns
+- Section extraction from file paths
+- BLUF (Bottom Line Up Front) ordering for output
+"""
+
+from __future__ import annotations
+
+import fnmatch
+
+from agent_index.models import DocFile, DocTree, TierConfig
+
+
+def assign_tiers(
+    doc_tree: DocTree,
+    tier_configs: list[TierConfig],
+) -> DocTree:
+    """Assign tier and section to each file in a DocTree.
+
+    Files are matched against tier patterns in order. The first matching
+    tier wins. Files that match no pattern go to the last tier.
+
+    Args:
+        doc_tree: DocTree with files to assign
+        tier_configs: List of tier configurations with patterns
+
+    Returns:
+        New DocTree with tier and section assigned to each file
+    """
+    # Build new files dict with assigned tiers
+    new_files: dict[str, DocFile] = {}
+
+    for rel_path, doc in doc_tree.files.items():
+        tier_name = _match_tier(rel_path, tier_configs)
+        section = _extract_section(rel_path)
+
+        # Create new DocFile with updated tier and section
+        new_files[rel_path] = doc.model_copy(
+            update={"tier": tier_name, "section": section}
+        )
+
+    # Return new DocTree with same metadata but updated files
+    return DocTree(
+        files=new_files,
+        scanned_at=doc_tree.scanned_at,
+        source=doc_tree.source,
+        total_tokens=doc_tree.total_tokens,
+    )
+
+
+def _match_tier(rel_path: str, tier_configs: list[TierConfig]) -> str:
+    """Match a file path to a tier based on glob patterns.
+
+    Args:
+        rel_path: Relative path of the file
+        tier_configs: List of tier configurations with patterns
+
+    Returns:
+        Name of the matching tier, or the last tier name if no pattern matches,
+        or empty string if no tiers are configured.
+    """
+    if not tier_configs:
+        return ""
+
+    # Try each tier in order
+    for tier in tier_configs:
+        for pattern in tier.patterns:
+            if _glob_match(rel_path, pattern):
+                return tier.name
+
+    # No pattern matched - fall back to last tier
+    return tier_configs[-1].name
+
+
+def _glob_match(path: str, pattern: str) -> bool:
+    """Match a path against a glob pattern.
+
+    Supports:
+    - * matches any characters except /
+    - ** matches any characters including /
+    - ? matches single character
+
+    Args:
+        path: File path to match (using forward slashes)
+        pattern: Glob pattern to match against
+
+    Returns:
+        True if the path matches the pattern
+    """
+    # Handle ** (matches any directory depth including none)
+    if "**" in pattern:
+        # Convert ** to regex-friendly pattern
+        # ** should match zero or more directories
+        # Split pattern on ** and match each part
+        parts = pattern.split("**")
+
+        if len(parts) == 2:
+            prefix, suffix = parts
+
+            # Remove leading/trailing slashes from prefix and suffix
+            prefix = prefix.rstrip("/")
+            suffix = suffix.lstrip("/")
+
+            # If prefix is empty, any path that ends with suffix matches
+            if not prefix:
+                # Match suffix at any position
+                if not suffix:
+                    return True  # ** alone matches everything
+                # The suffix must match at the end (for patterns like **/README.md)
+                # or in any directory position
+                path_parts = path.split("/")
+                suffix_parts = suffix.split("/") if suffix else []
+
+                # Check if path ends with suffix parts
+                if len(path_parts) >= len(suffix_parts):
+                    # Check if the last N path parts match the suffix pattern
+                    for i in range(len(path_parts) - len(suffix_parts) + 1):
+                        candidate = "/".join(path_parts[i:i + len(suffix_parts)])
+                        if _simple_glob_match(candidate, suffix):
+                            return True
+                return False
+
+            # If prefix is present (e.g., "docs/**")
+            if not path.startswith(prefix + "/") and path != prefix:
+                return False
+
+            # Check suffix if present
+            if suffix:
+                remainder = path[len(prefix):].lstrip("/")
+                if not remainder:
+                    return False
+                # Remainder must match the suffix at some point
+                remainder_parts = remainder.split("/")
+                suffix_parts = suffix.split("/") if suffix else []
+
+                if len(remainder_parts) >= len(suffix_parts):
+                    for i in range(len(remainder_parts) - len(suffix_parts) + 1):
+                        candidate = "/".join(remainder_parts[i:i + len(suffix_parts)])
+                        if _simple_glob_match(candidate, suffix):
+                            return True
+                return False
+
+            return True
+
+    # Simple glob matching without **
+    return _simple_glob_match(path, pattern)
+
+
+def _simple_glob_match(path: str, pattern: str) -> bool:
+    """Match a path against a simple glob pattern (no **).
+
+    Args:
+        path: File path to match
+        pattern: Glob pattern (supports * and ?)
+
+    Returns:
+        True if the path matches the pattern
+    """
+    return fnmatch.fnmatch(path, pattern)
+
+
+def _extract_section(rel_path: str) -> str:
+    """Extract section name from a relative file path.
+
+    Section is determined by the path structure:
+    - Top-level files: section = ""
+    - Single directory deep: section = "" (first dir is root)
+    - Nested deeper: section = second directory component
+
+    Examples:
+        "README.md" -> ""
+        "docs/setup.md" -> ""
+        "docs/guides/auth.md" -> "guides"
+        "docs/api/v2/users.md" -> "api"
+
+    Args:
+        rel_path: Relative file path using forward slashes
+
+    Returns:
+        Section name, or empty string for root-level files
+    """
+    parts = rel_path.split("/")
+
+    # File is at root or only one directory deep
+    if len(parts) <= 2:
+        return ""
+
+    # Return the second directory component (index 1)
+    return parts[1]
+
+
+def sort_files_bluf(
+    files: list[DocFile],
+    tier_configs: list[TierConfig],
+) -> list[DocFile]:
+    """Sort files in BLUF (Bottom Line Up Front) order.
+
+    Order: required tier first, then recommended, then reference,
+    with files sorted by priority (descending) then path within each tier.
+
+    Args:
+        files: List of DocFiles to sort
+        tier_configs: Tier configurations (for tier ordering)
+
+    Returns:
+        Sorted list of DocFiles
+    """
+    # Build tier name to order mapping
+    tier_order = {tier.name: i for i, tier in enumerate(tier_configs)}
+    max_order = len(tier_configs)  # Unknown tiers get this order
+
+    def sort_key(doc: DocFile) -> tuple[int, int, str]:
+        """Generate sort key: (tier_order, -priority, path)."""
+        tier_idx = tier_order.get(doc.tier, max_order)
+        # Negate priority so higher priority comes first
+        return (tier_idx, -doc.priority, doc.rel_path)
+
+    return sorted(files, key=sort_key)
+
+
+def group_by_section(files: list[DocFile]) -> dict[str, list[DocFile]]:
+    """Group files by their section field.
+
+    Args:
+        files: List of DocFiles
+
+    Returns:
+        Dict mapping section names to files in that section
+    """
+    groups: dict[str, list[DocFile]] = {}
+
+    for doc in files:
+        if doc.section not in groups:
+            groups[doc.section] = []
+        groups[doc.section].append(doc)
+
+    return groups
