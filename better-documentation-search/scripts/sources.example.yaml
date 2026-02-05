@@ -1,0 +1,111 @@
+# =============================================================================
+# sources.example.yaml — Example configuration for generate_docs_index.py
+# =============================================================================
+#
+# Copy this file to `sources.yaml` (or any name you like) and customize it
+# for your project. Run with:
+#
+#   python generate_docs_index.py --config sources.yaml
+#
+# See generate_docs_index.py --help for all CLI options.
+# =============================================================================
+
+# ---- Index metadata --------------------------------------------------------
+
+# Display name shown in the index header: [My Framework Docs Index]
+index_name: "My Framework Docs Index"
+
+# HTML comment marker used to delimit the index block.
+# The tool wraps output in <!-- MARKER-START --> ... <!-- MARKER-END -->
+# so it can be injected/replaced in existing files without clobbering
+# surrounding content. Pick something unique per index if you embed
+# multiple indexes in one file.
+marker_id: "MY-FRAMEWORK-DOCS"
+
+# Root path (relative to the project) where the actual doc files live.
+# The agent reads files from this path when it needs details beyond
+# what the index provides.
+root_path: "./.my-framework-docs"
+
+# Retrieval instruction embedded at the top of the index. This is the
+# single most important line — it shifts the agent from relying on
+# potentially stale training data to consulting the provided docs.
+instruction: >-
+  Prefer retrieval-led reasoning over pre-training-led reasoning
+  for any My Framework tasks.
+
+# Optional command the agent (or developer) can run if the local docs
+# directory is missing. Leave blank to omit.
+fallback_command: "npx @my-org/my-framework-docs"
+
+# ---- Sources ---------------------------------------------------------------
+# Each source tells the tool where to find documentation files.
+# Two types are supported: "local" (filesystem) and "github" (API).
+# You can mix and match — files from all sources are merged into one index.
+
+sources:
+  # -- Local filesystem source -----------------------------------------------
+  # Scans a directory tree on disk. Fast, no network required.
+  - type: local
+    path: "./docs"
+    # Optional: strip a leading prefix from directory paths in the index.
+    # Useful when your local docs live in a subfolder you don't want
+    # reflected in the index keys.
+    # strip_prefix: "content/"
+
+  # -- GitHub repository source ----------------------------------------------
+  # Fetches the file tree via the GitHub Trees API (single request).
+  # Useful when docs live in a separate repo or you want to index a
+  # specific branch/tag without cloning.
+  - type: github
+    repo: "my-org/my-framework"
+    branch: "main"            # branch, tag, or commit SHA
+    path: "docs"              # subfolder within the repo to scan
+    # Name of an environment variable holding a GitHub personal access
+    # token. Required for private repos; optional for public repos
+    # (but avoids rate limits). Leave blank to skip auth.
+    token_env: "GITHUB_TOKEN"
+
+  # -- Another local source (you can list as many as you need) ---------------
+  # - type: local
+  #   path: "./packages/ui/docs"
+  #   strip_prefix: ""
+
+# ---- Scanning options ------------------------------------------------------
+
+# Only files with these extensions are included in the index.
+file_extensions:
+  - ".md"
+  - ".mdx"
+  - ".rst"
+  - ".txt"
+
+# Directory names to skip during scanning (exact match).
+ignore_patterns:
+  - "node_modules"
+  - "__pycache__"
+  - ".git"
+  - ".venv"
+  - "venv"
+
+# ---- Output options --------------------------------------------------------
+
+# Write the index to this file. Leave blank to print to stdout.
+output_file: "my-framework-docs-index.md"
+
+# Alternatively, inject the index block into an existing file.
+# The tool looks for the marker comments and replaces the content
+# between them. If no markers are found, it appends to the end.
+# Uncomment to use:
+# inject_into: "AGENTS.md"
+
+# If true, output one section per line (easier to read/diff).
+# If false (default), output a single compressed line (smaller).
+expanded: false
+
+# ---- Parallelism -----------------------------------------------------------
+
+# Maximum threads for scanning sources concurrently.
+# On free-threaded Python 3.14 (no-GIL), these are true parallel threads.
+# On standard Python, they still provide I/O concurrency for GitHub API calls.
+max_workers: 8
