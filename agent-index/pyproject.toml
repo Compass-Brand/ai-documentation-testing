@@ -1,0 +1,22 @@
+[project]
+name = "agent-index"
+version = "0.1.0"
+description = "Scans documentation sources, transforms docs into AI-optimized .llms.md files, and generates tiered index files"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "mypy>=1.10",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_index"]
