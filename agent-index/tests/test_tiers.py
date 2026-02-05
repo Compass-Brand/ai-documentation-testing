@@ -2,7 +2,6 @@
 
 from datetime import UTC, datetime
 
-import pytest
 from agent_index.models import DocFile, DocTree, TierConfig
 from agent_index.tiers import assign_tiers, group_by_section, sort_files_bluf
 
