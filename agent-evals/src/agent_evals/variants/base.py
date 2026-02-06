@@ -21,14 +21,14 @@ class VariantMetadata(BaseModel):
 
     Attributes:
         name: Human-readable unique identifier for the variant.
-        axis: Evaluation axis this variant belongs to (1-10).
+        axis: Evaluation axis this variant belongs to (0-10, 0 = baseline).
         category: Broad grouping label (e.g. "structure", "ordering").
         description: Short prose description of what the variant does.
         token_estimate: Estimated output token count for a typical render.
     """
 
     name: str
-    axis: int = Field(ge=1, le=10)
+    axis: int = Field(ge=0, le=10)
     category: str
     description: str
     token_estimate: int = Field(default=0, ge=0)

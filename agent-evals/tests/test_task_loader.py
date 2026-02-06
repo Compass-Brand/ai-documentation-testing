@@ -331,7 +331,8 @@ class TestTaskTypeRegistry:
         ]
         for type_name in standard_types:
             assert type_name in TASK_TYPES, f"{type_name} not in TASK_TYPES"
-            assert TASK_TYPES[type_name] is GenericTask
+            # Specialized task types override GenericTask for types 1-4
+            assert issubclass(TASK_TYPES[type_name], EvalTask)
 
 
 # ---------------------------------------------------------------------------
@@ -372,8 +373,8 @@ class TestLoadTask:
 
         task = load_task(yaml_path)
 
-        # Default registry maps all types to GenericTask
-        assert isinstance(task, GenericTask)
+        # Retrieval type maps to RetrievalTask (or any EvalTask subclass)
+        assert isinstance(task, EvalTask)
 
     def test_load_task_invalid_task_id_raises(self, tmp_path: Path) -> None:
         """load_task raises ValueError for invalid task_id in YAML."""

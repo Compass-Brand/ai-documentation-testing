@@ -104,12 +104,12 @@ class TestVariantMetadata:
         assert meta.description == "A flat list of files"
         assert meta.token_estimate == 500
 
-    def test_axis_must_be_at_least_1(self) -> None:
-        """VariantMetadata rejects axis values below 1."""
+    def test_axis_must_be_at_least_0(self) -> None:
+        """VariantMetadata rejects axis values below 0."""
         with pytest.raises(ValueError):
             VariantMetadata(
                 name="bad",
-                axis=0,
+                axis=-1,
                 category="test",
                 description="Invalid axis",
                 token_estimate=100,
