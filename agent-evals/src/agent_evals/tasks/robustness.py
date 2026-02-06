@@ -1,33 +1,35 @@
-"""Fact extraction task type for evaluating factual accuracy.
+"""Robustness task type for evaluating answer stability under perturbation.
 
-Scores responses using keyword matching: exact/alias match yields 1.0,
-fallback computes fraction of non-stopword keywords found in the response.
+Reuses the same scoring logic as FactExtractionTask: exact / alias match
+yields 1.0, fallback computes fraction of non-stopword keywords found.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
-class FactExtractionTask(EvalTask):
-    """Task type for evaluating factual answer accuracy.
+class RobustnessTask(EvalTask):
+    """Task type for evaluating answer stability under input perturbation.
 
-    Checks if the expected answer or any alias appears in the response
-    (exact match = 1.0). Falls back to computing the fraction of
-    non-stopword keywords from the expected answer found in the response.
+    A perturbed version of a base task (e.g. paraphrased, with typos,
+    or reordered).  Scoring is identical to FactExtractionTask: exact
+    or alias match = 1.0, otherwise keyword-fraction fallback.
     """
 
     def __init__(self, definition: TaskDefinition) -> None:
         super().__init__(definition)
-        meta = definition.metadata
+        meta: dict[str, Any] = definition.metadata
+        self.base_task_id: str = meta.get("base_task_id", "")
+        self.perturbation_type: str = meta.get("perturbation_type", "")
         self.expected_answer: str = meta.get("expected_answer", "")
         self.answer_aliases: list[str] = meta.get("answer_aliases", [])
-        self.source_location: str = meta.get("source_location", "")
-        self.fact_type: str = meta.get("fact_type", "")
 
     def build_prompt(self, index_content: str) -> list[dict[str, str]]:
-        """Build messages for fact extraction evaluation.
+        """Build messages for robustness evaluation.
 
         Args:
             index_content: The documentation index content.
@@ -86,4 +88,5 @@ class FactExtractionTask(EvalTask):
         matched = sum(1 for kw in keywords if kw.lower() in response_lower)
         return max(0.0, min(1.0, matched / len(keywords)))
 
-register_task_type("fact_extraction", FactExtractionTask)
+
+register_task_type("robustness", RobustnessTask)
