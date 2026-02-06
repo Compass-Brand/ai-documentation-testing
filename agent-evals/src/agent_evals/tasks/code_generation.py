@@ -11,6 +11,14 @@ import re
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
+def _match_pattern(pattern: str, text: str) -> bool:
+    """Match a pattern against text, trying regex first, falling back to literal."""
+    try:
+        return bool(re.search(pattern, text))
+    except re.error:
+        return pattern in text
+
+
 class CodeGenerationTask(EvalTask):
     """Task type for evaluating code generation quality.
 
@@ -75,17 +83,17 @@ class CodeGenerationTask(EvalTask):
         # Compute required match rate
         if patterns:
             matched = sum(
-                1 for pat in patterns if re.search(pat, response)
+                1 for pat in patterns if _match_pattern(pat, response)
             )
             match_rate = matched / len(patterns)
         else:
             match_rate = 0.0
 
-        # Compute violation rate
+        # Compute violation rate (patterns may be literal strings or regex)
         if self.forbidden_patterns:
             violations = sum(
                 1 for pat in self.forbidden_patterns
-                if re.search(pat, response)
+                if _match_pattern(pat, response)
             )
             violation_rate = violations / len(self.forbidden_patterns)
         else:

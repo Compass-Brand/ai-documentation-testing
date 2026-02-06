@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,6 +32,9 @@ class LLMClient:
     Supports OpenRouter provider configuration via ``extra_body`` and returns
     structured :class:`GenerationResult` objects with token counts and cost.
     """
+
+    MAX_RETRIES: int = 3
+    RETRY_BASE_DELAY: float = 5.0
 
     def __init__(
         self,
@@ -80,13 +84,47 @@ class LLMClient:
         if self.provider_config is not None:
             call_kwargs["extra_body"] = {"provider": self.provider_config}
 
-        try:
-            response = litellm.completion(**call_kwargs)
-        except Exception as exc:
-            msg = (
-                f"LLM completion failed for model '{self.model}': {exc}"
-            )
-            raise LLMClientError(msg) from exc
+        last_exc: Exception | None = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                response = litellm.completion(**call_kwargs)
+                # Detect silent 429: litellm swallows OpenRouter rate
+                # limit errors and returns content=None instead of raising.
+                content = response.choices[0].message.content
+                if content is None:
+                    if attempt < self.MAX_RETRIES - 1:
+                        delay = self.RETRY_BASE_DELAY * (2 ** attempt)
+                        time.sleep(delay)
+                        continue
+                    raise LLMClientError(
+                        f"LLM returned empty content for '{self.model}' "
+                        f"(possible silent rate limit)"
+                    )
+                break
+            except LLMClientError:
+                raise
+            except Exception as exc:
+                last_exc = exc
+                # Retry on rate limit (429) or server errors (5xx)
+                exc_str = str(exc).lower()
+                is_retryable = (
+                    "429" in exc_str
+                    or "rate" in exc_str
+                    or "500" in exc_str
+                    or "502" in exc_str
+                    or "503" in exc_str
+                )
+                if is_retryable and attempt < self.MAX_RETRIES - 1:
+                    delay = self.RETRY_BASE_DELAY * (2 ** attempt)
+                    time.sleep(delay)
+                    continue
+                msg = (
+                    f"LLM completion failed for model '{self.model}': {exc}"
+                )
+                raise LLMClientError(msg) from exc
+        else:
+            msg = f"LLM completion failed after {self.MAX_RETRIES} retries: {last_exc}"
+            raise LLMClientError(msg) from last_exc
 
         # Extract cost from litellm hidden params if available.
         cost: float | None = None
@@ -95,7 +133,7 @@ class LLMClient:
             cost = hidden_params.get("response_cost")
 
         return GenerationResult(
-            content=response.choices[0].message.content,
+            content=response.choices[0].message.content or "",
             prompt_tokens=response.usage.prompt_tokens,
             completion_tokens=response.usage.completion_tokens,
             total_tokens=response.usage.total_tokens,
