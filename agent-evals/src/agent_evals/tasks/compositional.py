@@ -23,8 +23,21 @@ class CompositionalTask(EvalTask):
     def __init__(self, definition: TaskDefinition) -> None:
         super().__init__(definition)
         meta: dict[str, Any] = definition.metadata
-        self.sub_tasks: list[dict[str, Any]] = meta.get("sub_tasks", [])
         self.composition_type: str = meta.get("composition_type", "")
+
+        # Support both formats:
+        # 1. sub_tasks: [{question, expected_answer}, ...]
+        # 2. sub_questions: [...] + expected_answers: [...] (parallel lists)
+        raw_sub_tasks = meta.get("sub_tasks", [])
+        if raw_sub_tasks:
+            self.sub_tasks: list[dict[str, Any]] = raw_sub_tasks
+        else:
+            questions = meta.get("sub_questions", [])
+            answers = meta.get("expected_answers", [])
+            self.sub_tasks = [
+                {"question": q, "expected_answer": a}
+                for q, a in zip(questions, answers)
+            ]
 
     def build_prompt(self, index_content: str) -> list[dict[str, str]]:
         """Build messages for compositional reasoning evaluation.
