@@ -1,0 +1,74 @@
+# Pilot Study Configuration
+# Validates methodology before full evaluation (Phase 4)
+
+pilot:
+  description: "Lightweight pilot to validate eval methodology before full run"
+
+  # Task sampling
+  tasks:
+    per_type: 10              # 10 tasks per task type
+    total: 110                # 11 task types × 10 = 110
+    source_dir: "gold_standard"  # Load from gold standard corpus
+    sampling_strategy: "stratified"  # Maintain difficulty distribution
+    seed: 42                  # Reproducible sampling
+
+  # Execution
+  execution:
+    repetitions: 3            # N=3 for quick iteration (full run: N≥10)
+    max_connections: 5        # Conservative parallelism
+    temperature: 0.3
+    max_tokens: 2048
+    use_cache: true
+    cache_dir: ".pilot-cache"
+    output_dir: "pilot_results"
+
+  # Model
+  model:
+    default: "openrouter/anthropic/claude-sonnet-4-20250514"
+    judge: "openrouter/openai/gpt-4o"
+
+  # Axis orderings to test
+  axis_orderings:
+    default:
+      description: "Dependency-driven: structure before metadata, format before position"
+      order: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    alternative_a:
+      description: "Information-first: metadata and format early, structure later"
+      order: [2, 3, 1, 4, 6, 5, 8, 7, 9, 10]
+    alternative_b:
+      description: "Impact-first: high-impact axes first based on prior research"
+      order: [3, 1, 8, 2, 4, 5, 6, 7, 9, 10]
+
+  # Prompt framing strategies
+  framing:
+    constant:
+      description: "Same system prompt for all variants - isolates index effect"
+      system_prompt: >
+        You are an AI coding assistant. Use the provided documentation index
+        to answer the question. If the information is not available in the
+        index, say so clearly.
+    adapted:
+      description: "Variant-specific system prompt guidance"
+      template: >
+        You are an AI coding assistant. The documentation index below uses
+        {format_description}. Use it to answer the question. If the information
+        is not available in the index, say so clearly.
+
+  # Saturation analysis
+  saturation:
+    min_tasks: 20             # Start checking from 20 tasks
+    step_size: 10             # Add 10 tasks per step
+    stability_threshold: 1.0  # Rankings stable within 1 composite point
+    tail_fraction: 0.20       # Last 20% of tasks must not change rankings
+    confidence_level: 0.95    # For bootstrap CIs
+    n_bootstrap: 10000        # Bootstrap resamples
+
+  # Success criteria
+  thresholds:
+    ordering_sensitivity:
+      max_winner_changes: 0   # If >0 winners change, flag for investigation
+      p_value: 0.05           # Significance level for Wilcoxon test
+    framing_difference:
+      min_effect_size: 0.1    # Report if effect size > 0.1
+    saturation:
+      min_saturation_point: 100  # Expect saturation before 100 tasks
