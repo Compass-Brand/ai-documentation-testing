@@ -5,10 +5,11 @@ Tests cover:
 - Defaults for missing metadata
 - Registration in TASK_TYPES
 - build_prompt returns message list with index content and question
-- score_response: exact answer match (1.0)
-- score_response: label-only match (0.5)
+- score_response: keyword coverage answer match (1.0)
+- score_response: label-only match with underscore normalization (0.5)
 - score_response: no match (0.0)
 - Case-insensitive matching
+- Partial keyword coverage below threshold scores 0.0
 - Edge cases: empty interpretations, empty expected_interpretation
 """
 
@@ -175,6 +176,35 @@ class TestDisambiguationTaskScoring:
         """Empty expected_interpretation gives 0.0."""
         task = _disambiguation_task(expected_interpretation="")
         score = task.score_response("Connection pooling for databases")
+        assert score == 0.0
+
+    def test_label_normalized_underscore_to_space(self) -> None:
+        """Label with underscores matches when response uses spaces instead."""
+        task = _disambiguation_task()
+        # "database pool" (with space) should match label "database_pool"
+        score = task.score_response(
+            "This refers to the database pool concept."
+        )
+        assert score == 0.5
+
+    def test_partial_keyword_coverage_above_threshold(self) -> None:
+        """Response with >= 50% keyword coverage scores 1.0."""
+        task = _disambiguation_task()
+        # Keywords: ["Connection", "pooling", "databases"]
+        # "connection" and "pooling" present = 2/3 = 0.67 >= 0.5
+        score = task.score_response(
+            "It uses connection pooling to manage resources."
+        )
+        assert score == 1.0
+
+    def test_partial_keyword_coverage_below_threshold(self) -> None:
+        """Response with < 50% keyword coverage scores 0.0 (no label match either)."""
+        task = _disambiguation_task()
+        # Keywords: ["Connection", "pooling", "databases"]
+        # Only "connection" present = 1/3 = 0.33 < 0.5
+        score = task.score_response(
+            "It opens a connection to the server."
+        )
         assert score == 0.0
 
     def test_score_clamped_between_0_and_1(self) -> None:

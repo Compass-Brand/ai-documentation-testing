@@ -9,10 +9,16 @@ This module provides:
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 import time
+from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from agent_evals.llm.cache import ResponseCache
@@ -233,7 +239,7 @@ class EvalRunner:
         total_cost = sum(t.cost for t in trials if t.cost is not None)
         total_tokens = sum(t.total_tokens for t in trials)
 
-        return EvalRunResult(
+        result = EvalRunResult(
             config=self._config,
             trials=trials,
             total_cost=total_cost,
@@ -241,9 +247,137 @@ class EvalRunner:
             elapsed_seconds=elapsed,
         )
 
+        if self._config.output_dir:
+            json_path, csv_path = self._save_results(result, tasks)
+            print(f"JSON report saved to: {json_path}")
+            print(f"CSV  report saved to: {csv_path}")
+
+        return result
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+
+    def _save_results(
+        self,
+        result: EvalRunResult,
+        tasks: list[EvalTask],
+    ) -> tuple[Path, Path]:
+        """Save results to JSON and CSV files. Returns (json_path, csv_path)."""
+        output_dir = Path(self._config.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # Build task_id -> task_type lookup from the tasks list
+        task_type_map: dict[str, str] = {
+            t.definition.task_id: t.definition.type for t in tasks
+        }
+
+        # -- Trial dicts (shared between JSON and by_* aggregations) ---------
+        trial_dicts: list[dict[str, Any]] = []
+        for t in result.trials:
+            trial_dicts.append({
+                "task_id": t.task_id,
+                "variant_name": t.variant_name,
+                "repetition": t.repetition,
+                "score": t.score,
+                "metrics": t.metrics,
+                "prompt_tokens": t.prompt_tokens,
+                "completion_tokens": t.completion_tokens,
+                "total_tokens": t.total_tokens,
+                "cost": t.cost,
+                "latency_seconds": t.latency_seconds,
+                "cached": t.cached,
+            })
+
+        # -- by_variant aggregation ------------------------------------------
+        variant_scores: dict[str, list[float]] = defaultdict(list)
+        variant_tokens: dict[str, int] = defaultdict(int)
+        variant_counts: dict[str, int] = defaultdict(int)
+        for t in result.trials:
+            variant_scores[t.variant_name].append(t.score)
+            variant_tokens[t.variant_name] += t.total_tokens
+            variant_counts[t.variant_name] += 1
+
+        by_variant: dict[str, dict[str, Any]] = {}
+        for name in variant_scores:
+            scores = variant_scores[name]
+            by_variant[name] = {
+                "mean_score": sum(scores) / len(scores) if scores else 0.0,
+                "trial_count": variant_counts[name],
+                "total_tokens": variant_tokens[name],
+            }
+
+        # -- by_task_type aggregation ----------------------------------------
+        task_type_scores: dict[str, list[float]] = defaultdict(list)
+        task_type_counts: dict[str, int] = defaultdict(int)
+        for t in result.trials:
+            tt = task_type_map.get(t.task_id, "unknown")
+            task_type_scores[tt].append(t.score)
+            task_type_counts[tt] += 1
+
+        by_task_type: dict[str, dict[str, Any]] = {}
+        for tt in task_type_scores:
+            scores = task_type_scores[tt]
+            by_task_type[tt] = {
+                "mean_score": sum(scores) / len(scores) if scores else 0.0,
+                "trial_count": task_type_counts[tt],
+            }
+
+        # -- Config dict -----------------------------------------------------
+        config_dict: dict[str, Any] = {
+            "repetitions": self._config.repetitions,
+            "max_connections": self._config.max_connections,
+            "max_tasks": self._config.max_tasks,
+            "temperature": self._config.temperature,
+            "max_tokens": self._config.max_tokens,
+            "use_cache": self._config.use_cache,
+            "cache_dir": self._config.cache_dir,
+            "output_dir": self._config.output_dir,
+            "display_mode": self._config.display_mode,
+        }
+
+        # -- JSON report -----------------------------------------------------
+        report: dict[str, Any] = {
+            "config": config_dict,
+            "summary": {
+                "total_trials": len(result.trials),
+                "total_tokens": result.total_tokens,
+                "total_cost": result.total_cost,
+                "elapsed_seconds": result.elapsed_seconds,
+            },
+            "trials": trial_dicts,
+            "by_variant": by_variant,
+            "by_task_type": by_task_type,
+        }
+
+        json_path = output_dir / f"run_{timestamp}.json"
+        json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+        # -- CSV report ------------------------------------------------------
+        csv_fields = [
+            "task_id",
+            "variant_name",
+            "repetition",
+            "score",
+            "prompt_tokens",
+            "completion_tokens",
+            "total_tokens",
+            "cost",
+            "latency_seconds",
+            "cached",
+        ]
+
+        csv_path = output_dir / f"run_{timestamp}.csv"
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=csv_fields, extrasaction="ignore")
+        writer.writeheader()
+        for td in trial_dicts:
+            writer.writerow(td)
+        csv_path.write_text(buf.getvalue(), encoding="utf-8")
+
+        return json_path, csv_path
 
     def _run_trial(
         self,

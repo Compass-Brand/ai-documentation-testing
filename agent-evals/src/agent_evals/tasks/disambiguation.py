@@ -2,13 +2,15 @@
 
 Scores responses by checking whether the model correctly identified the
 expected interpretation from a set of ambiguous alternatives.
-Score: 1.0 for answer match, 0.5 for label-only match, 0.0 for neither.
+Score: 1.0 for keyword coverage >= 50% of expected answer keywords,
+0.5 for label match (underscore-normalized), 0.0 for neither.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
@@ -51,11 +53,13 @@ class DisambiguationTask(EvalTask):
         ]
 
     def score_response(self, response: str, **kwargs: object) -> float:
-        """Score response by checking interpretation answer and label matches.
+        """Score response by keyword coverage and label matching.
 
         Scoring logic:
-        - 1.0 if the expected interpretation's answer appears in the response
-        - 0.5 if only the expected interpretation's label appears
+        - 1.0 if >= 50% of expected answer keywords appear in the response
+        - 0.5 if the expected interpretation label (or its underscore-
+          normalized form) appears in the response
+        - Returns the max of answer score and label score
         - 0.0 if neither matches
 
         Args:
@@ -81,15 +85,24 @@ class DisambiguationTask(EvalTask):
         response_lower = response.lower()
         expected_answer: str = expected.get("answer", "")
 
-        # Check answer match (case-insensitive)
-        if expected_answer and expected_answer.lower() in response_lower:
-            return 1.0
+        # --- Answer keyword coverage scoring ---
+        answer_score = 0.0
+        if expected_answer:
+            keywords = extract_keywords(expected_answer)
+            if keywords:
+                hits = sum(1 for kw in keywords if kw.lower() in response_lower)
+                coverage = hits / len(keywords)
+                if coverage >= 0.5:
+                    answer_score = 1.0
 
-        # Check label match (case-insensitive)
-        if self.expected_interpretation.lower() in response_lower:
-            return 0.5
+        # --- Label match scoring (underscore-normalized) ---
+        label_score = 0.0
+        label = self.expected_interpretation.lower()
+        label_normalized = label.replace("_", " ")
+        if label in response_lower or label_normalized in response_lower:
+            label_score = 0.5
 
-        return 0.0
+        return max(answer_score, label_score)
 
 
 register_task_type("disambiguation", DisambiguationTask)

@@ -7,8 +7,8 @@ Tests cover:
 - score_response: no match (0.0)
 - score_response: partial match (between 0 and 1)
 - FAIL_TO_PASS / PASS_TO_PASS JSON parsing
-- Composite scoring weights (tool=0.3, files=0.3, correctness=0.4)
-- Edge cases: empty tools, missing kwargs, JSON string vs list
+- Composite scoring weights (file_mention=0.4, content=0.4, correctness=0.2)
+- Edge cases: empty files, missing metadata, JSON string vs list
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ def _agentic_task(**meta_overrides: Any) -> AgenticTask:
             {"name": "search", "args": {"query": "middleware"}},
         ],
         "files": {
-            "src/auth.py": "auth module",
-            "src/middleware.py": "middleware module",
+            "src/auth.py": "auth module AuthMiddleware JWTConfig",
+            "src/middleware.py": "middleware module RequestHandler",
         },
         "setup_script": "pip install -r requirements.txt",
         "FAIL_TO_PASS": json.dumps(["test_auth_login", "test_auth_logout"]),
@@ -140,103 +140,104 @@ class TestAgenticTaskBuildPrompt:
 
 
 # ---------------------------------------------------------------------------
-# score_response: composite scoring
+# score_response: text-based composite scoring
 # ---------------------------------------------------------------------------
 
 
 class TestAgenticTaskScoring:
-    """Tests for AgenticTask.score_response with composite scoring."""
+    """Tests for AgenticTask.score_response with text-based composite scoring."""
 
     def test_perfect_score_all_components(self) -> None:
-        """Response with all tools, all files, and all test names scores 1.0."""
+        """Response mentioning all files, all content keywords, and all test names scores 1.0."""
         task = _agentic_task()
+        # Mention both file paths, all content keywords, and both test names
         response = (
-            "I accessed src/auth.py and src/middleware.py. "
+            "I found the issue in src/auth.py and src/middleware.py. "
+            "The auth module uses AuthMiddleware and JWTConfig. "
+            "The middleware module uses RequestHandler. "
             "The fix resolves test_auth_login and test_auth_logout."
         )
-        tool_calls = [
-            {"name": "read_file", "args": {"path": "src/auth.py"}},
-            {"name": "search", "args": {"query": "middleware"}},
-        ]
-        score = task.score_response(
-            response,
-            tool_calls=tool_calls,
-            accessed_files=["src/auth.py", "src/middleware.py"],
-        )
+        score = task.score_response(response)
         assert score == 1.0
 
     def test_zero_score_no_components(self) -> None:
-        """Response with no tools, no files, no test names scores 0.0."""
+        """Response with no file paths, no keywords, no test names scores 0.0."""
         task = _agentic_task()
         response = "I'm not sure how to fix this."
-        score = task.score_response(response, tool_calls=[], accessed_files=[])
+        score = task.score_response(response)
         assert score == 0.0
 
-    def test_tool_invocation_component(self) -> None:
-        """Tool invocation contributes 0.3 to the score."""
+    def test_file_mention_component(self) -> None:
+        """File path mentions contribute to the score via 0.4 weight."""
         task = _agentic_task()
-        response = "test_auth_login test_auth_logout"  # correctness match
-        # All tools matched, but no files
-        tool_calls = [
-            {"name": "read_file", "args": {}},
-            {"name": "search", "args": {}},
-        ]
-        score_with_tools = task.score_response(
-            response, tool_calls=tool_calls, accessed_files=[]
-        )
-        score_without_tools = task.score_response(
-            response, tool_calls=[], accessed_files=[]
-        )
-        # Difference should be approximately 0.3 (tool weight)
-        tool_contribution = score_with_tools - score_without_tools
-        assert abs(tool_contribution - 0.3) < 0.01
+        # Use file paths that also leak some content keywords ("auth", "middleware")
+        response = "I looked at src/auth.py and src/middleware.py but found nothing."
+        score = task.score_response(response)
+        # File mention: 2/2 * 0.4 = 0.4
+        # Content: "auth" and "middleware" leak as keyword matches (2/7) * 0.4 ~ 0.114
+        # Total ~ 0.514
+        assert score > 0.4
 
-    def test_file_selection_component(self) -> None:
-        """File selection contributes 0.3 to the score."""
+    def test_content_component(self) -> None:
+        """Content keyword overlap contributes 0.4 to the score."""
         task = _agentic_task()
-        response = "test_auth_login test_auth_logout"  # correctness match
-        score_with_files = task.score_response(
-            response,
-            tool_calls=[],
-            accessed_files=["src/auth.py", "src/middleware.py"],
+        # Mention all content keywords but no file paths or test names
+        response = (
+            "The auth module uses AuthMiddleware and JWTConfig. "
+            "The middleware module uses RequestHandler."
         )
-        score_without_files = task.score_response(
-            response, tool_calls=[], accessed_files=[]
-        )
-        file_contribution = score_with_files - score_without_files
-        assert abs(file_contribution - 0.3) < 0.01
+        score_with_content = task.score_response(response)
+        score_without_content = task.score_response("nothing relevant here")
+        content_contribution = score_with_content - score_without_content
+        # Content keywords should contribute roughly 0.4
+        assert content_contribution > 0.2
 
     def test_correctness_component(self) -> None:
-        """Correctness (test name mention) contributes 0.4 to the score."""
+        """Correctness (test name mention) contributes 0.2 to the score."""
         task = _agentic_task()
+        # Both responses share the same keyword leakage ("auth" appears in test names)
+        # so the difference isolates correctness weight
         response_with_tests = "Fixed test_auth_login and test_auth_logout."
         response_without_tests = "Fixed the bug."
-        score_with = task.score_response(
-            response_with_tests, tool_calls=[], accessed_files=[]
-        )
-        score_without = task.score_response(
-            response_without_tests, tool_calls=[], accessed_files=[]
-        )
+        score_with = task.score_response(response_with_tests)
+        score_without = task.score_response(response_without_tests)
         correctness_contribution = score_with - score_without
-        assert abs(correctness_contribution - 0.4) < 0.01
+        # Correctness: 0.2 weight. Also "auth" keyword leaks in with_tests,
+        # so difference includes content bonus: (1/7)*0.4 ~ 0.057
+        # Total difference ~ 0.257
+        assert 0.2 < correctness_contribution < 0.3
 
-    def test_partial_tool_match(self) -> None:
-        """Partial tool invocation scores proportionally."""
+    def test_partial_file_mention(self) -> None:
+        """Partial file path mention scores proportionally."""
         task = _agentic_task()
-        response = "Something"
-        # Only 1 of 2 expected tools
-        tool_calls = [{"name": "read_file", "args": {}}]
-        score = task.score_response(response, tool_calls=tool_calls, accessed_files=[])
-        # Tool component: 0.5 * 0.3 = 0.15
-        assert 0.0 < score < 0.3
+        # Only 1 of 2 expected files
+        response = "I checked src/auth.py only."
+        score = task.score_response(response)
+        # File mention: 1/2 * 0.4 = 0.2, rest roughly 0
+        assert 0.0 < score < 0.4
 
-    def test_missing_kwargs_defaults_to_empty(self) -> None:
-        """score_response works without tool_calls or accessed_files kwargs."""
+    def test_kwargs_accepted_but_unused(self) -> None:
+        """score_response accepts kwargs for interface compatibility but ignores them."""
         task = _agentic_task()
         response = "test_auth_login test_auth_logout"
-        # Only correctness component should contribute
+        # Passing kwargs should not change the score
+        score_with_kwargs = task.score_response(
+            response,
+            tool_calls=[{"name": "read_file"}],
+            accessed_files=["src/auth.py"],
+        )
+        score_without_kwargs = task.score_response(response)
+        assert score_with_kwargs == score_without_kwargs
+
+    def test_score_without_kwargs(self) -> None:
+        """score_response works without any kwargs."""
+        task = _agentic_task()
+        response = "test_auth_login test_auth_logout"
+        # Correctness: 2/2 * 0.2 = 0.2
+        # Content: "auth" keyword leaks as substring match (1/7) * 0.4 ~ 0.057
+        # Total ~ 0.257
         score = task.score_response(response)
-        assert abs(score - 0.4) < 0.01
+        assert 0.2 < score < 0.3
 
     def test_score_clamped_between_0_and_1(self) -> None:
         """Score is always between 0.0 and 1.0."""
@@ -248,3 +249,27 @@ class TestAgenticTaskScoring:
         ]:
             score = task.score_response(resp)
             assert 0.0 <= score <= 1.0
+
+    def test_empty_files_metadata(self) -> None:
+        """When files metadata is empty, file and content scores are 0.0."""
+        task = _agentic_task(files={})
+        response = "test_auth_login test_auth_logout"
+        score = task.score_response(response)
+        # Only correctness: 1.0 * 0.2 = 0.2
+        assert abs(score - 0.2) < 0.01
+
+    def test_case_insensitive_file_matching(self) -> None:
+        """File path matching is case-insensitive."""
+        task = _agentic_task()
+        response = "I looked at SRC/AUTH.PY and SRC/MIDDLEWARE.PY."
+        score = task.score_response(response)
+        # Both files matched via case-insensitive check
+        assert score >= 0.35  # at least file_mention component
+
+    def test_case_insensitive_keyword_matching(self) -> None:
+        """Content keyword matching is case-insensitive."""
+        task = _agentic_task()
+        response = "The AUTH MODULE uses AUTHMIDDLEWARE and JWTCONFIG."
+        score = task.score_response(response)
+        # Content keywords matched via case-insensitive check
+        assert score > 0.0

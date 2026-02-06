@@ -8,6 +8,11 @@ Tests cover:
 - score_response: perfect match (1.0)
 - score_response: no match (0.0)
 - score_response: partial matches (between 0 and 1)
+- score_response: uses reasoning_chain over question_decomposition
+- score_response: falls back to question_decomposition when needed
+- score_response: empty-keyword steps excluded from denominator
+- score_response: word-boundary matching for short keywords
+- score_response: punctuation stripping in keywords
 - Edge cases and score bounding
 """
 
@@ -131,57 +136,133 @@ class TestMultiHopTaskBuildPrompt:
 class TestMultiHopTaskScoring:
     """Tests for MultiHopTask.score_response."""
 
-    def test_all_decomposition_steps_answered_returns_1(self) -> None:
-        """Response addressing all decomposition steps scores 1.0."""
+    def test_all_reasoning_chain_steps_matched_returns_1(self) -> None:
+        """Response addressing all reasoning-chain steps scores 1.0."""
         task = _multi_hop_task(
-            question_decomposition=[
-                "Who created Python?",
-                "Where did the creator work?",
+            reasoning_chain=[
+                "Python was created by Guido van Rossum.",
+                "Guido van Rossum worked at Google.",
             ],
         )
-        response = "Python was created by Guido. The creator worked at Google."
+        response = "Python was created by Guido. He worked at Google."
         score = task.score_response(response)
         assert score == 1.0
 
-    def test_no_decomposition_steps_answered_returns_0(self) -> None:
-        """Response addressing no decomposition steps scores 0.0."""
+    def test_no_reasoning_chain_steps_matched_returns_0(self) -> None:
+        """Response addressing no reasoning-chain steps scores 0.0."""
         task = _multi_hop_task(
-            question_decomposition=[
-                "Who created Python?",
-                "Where did the creator work?",
+            reasoning_chain=[
+                "Python was created by Guido van Rossum.",
+                "Guido van Rossum worked at Google.",
             ],
         )
         response = "I have no idea about any of this."
         score = task.score_response(response)
         assert score == 0.0
 
-    def test_partial_decomposition_steps_answered(self) -> None:
-        """Response addressing some decomposition steps scores partially."""
+    def test_partial_reasoning_chain_steps_matched(self) -> None:
+        """Response addressing some reasoning-chain steps scores partially."""
+        task = _multi_hop_task(
+            reasoning_chain=[
+                "Python was created by Guido van Rossum.",
+                "The annual revenue was 5 billion dollars.",
+            ],
+        )
+        # Matches step 1 keywords ("Python", "created", "Guido") but
+        # not step 2 keywords ("annual", "revenue", "billion", "dollars")
+        response = "Python was created by Guido but I don't know the finances."
+        score = task.score_response(response)
+        assert 0.0 < score < 1.0
+
+    def test_uses_reasoning_chain_over_question_decomposition(self) -> None:
+        """Scorer prefers reasoning_chain when it exists and is same length."""
+        task = _multi_hop_task(
+            question_decomposition=[
+                "What is the default TTL?",
+                "Which env var configures Redis?",
+            ],
+            reasoning_chain=[
+                "caching.md states default_ttl=300",
+                "config.md states REDIS_URL is the env var",
+            ],
+        )
+        # Response echoes question terms but NOT answer terms
+        response = "The default TTL for cached responses is configured via Redis."
+        score = task.score_response(response)
+        # Should NOT be 1.0 because "300", "default_ttl", "REDIS_URL" are missing
+        assert score < 1.0
+
+    def test_falls_back_to_decomposition_when_chain_empty(self) -> None:
+        """Falls back to question_decomposition when reasoning_chain is empty."""
         task = _multi_hop_task(
             question_decomposition=[
                 "Who created Python?",
                 "Where did the creator work?",
             ],
+            reasoning_chain=[],
         )
-        # Only the first step has keyword match ("created", "Python")
-        response = "Python was created by someone unknown."
+        response = "Python was created by someone. The creator worked somewhere."
         score = task.score_response(response)
-        assert 0.0 < score < 1.0
+        assert score == 1.0
 
-    def test_empty_decomposition_returns_1(self) -> None:
-        """Empty decomposition list returns 1.0 (vacuous truth)."""
-        task = _multi_hop_task(question_decomposition=[])
+    def test_falls_back_to_decomposition_when_chain_shorter(self) -> None:
+        """Falls back to question_decomposition when reasoning_chain is shorter."""
+        task = _multi_hop_task(
+            question_decomposition=[
+                "Who created Python?",
+                "Where did the creator work?",
+            ],
+            reasoning_chain=[
+                "Python was created by Guido.",
+            ],
+        )
+        # Should use question_decomposition (2 steps) since reasoning_chain has only 1
+        # "created" and "Python" match step 1; "creator" and "work" match step 2
+        response = "Python was created by someone. The creator did work."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_empty_both_returns_1(self) -> None:
+        """Empty reasoning_chain and question_decomposition returns 1.0."""
+        task = _multi_hop_task(question_decomposition=[], reasoning_chain=[])
         score = task.score_response("Any response")
+        assert score == 1.0
+
+    def test_empty_keyword_steps_excluded_from_denominator(self) -> None:
+        """Steps with no extractable keywords are excluded from scoring."""
+        task = _multi_hop_task(
+            reasoning_chain=[
+                "the and for",  # All stopwords, no extractable keywords
+                "Python was created by Guido van Rossum.",
+            ],
+            question_decomposition=[],
+        )
+        # Only 1 scorable step (the second). Response matches it.
+        response = "Python was created by Guido."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_all_empty_keyword_steps_returns_1(self) -> None:
+        """If every step has no extractable keywords, return 1.0."""
+        task = _multi_hop_task(
+            reasoning_chain=[
+                "the and for",
+                "but not all",
+            ],
+            question_decomposition=[],
+        )
+        score = task.score_response("anything")
         assert score == 1.0
 
     def test_stopwords_excluded_from_keyword_matching(self) -> None:
         """Stopwords and short words are excluded from keyword extraction."""
         task = _multi_hop_task(
-            question_decomposition=[
-                "What is the main use of the system?",
+            reasoning_chain=[
+                "The main system performs the critical role.",
             ],
+            question_decomposition=[],
         )
-        # Only contains stopwords from the step, not keywords like "main", "system"
+        # Only contains stopwords, not keywords like "main", "system", "performs"
         response = "the use of it is that"
         score = task.score_response(response)
         assert score < 1.0
@@ -189,17 +270,58 @@ class TestMultiHopTaskScoring:
     def test_score_clamped_between_0_and_1(self) -> None:
         """Score is always between 0.0 and 1.0."""
         task = _multi_hop_task()
-        for resp in ["complete answer with Python and Google", "nothing", ""]:
+        for resp in ["Guido van Rossum created Python at Google", "nothing", ""]:
             score = task.score_response(resp)
             assert 0.0 <= score <= 1.0
 
     def test_case_insensitive_keyword_matching(self) -> None:
         """Keyword matching is case-insensitive."""
         task = _multi_hop_task(
-            question_decomposition=[
-                "Who created Python?",
+            reasoning_chain=[
+                "Python was created by Guido van Rossum.",
             ],
+            question_decomposition=[],
         )
-        response = "PYTHON was CREATED by Guido."
+        response = "PYTHON was CREATED by GUIDO."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_word_boundary_matching_for_short_keywords(self) -> None:
+        """Short keywords (3-4 chars) use word boundaries to avoid substrings."""
+        task = _multi_hop_task(
+            reasoning_chain=[
+                "The TTL value is 300.",
+            ],
+            question_decomposition=[],
+        )
+        # "TTL" should NOT match inside "throttle" or "battle"
+        response = "The throttle battles are fierce."
+        score = task.score_response(response)
+        assert score < 1.0
+
+    def test_word_boundary_matching_allows_exact_short_keyword(self) -> None:
+        """Short keywords match when they appear as whole words."""
+        task = _multi_hop_task(
+            reasoning_chain=[
+                "The TTL value is 300.",
+            ],
+            question_decomposition=[],
+        )
+        response = "The TTL is set to 300 seconds."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_punctuation_stripped_from_keywords(self) -> None:
+        """Keywords with trailing punctuation are properly stripped."""
+        task = _multi_hop_task(
+            reasoning_chain=[
+                "The default_ttl value is 300.",
+                "REDIS_URL is the required env var.",
+            ],
+            question_decomposition=[],
+        )
+        # "300" should match even though source had "300." (trailing period)
+        # "REDIS_URL" should match even though source had "var." (trailing period)
+        response = "The default_ttl is 300 and REDIS_URL must be set."
         score = task.score_response(response)
         assert score == 1.0

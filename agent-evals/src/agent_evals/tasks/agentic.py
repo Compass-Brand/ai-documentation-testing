@@ -1,9 +1,9 @@
 """Agentic task type for evaluating multi-step coding agent behaviour.
 
-Composite score with 3 components:
-- Tool invocation (0.3): Did the agent invoke expected tools?
-- File selection (0.3): Did the agent access the right files?
-- Correctness (0.4): Heuristic check for FAIL_TO_PASS test names in response.
+Composite score with 3 text-based components:
+- File mention (0.4): Do expected file paths appear in the response text?
+- Content (0.4): Do key facts from file content summaries appear in the response?
+- Correctness (0.2): Bonus if FAIL_TO_PASS test names appear (not penalised if absent).
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
@@ -36,9 +37,9 @@ def _parse_json_or_list(value: object) -> list[str]:
 class AgenticTask(EvalTask):
     """Task type for evaluating agentic coding behaviour.
 
-    Scores responses using a composite of tool invocation accuracy,
-    file selection accuracy, and correctness heuristics based on
-    FAIL_TO_PASS test names.
+    Scores responses purely from text, using file-path mentions,
+    content-keyword overlap, and optional FAIL_TO_PASS test-name
+    mentions as a bonus.
     """
 
     def __init__(self, definition: TaskDefinition) -> None:
@@ -83,77 +84,80 @@ class AgenticTask(EvalTask):
         ]
 
     def score_response(self, response: str, **kwargs: object) -> float:
-        """Score response using composite of tool, file, and correctness metrics.
+        """Score response purely from text using file, content, and correctness signals.
 
         Args:
             response: The raw text response from the LLM.
-            **kwargs: Additional scoring context:
-                - tool_calls: list[dict] of tool invocations
-                - accessed_files: list[str] of accessed file paths
+            **kwargs: Accepted for interface compatibility but unused.
 
         Returns:
             Composite score between 0.0 and 1.0.
         """
-        tool_score = self._score_tools(kwargs.get("tool_calls", []))
-        file_score = self._score_files(kwargs.get("accessed_files", []))
+        file_mention_score = self._score_file_mentions(response)
+        content_score = self._score_content(response)
         correctness_score = self._score_correctness(response)
 
-        composite = tool_score * 0.3 + file_score * 0.3 + correctness_score * 0.4
+        composite = (
+            file_mention_score * 0.4
+            + content_score * 0.4
+            + correctness_score * 0.2
+        )
         return max(0.0, min(1.0, composite))
 
-    def _score_tools(self, tool_calls: object) -> float:
-        """Score tool invocation accuracy.
+    def _score_file_mentions(self, response: str) -> float:
+        """Score whether expected file paths appear in the response text.
 
         Args:
-            tool_calls: List of tool call dicts with 'name' keys.
+            response: The raw text response from the LLM.
 
         Returns:
-            Fraction of expected tools that were invoked.
-        """
-        if not self.expected_tools:
-            return 0.0
-
-        if not isinstance(tool_calls, list):
-            return 0.0
-
-        invoked_names: set[str] = set()
-        for call in tool_calls:
-            if isinstance(call, dict) and "name" in call:
-                invoked_names.add(call["name"])
-
-        expected_names = {t["name"] for t in self.expected_tools if "name" in t}
-        if not expected_names:
-            return 0.0
-
-        matched = len(expected_names & invoked_names)
-        return matched / len(expected_names)
-
-    def _score_files(self, accessed_files: object) -> float:
-        """Score file selection accuracy.
-
-        Args:
-            accessed_files: List of file paths accessed by the agent.
-
-        Returns:
-            Fraction of expected files that were accessed.
+            Fraction of expected file paths mentioned in the response.
         """
         if not self.files:
             return 0.0
 
-        if not isinstance(accessed_files, list):
-            return 0.0
-
-        expected_paths = set(self.files.keys())
-        accessed_set: set[str] = set()
-        for f in accessed_files:
-            if isinstance(f, str):
-                accessed_set.add(f)
-
-        matched = len(expected_paths & accessed_set)
+        response_lower = response.lower()
+        expected_paths = list(self.files.keys())
+        matched = sum(
+            1 for path in expected_paths
+            if path.lower() in response_lower
+        )
         return matched / len(expected_paths)
 
+    def _score_content(self, response: str) -> float:
+        """Score keyword overlap between file content summaries and response.
+
+        Extracts keywords from the value strings in ``self.files`` and
+        checks how many appear in the response text.
+
+        Args:
+            response: The raw text response from the LLM.
+
+        Returns:
+            Fraction of content keywords found in the response.
+        """
+        if not self.files:
+            return 0.0
+
+        all_keywords: list[str] = []
+        for summary in self.files.values():
+            all_keywords.extend(extract_keywords(summary))
+
+        if not all_keywords:
+            return 0.0
+
+        response_lower = response.lower()
+        matched = sum(
+            1 for kw in all_keywords
+            if kw.lower() in response_lower
+        )
+        return matched / len(all_keywords)
+
     def _score_correctness(self, response: str) -> float:
-        """Score correctness by checking if FAIL_TO_PASS test names appear in response.
+        """Bonus score if FAIL_TO_PASS test names appear in the response.
+
+        This is treated as a bonus signal rather than a hard requirement
+        because LLM responses rarely contain literal pytest test names.
 
         Args:
             response: The raw text response from the LLM.

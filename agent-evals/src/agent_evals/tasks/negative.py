@@ -3,6 +3,10 @@
 Scores responses by checking for the presence of recognised abstention
 phrases.  A correct response to an unanswerable question should contain
 one of these phrases and therefore receives a score of 1.0.
+
+The abstention phrase list covers 30+ common LLM refusal and uncertainty
+wordings grouped into categories: explicit refusal, information absence,
+search failure, uncertainty hedging, and scope limitation.
 """
 
 from __future__ import annotations
@@ -11,17 +15,54 @@ from typing import Any
 
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
-# Abstention phrases (same set as AbstentionMetric)
+# ---------------------------------------------------------------------------
+# Abstention phrases — checked case-insensitively via ``phrase in response``.
+# Grouped by category so maintainers can easily spot gaps.
+# ---------------------------------------------------------------------------
 _ABSTENTION_PHRASES: tuple[str, ...] = (
+    # -- Explicit refusal / inability --
     "cannot be determined",
-    "not available",
-    "no information",
-    "not found",
-    "don't know",
-    "unable to find",
-    "not in the documentation",
-    "unanswerable",
     "cannot answer",
+    "cannot determine",
+    "unable to find",
+    "unable to determine",
+    "unanswerable",
+    # -- "don't / do not" variants --
+    "don't know",
+    "do not know",
+    "don't have enough",
+    "do not have enough",
+    "doesn't contain",
+    "does not contain",
+    "doesn't include",
+    "does not include",
+    # -- Information absence --
+    "no information",
+    "no relevant information",
+    "no mention",
+    "no data",
+    "not available",
+    "not found",
+    "not mentioned",
+    "not provided",
+    "not specified",
+    "not documented",
+    "not covered",
+    "not addressed",
+    "not explicitly stated",
+    # -- Search / lookup failure --
+    "couldn't find",
+    "could not find",
+    "not in the documentation",
+    "the documentation does not specify",
+    # -- Uncertainty hedging --
+    "i'm not sure",
+    "i am not sure",
+    "not clear from",
+    "insufficient information",
+    # -- Scope limitation --
+    "based on the available",
+    "the provided documentation",
 )
 
 
