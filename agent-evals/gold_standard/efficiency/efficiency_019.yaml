@@ -1,0 +1,10 @@
+task_id: efficiency_019
+type: efficiency
+question: "What are the four branching types used in the project?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "main, develop, feature, fix"
+  answer_aliases: ["main, develop, feature, and fix branches"]
+  token_budget: 15

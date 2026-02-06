@@ -1,0 +1,13 @@
+task_id: multi_hop_019
+type: multi_hop
+question: "What branch do hotfixes branch from according to the release workflow, and what is the branch strategy for feature development according to the contributing guide?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  question_decomposition:
+    - "What branch do hotfixes branch from?"
+    - "What branch strategy is used for feature development?"
+  reasoning_chain:
+    - "release.md states hotfixes branch from main"
+    - "CONTRIBUTING.md states feature/* branches branch off develop"

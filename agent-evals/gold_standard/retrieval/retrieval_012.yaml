@@ -1,0 +1,14 @@
+task_id: retrieval_012
+type: retrieval
+question: "Which files should I look at to understand both JWT auth and the middleware that enforces authentication?"
+domain: framework_api
+difficulty: medium
+tags:
+  - auth
+  - middleware
+  - multi_file
+metadata:
+  expected_files:
+    - "api/auth.md"
+    - "api/middleware.md"
+  evidence_passage: "AuthMiddleware, @require_auth decorator, Auth middleware in chain"

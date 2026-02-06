@@ -1,0 +1,18 @@
+task_id: code_generation_015
+type: code_generation
+question: "Write a function that uses log_context() to add a request_id to structured log messages."
+domain: framework_api
+difficulty: medium
+tags:
+  - logging
+  - context
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    log_context
+    request_id
+  entry_point: "log_with_request_id"
+  canonical_solution: ""
+  libs: ["framework.logging"]
+  forbidden_patterns: ["eval(", "exec("]

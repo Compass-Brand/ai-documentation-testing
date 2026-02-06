@@ -1,0 +1,15 @@
+task_id: compositional_028
+type: compositional
+question: "When a database connection error occurs, what steps from the debugging workflow apply, and what does the troubleshooting guide recommend checking?"
+domain: project_repo
+difficulty: medium
+tags: [debugging, troubleshooting, database, connection]
+metadata:
+  sub_questions:
+    - "Which debugging workflow steps are relevant for a DB connection error?"
+    - "What does the troubleshooting guide say about DB connection issues?"
+    - "What configuration should be verified?"
+  expected_answers:
+    - "Reproduce the error, isolate the problem (is it network, config, or DB server?), and check common causes from the debugging workflow"
+    - "The troubleshooting guide lists DB connection failures as a common error with resolution steps"
+    - "Verify the DATABASE_URL environment variable is correctly set and the PostgreSQL server is accessible"

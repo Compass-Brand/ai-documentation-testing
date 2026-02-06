@@ -1,0 +1,14 @@
+task_id: robustness_021
+type: robustness
+question: "Since the framework uses RS256 for JWT signing, how would I rotate the keys?"
+domain: framework_api
+difficulty: hard
+tags:
+  - auth
+  - jwt
+  - misleading
+metadata:
+  perturbation_type: "misleading_premise"
+  original_question: "What signing algorithm does the framework use for JWT?"
+  expected_answer: "The premise is incorrect. The framework uses HS256, not RS256, for JWT signing. Key rotation procedures would differ because HS256 uses symmetric keys."
+  perturbation_details: "False premise that the framework uses RS256 when it actually uses HS256"

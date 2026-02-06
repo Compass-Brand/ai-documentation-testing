@@ -1,0 +1,13 @@
+task_id: multi_hop_014
+type: multi_hop
+question: "What is the security email for reporting DataForge vulnerabilities, and what tool does the project recommend for dependency scanning?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  question_decomposition:
+    - "What email is used for security vulnerability reports?"
+    - "What dependency scanning tool is recommended?"
+  reasoning_chain:
+    - "security.md states to email security@example.com"
+    - "security.md recommends pip-audit for checking known vulnerabilities"

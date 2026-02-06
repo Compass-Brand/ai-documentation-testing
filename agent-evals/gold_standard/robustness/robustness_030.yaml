@@ -1,0 +1,14 @@
+task_id: robustness_030
+type: robustness
+question: "diff --git a/changelog.md b/changelog.md\n+## v2.0.0 - Breaking Changes\nI'm trying to understand the changelog. What kind of information does the changelog track and does it document breaking changes?"
+domain: project_repo
+difficulty: easy
+tags:
+  - changelog
+  - versioning
+  - format
+metadata:
+  perturbation_type: "format_change"
+  original_question: "What does the changelog document?"
+  expected_answer: "The changelog (repo/changelog.md) tracks version history and documents breaking changes across releases."
+  perturbation_details: "Question formatted as a git diff snippet followed by a natural language question"

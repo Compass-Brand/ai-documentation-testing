@@ -1,0 +1,19 @@
+task_id: agentic_018
+type: agentic
+question: "Search for how to fix slow database inserts in the troubleshooting guide, and verify the recommended batch_size and COPY mode."
+domain: project_repo
+difficulty: medium
+tags:
+  - troubleshooting
+  - performance
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+  files:
+    "repo/troubleshooting.md": "slow inserts batch_size=5000, disable_indexes, COPY mode"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_insert_optimization"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

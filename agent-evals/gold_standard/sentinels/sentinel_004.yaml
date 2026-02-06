@@ -1,0 +1,12 @@
+task_id: sentinel_004
+type: retrieval
+question: "Which file describes how to configure environment variables for the application?"
+domain: framework_api
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_files:
+    - "api/config.md"
+  evidence_passage: "Application settings are loaded from environment variables with optional .env file support."

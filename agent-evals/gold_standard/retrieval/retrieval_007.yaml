@@ -1,0 +1,12 @@
+task_id: retrieval_007
+type: retrieval
+question: "Which file has the contributing guidelines, branch strategy, and PR process?"
+domain: project_repo
+difficulty: easy
+tags:
+  - contributing
+  - pr
+metadata:
+  expected_files:
+    - "repo/CONTRIBUTING.md"
+  evidence_passage: "branch strategy main/develop/feature/fix, PR process 6 steps, conventional commits"

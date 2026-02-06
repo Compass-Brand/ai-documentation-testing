@@ -1,0 +1,22 @@
+task_id: agentic_022
+type: agentic
+question: "Investigate the full authentication flow: search for JWT config, find the auth middleware position in the chain, check the login endpoint, and verify refresh token rotation."
+domain: framework_api
+difficulty: hard
+tags:
+  - auth
+  - middleware
+  - multi_step
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+    - name: "list_files"
+  files:
+    "api/auth.md": "JWT auth, /api/auth/login, /api/auth/refresh, refresh tokens rotate, @require_auth"
+    "api/middleware.md": "Auth middleware in chain, Order: RequestID->Logging->CORS->Auth->RateLimit->Handler"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_full_auth_flow"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

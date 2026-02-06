@@ -1,0 +1,13 @@
+task_id: robustness_016
+type: robustness
+question: "I was reading about how the Python GIL affects async performance in web servers, and I also heard that Redis can be used as a message broker for Celery. Anyway, my actual question is: what backing store does the @cached decorator use?"
+domain: framework_api
+difficulty: medium
+tags:
+  - caching
+  - redis
+metadata:
+  perturbation_type: "irrelevant_context"
+  original_question: "What backing store does the @cached decorator use?"
+  expected_answer: "The @cached decorator uses Redis as its backing store, configured through CacheConfig with a default TTL of 300 seconds."
+  perturbation_details: "Prepended irrelevant information about Python GIL, async performance, and Celery before the actual question"

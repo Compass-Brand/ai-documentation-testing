@@ -1,0 +1,16 @@
+task_id: conflicting_016
+type: conflicting
+question: "What is the default log level — INFO from config.md or DEBUG from troubleshooting.md?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "config.md"
+      claim: "LOG_LEVEL defaults to INFO"
+      authority: 9
+    - name: "troubleshooting.md"
+      claim: "Set LOG_LEVEL=DEBUG for debugging pipeline issues"
+      authority: 6
+  expected_resolution: "The default log level is INFO as specified in config.md. LOG_LEVEL=DEBUG is a troubleshooting recommendation, not the default."
+  resolution_strategy: "higher_authority"

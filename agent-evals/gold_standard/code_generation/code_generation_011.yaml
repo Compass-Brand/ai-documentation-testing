@@ -1,0 +1,20 @@
+task_id: code_generation_011
+type: code_generation
+question: "Write a function that creates an async SQLAlchemy engine using create_engine with a custom pool_size of 20 and max_overflow of 40."
+domain: framework_api
+difficulty: medium
+tags:
+  - database
+  - sqlalchemy
+  - async
+metadata:
+  expected_answer: ""
+  test: |
+    async|create_engine
+    pool_size.*20|20.*pool_size
+    max_overflow.*40|40.*max_overflow
+    def\s+\w+
+  entry_point: "create_db_engine"
+  canonical_solution: ""
+  libs: ["framework.database"]
+  forbidden_patterns: ["eval(", "exec("]

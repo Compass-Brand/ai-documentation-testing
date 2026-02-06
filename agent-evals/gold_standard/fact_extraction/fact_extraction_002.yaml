@@ -1,0 +1,13 @@
+task_id: fact_extraction_002
+type: fact_extraction
+question: "What hashing algorithm does the JWT configuration use?"
+domain: framework_api
+difficulty: easy
+tags:
+  - auth
+  - jwt
+metadata:
+  expected_answer: "HS256"
+  answer_aliases: ["HMAC-SHA256", "HMAC SHA-256"]
+  source_location: "api/auth.md"
+  fact_type: "name"

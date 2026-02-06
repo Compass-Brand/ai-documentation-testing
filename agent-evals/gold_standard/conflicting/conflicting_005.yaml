@@ -1,0 +1,16 @@
+task_id: conflicting_005
+type: conflicting
+question: "Is REDIS_URL required or optional for caching?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  sources:
+    - name: "config.md"
+      claim: "REDIS_URL is optional"
+      authority: 8
+    - name: "caching.md"
+      claim: "RedisBackend requires a Redis connection for caching"
+      authority: 8
+  expected_resolution: "REDIS_URL is optional because caching falls back to an in-memory backend when Redis is not configured. RedisBackend requires it only if you choose Redis."
+  resolution_strategy: "explicit_flag"

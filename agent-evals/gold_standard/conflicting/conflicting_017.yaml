@@ -1,0 +1,16 @@
+task_id: conflicting_017
+type: conflicting
+question: "Should I optimize inserts with batch_size or COPY?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "troubleshooting.md"
+      claim: "For slow inserts use batch_size=5000 and disable_indexes"
+      authority: 8
+    - name: "troubleshooting.md"
+      claim: "COPY command is also recommended for bulk inserts"
+      authority: 8
+  expected_resolution: "Both are valid optimization strategies. Use batch_size=5000 with disable_indexes for standard bulk inserts. COPY is a more aggressive optimization for very large datasets."
+  resolution_strategy: "explicit_flag"

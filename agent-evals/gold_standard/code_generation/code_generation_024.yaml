@@ -1,0 +1,21 @@
+task_id: code_generation_024
+type: code_generation
+question: "Write a function that implements JWT token refresh, validating the old token and generating a new one with rotated refresh tokens."
+domain: framework_api
+difficulty: hard
+tags:
+  - auth
+  - refresh
+  - jwt
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    refresh
+    token
+    rotate|new.*token|generate
+    return
+  entry_point: "refresh_token"
+  canonical_solution: ""
+  libs: ["framework.auth"]
+  forbidden_patterns: ["eval(", "exec("]

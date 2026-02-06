@@ -1,0 +1,11 @@
+task_id: negative_012
+type: negative
+question: "What is the password complexity policy for user accounts?"
+domain: framework_api
+difficulty: easy
+tags: [users, password, security]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The users docs cover UserModel, CRUD operations, roles, and permissions, but do not specify password complexity requirements. The security docs cover OWASP, input validation, and CSP headers but not password policies."
+  nearest_doc: "api/users.md"
+  nearest_content: "Covers UserModel fields, CRUD operations, role assignments, and permissions management."

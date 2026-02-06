@@ -1,0 +1,13 @@
+task_id: disambiguation_009
+type: disambiguation
+question: "What plugins can I create?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  interpretations:
+    - label: "custom_source_loader"
+      answer: "Create custom data sources and loaders using the @register_source decorator, e.g., @register_source('kafka') for a Kafka source plugin"
+    - label: "custom_middleware"
+      answer: "Create custom middleware by extending BaseMiddleware and implementing process_request and process_response methods"
+  expected_interpretation: "custom_source_loader"

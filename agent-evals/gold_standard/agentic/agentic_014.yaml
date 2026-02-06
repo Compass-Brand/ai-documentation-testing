@@ -1,0 +1,20 @@
+task_id: agentic_014
+type: agentic
+question: "Read the users API docs and the testing docs to determine how to write a test for the DELETE /api/users/:id endpoint that requires admin role."
+domain: framework_api
+difficulty: medium
+tags:
+  - users
+  - testing
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "read_file"
+  files:
+    "api/users.md": "DELETE/:id requires admin role"
+    "api/testing.md": "TestClient, db_session() fixture, mock.patch"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_delete_user_admin_required"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

@@ -1,0 +1,16 @@
+task_id: conflicting_020
+type: conflicting
+question: "Can anyone delete users, or is it restricted?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "users.md"
+      claim: "DELETE endpoint requires admin role"
+      authority: 9
+    - name: "auth.md"
+      claim: "@require_auth decorator protects endpoints but does not specify role-based access"
+      authority: 7
+  expected_resolution: "Only admin users can delete users. The DELETE /api/users endpoint requires admin role per users.md, beyond the basic @require_auth JWT check."
+  resolution_strategy: "higher_authority"

@@ -1,0 +1,10 @@
+task_id: efficiency_006
+type: efficiency
+question: "What is the default CORS_ORIGINS value?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  expected_answer: "* (all origins)"
+  answer_aliases: ["*", "asterisk", "all origins"]
+  token_budget: 10

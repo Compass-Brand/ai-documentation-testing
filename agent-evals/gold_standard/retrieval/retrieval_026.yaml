@@ -1,0 +1,14 @@
+task_id: retrieval_026
+type: retrieval
+question: "Which files describe the plugin system for adding custom data sources and the architecture of the pipeline?"
+domain: project_repo
+difficulty: hard
+tags:
+  - architecture
+  - plugins
+  - multi_file
+metadata:
+  expected_files:
+    - "repo/architecture.md"
+    - "repo/changelog.md"
+  evidence_passage: "plugin system with @register_source, built-in sources CSV/SQL/API/S3"

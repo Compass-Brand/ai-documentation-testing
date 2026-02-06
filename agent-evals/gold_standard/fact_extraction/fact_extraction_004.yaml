@@ -1,0 +1,13 @@
+task_id: fact_extraction_004
+type: fact_extraction
+question: "What is the default number of connections in the database connection pool?"
+domain: framework_api
+difficulty: easy
+tags:
+  - database
+  - pool
+metadata:
+  expected_answer: "10"
+  answer_aliases: ["10 connections", "ten", "ten connections"]
+  source_location: "api/database.md"
+  fact_type: "number"

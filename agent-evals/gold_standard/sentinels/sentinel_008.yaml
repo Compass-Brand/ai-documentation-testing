@@ -1,0 +1,12 @@
+task_id: sentinel_008
+type: negative
+question: "What is DataForge's pricing model for enterprise customers?"
+domain: project_repo
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  answerable: false
+  distractor_files:
+    - "repo/README.md"

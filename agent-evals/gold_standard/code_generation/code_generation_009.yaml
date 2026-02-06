@@ -1,0 +1,19 @@
+task_id: code_generation_009
+type: code_generation
+question: "Write a function that creates a RedisBackend with a CacheConfig specifying a custom default_ttl of 120 seconds."
+domain: framework_api
+difficulty: easy
+tags:
+  - caching
+  - redis
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    RedisBackend
+    CacheConfig
+    120
+  entry_point: "create_redis_cache"
+  canonical_solution: ""
+  libs: ["framework.caching"]
+  forbidden_patterns: ["eval(", "exec("]

@@ -1,0 +1,15 @@
+task_id: compositional_005
+type: compositional
+question: "What are the five steps in the debugging workflow, and in what order should they be performed?"
+domain: skills_workflows
+difficulty: medium
+tags: [debugging, workflow, steps]
+metadata:
+  sub_questions:
+    - "What is the first step in the debugging workflow?"
+    - "What is the second step?"
+    - "What are the remaining three steps in order?"
+  expected_answers:
+    - "Reproduce the issue"
+    - "Isolate the problem"
+    - "Check common causes, instrument the code, then fix the issue"

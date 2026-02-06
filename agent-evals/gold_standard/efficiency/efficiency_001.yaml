@@ -1,0 +1,10 @@
+task_id: efficiency_001
+type: efficiency
+question: "What is the default cache TTL in seconds?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  expected_answer: "300 seconds"
+  answer_aliases: ["300", "5 minutes"]
+  token_budget: 10

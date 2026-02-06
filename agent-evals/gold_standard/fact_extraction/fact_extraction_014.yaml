@@ -1,0 +1,13 @@
+task_id: fact_extraction_014
+type: fact_extraction
+question: "What is the correct order of the built-in middleware chain?"
+domain: framework_api
+difficulty: medium
+tags:
+  - middleware
+  - ordering
+metadata:
+  expected_answer: "RequestID, Logging, CORS, Auth, RateLimit"
+  answer_aliases: ["RequestID->Logging->CORS->Auth->RateLimit->Handler"]
+  source_location: "api/middleware.md"
+  fact_type: "list"

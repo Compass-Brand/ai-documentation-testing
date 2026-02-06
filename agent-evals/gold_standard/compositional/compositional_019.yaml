@@ -1,0 +1,15 @@
+task_id: compositional_019
+type: compositional
+question: "How do the DatabaseManager and the config system work together? What is needed to establish a database connection, and what pooling strategy is used?"
+domain: framework_api
+difficulty: medium
+tags: [database, config, connection-pooling]
+metadata:
+  sub_questions:
+    - "What config variable is required for database connectivity?"
+    - "What class manages database operations?"
+    - "What connection strategy does the database layer use?"
+  expected_answers:
+    - "DATABASE_URL environment variable is required"
+    - "DatabaseManager class handles database operations"
+    - "Connection pooling is used to efficiently manage PostgreSQL connections"

@@ -1,0 +1,19 @@
+task_id: code_generation_006
+type: code_generation
+question: "Write a function that creates an APIError with a 404 status code and a 'User not found' message."
+domain: framework_api
+difficulty: easy
+tags:
+  - errors
+  - api
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    APIError
+    404
+    [Uu]ser not found
+  entry_point: "user_not_found_error"
+  canonical_solution: ""
+  libs: ["framework.errors"]
+  forbidden_patterns: ["eval(", "exec("]

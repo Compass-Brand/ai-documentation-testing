@@ -1,0 +1,23 @@
+task_id: multi_hop_029
+type: multi_hop
+question: "An application deployed via Docker is experiencing intermittent database connection failures under load. The connection pool appears to be exhausting. Trace the full path from the Kubernetes deployment configuration through the database connection pooling setup, and explain how the REDIS_URL optional configuration interacts with this scenario if caching is used to reduce database pressure."
+domain: framework_api
+difficulty: hard
+tags:
+  - deployment
+  - database
+  - connection_pooling
+  - caching
+  - configuration
+metadata:
+  question_decomposition:
+    - "How is the application deployed via Docker and Kubernetes?"
+    - "How does DatabaseManager handle connection pooling?"
+    - "What configuration variables control database and Redis connections?"
+    - "How can the caching layer with Redis reduce database connection pressure?"
+  reasoning_chain:
+    - "api/deployment.md describes Docker containerization and Kubernetes deployment with health checks"
+    - "api/database.md details DatabaseManager with connection pooling for PostgreSQL"
+    - "api/config.md shows DATABASE_URL is required and REDIS_URL is optional"
+    - "api/caching.md explains CacheConfig with Redis backend and @cached decorator with default_ttl=300"
+    - "Enabling REDIS_URL and using @cached on frequently-read endpoints reduces repeated database queries, alleviating connection pool exhaustion under load"

@@ -1,0 +1,13 @@
+task_id: fact_extraction_023
+type: fact_extraction
+question: "What are the four comment prefixes used in the code review workflow?"
+domain: skills_workflows
+difficulty: hard
+tags:
+  - code_review
+  - workflow
+metadata:
+  expected_answer: "nit, suggestion, issue, question"
+  answer_aliases: ["nit/suggestion/issue/question"]
+  source_location: "workflows/code-review.md"
+  fact_type: "list"

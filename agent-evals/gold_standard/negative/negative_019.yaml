@@ -1,0 +1,11 @@
+task_id: negative_019
+type: negative
+question: "How do you configure the project's internationalization (i18n) and localization settings?"
+domain: project_repo
+difficulty: medium
+tags: [i18n, localization, configuration]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "No fixture document addresses internationalization or localization. The config docs cover DATABASE_URL, SECRET_KEY, REDIS_URL, and APP_ENV, but not locale or language settings."
+  nearest_doc: "api/config.md"
+  nearest_content: "Covers environment variables: DATABASE_URL (required), SECRET_KEY, REDIS_URL (optional), and APP_ENV."

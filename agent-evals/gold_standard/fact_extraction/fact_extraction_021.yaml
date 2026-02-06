@@ -1,0 +1,13 @@
+task_id: fact_extraction_021
+type: fact_extraction
+question: "What batch_size is recommended for optimizing slow inserts in the ETL pipeline?"
+domain: project_repo
+difficulty: medium
+tags:
+  - troubleshooting
+  - performance
+metadata:
+  expected_answer: "5000"
+  answer_aliases: ["batch_size=5000", "5,000"]
+  source_location: "repo/troubleshooting.md"
+  fact_type: "number"

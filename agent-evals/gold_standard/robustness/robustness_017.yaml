@@ -1,0 +1,13 @@
+task_id: robustness_017
+type: robustness
+question: "My team just finished migrating from Jenkins to GitHub Actions last week, and we also updated our Node.js version to 20 LTS. We're using Docker Compose for local dev. Speaking of CI, what are the stages in the CI setup described in the workflows?"
+domain: skills_workflows
+difficulty: medium
+tags:
+  - ci
+  - github_actions
+metadata:
+  perturbation_type: "irrelevant_context"
+  original_question: "What are the stages in the CI setup described in the workflows?"
+  expected_answer: "The CI setup uses GitHub Actions with three stages: lint, test, and build."
+  perturbation_details: "Added irrelevant context about Jenkins migration, Node.js version update, and Docker Compose before the actual question"

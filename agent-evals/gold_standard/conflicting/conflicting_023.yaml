@@ -1,0 +1,16 @@
+task_id: conflicting_023
+type: conflicting
+question: "What branch should release branches be created from — develop or main?"
+domain: skills_workflows
+difficulty: hard
+tags: []
+metadata:
+  sources:
+    - name: "release.md"
+      claim: "Create release/vX.Y.Z branch from develop"
+      authority: 9
+    - name: "release.md"
+      claim: "Hotfix branches are created from main"
+      authority: 9
+  expected_resolution: "Regular release branches are created from develop. Hotfix branches are created from main. These are two distinct workflows for different scenarios."
+  resolution_strategy: "explicit_flag"

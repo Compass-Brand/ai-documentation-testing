@@ -1,0 +1,18 @@
+task_id: retrieval_025
+type: retrieval
+question: "I need to understand the full development workflow: how to contribute, set up CI, do code review, and release. Which files cover this end-to-end?"
+domain: project_repo
+difficulty: hard
+tags:
+  - contributing
+  - ci
+  - review
+  - release
+  - multi_file
+metadata:
+  expected_files:
+    - "repo/CONTRIBUTING.md"
+    - "workflows/ci-setup.md"
+    - "workflows/code-review.md"
+    - "workflows/release.md"
+  evidence_passage: "PR process 6 steps, matrix Python 3.10/3.11/3.12, comment prefixes, bump2version"

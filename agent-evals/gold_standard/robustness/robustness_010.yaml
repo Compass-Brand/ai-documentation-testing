@@ -1,0 +1,13 @@
+task_id: robustness_010
+type: robustness
+question: "What request tracking identifiers does the logging system support?"
+domain: framework_api
+difficulty: medium
+tags:
+  - logging
+  - observability
+metadata:
+  perturbation_type: "synonym_substitution"
+  original_question: "What correlation IDs does the logging system support?"
+  expected_answer: "The StructuredLogger supports correlation IDs for tracking requests across the system, configured via LogConfig."
+  perturbation_details: "Replaced 'correlation IDs' with 'request tracking identifiers'"

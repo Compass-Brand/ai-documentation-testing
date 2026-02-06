@@ -1,0 +1,11 @@
+task_id: negative_007
+type: negative
+question: "What database migration tool does the project use and how do you create a new migration?"
+domain: framework_api
+difficulty: medium
+tags: [database, migration, schema]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The database docs cover DatabaseManager, connection pooling, and PostgreSQL usage, but do not mention any migration tool (e.g., Alembic, Flyway) or how to create migrations."
+  nearest_doc: "api/database.md"
+  nearest_content: "Covers DatabaseManager class, connection pooling configuration, and PostgreSQL as the database backend."

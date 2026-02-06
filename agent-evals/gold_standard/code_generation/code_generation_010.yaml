@@ -1,0 +1,19 @@
+task_id: code_generation_010
+type: code_generation
+question: "Write a custom middleware class that extends BaseMiddleware and adds a custom header 'X-Request-Time' to every response using process_response."
+domain: framework_api
+difficulty: medium
+tags:
+  - middleware
+  - custom
+metadata:
+  expected_answer: ""
+  test: |
+    class\s+\w+.*BaseMiddleware
+    process_response
+    X-Request-Time
+    def\s+process_response
+  entry_point: "RequestTimeMiddleware"
+  canonical_solution: ""
+  libs: ["framework.middleware"]
+  forbidden_patterns: ["eval(", "exec("]

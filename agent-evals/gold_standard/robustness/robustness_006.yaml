@@ -1,0 +1,13 @@
+task_id: robustness_006
+type: robustness
+question: "What is the token lifespan for JWT-based auth in the framework?"
+domain: framework_api
+difficulty: easy
+tags:
+  - auth
+  - jwt
+metadata:
+  perturbation_type: "synonym_substitution"
+  original_question: "What is the JWT expiry time in the framework?"
+  expected_answer: "The JWT expiry (token lifespan) is 3600 seconds (1 hour), configured via expiry_seconds."
+  perturbation_details: "Replaced 'JWT expiry' with 'token lifespan'"

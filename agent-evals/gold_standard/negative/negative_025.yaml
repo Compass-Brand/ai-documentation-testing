@@ -1,0 +1,11 @@
+task_id: negative_025
+type: negative
+question: "What is the process for requesting access to the project's private npm packages?"
+domain: project_repo
+difficulty: edge
+tags: [npm, private-packages, access]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "No fixture document mentions npm packages, package registries, or access request procedures for private packages. The project documentation focuses on Python-based API development."
+  nearest_doc: "repo/CONTRIBUTING.md"
+  nearest_content: "Covers the PR process, code style guidelines, and branch naming conventions for the repository."

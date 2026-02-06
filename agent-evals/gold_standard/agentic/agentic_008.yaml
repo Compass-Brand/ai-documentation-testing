@@ -1,0 +1,18 @@
+task_id: agentic_008
+type: agentic
+question: "Find the CI setup docs and determine which Python versions the test matrix covers."
+domain: skills_workflows
+difficulty: easy
+tags:
+  - ci
+  - python
+metadata:
+  expected_tools:
+    - name: "read_file"
+  files:
+    "workflows/ci-setup.md": "matrix Python 3.10/3.11/3.12, ruff+pytest+cov"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_python_matrix"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

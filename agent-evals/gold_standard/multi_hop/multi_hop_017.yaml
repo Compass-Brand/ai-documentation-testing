@@ -1,0 +1,13 @@
+task_id: multi_hop_017
+type: multi_hop
+question: "What are the 5 steps in the debugging workflow, and how does the troubleshooting guide suggest handling MemoryError for large CSV files?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  question_decomposition:
+    - "What are the 5 debugging workflow steps?"
+    - "How does the troubleshooting guide suggest handling MemoryError for CSV files?"
+  reasoning_chain:
+    - "debugging.md lists: Reproduce, Isolate the Component, Check Common Causes, Use the Debugger, Write a Regression Test"
+    - "troubleshooting.md recommends enabling streaming mode with CSVSource('large_file.csv', streaming=True, chunk_size=10000)"

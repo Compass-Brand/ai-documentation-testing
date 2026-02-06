@@ -1,0 +1,12 @@
+task_id: retrieval_019
+type: retrieval
+question: "I have a MemoryError when loading large datasets. Which file has troubleshooting steps for this?"
+domain: project_repo
+difficulty: medium
+tags:
+  - troubleshooting
+  - memory
+metadata:
+  expected_files:
+    - "repo/troubleshooting.md"
+  evidence_passage: "MemoryError streaming mode, chunk_size=10000"

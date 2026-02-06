@@ -1,0 +1,20 @@
+task_id: code_generation_027
+type: code_generation
+question: "Write a complete release automation script that uses bump2version to bump a minor version, creates a release branch from develop, and tags the release."
+domain: skills_workflows
+difficulty: hard
+tags:
+  - release
+  - automation
+metadata:
+  expected_answer: ""
+  test: |
+    bump2version
+    minor
+    release|branch
+    develop
+    tag|git.*tag
+  entry_point: "automate_release"
+  canonical_solution: ""
+  libs: []
+  forbidden_patterns: ["rm -rf", "force"]

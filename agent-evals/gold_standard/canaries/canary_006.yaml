@@ -1,0 +1,12 @@
+task_id: canary_006
+type: retrieval
+question: "Which file describes how to set up continuous integration?"
+domain: skills_workflows
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  expected_files:
+    - "workflows/ci-setup.md"
+  evidence_passage: "Guide for configuring continuous integration and deployment pipelines."

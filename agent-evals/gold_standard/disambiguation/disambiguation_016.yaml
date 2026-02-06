@@ -1,0 +1,13 @@
+task_id: disambiguation_016
+type: disambiguation
+question: "How do I configure CORS?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "cors_config_env"
+      answer: "Set CORS_ORIGINS environment variable, which defaults to * (all origins), via the Settings class in config.md"
+    - label: "cors_middleware"
+      answer: "CORS is handled by the CORS middleware, the 3rd in the middleware chain (RequestID→Logging→CORS→Auth→RateLimit) as described in middleware.md"
+  expected_interpretation: "cors_config_env"

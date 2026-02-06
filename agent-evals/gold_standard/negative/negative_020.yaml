@@ -1,0 +1,11 @@
+task_id: negative_020
+type: negative
+question: "What monitoring and alerting tools are integrated with the project's health checks?"
+domain: framework_api
+difficulty: hard
+tags: [monitoring, alerting, health-checks]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The deployment docs mention health check endpoints, but no document describes monitoring tools (e.g., Prometheus, Grafana) or alerting configurations connected to those health checks."
+  nearest_doc: "api/deployment.md"
+  nearest_content: "Covers Docker containerization, Kubernetes orchestration, and health check endpoints."

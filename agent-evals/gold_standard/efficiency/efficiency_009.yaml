@@ -1,0 +1,10 @@
+task_id: efficiency_009
+type: efficiency
+question: "What is the default per_page value for user listing pagination?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  expected_answer: "20"
+  answer_aliases: ["20 per page"]
+  token_budget: 5

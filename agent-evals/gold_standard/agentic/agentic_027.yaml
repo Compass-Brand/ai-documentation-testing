@@ -1,0 +1,24 @@
+task_id: agentic_027
+type: agentic
+question: "Build a comprehensive testing strategy: find the TestClient setup, db_session fixture, mocking patterns, CI test matrix, and code review testing criteria."
+domain: framework_api
+difficulty: hard
+tags:
+  - testing
+  - ci
+  - code_review
+  - multi_step
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+    - name: "list_files"
+  files:
+    "api/testing.md": "TestClient, db_session() fixture with auto-rollback, mock.patch for services, pytest -v --cov"
+    "workflows/ci-setup.md": "matrix Python 3.10/3.11/3.12, ruff+pytest+cov"
+    "workflows/code-review.md": "testing criteria in checklist"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_testing_strategy_complete"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

@@ -1,0 +1,12 @@
+task_id: retrieval_017
+type: retrieval
+question: "Where can I find the changelog and breaking changes for the DataForge v2.2.0 release?"
+domain: project_repo
+difficulty: medium
+tags:
+  - changelog
+  - breaking_changes
+metadata:
+  expected_files:
+    - "repo/changelog.md"
+  evidence_passage: "v2.2.0: dashboard, plugins, YAML definitions, breaking: execute->run, fetch->read, Python 3.9->3.10"

@@ -1,0 +1,11 @@
+task_id: negative_005
+type: negative
+question: "What branching strategy does the project use for hotfixes?"
+domain: project_repo
+difficulty: medium
+tags: [git, branching, hotfix]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The CONTRIBUTING docs cover PR process, code style, and branch naming conventions, but do not describe a specific hotfix branching strategy. The release docs mention release branches and semver but not hotfix branches."
+  nearest_doc: "repo/CONTRIBUTING.md"
+  nearest_content: "Covers the PR process, code style guidelines, and branch naming conventions."

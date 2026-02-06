@@ -1,0 +1,12 @@
+task_id: sentinel_011
+type: retrieval
+question: "Which file describes the release process?"
+domain: skills_workflows
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_files:
+    - "workflows/release.md"
+  evidence_passage: "Steps for cutting a new DataForge release."

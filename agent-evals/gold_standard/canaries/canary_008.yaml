@@ -1,0 +1,12 @@
+task_id: canary_008
+type: negative
+question: "How do you configure MongoDB as the database backend?"
+domain: framework_api
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  answerable: false
+  distractor_files:
+    - "api/database.md"

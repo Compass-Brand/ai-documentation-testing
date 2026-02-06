@@ -1,0 +1,15 @@
+task_id: compositional_021
+type: compositional
+question: "How do the security docs, the error handling system, and the middleware chain work together to protect the API from malicious requests?"
+domain: framework_api
+difficulty: hard
+tags: [security, errors, middleware, defense-in-depth]
+metadata:
+  sub_questions:
+    - "What security standards and mechanisms does the project implement?"
+    - "How does the error handling system contribute to security?"
+    - "What middleware protections are in place?"
+  expected_answers:
+    - "OWASP guidelines, input validation, and CSP headers as defined in security docs"
+    - "The AppError hierarchy and ErrorMiddleware ensure errors are caught and returned with structured error codes, preventing stack trace leakage"
+    - "The middleware chain provides CORS protection against cross-origin attacks and rate limiting (100 req/min) against abuse"

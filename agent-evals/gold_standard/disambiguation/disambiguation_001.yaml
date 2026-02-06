@@ -1,0 +1,13 @@
+task_id: disambiguation_001
+type: disambiguation
+question: "What is the default cache TTL?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  interpretations:
+    - label: "response_cache"
+      answer: "The default TTL for the response cache is 300 seconds (5 minutes), configured via CacheConfig default_ttl"
+    - label: "cached_decorator"
+      answer: "The @cached decorator example uses a TTL of 600 seconds"
+  expected_interpretation: "response_cache"

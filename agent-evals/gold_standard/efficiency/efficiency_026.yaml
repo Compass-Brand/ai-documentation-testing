@@ -1,0 +1,10 @@
+task_id: efficiency_026
+type: efficiency
+question: "What are all the parameters for the cache invalidate() method?"
+domain: framework_api
+difficulty: hard
+tags: []
+metadata:
+  expected_answer: "keys, patterns, and tags"
+  answer_aliases: ["keys, patterns, tags"]
+  token_budget: 15

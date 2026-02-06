@@ -1,0 +1,13 @@
+task_id: fact_extraction_020
+type: fact_extraction
+question: "How many structured logging fields are documented (list them)?"
+domain: framework_api
+difficulty: medium
+tags:
+  - logging
+  - structured
+metadata:
+  expected_answer: "timestamp, level, message, request_id, method, path, status, duration_ms"
+  answer_aliases: ["8 fields", "eight fields"]
+  source_location: "api/logging.md"
+  fact_type: "list"

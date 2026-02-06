@@ -1,0 +1,10 @@
+task_id: efficiency_012
+type: efficiency
+question: "What two environment variables are required by the framework configuration?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "DATABASE_URL and JWT_SECRET"
+  answer_aliases: ["DATABASE_URL, JWT_SECRET"]
+  token_budget: 15

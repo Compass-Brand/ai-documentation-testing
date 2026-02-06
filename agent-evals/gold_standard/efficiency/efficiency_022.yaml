@@ -1,0 +1,10 @@
+task_id: efficiency_022
+type: efficiency
+question: "What are the five debugging steps in order?"
+domain: skills_workflows
+difficulty: hard
+tags: []
+metadata:
+  expected_answer: "reproduce, isolate to pipeline stage, check common causes, use debugger, write regression test"
+  answer_aliases: ["reproduce, isolate, check causes, debugger, regression test"]
+  token_budget: 30

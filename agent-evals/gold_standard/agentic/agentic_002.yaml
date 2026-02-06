@@ -1,0 +1,18 @@
+task_id: agentic_002
+type: agentic
+question: "Look up the default TTL for the caching layer and verify which backend types are supported."
+domain: framework_api
+difficulty: easy
+tags:
+  - caching
+  - search
+metadata:
+  expected_tools:
+    - name: "read_file"
+  files:
+    "api/caching.md": "Redis/in-memory backends, CacheConfig, default_ttl=300"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_default_ttl"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

@@ -1,0 +1,11 @@
+task_id: negative_014
+type: negative
+question: "What GraphQL schema does the API expose?"
+domain: framework_api
+difficulty: medium
+tags: [api, graphql, schema]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "No fixture document mentions GraphQL. The API documentation covers REST endpoints, middleware, and authentication, but GraphQL is not discussed anywhere."
+  nearest_doc: "api/auth.md"
+  nearest_content: "Covers the REST-based /api/auth/login endpoint, JWT tokens, and AuthMiddleware."

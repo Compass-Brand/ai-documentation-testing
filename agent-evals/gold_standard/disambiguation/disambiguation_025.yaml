@@ -1,0 +1,13 @@
+task_id: disambiguation_025
+type: disambiguation
+question: "How do I invalidate stale data?"
+domain: framework_api
+difficulty: hard
+tags: []
+metadata:
+  interpretations:
+    - label: "cache_invalidation"
+      answer: "Use the invalidate() method with keys, patterns, or tags to remove stale cache entries. Supports TTL-based, LRU, and Write-through eviction strategies"
+    - label: "database_pool_refresh"
+      answer: "Database connections are managed by SQLAlchemy 2.0 async with a pool of 10 connections and 20 overflow, controlled by POOL_SIZE and MAX_OVERFLOW settings"
+  expected_interpretation: "cache_invalidation"

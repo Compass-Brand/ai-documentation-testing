@@ -1,0 +1,11 @@
+task_id: negative_026
+type: negative
+question: "How do you configure the @cached decorator to use a cache key prefix per service?"
+domain: framework_api
+difficulty: hard
+tags: [caching, decorator, key-prefix]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The caching docs cover the @cached decorator, CacheConfig, and default_ttl=300, but do not describe per-service cache key prefix configuration or cache key customization."
+  nearest_doc: "api/caching.md"
+  nearest_content: "Covers CacheConfig with default_ttl=300, the @cached decorator for function-level caching, and Redis as the backend."

@@ -1,0 +1,19 @@
+task_id: agentic_004
+type: agentic
+question: "Search the documentation to find the database connection pool defaults and the environment variables that override them."
+domain: framework_api
+difficulty: easy
+tags:
+  - database
+  - pool
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+  files:
+    "api/database.md": "pool defaults 10 connections + 20 overflow, POOL_SIZE/MAX_OVERFLOW env vars"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_pool_defaults"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

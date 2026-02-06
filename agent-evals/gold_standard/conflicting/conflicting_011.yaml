@@ -1,0 +1,16 @@
+task_id: conflicting_011
+type: conflicting
+question: "Is the database pool size 10 connections or 30 total?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "database.md"
+      claim: "Pool size of 10 connections with 20 overflow"
+      authority: 9
+    - name: "database.md"
+      claim: "POOL_SIZE and MAX_OVERFLOW environment variables control pool sizing"
+      authority: 9
+  expected_resolution: "The base pool size is 10 connections. With MAX_OVERFLOW=20, the pool can grow to 30 total connections under load, but the steady-state size is 10."
+  resolution_strategy: "explicit_flag"

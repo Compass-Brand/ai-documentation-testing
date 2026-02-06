@@ -1,0 +1,16 @@
+task_id: conflicting_003
+type: conflicting
+question: "How do I install DataForge — pip install dataforge or pip install -e '.[dev]'?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  sources:
+    - name: "README.md"
+      claim: "pip install dataforge for installation"
+      authority: 7
+    - name: "CONTRIBUTING.md"
+      claim: "pip install -e '.[dev]' for development setup"
+      authority: 8
+  expected_resolution: "Both are correct for different contexts. Use pip install dataforge for end-user installation and pip install -e '.[dev]' for development."
+  resolution_strategy: "explicit_flag"

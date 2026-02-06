@@ -1,0 +1,12 @@
+task_id: retrieval_021
+type: retrieval
+question: "Which file documents the release process including bump2version and PyPI publishing?"
+domain: skills_workflows
+difficulty: medium
+tags:
+  - release
+  - workflow
+metadata:
+  expected_files:
+    - "workflows/release.md"
+  evidence_passage: "bump2version patch/minor/major, release branch from develop, CI publishes PyPI"

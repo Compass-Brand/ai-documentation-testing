@@ -1,0 +1,12 @@
+task_id: retrieval_020
+type: retrieval
+question: "Which file documents the code review checklist including comment prefixes like nit and suggestion?"
+domain: skills_workflows
+difficulty: medium
+tags:
+  - code_review
+  - workflow
+metadata:
+  expected_files:
+    - "workflows/code-review.md"
+  evidence_passage: "Checklist: correctness, code quality, <30 line functions. Comment prefixes: nit/suggestion/issue/question"

@@ -1,0 +1,13 @@
+task_id: multi_hop_009
+type: multi_hop
+question: "When DataForge raised the minimum Python version to 3.10, what Python versions does the CI matrix now test against?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  question_decomposition:
+    - "When was the minimum Python version raised to 3.10?"
+    - "What Python versions does the CI matrix test?"
+  reasoning_chain:
+    - "changelog.md v2.2.0 states minimum Python raised from 3.9 to 3.10"
+    - "ci-setup.md shows matrix testing 3.10, 3.11, and 3.12"

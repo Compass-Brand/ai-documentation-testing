@@ -1,0 +1,12 @@
+task_id: sentinel_014
+type: retrieval
+question: "Which file describes the code review process?"
+domain: skills_workflows
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_files:
+    - "workflows/code-review.md"
+  evidence_passage: "A structured process for reviewing pull requests in the DataForge project."

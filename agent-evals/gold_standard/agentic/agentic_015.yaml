@@ -1,0 +1,21 @@
+task_id: agentic_015
+type: agentic
+question: "Search the logging docs to understand structured logging fields, then check the middleware docs to see how the Logging middleware is ordered."
+domain: framework_api
+difficulty: medium
+tags:
+  - logging
+  - middleware
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+  files:
+    "api/logging.md": "structured fields timestamp, level, message, request_id, method, path, status, duration_ms"
+    "api/middleware.md": "Order: RequestID->Logging->CORS->Auth->RateLimit->Handler"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_logging_middleware_fields"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

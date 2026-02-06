@@ -1,0 +1,10 @@
+task_id: efficiency_008
+type: efficiency
+question: "What email address should security vulnerabilities be reported to?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  expected_answer: "security@example.com"
+  answer_aliases: []
+  token_budget: 10

@@ -1,0 +1,16 @@
+task_id: conflicting_009
+type: conflicting
+question: "Where should CORS be configured — in the environment variables or in the middleware?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  sources:
+    - name: "config.md"
+      claim: "CORS_ORIGINS environment variable defaults to * (all origins)"
+      authority: 8
+    - name: "middleware.md"
+      claim: "CORS middleware is the 3rd in the chain: RequestID→Logging→CORS→Auth→RateLimit"
+      authority: 8
+  expected_resolution: "CORS_ORIGINS environment variable configures the allowed origins, and the CORS middleware enforces those settings at runtime. Both work together."
+  resolution_strategy: "explicit_flag"

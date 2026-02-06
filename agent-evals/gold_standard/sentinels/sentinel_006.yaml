@@ -1,0 +1,12 @@
+task_id: sentinel_006
+type: retrieval
+question: "Which file explains the project architecture?"
+domain: project_repo
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_files:
+    - "repo/architecture.md"
+  evidence_passage: "DataForge follows a pipeline architecture with pluggable components at each stage."

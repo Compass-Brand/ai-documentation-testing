@@ -1,0 +1,11 @@
+task_id: canary_003
+type: negative
+question: "What is the GraphQL schema for the DataForge API?"
+domain: framework_api
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  answerable: false
+  distractor_files: []

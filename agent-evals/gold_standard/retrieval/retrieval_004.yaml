@@ -1,0 +1,12 @@
+task_id: retrieval_004
+type: retrieval
+question: "Where is the user CRUD API documented, including pagination and role filtering?"
+domain: framework_api
+difficulty: easy
+tags:
+  - users
+  - crud
+metadata:
+  expected_files:
+    - "api/users.md"
+  evidence_passage: "CRUD /api/users, GET list page/per_page/role/search params"

@@ -1,0 +1,10 @@
+task_id: efficiency_014
+type: efficiency
+question: "What Python versions does the CI matrix test?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "Python 3.10, 3.11, and 3.12"
+  answer_aliases: ["3.10, 3.11, 3.12"]
+  token_budget: 15

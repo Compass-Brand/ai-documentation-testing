@@ -1,0 +1,21 @@
+task_id: multi_hop_024
+type: multi_hop
+question: "If the CI pipeline's test stage fails due to a ConfigurationError, what debugging steps should be followed, and which test fixtures from the testing framework would help reproduce the issue locally?"
+domain: skills_workflows
+difficulty: medium
+tags:
+  - ci
+  - debugging
+  - testing
+  - troubleshooting
+metadata:
+  question_decomposition:
+    - "What stages does the CI pipeline have and what happens in the test stage?"
+    - "What are the debugging steps for investigating failures?"
+    - "What does the troubleshooting guide say about ConfigurationError?"
+    - "Which test fixtures are available for local reproduction?"
+  reasoning_chain:
+    - "workflows/ci-setup.md describes GitHub Actions with lint/test/build stages"
+    - "workflows/debugging.md prescribes 5 steps: reproduce, isolate, check common causes, instrument, fix"
+    - "repo/troubleshooting.md documents ConfigurationError as a common error with specific remediation"
+    - "api/testing.md provides TestClient, db_session, mock_auth, and other fixtures for local testing"

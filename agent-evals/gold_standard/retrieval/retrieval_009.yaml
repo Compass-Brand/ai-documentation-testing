@@ -1,0 +1,12 @@
+task_id: retrieval_009
+type: retrieval
+question: "Where can I find information about the error response JSON format and HTTP status codes?"
+domain: framework_api
+difficulty: easy
+tags:
+  - errors
+  - api
+metadata:
+  expected_files:
+    - "api/errors.md"
+  evidence_passage: "JSON error envelope format, status codes 400-500, APIError class"

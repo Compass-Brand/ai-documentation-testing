@@ -1,0 +1,14 @@
+task_id: fact_extraction_028
+type: fact_extraction
+question: "Is REDIS_URL a required or optional environment variable?"
+domain: framework_api
+difficulty: hard
+tags:
+  - config
+  - redis
+  - edge_case
+metadata:
+  expected_answer: "optional"
+  answer_aliases: ["not required", "REDIS_URL optional"]
+  source_location: "api/config.md"
+  fact_type: "boolean"

@@ -1,0 +1,13 @@
+task_id: disambiguation_017
+type: disambiguation
+question: "What version of the project should I use?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "supported_version"
+      answer: "v2.3.x is the fully supported version with all features and security patches as stated in security.md"
+    - label: "security_only_version"
+      answer: "v2.2.x receives security fixes only but no new features, per security.md"
+  expected_interpretation: "supported_version"

@@ -1,0 +1,19 @@
+task_id: agentic_001
+type: agentic
+question: "Find which file documents the JWT authentication configuration and extract the default expiry time."
+domain: framework_api
+difficulty: easy
+tags:
+  - auth
+  - search
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+  files:
+    "api/auth.md": "JWT auth, AuthMiddleware, JWTConfig, HS256, expiry_seconds=3600"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_jwt_expiry"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

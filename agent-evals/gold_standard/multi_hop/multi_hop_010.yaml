@@ -1,0 +1,13 @@
+task_id: multi_hop_010
+type: multi_hop
+question: "If a JWT access token expires, what endpoint is used to renew it, and what HTTP status code would be returned if the expired token is used on a protected route?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  question_decomposition:
+    - "What endpoint renews an expired access token?"
+    - "What status code is returned for an expired token?"
+  reasoning_chain:
+    - "auth.md states /api/auth/refresh is used to renew tokens"
+    - "errors.md states 401 Unauthorized is returned for missing or expired authentication token"

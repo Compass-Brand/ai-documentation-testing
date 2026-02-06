@@ -1,0 +1,22 @@
+task_id: code_generation_030
+type: code_generation
+question: "Write a comprehensive health check endpoint function that verifies database connectivity, Redis cache availability, and returns JSON status for the /health endpoint."
+domain: framework_api
+difficulty: hard
+tags:
+  - deployment
+  - health
+  - edge_case
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    /health|health
+    database|db
+    redis|cache
+    json|JSON
+    status
+  entry_point: "health_check"
+  canonical_solution: ""
+  libs: ["framework.database", "framework.caching"]
+  forbidden_patterns: ["eval(", "exec("]

@@ -1,0 +1,13 @@
+task_id: multi_hop_013
+type: multi_hop
+question: "How do you invalidate cache entries by tag, and what cache strategies are available for managing expiration?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  question_decomposition:
+    - "How do you invalidate cache entries by tag?"
+    - "What cache strategies are available?"
+  reasoning_chain:
+    - "caching.md shows invalidate(tags=['user-profiles']) for tag-based invalidation"
+    - "caching.md lists TTL-based, LRU, and Write-through strategies"

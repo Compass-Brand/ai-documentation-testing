@@ -1,0 +1,12 @@
+task_id: retrieval_002
+type: retrieval
+question: "Which files describe the caching layer and how to set TTL values?"
+domain: framework_api
+difficulty: easy
+tags:
+  - caching
+  - ttl
+metadata:
+  expected_files:
+    - "api/caching.md"
+  evidence_passage: "Redis/in-memory backends, CacheConfig, default_ttl=300, @cached(ttl=600)"

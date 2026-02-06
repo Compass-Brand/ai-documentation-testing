@@ -1,0 +1,11 @@
+task_id: negative_029
+type: negative
+question: "What backup and disaster recovery strategy is in place for the PostgreSQL database?"
+domain: project_repo
+difficulty: hard
+tags: [database, backup, disaster-recovery]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The database docs cover DatabaseManager and connection pooling for PostgreSQL, and the security docs cover OWASP and input validation, but no document addresses backup strategies or disaster recovery plans."
+  nearest_doc: "api/database.md"
+  nearest_content: "Covers DatabaseManager, connection pooling, and PostgreSQL configuration."

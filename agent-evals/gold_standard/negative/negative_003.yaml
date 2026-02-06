@@ -1,0 +1,11 @@
+task_id: negative_003
+type: negative
+question: "What CI/CD tool does the project use for automated deployments to production?"
+domain: skills_workflows
+difficulty: easy
+tags: [ci, deployment, production]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The CI setup docs cover GitHub Actions with lint/test/build stages, and deployment docs cover Docker/Kubernetes, but neither specifies the automated deployment pipeline to production."
+  nearest_doc: "workflows/ci-setup.md"
+  nearest_content: "Covers GitHub Actions configuration with lint, test, and build stages."

@@ -1,0 +1,11 @@
+task_id: negative_018
+type: negative
+question: "What message queue system does the project use for async task processing?"
+domain: framework_api
+difficulty: medium
+tags: [async, message-queue, background-tasks]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "No fixture document mentions message queues or asynchronous task processing (e.g., Celery, RabbitMQ, SQS). Redis is mentioned for caching but not for message queuing."
+  nearest_doc: "api/caching.md"
+  nearest_content: "Covers Redis as a caching backend with CacheConfig and default_ttl=300, not as a message queue."

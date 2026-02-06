@@ -1,0 +1,13 @@
+task_id: disambiguation_007
+type: disambiguation
+question: "How do I handle errors in the system?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  interpretations:
+    - label: "http_errors"
+      answer: "HTTP errors use a JSON envelope {error: {code, message, details}} with status codes 400-500, raised via APIError(status_code, code, message) and caught by error middleware"
+    - label: "pipeline_errors"
+      answer: "Pipeline errors like ConfigurationError and MemoryError are handled per troubleshooting.md with solutions like streaming, chunk_size=10000, and LOG_LEVEL=DEBUG"
+  expected_interpretation: "http_errors"

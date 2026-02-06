@@ -1,0 +1,20 @@
+task_id: code_generation_005
+type: code_generation
+question: "Write a simple Pipeline using CSVSource and PostgresLoader to load data from 'data.csv' into a 'users' table."
+domain: project_repo
+difficulty: easy
+tags:
+  - pipeline
+  - etl
+metadata:
+  expected_answer: ""
+  test: |
+    Pipeline
+    CSVSource
+    PostgresLoader
+    data\.csv
+    users
+  entry_point: "build_pipeline"
+  canonical_solution: ""
+  libs: ["dataforge"]
+  forbidden_patterns: ["eval(", "exec("]

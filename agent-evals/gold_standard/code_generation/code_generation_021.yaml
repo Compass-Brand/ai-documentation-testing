@@ -1,0 +1,18 @@
+task_id: code_generation_021
+type: code_generation
+question: "Write a function that uses sanitize_input() to clean user-provided data before inserting it with a parameterized query."
+domain: project_repo
+difficulty: medium
+tags:
+  - security
+  - sql
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    sanitize_input
+    parameterized|\?|%s|:param
+  entry_point: "safe_insert"
+  canonical_solution: ""
+  libs: ["dataforge"]
+  forbidden_patterns: ["eval(", "exec(", "f\".*SELECT|f'.*SELECT"]

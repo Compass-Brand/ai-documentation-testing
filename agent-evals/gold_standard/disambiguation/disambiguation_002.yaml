@@ -1,0 +1,13 @@
+task_id: disambiguation_002
+type: disambiguation
+question: "How do I configure the application?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  interpretations:
+    - label: "framework_config"
+      answer: "Use the Settings class from config.md with environment variables like DATABASE_URL, JWT_SECRET, LOG_LEVEL, CORS_ORIGINS, and REDIS_URL"
+    - label: "pipeline_config"
+      answer: "DataForge pipelines are configured via YAML or Python configuration files as described in the README"
+  expected_interpretation: "framework_config"

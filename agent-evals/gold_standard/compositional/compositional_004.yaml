@@ -1,0 +1,15 @@
+task_id: compositional_004
+type: compositional
+question: "For the caching system, what is the default TTL, what decorator enables function-level caching, and what backend store is used?"
+domain: framework_api
+difficulty: easy
+tags: [caching, ttl, redis, decorator]
+metadata:
+  sub_questions:
+    - "What is the default TTL for cached entries?"
+    - "What decorator enables function-level caching?"
+    - "What backend store is used for caching?"
+  expected_answers:
+    - "default_ttl=300 (5 minutes)"
+    - "The @cached decorator"
+    - "Redis"

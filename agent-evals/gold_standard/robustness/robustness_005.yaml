@@ -1,0 +1,13 @@
+task_id: robustness_005
+type: robustness
+question: "What databse does the conection pooling manager suport?"
+domain: framework_api
+difficulty: easy
+tags:
+  - database
+  - connection_pooling
+metadata:
+  perturbation_type: "typo"
+  original_question: "What database does the connection pooling manager support?"
+  expected_answer: "The DatabaseManager with connection pooling supports PostgreSQL."
+  perturbation_details: "Misspelled 'database' as 'databse', 'connection' as 'conection', and 'support' as 'suport'"

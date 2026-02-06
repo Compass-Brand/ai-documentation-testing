@@ -1,0 +1,12 @@
+task_id: retrieval_006
+type: retrieval
+question: "Where is the DataForge ETL pipeline library documented with installation instructions?"
+domain: project_repo
+difficulty: easy
+tags:
+  - readme
+  - setup
+metadata:
+  expected_files:
+    - "repo/README.md"
+  evidence_passage: "DataForge ETL pipeline library, pip install dataforge, Pipeline+CSVSource+PostgresLoader"

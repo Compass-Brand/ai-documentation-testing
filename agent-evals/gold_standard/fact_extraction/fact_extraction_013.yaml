@@ -1,0 +1,12 @@
+task_id: fact_extraction_013
+type: fact_extraction
+question: "How many built-in middleware components are there?"
+domain: framework_api
+difficulty: medium
+tags:
+  - middleware
+metadata:
+  expected_answer: "5"
+  answer_aliases: ["five", "5 middleware"]
+  source_location: "api/middleware.md"
+  fact_type: "number"

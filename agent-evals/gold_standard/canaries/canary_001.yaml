@@ -1,0 +1,12 @@
+task_id: canary_001
+type: retrieval
+question: "Which file has information about authentication?"
+domain: framework_api
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  expected_files:
+    - "api/auth.md"
+  evidence_passage: "The authentication module provides JWT-based identity verification for all API endpoints."

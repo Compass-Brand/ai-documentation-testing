@@ -1,0 +1,18 @@
+task_id: code_generation_007
+type: code_generation
+question: "Write a function that calls configure_logging() to set up JSON-format structured logging."
+domain: framework_api
+difficulty: easy
+tags:
+  - logging
+  - setup
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    configure_logging
+    json|JSON
+  entry_point: "setup_logging"
+  canonical_solution: ""
+  libs: ["framework.logging"]
+  forbidden_patterns: ["eval(", "exec("]

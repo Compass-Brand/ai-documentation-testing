@@ -1,0 +1,18 @@
+task_id: retrieval_024
+type: retrieval
+question: "Which files should I read to understand the full request lifecycle, including middleware ordering, logging, authentication, and error handling?"
+domain: framework_api
+difficulty: hard
+tags:
+  - middleware
+  - logging
+  - auth
+  - errors
+  - multi_file
+metadata:
+  expected_files:
+    - "api/middleware.md"
+    - "api/logging.md"
+    - "api/auth.md"
+    - "api/errors.md"
+  evidence_passage: "Order: RequestID->Logging->CORS->Auth->RateLimit->Handler, error middleware catches unhandled exceptions"

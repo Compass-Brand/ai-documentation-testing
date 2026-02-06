@@ -1,0 +1,17 @@
+task_id: compositional_030
+type: compositional
+question: "Trace the full lifecycle of a new feature: from branch naming conventions, through the PR and review process, CI validation, and finally the release and changelog update."
+domain: skills_workflows
+difficulty: edge
+tags: [contributing, code-review, ci, release, end-to-end]
+metadata:
+  sub_questions:
+    - "How should the developer name their branch?"
+    - "What is the PR and review process?"
+    - "What CI validation must pass?"
+    - "How is the feature included in a release?"
+  expected_answers:
+    - "Follow branch naming conventions defined in CONTRIBUTING.md"
+    - "Submit a PR following the PR process in CONTRIBUTING.md, then pass the code review checklist and approval rules"
+    - "GitHub Actions CI runs lint, test, and build stages that must all pass"
+    - "The feature is included in a release branch following semver, and the changelog is updated to document the new feature"

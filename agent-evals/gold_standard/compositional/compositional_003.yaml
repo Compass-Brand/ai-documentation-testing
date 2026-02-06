@@ -1,0 +1,13 @@
+task_id: compositional_003
+type: compositional
+question: "What are the three stages in the CI pipeline, and what tool runs them?"
+domain: skills_workflows
+difficulty: easy
+tags: [ci, pipeline, github-actions]
+metadata:
+  sub_questions:
+    - "What CI/CD platform is used?"
+    - "What are the three pipeline stages?"
+  expected_answers:
+    - "GitHub Actions"
+    - "Lint, test, and build"

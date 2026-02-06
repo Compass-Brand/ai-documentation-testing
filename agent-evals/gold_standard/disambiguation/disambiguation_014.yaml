@@ -1,0 +1,13 @@
+task_id: disambiguation_014
+type: disambiguation
+question: "What's the correct way to install the project for development?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "dev_install"
+      answer: "For development, use pip install -e '.[dev]' as specified in CONTRIBUTING.md to install in editable mode with dev dependencies"
+    - label: "user_install"
+      answer: "For end users, use pip install dataforge as described in README.md"
+  expected_interpretation: "dev_install"

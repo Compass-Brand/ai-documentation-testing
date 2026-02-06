@@ -1,0 +1,21 @@
+task_id: code_generation_022
+type: code_generation
+question: "Write a complete endpoint function for PATCH /api/users/:id that updates a user and returns the updated user data."
+domain: framework_api
+difficulty: hard
+tags:
+  - users
+  - crud
+  - endpoint
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    patch|PATCH|update
+    user|User
+    return
+    id|user_id
+  entry_point: "update_user"
+  canonical_solution: ""
+  libs: ["framework.auth", "framework.errors"]
+  forbidden_patterns: ["eval(", "exec("]

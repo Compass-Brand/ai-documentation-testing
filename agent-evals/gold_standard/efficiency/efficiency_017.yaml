@@ -1,0 +1,10 @@
+task_id: efficiency_017
+type: efficiency
+question: "What cache eviction strategies are supported?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "TTL, LRU, and Write-through"
+  answer_aliases: ["TTL, LRU, Write-through"]
+  token_budget: 15

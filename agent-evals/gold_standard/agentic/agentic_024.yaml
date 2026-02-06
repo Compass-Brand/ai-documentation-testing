@@ -1,0 +1,24 @@
+task_id: agentic_024
+type: agentic
+question: "Trace the full request lifecycle: find middleware ordering, how RequestID is generated, how logging captures request_id, how errors are caught, and what the response format looks like."
+domain: framework_api
+difficulty: hard
+tags:
+  - middleware
+  - logging
+  - errors
+  - multi_step
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+    - name: "list_files"
+  files:
+    "api/middleware.md": "5 built-in: RequestID, Logging, CORS, Auth, RateLimit. Order specified."
+    "api/logging.md": "structured fields request_id, method, path, status, duration_ms"
+    "api/errors.md": "JSON error envelope format, error middleware catches unhandled exceptions"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_request_lifecycle"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

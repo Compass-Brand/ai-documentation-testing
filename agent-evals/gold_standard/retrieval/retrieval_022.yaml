@@ -1,0 +1,15 @@
+task_id: retrieval_022
+type: retrieval
+question: "I need to set up both database connections and caching. Which files should I consult for configuring Redis and SQLAlchemy?"
+domain: framework_api
+difficulty: hard
+tags:
+  - database
+  - caching
+  - multi_file
+metadata:
+  expected_files:
+    - "api/database.md"
+    - "api/caching.md"
+    - "api/config.md"
+  evidence_passage: "REDIS_URL optional env var, SQLAlchemy 2.0 async, RedisBackend"

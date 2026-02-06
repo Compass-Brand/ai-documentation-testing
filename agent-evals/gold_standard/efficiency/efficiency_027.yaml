@@ -1,0 +1,10 @@
+task_id: efficiency_027
+type: efficiency
+question: "List the version bumping levels supported by bump2version."
+domain: skills_workflows
+difficulty: hard
+tags: []
+metadata:
+  expected_answer: "patch, minor, major"
+  answer_aliases: ["patch, minor, and major"]
+  token_budget: 10

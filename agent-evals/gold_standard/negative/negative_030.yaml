@@ -1,0 +1,11 @@
+task_id: negative_030
+type: negative
+question: "How do you configure API versioning (e.g., /v1/, /v2/) in the middleware chain?"
+domain: framework_api
+difficulty: edge
+tags: [api, versioning, middleware]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The middleware docs cover the middleware chain, CORS, and rate limiting, and the changelog mentions version history, but no document describes URL-based API versioning or how to configure it in the middleware."
+  nearest_doc: "api/middleware.md"
+  nearest_content: "Covers the middleware chain ordering, CORS configuration, and rate limiting at 100 requests per minute."

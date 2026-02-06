@@ -1,0 +1,13 @@
+task_id: multi_hop_008
+type: multi_hop
+question: "What is the default CORS_ORIGINS value, and which middleware in the pipeline handles CORS?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  question_decomposition:
+    - "What is the default CORS_ORIGINS value?"
+    - "Which middleware handles CORS in the request pipeline?"
+  reasoning_chain:
+    - "config.md states CORS_ORIGINS defaults to *"
+    - "middleware.md lists CORS as the 3rd middleware in the pipeline"

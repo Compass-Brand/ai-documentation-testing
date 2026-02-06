@@ -1,0 +1,13 @@
+task_id: multi_hop_018
+type: multi_hop
+question: "What decorator is used to register custom source plugins in DataForge, and which version introduced the plugin system?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  question_decomposition:
+    - "What decorator registers custom source plugins?"
+    - "Which version introduced the plugin system?"
+  reasoning_chain:
+    - "architecture.md shows @register_source decorator from dataforge.plugins"
+    - "changelog.md v2.2.0 lists 'Plugin system for custom sources and loaders'"

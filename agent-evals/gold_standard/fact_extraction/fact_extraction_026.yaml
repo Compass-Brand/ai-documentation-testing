@@ -1,0 +1,13 @@
+task_id: fact_extraction_026
+type: fact_extraction
+question: "What are the three methods available for cache invalidation?"
+domain: framework_api
+difficulty: hard
+tags:
+  - caching
+  - invalidation
+metadata:
+  expected_answer: "keys, patterns, tags"
+  answer_aliases: ["invalidate() with keys/patterns/tags"]
+  source_location: "api/caching.md"
+  fact_type: "list"

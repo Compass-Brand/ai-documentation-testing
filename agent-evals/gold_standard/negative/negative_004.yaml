@@ -1,0 +1,11 @@
+task_id: negative_004
+type: negative
+question: "What is the maximum file upload size allowed by the API?"
+domain: framework_api
+difficulty: easy
+tags: [api, file-upload, limits]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "No fixture document mentions file uploads or file size limits. The middleware docs discuss rate limiting (100 req/min) and CORS, but not file upload constraints."
+  nearest_doc: "api/middleware.md"
+  nearest_content: "Covers the middleware chain, CORS configuration, and rate limiting at 100 requests per minute."

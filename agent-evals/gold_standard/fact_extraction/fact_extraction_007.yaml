@@ -1,0 +1,13 @@
+task_id: fact_extraction_007
+type: fact_extraction
+question: "What is the default CORS_ORIGINS value?"
+domain: framework_api
+difficulty: easy
+tags:
+  - config
+  - cors
+metadata:
+  expected_answer: "*"
+  answer_aliases: ["asterisk", "wildcard", "all origins"]
+  source_location: "api/config.md"
+  fact_type: "name"

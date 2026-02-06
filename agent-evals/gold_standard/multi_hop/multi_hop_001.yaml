@@ -1,0 +1,13 @@
+task_id: multi_hop_001
+type: multi_hop
+question: "What is the default TTL for cached responses, and which environment variable must be set to use Redis as the cache backend?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  question_decomposition:
+    - "What is the default TTL for cached responses?"
+    - "Which environment variable configures the Redis cache backend?"
+  reasoning_chain:
+    - "caching.md states default_ttl=300"
+    - "config.md states REDIS_URL is the optional env var for the cache backend"

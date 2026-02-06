@@ -1,0 +1,10 @@
+task_id: efficiency_007
+type: efficiency
+question: "What is the maximum Docker image size for deployment?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  expected_answer: "150MB"
+  answer_aliases: ["150 MB", "under 150MB"]
+  token_budget: 10

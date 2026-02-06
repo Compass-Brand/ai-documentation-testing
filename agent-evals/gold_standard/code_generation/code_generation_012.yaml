@@ -1,0 +1,20 @@
+task_id: code_generation_012
+type: code_generation
+question: "Write a test function that uses the db_session fixture with auto-rollback to create a user and verify it was persisted."
+domain: framework_api
+difficulty: medium
+tags:
+  - testing
+  - database
+  - fixtures
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+test_
+    db_session
+    assert
+    user|User
+  entry_point: "test_create_user_persisted"
+  canonical_solution: ""
+  libs: ["framework.testing"]
+  forbidden_patterns: ["eval(", "exec("]

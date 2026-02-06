@@ -1,0 +1,16 @@
+task_id: conflicting_022
+type: conflicting
+question: "The changelog says v2.3.0 added retry support, but the architecture doc does not mention retries. Is retry actually supported?"
+domain: project_repo
+difficulty: hard
+tags: []
+metadata:
+  sources:
+    - name: "changelog.md"
+      claim: "v2.3.0 added retry support"
+      authority: 9
+    - name: "architecture.md"
+      claim: "Describes Source→Transformer→Validator→Loader→Monitor without mentioning retry"
+      authority: 7
+  expected_resolution: "Retry is supported as of v2.3.0 per the changelog. Architecture.md may not yet be updated to reflect this newer feature."
+  resolution_strategy: "more_recent"

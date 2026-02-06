@@ -1,0 +1,16 @@
+task_id: conflicting_012
+type: conflicting
+question: "Should I create a hotfix branch from main or from develop?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "release.md"
+      claim: "Hotfix branches are created from main"
+      authority: 9
+    - name: "CONTRIBUTING.md"
+      claim: "Feature branches branch from develop, fix branches exist"
+      authority: 8
+  expected_resolution: "Hotfix branches are created from main per release.md. Regular fix branches come from develop per CONTRIBUTING.md. Hotfixes are for urgent production issues."
+  resolution_strategy: "higher_authority"

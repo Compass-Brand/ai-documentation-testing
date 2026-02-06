@@ -1,0 +1,22 @@
+task_id: code_generation_025
+type: code_generation
+question: "Write an Alembic migration that creates a users table with id, email, role, and created_at columns using SQLAlchemy 2.0 syntax."
+domain: framework_api
+difficulty: hard
+tags:
+  - database
+  - migration
+  - alembic
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+upgrade
+    def\s+downgrade
+    users|user
+    Column|column
+    email
+    role
+  entry_point: "upgrade"
+  canonical_solution: ""
+  libs: ["framework.database"]
+  forbidden_patterns: ["eval(", "exec("]

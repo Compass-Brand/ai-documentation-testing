@@ -1,0 +1,15 @@
+task_id: compositional_015
+type: compositional
+question: "Describe how a developer would go from writing code to getting it merged: what contribution process do they follow, what review checks apply, and what CI stages must pass?"
+domain: skills_workflows
+difficulty: hard
+tags: [contributing, code-review, ci, workflow]
+metadata:
+  sub_questions:
+    - "What is the contribution process for submitting code?"
+    - "What review checks are applied to the pull request?"
+    - "What CI stages must pass before merging?"
+  expected_answers:
+    - "Follow the PR process defined in CONTRIBUTING.md, including code style adherence and proper branch naming"
+    - "Code review checklist and approval rules from the code-review workflow"
+    - "Lint, test, and build stages in GitHub Actions must all pass"

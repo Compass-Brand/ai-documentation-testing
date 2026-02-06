@@ -1,0 +1,10 @@
+task_id: efficiency_023
+type: efficiency
+question: "Describe the JSON error envelope structure used by the framework."
+domain: framework_api
+difficulty: hard
+tags: []
+metadata:
+  expected_answer: "{error: {code, message, details}}"
+  answer_aliases: ["error object with code, message, and details fields"]
+  token_budget: 25

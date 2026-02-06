@@ -1,0 +1,17 @@
+task_id: compositional_026
+type: compositional
+question: "How do caching and database connection pooling together improve API performance? What are the default settings for each?"
+domain: framework_api
+difficulty: hard
+tags: [caching, database, performance, pooling]
+metadata:
+  sub_questions:
+    - "How does caching improve performance?"
+    - "How does connection pooling improve performance?"
+    - "What are the default settings for caching?"
+    - "What database and pooling class is used?"
+  expected_answers:
+    - "The @cached decorator with Redis backend avoids redundant computation by caching function results"
+    - "DatabaseManager uses connection pooling to reuse PostgreSQL connections instead of creating new ones per request"
+    - "CacheConfig with default_ttl=300 seconds"
+    - "PostgreSQL with DatabaseManager providing connection pooling"

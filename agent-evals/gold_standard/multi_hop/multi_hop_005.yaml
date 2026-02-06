@@ -1,0 +1,13 @@
+task_id: multi_hop_005
+type: multi_hop
+question: "What is the default log level, and where is this configured according to the environment variables documentation?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  question_decomposition:
+    - "What is the default LOG_LEVEL?"
+    - "Where is this documented in the environment variables?"
+  reasoning_chain:
+    - "config.md states LOG_LEVEL default is INFO"
+    - "logging.md confirms 5 log levels with INFO as general operational events"

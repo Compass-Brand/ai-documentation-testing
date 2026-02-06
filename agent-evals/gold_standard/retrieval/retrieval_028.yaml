@@ -1,0 +1,15 @@
+task_id: retrieval_028
+type: retrieval
+question: "Where is the documentation about configuring CORS? I know it involves middleware but I am not sure if it is in config or middleware docs."
+domain: framework_api
+difficulty: hard
+tags:
+  - cors
+  - middleware
+  - config
+  - edge_case
+metadata:
+  expected_files:
+    - "api/middleware.md"
+    - "api/config.md"
+  evidence_passage: "CORS middleware, CORS_ORIGINS default *"

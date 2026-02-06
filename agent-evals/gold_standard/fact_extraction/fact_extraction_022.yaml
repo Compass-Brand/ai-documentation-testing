@@ -1,0 +1,13 @@
+task_id: fact_extraction_022
+type: fact_extraction
+question: "What Python versions does the CI matrix test against?"
+domain: skills_workflows
+difficulty: medium
+tags:
+  - ci
+  - python
+metadata:
+  expected_answer: "3.10, 3.11, 3.12"
+  answer_aliases: ["Python 3.10/3.11/3.12", "3.10 3.11 3.12"]
+  source_location: "workflows/ci-setup.md"
+  fact_type: "list"

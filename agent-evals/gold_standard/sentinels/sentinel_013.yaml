@@ -1,0 +1,13 @@
+task_id: sentinel_013
+type: negative
+question: "How do you set up Kubernetes deployment for DataForge?"
+domain: skills_workflows
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  answerable: false
+  distractor_files:
+    - "workflows/ci-setup.md"
+    - "workflows/release.md"

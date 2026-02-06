@@ -1,0 +1,16 @@
+task_id: conflicting_024
+type: conflicting
+question: "The deployment docs say Docker images should be under 150MB, but Docker Compose includes app+db+redis. Doesn't the full stack exceed 150MB?"
+domain: framework_api
+difficulty: hard
+tags: []
+metadata:
+  sources:
+    - name: "deployment.md"
+      claim: "Docker images should be under 150MB"
+      authority: 9
+    - name: "deployment.md"
+      claim: "Docker Compose runs app+db+redis together"
+      authority: 8
+  expected_resolution: "The 150MB limit applies to the application Docker image only, not the combined stack. Database and Redis use their own standard images in the Docker Compose configuration."
+  resolution_strategy: "explicit_flag"

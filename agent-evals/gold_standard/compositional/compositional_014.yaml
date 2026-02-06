@@ -1,0 +1,15 @@
+task_id: compositional_014
+type: compositional
+question: "When troubleshooting, what common error types might you encounter, and how does the troubleshooting guide relate to the error handling system?"
+domain: project_repo
+difficulty: hard
+tags: [troubleshooting, errors, configuration]
+metadata:
+  sub_questions:
+    - "What common errors does the troubleshooting guide cover?"
+    - "What is the relationship between ConfigurationError in troubleshooting and the AppError hierarchy?"
+    - "What database-related issue is covered in troubleshooting?"
+  expected_answers:
+    - "Common errors including ConfigurationError and database connection issues"
+    - "ConfigurationError is likely part of the AppError hierarchy defined in api/errors.md, with troubleshooting providing resolution steps"
+    - "Database connection failures and their resolution"

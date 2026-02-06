@@ -1,0 +1,24 @@
+task_id: agentic_030
+type: agentic
+question: "A developer reports that the @cached decorator is not invalidating entries when user records are updated through the CRUD operations. The caching layer uses Redis with a default TTL of 300 seconds, but stale user data persists even after explicit updates. Investigate the interaction between the CacheConfig and the UserModel CRUD operations, and implement a cache invalidation strategy that clears relevant cache entries when user data changes."
+domain: framework_api
+difficulty: medium
+tags:
+  - caching
+  - users
+  - crud
+  - redis
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+    - name: "write_file"
+  files:
+    "api/caching.md": "CacheConfig with default_ttl=300, @cached decorator, Redis backend"
+    "api/users.md": "UserModel with CRUD operations, roles, and permissions"
+    "api/database.md": "DatabaseManager, connection pooling, PostgreSQL"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_user_update_invalidates_cache"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

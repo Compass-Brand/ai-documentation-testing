@@ -1,0 +1,28 @@
+task_id: agentic_029
+type: agentic
+question: "A production deployment is failing health checks after upgrading the authentication system. The logs show correlation IDs but the error middleware is returning generic 500 errors instead of structured error responses. Investigate the interaction between the AuthMiddleware JWT validation, the ErrorMiddleware error hierarchy, and the Kubernetes health check endpoints. Determine why authenticated health check probes are failing and propose a fix that preserves structured logging with correlation IDs."
+domain: framework_api
+difficulty: hard
+tags:
+  - authentication
+  - error_handling
+  - deployment
+  - health_checks
+  - structured_logging
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+    - name: "list_files"
+    - name: "write_file"
+  files:
+    "api/auth.md": "JWT AuthMiddleware with HS256, expiry_seconds=3600, /api/auth/login endpoint"
+    "api/errors.md": "AppError hierarchy, ErrorMiddleware, structured error codes"
+    "api/deployment.md": "Docker and Kubernetes config, health check endpoints"
+    "api/logging.md": "LogConfig, StructuredLogger, correlation IDs for request tracing"
+    "api/middleware.md": "Middleware chain ordering, CORS, rate limiting at 100 req/min"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_health_check_bypasses_auth", "test_error_middleware_returns_structured_response_on_auth_failure"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

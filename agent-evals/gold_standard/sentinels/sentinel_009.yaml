@@ -1,0 +1,12 @@
+task_id: sentinel_009
+type: retrieval
+question: "Which file contains the version history for DataForge?"
+domain: project_repo
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_files:
+    - "repo/changelog.md"
+  evidence_passage: "All notable changes to DataForge are documented here."

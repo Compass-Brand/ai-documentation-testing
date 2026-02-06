@@ -1,0 +1,19 @@
+task_id: code_generation_014
+type: code_generation
+question: "Write a function that invalidates cache entries matching a pattern 'user_*' using the invalidate() method with pattern matching."
+domain: framework_api
+difficulty: medium
+tags:
+  - caching
+  - invalidation
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    invalidate
+    user_\*|user_
+    pattern
+  entry_point: "invalidate_user_cache"
+  canonical_solution: ""
+  libs: ["framework.caching"]
+  forbidden_patterns: ["eval(", "exec("]

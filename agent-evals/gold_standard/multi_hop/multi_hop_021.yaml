@@ -1,0 +1,18 @@
+task_id: multi_hop_021
+type: multi_hop
+question: "What is the default cache TTL in seconds, and if a JWT token is issued at the same moment a cache entry is created, which one expires first?"
+domain: framework_api
+difficulty: easy
+tags:
+  - caching
+  - authentication
+  - ttl
+metadata:
+  question_decomposition:
+    - "What is the default cache TTL?"
+    - "What is the JWT token expiry duration?"
+    - "Which duration is shorter?"
+  reasoning_chain:
+    - "api/caching.md states default_ttl=300 seconds"
+    - "api/auth.md states expiry_seconds=3600 for JWT tokens"
+    - "300 < 3600, so the cache entry expires first after 5 minutes while the JWT lasts 1 hour"

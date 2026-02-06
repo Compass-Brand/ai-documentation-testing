@@ -1,0 +1,15 @@
+task_id: compositional_017
+type: compositional
+question: "If a user hits the /api/auth/login endpoint, what happens at the auth layer, the middleware layer, and the configuration layer to process their request?"
+domain: framework_api
+difficulty: hard
+tags: [auth, middleware, config, request-flow]
+metadata:
+  sub_questions:
+    - "What does the auth layer do when /api/auth/login is called?"
+    - "What middleware components process the request?"
+    - "What configuration values are relevant to auth processing?"
+  expected_answers:
+    - "The /api/auth/login endpoint authenticates the user and issues a JWT token signed with HS256, valid for expiry_seconds=3600"
+    - "The middleware chain processes the request including CORS handling, rate limiting (100 req/min), and AuthMiddleware for subsequent authenticated requests"
+    - "SECRET_KEY from config is used for JWT signing, and APP_ENV may affect auth behavior"

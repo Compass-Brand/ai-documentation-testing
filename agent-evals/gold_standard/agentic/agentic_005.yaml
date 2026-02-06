@@ -1,0 +1,18 @@
+task_id: agentic_005
+type: agentic
+question: "Find the DataForge installation instructions and verify the basic Pipeline usage example."
+domain: project_repo
+difficulty: easy
+tags:
+  - readme
+  - setup
+metadata:
+  expected_tools:
+    - name: "read_file"
+  files:
+    "repo/README.md": "pip install dataforge, Pipeline+CSVSource+PostgresLoader"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_install_command"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

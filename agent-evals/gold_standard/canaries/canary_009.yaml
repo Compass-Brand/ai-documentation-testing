@@ -1,0 +1,13 @@
+task_id: canary_009
+type: fact_extraction
+question: "What email address should security vulnerabilities be reported to?"
+domain: project_repo
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  expected_answer: "security@example.com"
+  answer_aliases: []
+  source_location: "repo/security.md"
+  fact_type: "contact_information"

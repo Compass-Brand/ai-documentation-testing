@@ -1,0 +1,18 @@
+task_id: multi_hop_022
+type: multi_hop
+question: "When setting up a new development environment, which configuration variables are required versus optional, and how does the database connection pooling interact with the DATABASE_URL setting?"
+domain: framework_api
+difficulty: medium
+tags:
+  - configuration
+  - database
+  - setup
+metadata:
+  question_decomposition:
+    - "Which environment variables are required and which are optional?"
+    - "How does DatabaseManager handle connection pooling?"
+    - "How does DATABASE_URL connect the config to the database layer?"
+  reasoning_chain:
+    - "api/config.md states DATABASE_URL is required, SECRET_KEY is required, REDIS_URL is optional, APP_ENV is optional"
+    - "api/database.md states DatabaseManager uses connection pooling with PostgreSQL"
+    - "The required DATABASE_URL from config.md is consumed by DatabaseManager from database.md to establish the pooled PostgreSQL connection"

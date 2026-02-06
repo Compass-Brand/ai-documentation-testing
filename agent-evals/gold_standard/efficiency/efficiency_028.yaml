@@ -1,0 +1,11 @@
+task_id: efficiency_028
+type: efficiency
+question: "What is the recommended chunk_size for handling MemoryError in DataForge, and what is the recommended batch_size for slow inserts? Answer with both numbers only."
+domain: project_repo
+difficulty: hard
+tags:
+  - edge_case
+metadata:
+  expected_answer: "chunk_size=10000, batch_size=5000"
+  answer_aliases: ["10000 and 5000"]
+  token_budget: 15

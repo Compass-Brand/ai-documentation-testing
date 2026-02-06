@@ -1,0 +1,11 @@
+task_id: negative_013
+type: negative
+question: "How do you set up a staging environment separate from production?"
+domain: framework_api
+difficulty: hard
+tags: [deployment, staging, environments]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The config docs mention APP_ENV and the deployment docs cover Docker and Kubernetes, but neither provides instructions for setting up a dedicated staging environment."
+  nearest_doc: "api/deployment.md"
+  nearest_content: "Covers Docker containerization, Kubernetes orchestration, and health check endpoints."

@@ -1,0 +1,11 @@
+task_id: negative_011
+type: negative
+question: "How do you configure email notifications for failed CI builds?"
+domain: skills_workflows
+difficulty: medium
+tags: [ci, notifications, email]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The CI setup docs cover GitHub Actions with lint/test/build stages, but do not describe email notification configuration for build failures."
+  nearest_doc: "workflows/ci-setup.md"
+  nearest_content: "Covers GitHub Actions setup with lint, test, and build stages."

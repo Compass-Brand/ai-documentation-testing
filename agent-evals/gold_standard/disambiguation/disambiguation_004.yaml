@@ -1,0 +1,13 @@
+task_id: disambiguation_004
+type: disambiguation
+question: "What sources are supported?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  interpretations:
+    - label: "data_sources"
+      answer: "DataForge supports CSV, SQL, API, and S3 data sources, with S3Source added in v2.3.0 and extensibility via @register_source decorator"
+    - label: "code_source_repo"
+      answer: "The project source code uses a branching model with main, develop, feature, and fix branches as described in CONTRIBUTING.md"
+  expected_interpretation: "data_sources"

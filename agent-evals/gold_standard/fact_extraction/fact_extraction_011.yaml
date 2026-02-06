@@ -1,0 +1,13 @@
+task_id: fact_extraction_011
+type: fact_extraction
+question: "What is the maximum overflow size for the database connection pool?"
+domain: framework_api
+difficulty: medium
+tags:
+  - database
+  - pool
+metadata:
+  expected_answer: "20"
+  answer_aliases: ["20 overflow", "twenty", "20 connections"]
+  source_location: "api/database.md"
+  fact_type: "number"

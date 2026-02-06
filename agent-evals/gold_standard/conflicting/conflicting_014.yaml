@@ -1,0 +1,16 @@
+task_id: conflicting_014
+type: conflicting
+question: "What coverage threshold is required — is it enforced in CI or only at release?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "ci-setup.md"
+      claim: "CI runs pytest with coverage reporting"
+      authority: 7
+    - name: "release.md"
+      claim: "90% coverage is required as a pre-release gate"
+      authority: 9
+  expected_resolution: "90% coverage is a hard gate at release time per release.md. CI reports coverage but the 90% threshold is enforced during the release process."
+  resolution_strategy: "higher_authority"

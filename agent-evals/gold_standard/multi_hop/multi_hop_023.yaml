@@ -1,0 +1,18 @@
+task_id: multi_hop_023
+type: multi_hop
+question: "A new contributor wants to submit a PR that adds a feature to the Service layer. According to the project guidelines, what branch naming convention should they follow, and which architectural layer should their code NOT directly depend on?"
+domain: project_repo
+difficulty: easy
+tags:
+  - contributing
+  - architecture
+  - onboarding
+metadata:
+  question_decomposition:
+    - "What branch naming convention does the project require for PRs?"
+    - "What are the architectural layers and their dependency rules?"
+    - "Which layer should the Service layer not directly depend on?"
+  reasoning_chain:
+    - "repo/CONTRIBUTING.md defines branch naming conventions and PR process"
+    - "repo/architecture.md describes a 3-layer architecture: API/Service/Data with dependency injection"
+    - "In a 3-layer architecture with dependency injection, the Service layer should not directly depend on the API layer; dependencies flow downward from API to Service to Data"

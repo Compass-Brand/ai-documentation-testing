@@ -1,0 +1,13 @@
+task_id: robustness_003
+type: robustness
+question: "What is the defualt rate limitting configuration for the middleware?"
+domain: framework_api
+difficulty: easy
+tags:
+  - middleware
+  - rate_limiting
+metadata:
+  perturbation_type: "typo"
+  original_question: "What is the default rate limiting configuration for the middleware?"
+  expected_answer: "The default rate limiting configuration is 100 requests per minute."
+  perturbation_details: "Misspelled 'default' as 'defualt' and 'limiting' as 'limitting'"

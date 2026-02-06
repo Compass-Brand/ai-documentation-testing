@@ -1,0 +1,20 @@
+task_id: agentic_017
+type: agentic
+question: "Find the contributing guidelines to understand the branch strategy, then check the CI setup docs for the deployment stages."
+domain: project_repo
+difficulty: medium
+tags:
+  - contributing
+  - ci
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "read_file"
+  files:
+    "repo/CONTRIBUTING.md": "branch strategy main/develop/feature/fix, conventional commits"
+    "workflows/ci-setup.md": "deployment stages, secrets PYPI_TOKEN, DEPLOY_KEY"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_branch_ci_integration"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

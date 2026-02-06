@@ -1,0 +1,21 @@
+task_id: code_generation_029
+type: code_generation
+question: "Write a streaming ETL pipeline function that processes data in chunks of 10000 to avoid MemoryError, using batch_size=5000 for the loader."
+domain: project_repo
+difficulty: hard
+tags:
+  - pipeline
+  - streaming
+  - performance
+  - edge_case
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    chunk_size.*10000|10000.*chunk
+    batch_size.*5000|5000.*batch
+    stream|Stream
+  entry_point: "streaming_pipeline"
+  canonical_solution: ""
+  libs: ["dataforge"]
+  forbidden_patterns: ["eval(", "exec("]

@@ -1,0 +1,15 @@
+task_id: compositional_013
+type: compositional
+question: "What infrastructure technologies are used for deployment, and what operational endpoint is provided for monitoring?"
+domain: framework_api
+difficulty: easy
+tags: [deployment, docker, kubernetes, health-checks]
+metadata:
+  sub_questions:
+    - "What containerization technology is used?"
+    - "What orchestration platform is used?"
+    - "What operational endpoint is available?"
+  expected_answers:
+    - "Docker"
+    - "Kubernetes"
+    - "Health check endpoints"

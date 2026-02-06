@@ -1,0 +1,13 @@
+task_id: fact_extraction_027
+type: fact_extraction
+question: "What are the five log levels supported by the logging system?"
+domain: framework_api
+difficulty: hard
+tags:
+  - logging
+  - levels
+metadata:
+  expected_answer: "DEBUG, INFO, WARNING, ERROR, CRITICAL"
+  answer_aliases: ["DEBUG-CRITICAL"]
+  source_location: "api/logging.md"
+  fact_type: "list"

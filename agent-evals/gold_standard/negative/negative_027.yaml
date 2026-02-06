@@ -1,0 +1,11 @@
+task_id: negative_027
+type: negative
+question: "What are the steps to set up a local development environment with Docker Compose?"
+domain: project_repo
+difficulty: medium
+tags: [docker-compose, local-dev, setup]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The README covers project overview and quickstart, and deployment docs cover Docker and Kubernetes, but neither provides Docker Compose setup instructions for local development."
+  nearest_doc: "repo/README.md"
+  nearest_content: "Covers the project overview and quickstart guide for getting started."

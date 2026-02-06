@@ -1,0 +1,13 @@
+task_id: sentinel_012
+type: fact_extraction
+question: "What CI platform does the project use?"
+domain: skills_workflows
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_answer: "GitHub Actions"
+  answer_aliases: []
+  source_location: "workflows/ci-setup.md"
+  fact_type: "tooling"

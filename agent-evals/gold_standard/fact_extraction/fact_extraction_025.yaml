@@ -1,0 +1,13 @@
+task_id: fact_extraction_025
+type: fact_extraction
+question: "How many steps are in the PR process according to the contributing guidelines?"
+domain: project_repo
+difficulty: hard
+tags:
+  - contributing
+  - pr
+metadata:
+  expected_answer: "6"
+  answer_aliases: ["6 steps", "six", "six steps"]
+  source_location: "repo/CONTRIBUTING.md"
+  fact_type: "number"

@@ -1,0 +1,188 @@
+# Gold Standard Example Schema
+#
+# Each .yaml file in a task type directory follows this schema.
+# The "task" section uses the same schema as regular task YAMLs
+# (see agent_evals.tasks.base.TaskDefinition).
+# The "annotations" section stores human judgments used to
+# calibrate LLM-as-judge scorers.
+#
+# Minimum 30 examples per task type, maximum 50.
+# 20% overlap across annotators for inter-annotator agreement.
+# Target: Cohen's kappa >= 0.70, Spearman rho >= 0.80.
+
+# ---------------------------------------------------------------------------
+# Schema definition
+# ---------------------------------------------------------------------------
+
+schema:
+  version: "1.0"
+  description: >
+    Schema for gold standard examples used to calibrate LLM-as-judge
+    scorers. Each example pairs a task definition with one or more
+    human annotations scoring an LLM response to that task.
+
+  # ---
+  # Task section: mirrors TaskDefinition from agent_evals.tasks.base
+  # ---
+  task:
+    task_id:
+      type: string
+      required: true
+      pattern: "^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\\d+$"
+      description: >
+        Unique task identifier. Pattern: {type}_{digits} or
+        {type}_{subtype}_{digits}. Examples: retrieval_001,
+        code_generation_python_001.
+
+    type:
+      type: string
+      required: true
+      enum:
+        - retrieval
+        - fact_extraction
+        - code_generation
+        - agentic
+        - multi_hop
+        - negative
+        - compositional
+        - robustness
+        - disambiguation
+        - conflicting
+        - efficiency
+      description: One of 11 task types.
+
+    question:
+      type: string
+      required: true
+      description: The question or prompt given to the LLM.
+
+    domain:
+      type: string
+      required: true
+      enum:
+        - framework_api
+        - project_repo
+        - skills_workflows
+      description: The documentation domain this task targets.
+
+    difficulty:
+      type: string
+      required: true
+      enum:
+        - easy
+        - medium
+        - hard
+      description: Difficulty level for the task.
+
+    tags:
+      type: list[string]
+      required: false
+      default: []
+      description: Optional categorization tags.
+
+    metadata:
+      type: dict
+      required: false
+      default: {}
+      description: >
+        Type-specific fields (expected_files, expected_answer,
+        expected_code_elements, perturbation_type, etc.).
+
+  # ---
+  # Annotations section: human judgments on LLM responses
+  # ---
+  annotations:
+    type: list
+    required: true
+    min_items: 1
+    description: >
+      One or more human annotations. Each annotation captures a
+      single annotator's judgment of a specific LLM response to
+      this task.
+    items:
+      annotator_id:
+        type: string
+        required: true
+        description: Anonymous annotator identifier (e.g., "annotator_A").
+
+      timestamp:
+        type: string
+        required: true
+        format: iso8601
+        description: ISO 8601 timestamp of the annotation (e.g., "2025-01-15T14:30:00Z").
+
+      response:
+        type: string
+        required: true
+        description: The full LLM response being judged.
+
+      score:
+        type: float
+        required: true
+        min: 0.0
+        max: 1.0
+        description: Overall human score from 0.0 (worst) to 1.0 (best).
+
+      rationale:
+        type: string
+        required: true
+        description: >
+          Free-text explanation of why the annotator assigned
+          this score. Should reference specific strengths or
+          weaknesses in the response.
+
+      criteria_scores:
+        type: dict
+        required: false
+        description: >
+          Optional per-criterion breakdown. Each criterion is
+          scored 0.0-1.0.
+        fields:
+          correctness:
+            type: float
+            min: 0.0
+            max: 1.0
+            description: Factual accuracy of the response.
+          completeness:
+            type: float
+            min: 0.0
+            max: 1.0
+            description: How thoroughly the response addresses the question.
+          conciseness:
+            type: float
+            min: 0.0
+            max: 1.0
+            description: Brevity without sacrificing key information.
+
+# ---------------------------------------------------------------------------
+# Difficulty distribution targets
+# ---------------------------------------------------------------------------
+
+difficulty_distribution:
+  description: >
+    Target distribution of difficulty levels across examples
+    within each task type directory.
+  target:
+    easy: 0.30
+    medium: 0.40
+    hard: 0.20
+    edge: 0.10
+
+# ---------------------------------------------------------------------------
+# Validation thresholds
+# ---------------------------------------------------------------------------
+
+validation:
+  min_examples_per_type: 30
+  max_examples_per_type: 50
+  overlap_percentage: 0.20
+  target_kappa: 0.70
+  target_spearman: 0.80
+  min_annotations_per_example: 1
+  description: >
+    Quality gates for the gold standard corpus.
+    - 30-50 examples per task type.
+    - 20% of examples annotated by multiple annotators for
+      inter-annotator agreement measurement.
+    - Cohen's kappa >= 0.70 required for categorical agreement.
+    - Spearman rho >= 0.80 required for score correlation.

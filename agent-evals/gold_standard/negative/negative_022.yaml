@@ -1,0 +1,11 @@
+task_id: negative_022
+type: negative
+question: "How do you configure multi-tenancy in the DatabaseManager?"
+domain: framework_api
+difficulty: hard
+tags: [database, multi-tenancy, architecture]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The database docs cover DatabaseManager, connection pooling, and PostgreSQL, but never mention multi-tenancy, tenant isolation, or schema-per-tenant patterns."
+  nearest_doc: "api/database.md"
+  nearest_content: "Covers DatabaseManager class, connection pooling configuration, and PostgreSQL backend setup."

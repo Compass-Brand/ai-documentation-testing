@@ -1,0 +1,19 @@
+task_id: code_generation_017
+type: code_generation
+question: "Write a custom DataForge source plugin using the @register_source decorator that reads from a JSON API endpoint."
+domain: project_repo
+difficulty: medium
+tags:
+  - plugin
+  - architecture
+metadata:
+  expected_answer: ""
+  test: |
+    @register_source
+    class\s+\w+
+    def\s+read|def\s+fetch
+    json|JSON
+  entry_point: "JsonApiSource"
+  canonical_solution: ""
+  libs: ["dataforge"]
+  forbidden_patterns: ["eval(", "exec("]

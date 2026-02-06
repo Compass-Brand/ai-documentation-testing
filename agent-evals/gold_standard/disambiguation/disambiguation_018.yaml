@@ -1,0 +1,13 @@
+task_id: disambiguation_018
+type: disambiguation
+question: "How do I read data from external systems?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "source_read_method"
+      answer: "Use Source.read() to fetch data. The fetch() method was renamed to read() in v2.2.0 per the changelog"
+    - label: "api_source"
+      answer: "Use the API source type in the Source→Transformer→Validator→Loader pipeline to read from external APIs"
+  expected_interpretation: "source_read_method"

@@ -1,0 +1,13 @@
+task_id: robustness_002
+type: robustness
+question: "How do I set up authentikation middleware in the framework?"
+domain: framework_api
+difficulty: easy
+tags:
+  - auth
+  - middleware
+metadata:
+  perturbation_type: "typo"
+  original_question: "How do I set up authentication middleware in the framework?"
+  expected_answer: "Use the AuthMiddleware class, which handles JWT-based authentication with HS256 signing algorithm and a default expiry of 3600 seconds."
+  perturbation_details: "Misspelled 'authentication' as 'authentikation'"

@@ -1,0 +1,10 @@
+task_id: efficiency_013
+type: efficiency
+question: "What data sources does DataForge support?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "CSV, SQL, API, and S3"
+  answer_aliases: ["CSV, SQL, API, S3", "CSVSource, SQLSource, APISource, S3Source"]
+  token_budget: 20

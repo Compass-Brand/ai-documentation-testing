@@ -1,0 +1,15 @@
+task_id: retrieval_023
+type: retrieval
+question: "I want to deploy the application with Docker Compose, set up CI/CD with GitHub Actions, and configure environment variables. Which files cover all of these?"
+domain: framework_api
+difficulty: hard
+tags:
+  - deployment
+  - ci
+  - config
+  - multi_file
+metadata:
+  expected_files:
+    - "api/deployment.md"
+    - "api/config.md"
+  evidence_passage: "Docker Compose app+db+redis, GitHub Actions CI/CD 6 steps, DATABASE_URL required"

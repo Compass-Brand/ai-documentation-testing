@@ -1,0 +1,19 @@
+task_id: agentic_013
+type: agentic
+question: "Search for the deployment docs and figure out how to set up Docker Compose with the correct service dependencies and health endpoint."
+domain: framework_api
+difficulty: medium
+tags:
+  - deployment
+  - docker
+metadata:
+  expected_tools:
+    - name: "read_file"
+    - name: "grep_files"
+  files:
+    "api/deployment.md": "Docker Compose app+db+redis, /health endpoint, GitHub Actions CI/CD"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_docker_compose_setup"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

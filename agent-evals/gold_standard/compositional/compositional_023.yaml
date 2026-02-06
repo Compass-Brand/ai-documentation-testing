@@ -1,0 +1,15 @@
+task_id: compositional_023
+type: compositional
+question: "When debugging a ConfigurationError that prevents the app from starting, which debugging steps apply, what does the troubleshooting guide say, and what config values should you check?"
+domain: skills_workflows
+difficulty: hard
+tags: [debugging, troubleshooting, config, cross-doc]
+metadata:
+  sub_questions:
+    - "Which debugging workflow steps are most relevant?"
+    - "What does the troubleshooting guide say about ConfigurationError?"
+    - "What configuration values should be verified?"
+  expected_answers:
+    - "Reproduce the error, then isolate by checking common causes (step 1, 2, and 3 of the debugging workflow)"
+    - "The troubleshooting guide covers ConfigurationError as a common error with resolution steps"
+    - "Verify DATABASE_URL (required), and optionally SECRET_KEY, REDIS_URL, and APP_ENV from the config docs"

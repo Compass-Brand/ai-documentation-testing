@@ -1,0 +1,13 @@
+task_id: disambiguation_012
+type: disambiguation
+question: "How should I run the pipeline?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "pipeline_run_method"
+      answer: "Use Pipeline.run() to execute pipelines. The execute() method was renamed to run() in v2.2.0"
+    - label: "pipeline_cli"
+      answer: "Run pipelines using the DataForge CLI with --dry-run flag available since v2.3.0 for testing without side effects"
+  expected_interpretation: "pipeline_run_method"

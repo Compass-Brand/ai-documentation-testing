@@ -1,0 +1,16 @@
+task_id: conflicting_025
+type: conflicting
+question: "Should I use conventional commits or is there a different commit message format?"
+domain: project_repo
+difficulty: hard
+tags: []
+metadata:
+  sources:
+    - name: "CONTRIBUTING.md"
+      claim: "Use conventional commits for commit messages"
+      authority: 9
+    - name: "code-review.md"
+      claim: "Code review comment prefixes use nit/suggestion/issue/question format"
+      authority: 7
+  expected_resolution: "Use conventional commits for git commit messages (per CONTRIBUTING.md). The nit/suggestion/issue/question prefixes from code-review.md are for review comments, not commit messages."
+  resolution_strategy: "higher_authority"

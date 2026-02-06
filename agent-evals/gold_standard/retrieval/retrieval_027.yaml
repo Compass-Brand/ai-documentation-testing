@@ -1,0 +1,13 @@
+task_id: retrieval_027
+type: retrieval
+question: "Which file documents the debugging workflow for isolating issues in ETL pipeline components?"
+domain: skills_workflows
+difficulty: hard
+tags:
+  - debugging
+  - edge_case
+metadata:
+  expected_files:
+    - "workflows/debugging.md"
+    - "repo/troubleshooting.md"
+  evidence_passage: "5 steps: reproduce, isolate component Source/Transform/Validate/Load, debug logging"

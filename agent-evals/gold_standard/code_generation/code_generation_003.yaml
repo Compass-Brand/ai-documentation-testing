@@ -1,0 +1,19 @@
+task_id: code_generation_003
+type: code_generation
+question: "Write a function that reads the DATABASE_URL from environment variables and raises ConfigError if it is not set."
+domain: framework_api
+difficulty: easy
+tags:
+  - config
+  - env
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    DATABASE_URL
+    ConfigError
+    os\.environ|os\.getenv
+  entry_point: "get_database_url"
+  canonical_solution: ""
+  libs: ["framework.config"]
+  forbidden_patterns: ["eval(", "exec("]

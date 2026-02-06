@@ -1,0 +1,13 @@
+task_id: multi_hop_015
+type: multi_hop
+question: "What coverage threshold must be met before a DataForge release, and what tool is used for version bumping?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  question_decomposition:
+    - "What coverage threshold is required for a release?"
+    - "What tool is used for version bumping?"
+  reasoning_chain:
+    - "release.md states coverage must meet the 90% threshold"
+    - "release.md states bump2version is used for semantic versioning"

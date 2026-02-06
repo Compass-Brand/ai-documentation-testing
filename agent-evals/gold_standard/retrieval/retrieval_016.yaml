@@ -1,0 +1,12 @@
+task_id: retrieval_016
+type: retrieval
+question: "Which files describe the pipeline architecture, including Source, Transformer, Validator, and Loader components?"
+domain: project_repo
+difficulty: medium
+tags:
+  - architecture
+  - pipeline
+metadata:
+  expected_files:
+    - "repo/architecture.md"
+  evidence_passage: "Pipeline: Source->Transformer->Validator->Loader->Monitor, plugin system with @register_source"

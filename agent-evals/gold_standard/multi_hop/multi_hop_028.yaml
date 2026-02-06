@@ -1,0 +1,20 @@
+task_id: multi_hop_028
+type: multi_hop
+question: "During code review, a reviewer notices that a new endpoint does not use the mock_auth test fixture and lacks correlation ID propagation. Which review checklist items does this violate, and what specific testing and logging utilities should be added?"
+domain: skills_workflows
+difficulty: medium
+tags:
+  - code_review
+  - testing
+  - logging
+  - correlation_ids
+metadata:
+  question_decomposition:
+    - "What does the code review checklist require for new endpoints?"
+    - "What is the mock_auth fixture and how should it be used?"
+    - "How are correlation IDs propagated in the logging system?"
+  reasoning_chain:
+    - "workflows/code-review.md defines the review checklist and approval rules for PRs"
+    - "api/testing.md provides the mock_auth fixture specifically for testing authenticated endpoints"
+    - "api/logging.md describes StructuredLogger with correlation IDs for request tracing"
+    - "The missing mock_auth fixture violates test coverage requirements, and missing correlation IDs violate observability requirements from the review checklist"

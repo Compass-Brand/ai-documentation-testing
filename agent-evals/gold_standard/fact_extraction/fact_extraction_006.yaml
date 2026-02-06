@@ -1,0 +1,13 @@
+task_id: fact_extraction_006
+type: fact_extraction
+question: "What is the maximum Docker image size target for the multi-stage build?"
+domain: framework_api
+difficulty: easy
+tags:
+  - deployment
+  - docker
+metadata:
+  expected_answer: "150MB"
+  answer_aliases: ["<150MB", "less than 150MB", "under 150MB", "150 MB"]
+  source_location: "api/deployment.md"
+  fact_type: "number"

@@ -1,0 +1,21 @@
+task_id: code_generation_028
+type: code_generation
+question: "Write an error handling middleware that catches unhandled exceptions and returns the JSON error envelope format with appropriate status codes."
+domain: framework_api
+difficulty: hard
+tags:
+  - errors
+  - middleware
+  - edge_case
+metadata:
+  expected_answer: ""
+  test: |
+    class\s+\w+.*BaseMiddleware|middleware
+    except|Exception
+    json|JSON
+    status|status_code
+    error|message
+  entry_point: "ErrorHandlerMiddleware"
+  canonical_solution: ""
+  libs: ["framework.errors", "framework.middleware"]
+  forbidden_patterns: ["eval(", "exec("]

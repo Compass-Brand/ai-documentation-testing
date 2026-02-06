@@ -1,0 +1,12 @@
+task_id: retrieval_015
+type: retrieval
+question: "Where is structured JSON logging documented, including request_id tracking and log levels?"
+domain: framework_api
+difficulty: medium
+tags:
+  - logging
+  - structured
+metadata:
+  expected_files:
+    - "api/logging.md"
+  evidence_passage: "configure_logging(), JSON/text format, structured fields timestamp, level, message, request_id"

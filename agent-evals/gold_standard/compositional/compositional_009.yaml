@@ -1,0 +1,15 @@
+task_id: compositional_009
+type: compositional
+question: "What versioning scheme does the release process use, what branch type is created for releases, and what must be updated alongside each release?"
+domain: skills_workflows
+difficulty: medium
+tags: [release, semver, changelog]
+metadata:
+  sub_questions:
+    - "What versioning scheme is used?"
+    - "What type of branches are created for releases?"
+    - "What documentation must be updated with each release?"
+  expected_answers:
+    - "Semantic versioning (semver)"
+    - "Release branches"
+    - "The changelog"

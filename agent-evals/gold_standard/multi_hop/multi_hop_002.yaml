@@ -1,0 +1,13 @@
+task_id: multi_hop_002
+type: multi_hop
+question: "Which middleware validates JWT tokens, and what algorithm does the JWT configuration use by default?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  question_decomposition:
+    - "Which middleware component validates JWT tokens?"
+    - "What algorithm does JWTConfig use?"
+  reasoning_chain:
+    - "middleware.md lists Auth as the 4th middleware that validates JWT tokens"
+    - "auth.md shows JWTConfig uses algorithm HS256"

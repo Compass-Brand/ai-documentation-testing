@@ -1,0 +1,13 @@
+task_id: fact_extraction_012
+type: fact_extraction
+question: "What TTL value does the @cached decorator use in the caching documentation example?"
+domain: framework_api
+difficulty: medium
+tags:
+  - caching
+  - decorator
+metadata:
+  expected_answer: "600"
+  answer_aliases: ["600 seconds", "10 minutes", "ten minutes"]
+  source_location: "api/caching.md"
+  fact_type: "duration"

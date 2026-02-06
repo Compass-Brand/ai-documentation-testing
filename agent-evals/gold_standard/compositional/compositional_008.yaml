@@ -1,0 +1,15 @@
+task_id: compositional_008
+type: compositional
+question: "Explain the error handling system: what is the base error class, what middleware catches errors, and how are errors identified?"
+domain: framework_api
+difficulty: easy
+tags: [errors, middleware, error-codes]
+metadata:
+  sub_questions:
+    - "What is the base error class hierarchy called?"
+    - "What middleware component handles error catching?"
+    - "How are different errors identified?"
+  expected_answers:
+    - "AppError hierarchy"
+    - "ErrorMiddleware"
+    - "Through structured error codes"

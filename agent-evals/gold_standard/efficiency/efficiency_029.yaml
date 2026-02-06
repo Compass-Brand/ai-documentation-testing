@@ -1,0 +1,11 @@
+task_id: efficiency_029
+type: efficiency
+question: "List every authentication endpoint and the JWT config values (algorithm and expiry). Use only comma-separated key=value pairs."
+domain: framework_api
+difficulty: hard
+tags:
+  - edge_case
+metadata:
+  expected_answer: "/api/auth/login, /api/auth/refresh, algorithm=HS256, expiry_seconds=3600"
+  answer_aliases: ["login, refresh, HS256, 3600"]
+  token_budget: 25

@@ -1,0 +1,13 @@
+task_id: disambiguation_023
+type: disambiguation
+question: "How do I register a custom component?"
+domain: project_repo
+difficulty: hard
+tags: []
+metadata:
+  interpretations:
+    - label: "register_source"
+      answer: "Register a custom data source using the @register_source decorator, e.g., @register_source('kafka') to add a Kafka source to the pipeline"
+    - label: "register_middleware"
+      answer: "Register custom middleware by extending BaseMiddleware and implementing process_request and process_response hooks in the middleware chain"
+  expected_interpretation: "register_source"

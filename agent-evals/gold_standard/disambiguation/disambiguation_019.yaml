@@ -1,0 +1,13 @@
+task_id: disambiguation_019
+type: disambiguation
+question: "What testing infrastructure is available?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "ci_testing"
+      answer: "GitHub Actions CI runs a test matrix across Python 3.10, 3.11, and 3.12 with ruff linting, pytest, and coverage reporting"
+    - label: "framework_testing"
+      answer: "The framework provides TestClient for HTTP testing, db_session() fixture with auto-rollback, and mock.patch for isolation"
+  expected_interpretation: "ci_testing"

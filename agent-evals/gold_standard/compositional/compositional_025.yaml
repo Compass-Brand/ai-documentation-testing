@@ -1,0 +1,15 @@
+task_id: compositional_025
+type: compositional
+question: "Explain the code review workflow: what checklist items are reviewed, what approval rules must be met, and how does this integrate with the CI pipeline?"
+domain: skills_workflows
+difficulty: medium
+tags: [code-review, ci, approval, checklist]
+metadata:
+  sub_questions:
+    - "What does the code review checklist cover?"
+    - "What approval rules govern merging?"
+    - "How does code review integrate with CI?"
+  expected_answers:
+    - "The review checklist covers code quality, correctness, and adherence to project standards"
+    - "Approval rules define who can approve and what conditions must be met for merge approval"
+    - "CI stages (lint, test, build) in GitHub Actions must pass alongside the code review approval before merging"

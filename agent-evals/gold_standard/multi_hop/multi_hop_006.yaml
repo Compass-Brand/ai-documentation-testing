@@ -1,0 +1,13 @@
+task_id: multi_hop_006
+type: multi_hop
+question: "What testing tool does the CI pipeline use for linting, and what is the maximum line length enforced by the project's code style?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  question_decomposition:
+    - "What linting tool is used in the CI pipeline?"
+    - "What is the maximum line length in the project code style?"
+  reasoning_chain:
+    - "ci-setup.md shows the CI step 'ruff check src/'"
+    - "CONTRIBUTING.md states maximum line length is 100 characters"

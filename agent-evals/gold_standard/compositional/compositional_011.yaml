@@ -1,0 +1,15 @@
+task_id: compositional_011
+type: compositional
+question: "How does the middleware chain handle cross-origin requests and rate limiting? What is the rate limit threshold?"
+domain: framework_api
+difficulty: medium
+tags: [middleware, cors, rate-limiting]
+metadata:
+  sub_questions:
+    - "How are cross-origin requests handled?"
+    - "What rate limiting is applied?"
+    - "What is the specific rate limit threshold?"
+  expected_answers:
+    - "Through CORS middleware in the middleware chain"
+    - "Rate limiting middleware is part of the middleware chain"
+    - "100 requests per minute"

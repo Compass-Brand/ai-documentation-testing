@@ -1,0 +1,21 @@
+task_id: agentic_012
+type: agentic
+question: "Find the caching docs and determine all the ways to invalidate cache entries, then check the config docs for REDIS_URL."
+domain: framework_api
+difficulty: medium
+tags:
+  - caching
+  - config
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "read_file"
+    - name: "grep_files"
+  files:
+    "api/caching.md": "invalidate() with keys/patterns/tags, RedisBackend"
+    "api/config.md": "REDIS_URL optional"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_cache_invalidation_methods"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

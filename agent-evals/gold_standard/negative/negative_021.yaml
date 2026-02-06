@@ -1,0 +1,11 @@
+task_id: negative_021
+type: negative
+question: "What is the project's SLA for API response times?"
+domain: project_repo
+difficulty: easy
+tags: [sla, performance, api]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "No fixture document specifies SLA targets or API response time requirements. The deployment docs cover infrastructure but not performance SLAs."
+  nearest_doc: "api/deployment.md"
+  nearest_content: "Covers Docker, Kubernetes, and health check endpoints, but not performance targets or SLAs."

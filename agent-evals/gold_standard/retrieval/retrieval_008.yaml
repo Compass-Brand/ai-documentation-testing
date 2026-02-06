@@ -1,0 +1,12 @@
+task_id: retrieval_008
+type: retrieval
+question: "I need to set up a GitHub Actions CI pipeline with a Python test matrix. Which file documents this?"
+domain: skills_workflows
+difficulty: easy
+tags:
+  - ci
+  - github_actions
+metadata:
+  expected_files:
+    - "workflows/ci-setup.md"
+  evidence_passage: "GitHub Actions CI YAML, matrix Python 3.10/3.11/3.12, ruff+pytest+cov"

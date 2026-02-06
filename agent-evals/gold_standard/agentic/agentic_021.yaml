@@ -1,0 +1,21 @@
+task_id: agentic_021
+type: agentic
+question: "Find the debugging workflow steps, then search the troubleshooting guide to understand common issues with each pipeline component (Source, Transform, Validate, Load)."
+domain: skills_workflows
+difficulty: medium
+tags:
+  - debugging
+  - troubleshooting
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "read_file"
+    - name: "grep_files"
+  files:
+    "workflows/debugging.md": "5 steps: reproduce, isolate component Source/Transform/Validate/Load, check common causes"
+    "repo/troubleshooting.md": "ConfigurationError, MemoryError, slow inserts, schema validation"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_debug_workflow"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

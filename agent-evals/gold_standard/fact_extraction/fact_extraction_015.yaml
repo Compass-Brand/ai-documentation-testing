@@ -1,0 +1,13 @@
+task_id: fact_extraction_015
+type: fact_extraction
+question: "What method was renamed from 'execute' in DataForge v2.2.0?"
+domain: project_repo
+difficulty: medium
+tags:
+  - changelog
+  - breaking_changes
+metadata:
+  expected_answer: "run"
+  answer_aliases: ["execute was renamed to run", "execute->run"]
+  source_location: "repo/changelog.md"
+  fact_type: "name"

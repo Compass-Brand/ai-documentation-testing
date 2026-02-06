@@ -1,0 +1,23 @@
+task_id: agentic_028
+type: agentic
+question: "A user reports that their pipeline crashes with a ConfigurationError. Investigate by reading the troubleshooting guide and then the config docs to trace the root cause and fix."
+domain: project_repo
+difficulty: hard
+tags:
+  - troubleshooting
+  - config
+  - debugging
+  - edge_case
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+  files:
+    "repo/troubleshooting.md": "ConfigurationError fix"
+    "api/config.md": "DATABASE_URL required, ConfigError"
+    "workflows/debugging.md": "5 steps: reproduce, isolate component, check common causes"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_configuration_error_debug"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

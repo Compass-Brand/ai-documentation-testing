@@ -1,0 +1,11 @@
+task_id: negative_015
+type: negative
+question: "What is the project's code coverage threshold required to pass CI?"
+domain: skills_workflows
+difficulty: easy
+tags: [ci, testing, coverage]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The CI setup docs cover lint/test/build stages in GitHub Actions, and testing docs cover TestClient and fixtures, but no document specifies a minimum code coverage threshold."
+  nearest_doc: "workflows/ci-setup.md"
+  nearest_content: "Covers GitHub Actions configuration with lint, test, and build pipeline stages."

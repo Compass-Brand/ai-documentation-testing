@@ -1,0 +1,15 @@
+task_id: sentinel_015
+type: fact_extraction
+question: "What is the test coverage threshold required before a release?"
+domain: skills_workflows
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_answer: "90%"
+  answer_aliases:
+    - "90 percent"
+    - "90"
+  source_location: "workflows/release.md"
+  fact_type: "process_requirement"

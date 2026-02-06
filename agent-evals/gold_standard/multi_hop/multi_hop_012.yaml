@@ -1,0 +1,13 @@
+task_id: multi_hop_012
+type: multi_hop
+question: "What is the maximum Docker image size for production, and how many steps does the GitHub Actions CI/CD pipeline have?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  question_decomposition:
+    - "What is the maximum Docker image size?"
+    - "How many steps does the CI/CD pipeline have?"
+  reasoning_chain:
+    - "deployment.md states the image uses multi-stage build to keep final size under 150 MB"
+    - "deployment.md lists 6 CI/CD pipeline steps"

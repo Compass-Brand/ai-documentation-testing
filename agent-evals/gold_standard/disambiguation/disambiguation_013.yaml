@@ -1,0 +1,13 @@
+task_id: disambiguation_013
+type: disambiguation
+question: "What does the logging configuration look like?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "framework_logging"
+      answer: "Use configure_logging(level, format, output) with JSON or text format, structured fields via log_context(), and levels DEBUG/INFO/WARNING/ERROR/CRITICAL"
+    - label: "pipeline_debug_logging"
+      answer: "Set LOG_LEVEL=DEBUG environment variable to enable debug logging for pipeline troubleshooting as described in troubleshooting.md"
+  expected_interpretation: "framework_logging"

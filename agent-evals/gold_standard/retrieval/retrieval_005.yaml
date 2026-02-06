@@ -1,0 +1,12 @@
+task_id: retrieval_005
+type: retrieval
+question: "Which file explains how to write tests using the TestClient and database fixtures?"
+domain: framework_api
+difficulty: easy
+tags:
+  - testing
+  - fixtures
+metadata:
+  expected_files:
+    - "api/testing.md"
+  evidence_passage: "TestClient, db_session() fixture with auto-rollback, mock.patch for services"

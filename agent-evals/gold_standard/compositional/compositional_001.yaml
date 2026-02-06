@@ -1,0 +1,15 @@
+task_id: compositional_001
+type: compositional
+question: "What algorithm does the auth system use for JWT signing, what is the default token expiry, and what middleware enforces authentication?"
+domain: framework_api
+difficulty: easy
+tags: [auth, jwt, middleware]
+metadata:
+  sub_questions:
+    - "What signing algorithm is used for JWT tokens?"
+    - "What is the default token expiry duration?"
+    - "What middleware component enforces authentication?"
+  expected_answers:
+    - "HS256"
+    - "expiry_seconds=3600 (1 hour)"
+    - "AuthMiddleware"

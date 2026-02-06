@@ -1,0 +1,13 @@
+task_id: disambiguation_006
+type: disambiguation
+question: "What middleware is available?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  interpretations:
+    - label: "framework_middleware"
+      answer: "Five built-in middleware in order: RequestID, Logging, CORS, Auth, RateLimit. Custom middleware extends BaseMiddleware with process_request and process_response methods"
+    - label: "pipeline_stages"
+      answer: "The DataForge pipeline has five stages: Source, Transformer, Validator, Loader, and Monitor"
+  expected_interpretation: "framework_middleware"

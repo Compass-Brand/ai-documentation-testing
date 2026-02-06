@@ -1,0 +1,10 @@
+task_id: efficiency_020
+type: efficiency
+question: "What is the maximum line length for code contributions?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "100 characters"
+  answer_aliases: ["100", "100 chars"]
+  token_budget: 10

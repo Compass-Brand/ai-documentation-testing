@@ -1,0 +1,18 @@
+task_id: code_generation_002
+type: code_generation
+question: "Write a function that configures an in-memory cache with a TTL of 600 seconds using the @cached decorator."
+domain: framework_api
+difficulty: easy
+tags:
+  - caching
+  - decorator
+metadata:
+  expected_answer: ""
+  test: |
+    @cached
+    ttl=600
+    def\s+\w+
+  entry_point: "get_cached_data"
+  canonical_solution: ""
+  libs: ["framework.caching"]
+  forbidden_patterns: ["eval(", "exec("]

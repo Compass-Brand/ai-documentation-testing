@@ -1,0 +1,14 @@
+task_id: sentinel_010
+type: fact_extraction
+question: "What license does DataForge use?"
+domain: project_repo
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_answer: "MIT"
+  answer_aliases:
+    - "MIT License"
+  source_location: "repo/README.md"
+  fact_type: "project_metadata"

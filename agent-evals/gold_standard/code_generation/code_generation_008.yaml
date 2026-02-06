@@ -1,0 +1,18 @@
+task_id: code_generation_008
+type: code_generation
+question: "Write a GitHub Actions workflow step that runs ruff linting and pytest with coverage."
+domain: skills_workflows
+difficulty: easy
+tags:
+  - ci
+  - github_actions
+metadata:
+  expected_answer: ""
+  test: |
+    ruff
+    pytest
+    cov|coverage
+  entry_point: "ci_lint_test_step"
+  canonical_solution: ""
+  libs: []
+  forbidden_patterns: ["eval(", "exec("]

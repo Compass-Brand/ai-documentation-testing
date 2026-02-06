@@ -1,0 +1,13 @@
+task_id: fact_extraction_024
+type: fact_extraction
+question: "What are the three caching strategies supported?"
+domain: framework_api
+difficulty: hard
+tags:
+  - caching
+  - strategies
+metadata:
+  expected_answer: "TTL, LRU, Write-through"
+  answer_aliases: ["TTL/LRU/Write-through"]
+  source_location: "api/caching.md"
+  fact_type: "list"

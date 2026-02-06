@@ -1,0 +1,22 @@
+task_id: agentic_026
+type: agentic
+question: "Analyze the DataForge security posture: find the vulnerability reporting process, supported versions, input sanitization methods, audit tools, and CI secrets management."
+domain: project_repo
+difficulty: hard
+tags:
+  - security
+  - ci
+  - multi_step
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+    - name: "list_files"
+  files:
+    "repo/security.md": "security@example.com, sanitize_input(), parameterized queries, pip-audit, supported versions"
+    "workflows/ci-setup.md": "secrets PYPI_TOKEN, DEPLOY_KEY, DATABASE_URL"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_security_posture"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

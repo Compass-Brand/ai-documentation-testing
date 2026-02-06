@@ -1,0 +1,21 @@
+task_id: agentic_010
+type: agentic
+question: "Search across the middleware and auth docs to find out how the AuthMiddleware integrates with the middleware chain and what decorator protects endpoints."
+domain: framework_api
+difficulty: medium
+tags:
+  - auth
+  - middleware
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+  files:
+    "api/auth.md": "@require_auth decorator, AuthMiddleware"
+    "api/middleware.md": "Order: RequestID->Logging->CORS->Auth->RateLimit->Handler"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_auth_middleware_integration"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

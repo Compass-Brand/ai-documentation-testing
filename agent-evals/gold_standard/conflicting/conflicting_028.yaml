@@ -1,0 +1,17 @@
+task_id: conflicting_028
+type: conflicting
+question: "Auth.md says JWT tokens expire in 3600 seconds, but refresh tokens also exist. If a refresh token is used, does the new JWT also expire in 3600 seconds, or could the expiry differ?"
+domain: framework_api
+difficulty: hard
+tags:
+  - edge_case
+metadata:
+  sources:
+    - name: "auth.md"
+      claim: "JWTConfig expiry_seconds=3600"
+      authority: 9
+    - name: "auth.md"
+      claim: "Refresh tokens rotate and /api/auth/refresh issues new tokens"
+      authority: 9
+  expected_resolution: "JWTs issued via refresh always use the JWTConfig expiry_seconds=3600. The refresh endpoint issues a new JWT with the same configuration, so expiry is always 3600 seconds."
+  resolution_strategy: "higher_authority"

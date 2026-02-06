@@ -1,0 +1,13 @@
+task_id: multi_hop_003
+type: multi_hop
+question: "What role is required to delete a user, and what HTTP status code is returned when a user lacks sufficient permissions?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  question_decomposition:
+    - "What role is required to delete a user?"
+    - "What HTTP status code represents insufficient permissions?"
+  reasoning_chain:
+    - "users.md states DELETE /api/users/{user_id} requires the admin role"
+    - "errors.md states 403 Forbidden is returned for insufficient permissions"

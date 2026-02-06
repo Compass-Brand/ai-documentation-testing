@@ -1,0 +1,11 @@
+task_id: negative_010
+type: negative
+question: "What load testing tool is recommended and what are the performance benchmarks?"
+domain: project_repo
+difficulty: hard
+tags: [performance, load-testing, benchmarks]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "No fixture document discusses load testing tools or performance benchmarks. The testing docs cover TestClient, db_session, and mock_auth fixtures, but focus on unit/integration testing only."
+  nearest_doc: "api/testing.md"
+  nearest_content: "Covers TestClient usage, db_session fixture, mock_auth helper, and test fixture patterns."

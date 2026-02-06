@@ -1,0 +1,11 @@
+task_id: negative_008
+type: negative
+question: "What is the minimum number of approvals required to merge a pull request?"
+domain: project_repo
+difficulty: easy
+tags: [code-review, pr, approvals]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The code review docs cover the review checklist and approval rules conceptually, but the exact minimum number of approvals required is not specified in the fixture docs."
+  nearest_doc: "workflows/code-review.md"
+  nearest_content: "Covers the code review checklist and general approval rules for pull requests."

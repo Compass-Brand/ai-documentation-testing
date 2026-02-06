@@ -1,0 +1,11 @@
+task_id: negative_016
+type: negative
+question: "How do you implement pagination for the users list endpoint?"
+domain: framework_api
+difficulty: medium
+tags: [api, pagination, users]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The users docs cover UserModel, CRUD operations, roles, and permissions, but do not describe pagination patterns or parameters for list endpoints."
+  nearest_doc: "api/users.md"
+  nearest_content: "Covers UserModel definition, CRUD operations, role-based access, and permission assignments."

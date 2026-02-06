@@ -1,0 +1,15 @@
+task_id: compositional_027
+type: compositional
+question: "What does the project architecture look like end-to-end: from the README's overview, through the 3-layer architecture, to the deployment infrastructure?"
+domain: project_repo
+difficulty: hard
+tags: [architecture, readme, deployment, end-to-end]
+metadata:
+  sub_questions:
+    - "What does the README provide as the entry point?"
+    - "What are the three layers in the architecture?"
+    - "What deployment infrastructure is used?"
+  expected_answers:
+    - "Project overview and quickstart guide for understanding the project's purpose and getting started"
+    - "API layer (handles HTTP), Service layer (business logic), and Data layer (database access), connected via dependency injection"
+    - "Docker for containerization, Kubernetes for orchestration, with health check endpoints for monitoring"

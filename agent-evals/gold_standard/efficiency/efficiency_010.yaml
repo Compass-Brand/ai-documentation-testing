@@ -1,0 +1,10 @@
+task_id: efficiency_010
+type: efficiency
+question: "List the five built-in middleware in order."
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "RequestID, Logging, CORS, Auth, RateLimit"
+  answer_aliases: ["RequestID→Logging→CORS→Auth→RateLimit"]
+  token_budget: 20

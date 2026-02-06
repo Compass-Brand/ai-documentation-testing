@@ -1,0 +1,19 @@
+task_id: agentic_006
+type: agentic
+question: "Find the troubleshooting guide and look up how to fix a MemoryError when loading large datasets."
+domain: project_repo
+difficulty: easy
+tags:
+  - troubleshooting
+  - memory
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+  files:
+    "repo/troubleshooting.md": "MemoryError streaming mode, chunk_size=10000"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_memory_fix"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

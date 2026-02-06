@@ -1,0 +1,11 @@
+task_id: negative_009
+type: negative
+question: "How do you implement WebSocket connections for real-time updates in the framework?"
+domain: framework_api
+difficulty: medium
+tags: [websocket, real-time, api]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "No fixture document mentions WebSocket support. The API docs cover REST endpoints, middleware, and authentication, but real-time communication via WebSockets is not addressed."
+  nearest_doc: "api/middleware.md"
+  nearest_content: "Covers the middleware chain for HTTP requests, CORS, and rate limiting."

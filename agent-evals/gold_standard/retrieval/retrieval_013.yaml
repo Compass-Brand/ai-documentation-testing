@@ -1,0 +1,12 @@
+task_id: retrieval_013
+type: retrieval
+question: "Where can I find documentation about Docker deployment and the health check endpoint?"
+domain: framework_api
+difficulty: medium
+tags:
+  - deployment
+  - docker
+metadata:
+  expected_files:
+    - "api/deployment.md"
+  evidence_passage: "Docker multi-stage build <150MB, Docker Compose app+db+redis, /health endpoint"

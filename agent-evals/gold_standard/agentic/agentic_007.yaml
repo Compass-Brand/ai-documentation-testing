@@ -1,0 +1,19 @@
+task_id: agentic_007
+type: agentic
+question: "Search for the error handling documentation and find out what the JSON error envelope format looks like."
+domain: framework_api
+difficulty: easy
+tags:
+  - errors
+  - api
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+  files:
+    "api/errors.md": "JSON error envelope format, status codes 400-500, APIError class"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_error_envelope"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

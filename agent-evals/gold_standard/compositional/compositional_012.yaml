@@ -1,0 +1,15 @@
+task_id: compositional_012
+type: compositional
+question: "What does the UserModel support in terms of access control? Describe the CRUD operations and the role/permission system."
+domain: framework_api
+difficulty: medium
+tags: [users, crud, roles, permissions]
+metadata:
+  sub_questions:
+    - "What CRUD operations are available for users?"
+    - "How is role-based access managed?"
+    - "How are permissions assigned?"
+  expected_answers:
+    - "Full CRUD operations: create, read, update, delete users via the UserModel"
+    - "Users can be assigned roles that determine their access level"
+    - "Permissions are managed and assigned to users or roles for fine-grained access control"

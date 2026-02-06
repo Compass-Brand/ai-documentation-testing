@@ -1,0 +1,13 @@
+task_id: disambiguation_026
+type: disambiguation
+question: "How do I handle configuration errors?"
+domain: framework_api
+difficulty: hard
+tags: []
+metadata:
+  interpretations:
+    - label: "framework_config_error"
+      answer: "The Settings class raises ConfigError when required variables DATABASE_URL or JWT_SECRET are missing, as defined in config.md"
+    - label: "pipeline_config_error"
+      answer: "Pipeline ConfigurationError is raised for invalid YAML/Python pipeline configs and can be debugged with LOG_LEVEL=DEBUG per troubleshooting.md"
+  expected_interpretation: "framework_config_error"

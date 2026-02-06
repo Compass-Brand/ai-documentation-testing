@@ -1,0 +1,13 @@
+task_id: disambiguation_011
+type: disambiguation
+question: "How do I set up configuration validation?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "app_config_validation"
+      answer: "The Settings class validates required environment variables DATABASE_URL and JWT_SECRET, raising ConfigError when they are missing"
+    - label: "pipeline_config_validation"
+      answer: "Pipeline YAML configuration is validated during parsing, with ConfigurationError raised for invalid schemas as described in troubleshooting.md"
+  expected_interpretation: "app_config_validation"

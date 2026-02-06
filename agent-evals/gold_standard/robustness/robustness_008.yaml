@@ -1,0 +1,13 @@
+task_id: robustness_008
+type: robustness
+question: "What is the merge request workflow and coding conventions for contributing?"
+domain: project_repo
+difficulty: medium
+tags:
+  - contributing
+  - workflow
+metadata:
+  perturbation_type: "synonym_substitution"
+  original_question: "What is the PR process and code style for contributing?"
+  expected_answer: "The CONTRIBUTING.md describes the PR process (merge request workflow), code style conventions, and branch naming rules for contributions."
+  perturbation_details: "Replaced 'PR process' with 'merge request workflow' and 'code style' with 'coding conventions'"

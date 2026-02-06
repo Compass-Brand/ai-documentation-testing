@@ -1,0 +1,13 @@
+task_id: fact_extraction_008
+type: fact_extraction
+question: "What is the minimum Python version required for DataForge v2.2.0?"
+domain: project_repo
+difficulty: easy
+tags:
+  - changelog
+  - python
+metadata:
+  expected_answer: "3.10"
+  answer_aliases: ["Python 3.10"]
+  source_location: "repo/changelog.md"
+  fact_type: "name"

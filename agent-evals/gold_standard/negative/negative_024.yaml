@@ -1,0 +1,11 @@
+task_id: negative_024
+type: negative
+question: "How do you implement custom error pages for 404 and 500 responses?"
+domain: framework_api
+difficulty: medium
+tags: [errors, custom-pages, http-status]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The errors docs cover the AppError hierarchy, ErrorMiddleware, and error codes, but do not describe custom HTML error pages or template rendering for 404/500 responses."
+  nearest_doc: "api/errors.md"
+  nearest_content: "Covers the AppError class hierarchy, ErrorMiddleware for catching exceptions, and structured error codes."

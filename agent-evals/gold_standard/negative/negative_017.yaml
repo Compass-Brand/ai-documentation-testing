@@ -1,0 +1,11 @@
+task_id: negative_017
+type: negative
+question: "What is the rollback procedure when a release deployment fails?"
+domain: skills_workflows
+difficulty: hard
+tags: [release, rollback, deployment]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The release docs cover semver, release branches, and changelog updates, and the deployment docs cover Docker/Kubernetes and health checks, but neither describes a rollback procedure for failed deployments."
+  nearest_doc: "workflows/release.md"
+  nearest_content: "Covers semantic versioning conventions, release branch management, and changelog update process."

@@ -1,0 +1,17 @@
+task_id: conflicting_029
+type: conflicting
+question: "Security.md says v2.2.x gets security fixes only, but the changelog shows v2.2.0 itself introduced breaking changes (method renames). How can a security-only version have breaking changes?"
+domain: project_repo
+difficulty: hard
+tags:
+  - edge_case
+metadata:
+  sources:
+    - name: "security.md"
+      claim: "v2.2.x receives security fixes only"
+      authority: 9
+    - name: "changelog.md"
+      claim: "v2.2.0 had breaking changes: execute→run, fetch→read, Python 3.10 minimum"
+      authority: 9
+  expected_resolution: "The security-only policy applies to v2.2.x patch releases (v2.2.1, v2.2.2, etc.), not the v2.2.0 release itself. v2.2.0 was a feature release with breaking changes; subsequent patches are security-only."
+  resolution_strategy: "explicit_flag"

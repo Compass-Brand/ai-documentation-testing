@@ -1,0 +1,16 @@
+task_id: conflicting_019
+type: conflicting
+question: "What is the maximum pagination limit — 20 or 100?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "users.md"
+      claim: "Default per_page is 20, maximum per_page is 100"
+      authority: 9
+    - name: "users.md"
+      claim: "Pagination uses page and per_page query parameters"
+      authority: 8
+  expected_resolution: "The default per_page is 20 and the maximum per_page is 100. These are not conflicting — 20 is the default and 100 is the upper bound."
+  resolution_strategy: "explicit_flag"

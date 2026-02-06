@@ -1,0 +1,13 @@
+task_id: compositional_002
+type: compositional
+question: "Describe the project's three architectural layers and explain how dependency injection connects them."
+domain: project_repo
+difficulty: medium
+tags: [architecture, layers, dependency-injection]
+metadata:
+  sub_questions:
+    - "What are the three architectural layers?"
+    - "How does dependency injection work between the layers?"
+  expected_answers:
+    - "API layer, Service layer, and Data layer"
+    - "Dependency injection is used to decouple layers, allowing each layer to depend on abstractions rather than concrete implementations"

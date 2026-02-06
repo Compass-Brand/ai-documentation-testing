@@ -1,0 +1,15 @@
+task_id: compositional_007
+type: compositional
+question: "What security standards does the project follow, and what specific security mechanisms are implemented for input handling and browser security?"
+domain: project_repo
+difficulty: medium
+tags: [security, owasp, csp, validation]
+metadata:
+  sub_questions:
+    - "What security standard does the project reference?"
+    - "What mechanism is used for input handling?"
+    - "What browser security mechanism is configured?"
+  expected_answers:
+    - "OWASP guidelines"
+    - "Input validation"
+    - "CSP (Content Security Policy) headers"

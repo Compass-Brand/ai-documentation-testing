@@ -1,0 +1,11 @@
+task_id: negative_006
+type: negative
+question: "How do you configure the StructuredLogger to send logs to an external service like Datadog?"
+domain: framework_api
+difficulty: hard
+tags: [logging, datadog, external-service, integration]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The logging docs cover LogConfig, StructuredLogger, and correlation IDs, but never mention integration with external logging services like Datadog, Splunk, or ELK."
+  nearest_doc: "api/logging.md"
+  nearest_content: "Covers LogConfig, StructuredLogger setup, and correlation ID tracking for request tracing."

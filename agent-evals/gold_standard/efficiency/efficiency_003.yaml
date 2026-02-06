@@ -1,0 +1,10 @@
+task_id: efficiency_003
+type: efficiency
+question: "What is the default database connection pool size?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  expected_answer: "10"
+  answer_aliases: ["10 connections", "pool of 10"]
+  token_budget: 10

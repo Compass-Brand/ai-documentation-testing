@@ -1,0 +1,19 @@
+task_id: code_generation_004
+type: code_generation
+question: "Write a test function using TestClient that sends a GET request to /api/users and asserts a 200 status code."
+domain: framework_api
+difficulty: easy
+tags:
+  - testing
+  - users
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+test_
+    TestClient
+    /api/users
+    assert.*200|status_code.*200
+  entry_point: "test_list_users"
+  canonical_solution: ""
+  libs: ["framework.testing"]
+  forbidden_patterns: ["eval(", "exec("]

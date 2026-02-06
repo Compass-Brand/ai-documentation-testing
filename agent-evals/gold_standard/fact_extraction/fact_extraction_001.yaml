@@ -1,0 +1,13 @@
+task_id: fact_extraction_001
+type: fact_extraction
+question: "What is the default TTL for the caching layer in seconds?"
+domain: framework_api
+difficulty: easy
+tags:
+  - caching
+  - ttl
+metadata:
+  expected_answer: "300"
+  answer_aliases: ["300 seconds", "5 minutes", "five minutes"]
+  source_location: "api/caching.md"
+  fact_type: "number"

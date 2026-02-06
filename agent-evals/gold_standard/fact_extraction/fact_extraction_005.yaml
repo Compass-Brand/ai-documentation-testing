@@ -1,0 +1,13 @@
+task_id: fact_extraction_005
+type: fact_extraction
+question: "What is the JWT token expiry time in seconds?"
+domain: framework_api
+difficulty: easy
+tags:
+  - auth
+  - jwt
+metadata:
+  expected_answer: "3600"
+  answer_aliases: ["3600 seconds", "1 hour", "one hour", "60 minutes"]
+  source_location: "api/auth.md"
+  fact_type: "duration"

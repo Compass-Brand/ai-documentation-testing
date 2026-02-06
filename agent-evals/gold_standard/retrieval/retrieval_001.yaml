@@ -1,0 +1,12 @@
+task_id: retrieval_001
+type: retrieval
+question: "Where can I find documentation about JWT authentication and login endpoints?"
+domain: framework_api
+difficulty: easy
+tags:
+  - auth
+  - jwt
+metadata:
+  expected_files:
+    - "api/auth.md"
+  evidence_passage: "JWT auth, AuthMiddleware, JWTConfig, HS256, /api/auth/login"

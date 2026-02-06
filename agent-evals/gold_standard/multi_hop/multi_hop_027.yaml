@@ -1,0 +1,21 @@
+task_id: multi_hop_027
+type: multi_hop
+question: "A security audit requires verifying that authentication tokens use a cryptographically secure signing key. Where is the SECRET_KEY configured, what algorithm does the JWT system use for signing, and what OWASP-related security controls are documented for input validation?"
+domain: framework_api
+difficulty: hard
+tags:
+  - security
+  - authentication
+  - configuration
+  - owasp
+metadata:
+  question_decomposition:
+    - "Where is SECRET_KEY defined and configured?"
+    - "What signing algorithm does the JWT authentication use?"
+    - "What OWASP security controls does the project document?"
+    - "How do these three concerns interconnect for the audit?"
+  reasoning_chain:
+    - "api/config.md states SECRET_KEY is a required configuration variable"
+    - "api/auth.md states JWT tokens are signed with HS256 algorithm"
+    - "repo/security.md documents OWASP compliance, input validation rules, and CSP headers"
+    - "The SECRET_KEY from config is used by the auth system's HS256 signing, and the security policy adds defense-in-depth via OWASP input validation and CSP headers"

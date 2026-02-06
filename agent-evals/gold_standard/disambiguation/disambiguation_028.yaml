@@ -1,0 +1,16 @@
+task_id: disambiguation_028
+type: disambiguation
+question: "If I ask about 'cache' in the context of both response storage and database pooling, which system component handles the 300-second default TTL?"
+domain: framework_api
+difficulty: hard
+tags:
+  - edge_case
+metadata:
+  interpretations:
+    - label: "response_cache"
+      answer: "The CacheConfig in caching.md sets default_ttl=300 seconds for HTTP response caching with Redis or in-memory backends"
+    - label: "database_pool"
+      answer: "SQLAlchemy connection pooling uses pool_size=10 with max_overflow=20 but does not use TTL-based expiration in seconds"
+    - label: "decorator_cache"
+      answer: "The @cached(ttl=600) decorator uses 600 seconds, not 300, making it a distinct configuration from the default"
+  expected_interpretation: "response_cache"

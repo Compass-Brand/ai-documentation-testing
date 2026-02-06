@@ -1,0 +1,13 @@
+task_id: multi_hop_004
+type: multi_hop
+question: "How does the database connection pool size compare to the maximum items per page in the Users API?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  question_decomposition:
+    - "What is the database connection pool size?"
+    - "What is the maximum items per page for the Users API?"
+  reasoning_chain:
+    - "database.md states pool defaults to 10 connections"
+    - "users.md states per_page max is 100"

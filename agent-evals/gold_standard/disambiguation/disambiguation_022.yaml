@@ -1,0 +1,13 @@
+task_id: disambiguation_022
+type: disambiguation
+question: "What is the debugging workflow for the system?"
+domain: skills_workflows
+difficulty: hard
+tags: []
+metadata:
+  interpretations:
+    - label: "pipeline_debugging"
+      answer: "Follow the 5-step debugging process: reproduce, isolate to pipeline stage (Source/Transform/Validate/Load), check common causes, use debugger, write regression test"
+    - label: "app_debugging"
+      answer: "Use LOG_LEVEL=DEBUG environment variable, configure_logging with DEBUG level, and structured log fields via log_context() to trace issues"
+  expected_interpretation: "pipeline_debugging"

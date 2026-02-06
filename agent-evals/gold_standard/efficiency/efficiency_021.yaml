@@ -1,0 +1,10 @@
+task_id: efficiency_021
+type: efficiency
+question: "What is the maximum per_page value allowed for user listing?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "100"
+  answer_aliases: ["max 100"]
+  token_budget: 10

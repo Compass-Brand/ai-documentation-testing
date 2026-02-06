@@ -1,0 +1,11 @@
+task_id: negative_028
+type: negative
+question: "How do you add a new step to the debugging workflow for memory leak detection?"
+domain: skills_workflows
+difficulty: edge
+tags: [debugging, memory-leak, workflow-extension]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The debugging workflow covers 5 steps (reproduce, isolate, check common causes, instrument, fix), but does not mention memory leak detection or how to extend the workflow with new steps."
+  nearest_doc: "workflows/debugging.md"
+  nearest_content: "Covers the 5-step debugging workflow: reproduce, isolate, check common causes, instrument, fix."

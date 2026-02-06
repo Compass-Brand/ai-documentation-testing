@@ -1,0 +1,16 @@
+task_id: conflicting_018
+type: conflicting
+question: "Does the middleware chain process authentication before or after CORS?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "middleware.md"
+      claim: "Middleware order: RequestID→Logging→CORS→Auth→RateLimit (Auth is 4th)"
+      authority: 9
+    - name: "auth.md"
+      claim: "AuthMiddleware validates JWT tokens via @require_auth"
+      authority: 8
+  expected_resolution: "CORS is processed before Auth. The middleware chain order is RequestID→Logging→CORS→Auth→RateLimit, so CORS headers are set before authentication is checked."
+  resolution_strategy: "higher_authority"

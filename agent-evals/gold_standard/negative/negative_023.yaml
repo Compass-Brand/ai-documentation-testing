@@ -1,0 +1,11 @@
+task_id: negative_023
+type: negative
+question: "What linting rules and ESLint configuration does the project enforce?"
+domain: project_repo
+difficulty: easy
+tags: [linting, eslint, code-quality]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The CONTRIBUTING docs mention code style and the CI setup mentions a lint stage, but neither specifies the actual linting tool, ESLint configuration, or specific rules enforced."
+  nearest_doc: "repo/CONTRIBUTING.md"
+  nearest_content: "Covers the PR process, code style guidelines, and branch naming conventions."

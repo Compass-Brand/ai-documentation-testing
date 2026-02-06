@@ -1,0 +1,10 @@
+task_id: efficiency_018
+type: efficiency
+question: "What coverage percentage is required for a release?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "90%"
+  answer_aliases: ["90 percent", "90% coverage"]
+  token_budget: 10

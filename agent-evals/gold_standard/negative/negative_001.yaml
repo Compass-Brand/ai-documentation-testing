@@ -1,0 +1,11 @@
+task_id: negative_001
+type: negative
+question: "What is the default connection timeout for the Redis cache client?"
+domain: framework_api
+difficulty: easy
+tags: [caching, redis, timeout]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The caching docs cover CacheConfig, default_ttl, @cached decorator, and Redis integration, but never specify the Redis client connection timeout value."
+  nearest_doc: "api/caching.md"
+  nearest_content: "Covers CacheConfig with default_ttl=300, @cached decorator usage, and Redis as the backend store."

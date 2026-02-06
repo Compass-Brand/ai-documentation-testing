@@ -1,0 +1,13 @@
+task_id: retrieval_029
+type: retrieval
+question: "I need to understand how to handle slow database inserts in the ETL pipeline. Should I look at the framework database docs or the project troubleshooting guide?"
+domain: project_repo
+difficulty: hard
+tags:
+  - troubleshooting
+  - performance
+  - edge_case
+metadata:
+  expected_files:
+    - "repo/troubleshooting.md"
+  evidence_passage: "slow inserts batch_size=5000, disable_indexes, COPY mode"

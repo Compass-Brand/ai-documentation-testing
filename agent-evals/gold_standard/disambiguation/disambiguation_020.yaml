@@ -1,0 +1,13 @@
+task_id: disambiguation_020
+type: disambiguation
+question: "How do I handle authentication in requests?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "jwt_auth"
+      answer: "Use JWT authentication via AuthMiddleware with JWTConfig using HS256 algorithm and expiry_seconds=3600, with endpoints /api/auth/login and /api/auth/refresh"
+    - label: "require_auth_decorator"
+      answer: "Protect individual endpoints with the @require_auth decorator which validates the JWT token from the request"
+  expected_interpretation: "jwt_auth"

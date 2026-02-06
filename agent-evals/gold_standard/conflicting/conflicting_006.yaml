@@ -1,0 +1,16 @@
+task_id: conflicting_006
+type: conflicting
+question: "What is the correct method name for fetching data from a source — fetch() or read()?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  sources:
+    - name: "changelog.md"
+      claim: "v2.2.0: fetch() renamed to read()"
+      authority: 9
+    - name: "architecture.md"
+      claim: "Source stage is the first in the pipeline (may still reference old terminology)"
+      authority: 7
+  expected_resolution: "Use read(). The fetch() method was renamed to read() in v2.2.0 and is the current API."
+  resolution_strategy: "more_recent"

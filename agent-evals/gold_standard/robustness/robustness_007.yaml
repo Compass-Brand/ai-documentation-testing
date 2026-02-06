@@ -1,0 +1,13 @@
+task_id: robustness_007
+type: robustness
+question: "How do I use the result-storing wrapper to avoid recomputation in the caching module?"
+domain: framework_api
+difficulty: medium
+tags:
+  - caching
+  - decorator
+metadata:
+  perturbation_type: "synonym_substitution"
+  original_question: "How do I use the @cached decorator in the caching module?"
+  expected_answer: "Use the @cached decorator from the caching module. It wraps functions to store their results and avoid recomputation, backed by Redis with the configured CacheConfig TTL."
+  perturbation_details: "Replaced '@cached decorator' with 'result-storing wrapper to avoid recomputation'"

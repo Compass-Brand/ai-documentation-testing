@@ -1,0 +1,19 @@
+task_id: multi_hop_026
+type: multi_hop
+question: "When preparing a new release, what version numbering scheme must be followed, how should breaking changes be documented, and what CI stages must pass before the release branch can be merged?"
+domain: skills_workflows
+difficulty: medium
+tags:
+  - release
+  - versioning
+  - ci
+  - changelog
+metadata:
+  question_decomposition:
+    - "What versioning scheme does the release process require?"
+    - "How are breaking changes tracked in the changelog?"
+    - "What CI stages gate the release branch merge?"
+  reasoning_chain:
+    - "workflows/release.md specifies semver versioning, release branches, and changelog update requirements"
+    - "repo/changelog.md documents version history and how breaking changes are recorded"
+    - "workflows/ci-setup.md defines the GitHub Actions pipeline with lint/test/build stages that must all pass"

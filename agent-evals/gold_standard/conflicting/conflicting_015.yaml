@@ -1,0 +1,16 @@
+task_id: conflicting_015
+type: conflicting
+question: "Are refresh tokens single-use or reusable?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "auth.md"
+      claim: "Refresh tokens rotate on use (implying single-use with rotation)"
+      authority: 9
+    - name: "auth.md"
+      claim: "/api/auth/refresh endpoint accepts refresh tokens"
+      authority: 8
+  expected_resolution: "Refresh tokens are single-use. When a refresh token is used at /api/auth/refresh, a new refresh token is issued (rotation), invalidating the old one."
+  resolution_strategy: "higher_authority"

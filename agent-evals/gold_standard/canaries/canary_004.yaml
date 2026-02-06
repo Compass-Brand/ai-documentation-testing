@@ -1,0 +1,15 @@
+task_id: canary_004
+type: code_generation
+question: "Write a Python function called `hello` that returns the string 'Hello, World!'."
+domain: framework_api
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  expected_answer: "def hello():\n    return 'Hello, World!'"
+  test: "def hello"
+  entry_point: "hello"
+  canonical_solution: "def hello():\n    return 'Hello, World!'"
+  libs: []
+  forbidden_patterns: []

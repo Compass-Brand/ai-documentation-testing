@@ -1,0 +1,13 @@
+task_id: robustness_018
+type: robustness
+question: "I've been looking into OWASP ZAP for automated penetration testing and also exploring SonarQube for static analysis. We use Snyk for dependency scanning too. By the way, what security standards does the project's security documentation reference?"
+domain: project_repo
+difficulty: medium
+tags:
+  - security
+  - standards
+metadata:
+  perturbation_type: "irrelevant_context"
+  original_question: "What security standards does the project's security documentation reference?"
+  expected_answer: "The security documentation references OWASP standards, covers input validation, and describes CSP (Content Security Policy) headers."
+  perturbation_details: "Added irrelevant context about OWASP ZAP, SonarQube, and Snyk before the actual question about security docs"

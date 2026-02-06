@@ -1,0 +1,13 @@
+task_id: fact_extraction_019
+type: fact_extraction
+question: "What coverage threshold is required before a release?"
+domain: skills_workflows
+difficulty: medium
+tags:
+  - release
+  - coverage
+metadata:
+  expected_answer: "90%"
+  answer_aliases: ["90 percent", "ninety percent", "90% coverage"]
+  source_location: "workflows/release.md"
+  fact_type: "number"

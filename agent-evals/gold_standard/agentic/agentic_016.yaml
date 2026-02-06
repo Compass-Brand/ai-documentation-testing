@@ -1,0 +1,21 @@
+task_id: agentic_016
+type: agentic
+question: "Find the architecture docs and the changelog to understand how the plugin system evolved and what S3Source was added in v2.3.0."
+domain: project_repo
+difficulty: medium
+tags:
+  - architecture
+  - changelog
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "read_file"
+    - name: "grep_files"
+  files:
+    "repo/architecture.md": "plugin system with @register_source, built-in sources CSV/SQL/API/S3"
+    "repo/changelog.md": "v2.3.0: S3Source, retry, --dry-run"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_s3_source_added"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

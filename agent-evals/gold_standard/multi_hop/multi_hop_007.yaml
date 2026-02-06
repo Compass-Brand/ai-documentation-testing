@@ -1,0 +1,13 @@
+task_id: multi_hop_007
+type: multi_hop
+question: "What version of DataForge added the S3Source, and what pipeline architecture stage would it belong to?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  question_decomposition:
+    - "Which DataForge version added S3Source?"
+    - "What pipeline architecture stage does S3Source belong to?"
+  reasoning_chain:
+    - "changelog.md states S3Source was added in v2.3.0"
+    - "architecture.md lists S3Source under the Source stage"

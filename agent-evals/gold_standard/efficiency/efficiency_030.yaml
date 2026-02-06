@@ -1,0 +1,11 @@
+task_id: efficiency_030
+type: efficiency
+question: "Name every method renamed in v2.2.0 with both the old and new names, plus the minimum Python version introduced. Use the format old→new."
+domain: project_repo
+difficulty: hard
+tags:
+  - edge_case
+metadata:
+  expected_answer: "execute→run, fetch→read, Python 3.10 minimum"
+  answer_aliases: ["Pipeline.execute()→Pipeline.run(), Source.fetch()→Source.read(), Python 3.10"]
+  token_budget: 25

@@ -1,0 +1,12 @@
+task_id: sentinel_003
+type: negative
+question: "How do you deploy to AWS Lambda?"
+domain: framework_api
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  answerable: false
+  distractor_files:
+    - "api/deployment.md"

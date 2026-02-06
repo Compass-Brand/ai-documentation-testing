@@ -1,0 +1,16 @@
+task_id: disambiguation_029
+type: disambiguation
+question: "The docs mention both 'validation' for data pipelines and 'validation' for security inputs — if a new developer asks 'where does validation happen?', what are all the distinct validation points?"
+domain: project_repo
+difficulty: hard
+tags:
+  - edge_case
+metadata:
+  interpretations:
+    - label: "pipeline_validation"
+      answer: "The Validator stage in the Source→Transformer→Validator→Loader→Monitor pipeline validates data records between transformation and loading"
+    - label: "security_validation"
+      answer: "sanitize_input() in security.md validates user inputs against injection attacks, and parameterized queries validate SQL inputs"
+    - label: "config_validation"
+      answer: "The Settings class in config.md validates required environment variables DATABASE_URL and JWT_SECRET, raising ConfigError on failure"
+  expected_interpretation: "pipeline_validation"

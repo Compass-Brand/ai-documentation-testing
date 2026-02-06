@@ -1,0 +1,24 @@
+task_id: agentic_023
+type: agentic
+question: "Set up a complete deployment pipeline: find Docker config, CI/CD steps, environment variables, and health check endpoint. Synthesize all the required pieces."
+domain: framework_api
+difficulty: hard
+tags:
+  - deployment
+  - config
+  - ci
+  - multi_step
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+    - name: "list_files"
+  files:
+    "api/deployment.md": "Docker multi-stage build <150MB, Docker Compose app+db+redis, GitHub Actions CI/CD, /health"
+    "api/config.md": "DATABASE_URL required, JWT_SECRET required, REDIS_URL optional"
+    "workflows/ci-setup.md": "GitHub Actions CI YAML, deployment stages, secrets"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_deployment_pipeline_complete"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

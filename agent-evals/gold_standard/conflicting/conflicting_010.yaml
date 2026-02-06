@@ -1,0 +1,16 @@
+task_id: conflicting_010
+type: conflicting
+question: "The caching documentation mentions both default_ttl=300 and a @cached(ttl=600) example. Which TTL is actually used when no TTL is specified?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "caching.md"
+      claim: "CacheConfig default_ttl=300 (5 minutes)"
+      authority: 9
+    - name: "caching.md"
+      claim: "@cached(ttl=600) is shown as a usage example"
+      authority: 5
+  expected_resolution: "300 seconds. The default_ttl in CacheConfig is 300. The @cached(ttl=600) example explicitly overrides the default to demonstrate the parameter."
+  resolution_strategy: "higher_authority"

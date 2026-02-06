@@ -1,0 +1,14 @@
+task_id: retrieval_030
+type: retrieval
+question: "Which files cover security practices including input sanitization, parameterized queries, and secrets management for CI?"
+domain: project_repo
+difficulty: hard
+tags:
+  - security
+  - ci
+  - multi_file
+metadata:
+  expected_files:
+    - "repo/security.md"
+    - "workflows/ci-setup.md"
+  evidence_passage: "sanitize_input(), parameterized queries, pip-audit, secrets PYPI_TOKEN DEPLOY_KEY DATABASE_URL"

@@ -1,0 +1,21 @@
+task_id: agentic_019
+type: agentic
+question: "Find the security docs and the contributing guidelines to understand input sanitization practices and the code style requirements."
+domain: project_repo
+difficulty: medium
+tags:
+  - security
+  - contributing
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "read_file"
+    - name: "grep_files"
+  files:
+    "repo/security.md": "sanitize_input(), parameterized queries, pip-audit"
+    "repo/CONTRIBUTING.md": "PEP 8, type hints, 100 char lines, Google docstrings"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_secure_coding_practices"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

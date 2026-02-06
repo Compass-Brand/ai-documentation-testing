@@ -1,0 +1,20 @@
+task_id: code_generation_016
+type: code_generation
+question: "Write a Docker Compose service definition for the app with dependencies on db and redis services."
+domain: framework_api
+difficulty: medium
+tags:
+  - deployment
+  - docker
+metadata:
+  expected_answer: ""
+  test: |
+    services|service
+    app
+    depends_on
+    db|postgres
+    redis
+  entry_point: "docker_compose_app"
+  canonical_solution: ""
+  libs: []
+  forbidden_patterns: []

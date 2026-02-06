@@ -1,0 +1,16 @@
+task_id: conflicting_002
+type: conflicting
+question: "Should I use Pipeline.execute() or Pipeline.run() to run a pipeline?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  sources:
+    - name: "changelog.md"
+      claim: "v2.2.0: Pipeline.execute() renamed to Pipeline.run()"
+      authority: 9
+    - name: "architecture.md"
+      claim: "Describes pipeline stages but may reference execute terminology"
+      authority: 7
+  expected_resolution: "Use Pipeline.run(). The execute() method was renamed to run() in v2.2.0 and is the current API."
+  resolution_strategy: "more_recent"

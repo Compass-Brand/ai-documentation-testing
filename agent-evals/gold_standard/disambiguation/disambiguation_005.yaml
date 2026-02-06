@@ -1,0 +1,13 @@
+task_id: disambiguation_005
+type: disambiguation
+question: "How do I deploy the application?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  interpretations:
+    - label: "docker_deploy"
+      answer: "Deploy using Docker with images under 150MB, Docker Compose for app+db+redis, and GitHub Actions with 6 deployment steps including a /health endpoint"
+    - label: "pypi_publish"
+      answer: "Publish to PyPI using the release process: bump2version, create release branch from develop, tag, and CI deploys to PyPI"
+  expected_interpretation: "docker_deploy"

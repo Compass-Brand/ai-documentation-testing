@@ -1,0 +1,14 @@
+task_id: robustness_028
+type: robustness
+question: "grep -r 'ConfigurationError' src/\nI keep getting this error in production. The troubleshooting docs mention it -- what are the common causes and fixes?"
+domain: project_repo
+difficulty: medium
+tags:
+  - troubleshooting
+  - errors
+  - format
+metadata:
+  perturbation_type: "format_change"
+  original_question: "What does the troubleshooting guide say about ConfigurationError?"
+  expected_answer: "The troubleshooting guide documents ConfigurationError as a common error along with DB connection issues. It provides guidance on resolving configuration-related problems."
+  perturbation_details: "Question formatted as a terminal command output followed by a natural language question"

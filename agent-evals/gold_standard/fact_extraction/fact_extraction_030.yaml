@@ -1,0 +1,13 @@
+task_id: fact_extraction_030
+type: fact_extraction
+question: "What is the release date of DataForge v2.3.0?"
+domain: project_repo
+difficulty: hard
+tags:
+  - changelog
+  - edge_case
+metadata:
+  expected_answer: "2025-01-15"
+  answer_aliases: ["January 15, 2025", "Jan 15 2025", "2025-01-15"]
+  source_location: "repo/changelog.md"
+  fact_type: "name"

@@ -1,0 +1,16 @@
+task_id: conflicting_026
+type: conflicting
+question: "Is SQLAlchemy 2.0 a v2.3.0 feature or was it always used?"
+domain: project_repo
+difficulty: hard
+tags: []
+metadata:
+  sources:
+    - name: "changelog.md"
+      claim: "v2.3.0 upgraded to SQLAlchemy 2.0"
+      authority: 9
+    - name: "database.md"
+      claim: "Uses SQLAlchemy 2.0 async with pool of 10 connections"
+      authority: 8
+  expected_resolution: "SQLAlchemy 2.0 was introduced in v2.3.0 per the changelog. Database.md documents the current state which reflects the v2.3.0 upgrade."
+  resolution_strategy: "more_recent"

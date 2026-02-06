@@ -1,0 +1,10 @@
+task_id: efficiency_025
+type: efficiency
+question: "What are the three Docker Compose services in a deployment?"
+domain: framework_api
+difficulty: hard
+tags: []
+metadata:
+  expected_answer: "app, db, and redis"
+  answer_aliases: ["app, database, redis", "application, database, redis"]
+  token_budget: 15

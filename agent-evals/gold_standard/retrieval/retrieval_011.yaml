@@ -1,0 +1,12 @@
+task_id: retrieval_011
+type: retrieval
+question: "I need to set up rate limiting for my API. Which files cover rate limiting configuration?"
+domain: framework_api
+difficulty: medium
+tags:
+  - middleware
+  - rate_limiting
+metadata:
+  expected_files:
+    - "api/middleware.md"
+  evidence_passage: "RateLimit middleware, Order: RequestID->Logging->CORS->Auth->RateLimit->Handler"

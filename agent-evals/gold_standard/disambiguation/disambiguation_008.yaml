@@ -1,0 +1,13 @@
+task_id: disambiguation_008
+type: disambiguation
+question: "How do I run the tests?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  interpretations:
+    - label: "unit_tests"
+      answer: "Run unit tests with pytest --cov using TestClient for HTTP tests and db_session() for auto-rollback database tests, with mock.patch for isolation"
+    - label: "ci_tests"
+      answer: "CI tests run via GitHub Actions with a matrix of Python 3.10, 3.11, 3.12, executing ruff linting, pytest, and coverage checks"
+  expected_interpretation: "unit_tests"

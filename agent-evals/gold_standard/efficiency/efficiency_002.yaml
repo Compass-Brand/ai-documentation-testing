@@ -1,0 +1,10 @@
+task_id: efficiency_002
+type: efficiency
+question: "What algorithm does JWT authentication use?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  expected_answer: "HS256"
+  answer_aliases: ["HMAC-SHA256"]
+  token_budget: 10

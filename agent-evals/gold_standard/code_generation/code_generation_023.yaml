@@ -1,0 +1,20 @@
+task_id: code_generation_023
+type: code_generation
+question: "Write a complete middleware chain setup that configures all 5 built-in middleware in the correct order: RequestID, Logging, CORS, Auth, RateLimit."
+domain: framework_api
+difficulty: hard
+tags:
+  - middleware
+  - setup
+metadata:
+  expected_answer: ""
+  test: |
+    RequestID
+    Logging
+    CORS
+    Auth
+    RateLimit
+  entry_point: "setup_middleware"
+  canonical_solution: ""
+  libs: ["framework.middleware"]
+  forbidden_patterns: ["eval(", "exec("]

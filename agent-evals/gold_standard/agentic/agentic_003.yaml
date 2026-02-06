@@ -1,0 +1,19 @@
+task_id: agentic_003
+type: agentic
+question: "Find the required environment variables in the configuration docs and check which ones have default values."
+domain: framework_api
+difficulty: easy
+tags:
+  - config
+  - env
+metadata:
+  expected_tools:
+    - name: "read_file"
+    - name: "grep_files"
+  files:
+    "api/config.md": "DATABASE_URL required, JWT_SECRET required, LOG_LEVEL default INFO, CORS_ORIGINS default *, REDIS_URL optional"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_required_env_vars"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

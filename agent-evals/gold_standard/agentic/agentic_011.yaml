@@ -1,0 +1,21 @@
+task_id: agentic_011
+type: agentic
+question: "Search across config and database docs to find the DATABASE_URL environment variable and understand how it connects to the SQLAlchemy engine configuration."
+domain: framework_api
+difficulty: medium
+tags:
+  - config
+  - database
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+  files:
+    "api/config.md": "DATABASE_URL required, Settings class"
+    "api/database.md": "SQLAlchemy 2.0 async, create_engine"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_database_url_config"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

@@ -1,0 +1,19 @@
+task_id: code_generation_018
+type: code_generation
+question: "Write a YAML pipeline definition for DataForge that uses S3Source with retry enabled and the --dry-run flag."
+domain: project_repo
+difficulty: medium
+tags:
+  - pipeline
+  - yaml
+  - s3
+metadata:
+  expected_answer: ""
+  test: |
+    S3Source|s3_source|source.*[Ss]3
+    retry
+    dry.run|dry_run
+  entry_point: "s3_pipeline_yaml"
+  canonical_solution: ""
+  libs: ["dataforge"]
+  forbidden_patterns: []

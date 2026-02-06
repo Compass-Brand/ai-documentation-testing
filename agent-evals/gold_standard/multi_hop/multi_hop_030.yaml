@@ -1,0 +1,24 @@
+task_id: multi_hop_030
+type: multi_hop
+question: "A user with the 'viewer' role reports receiving a 500 error instead of a 403 when attempting to update another user's profile. The error is not appearing in structured logs. Is this a permissions issue, an error handling issue, a logging issue, or all three? Trace through every relevant system to explain the full failure chain."
+domain: framework_api
+difficulty: hard
+tags:
+  - permissions
+  - error_handling
+  - logging
+  - users
+  - edge_case
+metadata:
+  question_decomposition:
+    - "How does the UserModel handle roles and permissions for CRUD operations?"
+    - "What should happen when a permission check fails in the error hierarchy?"
+    - "Why would a 500 appear instead of a 403?"
+    - "Why would the error not appear in structured logs?"
+    - "How do all these systems interact in the failure chain?"
+  reasoning_chain:
+    - "api/users.md defines UserModel with roles and permissions; a 'viewer' role should not have update permission"
+    - "api/errors.md defines AppError hierarchy; a permission denial should raise a specific AppError subclass resulting in a 403, not an unhandled 500"
+    - "If the permission check raises an unexpected exception type not in the AppError hierarchy, ErrorMiddleware may fall through to a generic 500"
+    - "api/logging.md StructuredLogger with correlation IDs may not capture errors that bypass the ErrorMiddleware's structured handling path"
+    - "This is all three issues: the permission check raises a non-AppError exception, the ErrorMiddleware does not catch it properly producing a 500, and the StructuredLogger misses it because correlation ID propagation fails for unhandled exceptions"

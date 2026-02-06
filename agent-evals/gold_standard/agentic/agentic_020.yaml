@@ -1,0 +1,21 @@
+task_id: agentic_020
+type: agentic
+question: "Search the code review workflow to find the checklist criteria, then verify the maximum function length and docstring format."
+domain: skills_workflows
+difficulty: medium
+tags:
+  - code_review
+  - contributing
+  - multi_file
+metadata:
+  expected_tools:
+    - name: "read_file"
+    - name: "grep_files"
+  files:
+    "workflows/code-review.md": "correctness, code quality <30 line functions, no duplication, type hints, Google docstrings"
+    "repo/CONTRIBUTING.md": "Google docstrings, type hints"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_code_review_standards"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0

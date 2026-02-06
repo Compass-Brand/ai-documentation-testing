@@ -1,0 +1,12 @@
+task_id: retrieval_014
+type: retrieval
+question: "I need to configure SQLAlchemy database connections with connection pooling. Which file covers this?"
+domain: framework_api
+difficulty: medium
+tags:
+  - database
+  - sqlalchemy
+metadata:
+  expected_files:
+    - "api/database.md"
+  evidence_passage: "SQLAlchemy 2.0 async, pool defaults 10 connections + 20 overflow, POOL_SIZE/MAX_OVERFLOW env vars"

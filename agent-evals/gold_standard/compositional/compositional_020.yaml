@@ -1,0 +1,17 @@
+task_id: compositional_020
+type: compositional
+question: "Walk through the complete release process: what versioning scheme is used, how are branches managed, what documentation changes are required, and how does CI validate the release?"
+domain: skills_workflows
+difficulty: hard
+tags: [release, semver, ci, changelog]
+metadata:
+  sub_questions:
+    - "What versioning scheme governs releases?"
+    - "How are branches managed during a release?"
+    - "What documentation must be updated?"
+    - "How does CI validate the release?"
+  expected_answers:
+    - "Semantic versioning (semver) with major.minor.patch"
+    - "Dedicated release branches are created for each release"
+    - "The changelog must be updated to reflect changes in the release"
+    - "GitHub Actions runs lint, test, and build stages to validate the release"

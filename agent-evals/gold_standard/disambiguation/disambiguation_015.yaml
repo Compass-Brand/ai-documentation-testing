@@ -1,0 +1,13 @@
+task_id: disambiguation_015
+type: disambiguation
+question: "How do I set up the review process?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "code_review"
+      answer: "Code reviews use 4 categories: correctness, quality, testing, performance. Functions should be under 30 lines. Use comment prefixes nit/suggestion/issue/question"
+    - label: "pr_review"
+      answer: "PRs require 6 steps per CONTRIBUTING.md, with branch protection requiring all CI checks passing, at least one review, and branch up-to-date"
+  expected_interpretation: "code_review"

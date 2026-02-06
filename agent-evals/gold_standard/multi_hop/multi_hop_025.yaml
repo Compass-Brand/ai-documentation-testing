@@ -1,0 +1,17 @@
+task_id: multi_hop_025
+type: multi_hop
+question: "What is the rate limit for API requests, and how should rate limit violations be represented using the project's error handling hierarchy?"
+domain: framework_api
+difficulty: easy
+tags:
+  - rate_limiting
+  - error_handling
+  - middleware
+metadata:
+  question_decomposition:
+    - "What is the API rate limit?"
+    - "How does the error hierarchy structure error responses?"
+  reasoning_chain:
+    - "api/middleware.md states rate limiting is set to 100 req/min"
+    - "api/errors.md defines the AppError hierarchy and ErrorMiddleware with structured error codes"
+    - "Rate limit violations should be represented as a specific AppError subclass with an appropriate error code, processed by the ErrorMiddleware"

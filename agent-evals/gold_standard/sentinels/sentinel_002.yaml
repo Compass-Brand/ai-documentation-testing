@@ -1,0 +1,15 @@
+task_id: sentinel_002
+type: fact_extraction
+question: "What is the default cache TTL in seconds?"
+domain: framework_api
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_answer: "300"
+  answer_aliases:
+    - "300 seconds"
+    - "5 minutes"
+  source_location: "api/caching.md"
+  fact_type: "configuration_value"

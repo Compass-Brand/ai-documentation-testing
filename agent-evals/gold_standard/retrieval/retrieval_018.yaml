@@ -1,0 +1,12 @@
+task_id: retrieval_018
+type: retrieval
+question: "Which file documents the security vulnerability reporting process and supported versions?"
+domain: project_repo
+difficulty: medium
+tags:
+  - security
+  - reporting
+metadata:
+  expected_files:
+    - "repo/security.md"
+  evidence_passage: "Report to security@example.com, supported versions: 2.3.x yes, 2.2.x security only, <2.2 no"

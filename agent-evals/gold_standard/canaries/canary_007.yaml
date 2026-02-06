@@ -1,0 +1,14 @@
+task_id: canary_007
+type: fact_extraction
+question: "What ORM does the framework use for database operations?"
+domain: framework_api
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  expected_answer: "SQLAlchemy 2.0"
+  answer_aliases:
+    - "SQLAlchemy"
+  source_location: "api/database.md"
+  fact_type: "technology_choice"

@@ -1,0 +1,10 @@
+task_id: efficiency_005
+type: efficiency
+question: "What is the default LOG_LEVEL?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  expected_answer: "INFO"
+  answer_aliases: []
+  token_budget: 5

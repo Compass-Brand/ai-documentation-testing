@@ -1,0 +1,10 @@
+task_id: efficiency_004
+type: efficiency
+question: "What is the JWT token expiry time?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  expected_answer: "3600 seconds"
+  answer_aliases: ["3600", "1 hour", "60 minutes"]
+  token_budget: 10

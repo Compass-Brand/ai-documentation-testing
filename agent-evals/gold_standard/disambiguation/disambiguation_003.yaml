@@ -1,0 +1,13 @@
+task_id: disambiguation_003
+type: disambiguation
+question: "How does validation work in the system?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  interpretations:
+    - label: "data_validation"
+      answer: "Data validation is a pipeline stage in the Source→Transformer→Validator→Loader→Monitor architecture that validates data between transformation and loading"
+    - label: "input_validation"
+      answer: "Input validation uses sanitize_input() and parameterized queries as described in security.md to prevent injection attacks"
+  expected_interpretation: "data_validation"

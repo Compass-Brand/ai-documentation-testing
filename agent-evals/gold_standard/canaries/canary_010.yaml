@@ -1,0 +1,12 @@
+task_id: canary_010
+type: retrieval
+question: "Which file explains how to contribute to the project?"
+domain: project_repo
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  expected_files:
+    - "repo/CONTRIBUTING.md"
+  evidence_passage: "We welcome contributions from the community."

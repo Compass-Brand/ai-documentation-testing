@@ -1,0 +1,16 @@
+task_id: conflicting_008
+type: conflicting
+question: "Does v2.2.x still receive updates, and if so, what kind?"
+domain: project_repo
+difficulty: easy
+tags: []
+metadata:
+  sources:
+    - name: "security.md"
+      claim: "v2.2.x receives security fixes only"
+      authority: 9
+    - name: "changelog.md"
+      claim: "v2.2.0 introduced breaking changes including method renames (execute→run, fetch→read)"
+      authority: 8
+  expected_resolution: "v2.2.x receives security fixes only going forward. The breaking changes in v2.2.0 were part of that release, but no new features will be added to the 2.2.x line."
+  resolution_strategy: "higher_authority"

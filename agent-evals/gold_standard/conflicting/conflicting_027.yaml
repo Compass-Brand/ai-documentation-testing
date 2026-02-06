@@ -1,0 +1,16 @@
+task_id: conflicting_027
+type: conflicting
+question: "The v2.3.0 changelog claims batch processing improved by 40%, but troubleshooting.md recommends batch_size=5000 for slow inserts. If batching is 40% faster, why is slow insert troubleshooting still needed?"
+domain: project_repo
+difficulty: hard
+tags: []
+metadata:
+  sources:
+    - name: "changelog.md"
+      claim: "v2.3.0: batch processing +40% performance improvement"
+      authority: 8
+    - name: "troubleshooting.md"
+      claim: "Slow inserts: use batch_size=5000, disable_indexes, COPY"
+      authority: 8
+  expected_resolution: "The 40% improvement is the general batch throughput gain. Slow insert troubleshooting is still needed for edge cases like very large datasets, misconfigured batch sizes, or when indexes are not disabled."
+  resolution_strategy: "explicit_flag"

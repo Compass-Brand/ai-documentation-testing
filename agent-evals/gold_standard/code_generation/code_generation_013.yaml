@@ -1,0 +1,19 @@
+task_id: code_generation_013
+type: code_generation
+question: "Write a function decorated with @require_auth that returns user profile data from the /api/auth endpoint."
+domain: framework_api
+difficulty: medium
+tags:
+  - auth
+  - decorator
+metadata:
+  expected_answer: ""
+  test: |
+    @require_auth
+    def\s+\w+
+    return
+    profile|user
+  entry_point: "get_user_profile"
+  canonical_solution: ""
+  libs: ["framework.auth"]
+  forbidden_patterns: ["eval(", "exec("]

@@ -1,0 +1,18 @@
+task_id: code_generation_001
+type: code_generation
+question: "Write a function that creates a JWTConfig with the default HS256 algorithm and a custom secret key."
+domain: framework_api
+difficulty: easy
+tags:
+  - auth
+  - jwt
+metadata:
+  expected_answer: ""
+  test: |
+    def\s+\w+
+    JWTConfig
+    HS256
+  entry_point: "create_jwt_config"
+  canonical_solution: ""
+  libs: ["framework.auth"]
+  forbidden_patterns: ["eval(", "exec("]

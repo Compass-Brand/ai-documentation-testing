@@ -1,0 +1,15 @@
+task_id: canary_005
+type: disambiguation
+question: "What does 'config' refer to in the project?"
+domain: framework_api
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  interpretations:
+    - label: "application_settings"
+      answer: "Application settings loaded from environment variables with optional .env file support"
+    - label: "pipeline_config"
+      answer: "YAML pipeline configuration for DataForge ETL jobs"
+  expected_interpretation: "application_settings"

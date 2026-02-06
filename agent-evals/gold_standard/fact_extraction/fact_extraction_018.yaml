@@ -1,0 +1,13 @@
+task_id: fact_extraction_018
+type: fact_extraction
+question: "What is the maximum line length allowed by the contributing guidelines?"
+domain: project_repo
+difficulty: medium
+tags:
+  - contributing
+  - style
+metadata:
+  expected_answer: "100"
+  answer_aliases: ["100 characters", "100 char", "100 chars"]
+  source_location: "repo/CONTRIBUTING.md"
+  fact_type: "number"

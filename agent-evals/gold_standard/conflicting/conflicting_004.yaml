@@ -1,0 +1,16 @@
+task_id: conflicting_004
+type: conflicting
+question: "Does production deployment require manual approval?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  sources:
+    - name: "deployment.md"
+      claim: "Manual approval required for production deployment"
+      authority: 8
+    - name: "ci-setup.md"
+      claim: "Production requires manual approval in the GitHub Actions UI"
+      authority: 8
+  expected_resolution: "Both describe the same mechanism. Production deployment requires manual approval via the GitHub Actions UI as part of the deployment pipeline."
+  resolution_strategy: "explicit_flag"

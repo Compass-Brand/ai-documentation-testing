@@ -1,0 +1,15 @@
+task_id: compositional_024
+type: compositional
+question: "How would you set up a complete test for an authenticated API endpoint? What test client do you use, how do you handle auth, and how do you manage the database state?"
+domain: framework_api
+difficulty: medium
+tags: [testing, auth, database, fixtures]
+metadata:
+  sub_questions:
+    - "What test client class is used for HTTP requests?"
+    - "How is authentication handled in tests?"
+    - "How is database state managed during tests?"
+  expected_answers:
+    - "TestClient is used to make HTTP requests in tests"
+    - "The mock_auth fixture simulates authenticated requests without real JWT tokens"
+    - "The db_session fixture provides a clean database session for each test"

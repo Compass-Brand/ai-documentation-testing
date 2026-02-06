@@ -1,0 +1,12 @@
+task_id: retrieval_010
+type: retrieval
+question: "Which files should I consult to understand middleware ordering and how to create custom middleware?"
+domain: framework_api
+difficulty: medium
+tags:
+  - middleware
+  - custom
+metadata:
+  expected_files:
+    - "api/middleware.md"
+  evidence_passage: "5 built-in: RequestID, Logging, CORS, Auth, RateLimit. BaseMiddleware for custom"

@@ -1,0 +1,13 @@
+task_id: sentinel_005
+type: fact_extraction
+question: "What is the default LOG_LEVEL for the application?"
+domain: framework_api
+difficulty: easy
+tags:
+  - sentinel
+  - drift_detection
+metadata:
+  expected_answer: "INFO"
+  answer_aliases: []
+  source_location: "api/config.md"
+  fact_type: "configuration_value"

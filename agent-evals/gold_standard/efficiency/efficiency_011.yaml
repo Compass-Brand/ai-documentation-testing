@@ -1,0 +1,10 @@
+task_id: efficiency_011
+type: efficiency
+question: "What are the five pipeline stages in DataForge's architecture?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "Source, Transformer, Validator, Loader, Monitor"
+  answer_aliases: ["Source→Transformer→Validator→Loader→Monitor"]
+  token_budget: 20

@@ -1,0 +1,13 @@
+task_id: robustness_001
+type: robustness
+question: "What is the default TTL for the cahce configuration?"
+domain: framework_api
+difficulty: easy
+tags:
+  - caching
+  - configuration
+metadata:
+  perturbation_type: "typo"
+  original_question: "What is the default TTL for the cache configuration?"
+  expected_answer: "The default TTL for CacheConfig is 300 seconds."
+  perturbation_details: "Misspelled 'cache' as 'cahce'"

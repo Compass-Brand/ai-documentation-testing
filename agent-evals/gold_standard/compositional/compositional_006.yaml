@@ -1,0 +1,15 @@
+task_id: compositional_006
+type: compositional
+question: "Which environment variables are required vs optional in the config, and what database does the project use?"
+domain: framework_api
+difficulty: medium
+tags: [config, environment-variables, database]
+metadata:
+  sub_questions:
+    - "Which environment variables are required?"
+    - "Which environment variables are optional?"
+    - "What database system does the project use?"
+  expected_answers:
+    - "DATABASE_URL is required"
+    - "SECRET_KEY, REDIS_URL, and APP_ENV are optional"
+    - "PostgreSQL"

@@ -1,0 +1,13 @@
+task_id: compositional_022
+type: compositional
+question: "What information does the changelog track, and how does semver relate to the breaking changes documented there?"
+domain: project_repo
+difficulty: medium
+tags: [changelog, semver, breaking-changes]
+metadata:
+  sub_questions:
+    - "What does the changelog track?"
+    - "How does semver relate to the changelog entries?"
+  expected_answers:
+    - "Version history and breaking changes across releases"
+    - "Semver major version bumps correspond to breaking changes documented in the changelog; minor versions add features, patch versions fix bugs"

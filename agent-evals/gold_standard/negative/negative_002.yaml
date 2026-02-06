@@ -1,0 +1,11 @@
+task_id: negative_002
+type: negative
+question: "How do you configure OAuth2 social login with Google in the auth module?"
+domain: framework_api
+difficulty: medium
+tags: [auth, oauth2, google, social-login]
+metadata:
+  expected_answer: "unanswerable"
+  reason: "The auth docs cover JWT-based authentication with AuthMiddleware, HS256 signing, and /api/auth/login, but never mention OAuth2 or any social login providers."
+  nearest_doc: "api/auth.md"
+  nearest_content: "Covers JWT tokens, AuthMiddleware, HS256 algorithm, expiry_seconds=3600, and the /api/auth/login endpoint."

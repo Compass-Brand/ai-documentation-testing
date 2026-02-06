@@ -1,0 +1,14 @@
+task_id: robustness_029
+type: robustness
+question: "user_model.py:42: UserModel.get_by_role() -- Does this support RBAC? What roles and permissions system is documented?"
+domain: framework_api
+difficulty: medium
+tags:
+  - users
+  - roles
+  - format
+metadata:
+  perturbation_type: "format_change"
+  original_question: "What roles and permissions system is documented for the UserModel?"
+  expected_answer: "The UserModel supports roles and permissions as documented in api/users.md. It provides CRUD operations for users along with role-based access control."
+  perturbation_details: "Question formatted as a code reference with file path and line number, followed by the actual question"

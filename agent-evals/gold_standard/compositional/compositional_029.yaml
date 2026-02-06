@@ -1,0 +1,15 @@
+task_id: compositional_029
+type: compositional
+question: "How do correlation IDs in the logging system help when debugging issues in a multi-service deployment on Kubernetes?"
+domain: framework_api
+difficulty: edge
+tags: [logging, correlation-ids, kubernetes, debugging]
+metadata:
+  sub_questions:
+    - "What is the purpose of correlation IDs in the StructuredLogger?"
+    - "How does structured logging aid debugging?"
+    - "How does Kubernetes deployment context make correlation IDs more valuable?"
+  expected_answers:
+    - "Correlation IDs trace a single request across multiple service calls, linking related log entries together"
+    - "StructuredLogger produces structured log output that can be searched and filtered programmatically"
+    - "In a Kubernetes deployment with multiple pods/services, correlation IDs let you follow a request across container boundaries and service instances"

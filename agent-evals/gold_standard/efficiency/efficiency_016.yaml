@@ -1,0 +1,10 @@
+task_id: efficiency_016
+type: efficiency
+question: "What HTTP error status codes does the framework support?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "400 through 500"
+  answer_aliases: ["400-500", "400, 401, 403, 404, 500"]
+  token_budget: 15

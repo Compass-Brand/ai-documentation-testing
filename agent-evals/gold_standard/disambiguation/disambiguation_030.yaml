@@ -1,0 +1,16 @@
+task_id: disambiguation_030
+type: disambiguation
+question: "The term 'source' appears in architecture.md, CONTRIBUTING.md, and security.md — when someone says 'add a new source', which interpretation should be prioritized and why?"
+domain: skills_workflows
+difficulty: hard
+tags:
+  - edge_case
+metadata:
+  interpretations:
+    - label: "data_source"
+      answer: "In architecture.md, a 'source' is a data input component (CSV, SQL, API, S3) registered via @register_source() for the pipeline's first stage"
+    - label: "code_source"
+      answer: "In CONTRIBUTING.md, 'source' refers to the source code repository with branching model main/develop/feature/fix"
+    - label: "security_source"
+      answer: "In security.md, 'source' is not a primary term but input sources must be sanitized with sanitize_input() before processing"
+  expected_interpretation: "data_source"

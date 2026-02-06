@@ -1,0 +1,13 @@
+task_id: compositional_018
+type: compositional
+question: "What does the project README provide for new developers, and what additional details does the CONTRIBUTING guide add about working with the codebase?"
+domain: project_repo
+difficulty: easy
+tags: [readme, contributing, onboarding]
+metadata:
+  sub_questions:
+    - "What does the README cover for new developers?"
+    - "What does the CONTRIBUTING guide add beyond the README?"
+  expected_answers:
+    - "Project overview and quickstart instructions to get the project running"
+    - "PR process details, code style requirements, and branch naming conventions for contributing code"

@@ -1,0 +1,13 @@
+task_id: fact_extraction_003
+type: fact_extraction
+question: "What is the default value for the LOG_LEVEL environment variable?"
+domain: framework_api
+difficulty: easy
+tags:
+  - config
+  - logging
+metadata:
+  expected_answer: "INFO"
+  answer_aliases: []
+  source_location: "api/config.md"
+  fact_type: "name"

@@ -1,0 +1,15 @@
+task_id: compositional_010
+type: compositional
+question: "What test fixtures are available for writing tests, and what client class is used to make test HTTP requests?"
+domain: framework_api
+difficulty: easy
+tags: [testing, fixtures, test-client]
+metadata:
+  sub_questions:
+    - "What client class is used for test HTTP requests?"
+    - "What database fixture is provided?"
+    - "What authentication fixture is available?"
+  expected_answers:
+    - "TestClient"
+    - "db_session fixture for database testing"
+    - "mock_auth fixture for simulating authentication"

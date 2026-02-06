@@ -1,0 +1,13 @@
+task_id: disambiguation_027
+type: disambiguation
+question: "What does the term 'monitor' refer to in the architecture?"
+domain: project_repo
+difficulty: hard
+tags: []
+metadata:
+  interpretations:
+    - label: "pipeline_monitor"
+      answer: "Monitor is the 5th and final stage in the Source→Transformer→Validator→Loader→Monitor pipeline architecture for observing pipeline execution"
+    - label: "health_monitoring"
+      answer: "Application health monitoring via the /health endpoint described in deployment.md for Docker and production deployments"
+  expected_interpretation: "pipeline_monitor"

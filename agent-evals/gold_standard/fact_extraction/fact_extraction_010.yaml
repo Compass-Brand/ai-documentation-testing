@@ -1,0 +1,13 @@
+task_id: fact_extraction_010
+type: fact_extraction
+question: "How many steps are in the GitHub Actions CI/CD pipeline?"
+domain: framework_api
+difficulty: medium
+tags:
+  - deployment
+  - ci
+metadata:
+  expected_answer: "6"
+  answer_aliases: ["6 steps", "six", "six steps"]
+  source_location: "api/deployment.md"
+  fact_type: "number"

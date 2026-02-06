@@ -1,0 +1,13 @@
+task_id: disambiguation_021
+type: disambiguation
+question: "What security measures should I implement?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "app_security"
+      answer: "Use sanitize_input() for input validation, parameterized queries for SQL, and pip-audit for dependency scanning. Report vulnerabilities to security@example.com"
+    - label: "auth_security"
+      answer: "Implement JWT authentication with HS256 signing, token expiry of 3600 seconds, refresh token rotation, and the AuthMiddleware chain"
+  expected_interpretation: "app_security"

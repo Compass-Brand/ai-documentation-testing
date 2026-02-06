@@ -1,0 +1,18 @@
+task_id: code_generation_019
+type: code_generation
+question: "Write a test that uses mock.patch to mock an external service dependency and verify it was called with the correct arguments."
+domain: framework_api
+difficulty: medium
+tags:
+  - testing
+  - mocking
+metadata:
+  expected_answer: ""
+  test: |
+    mock\.patch|@patch
+    def\s+test_
+    assert.*called|call_args|assert_called
+  entry_point: "test_service_mock"
+  canonical_solution: ""
+  libs: ["framework.testing"]
+  forbidden_patterns: ["eval(", "exec("]

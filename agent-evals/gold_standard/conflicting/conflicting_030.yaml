@@ -1,0 +1,17 @@
+task_id: conflicting_030
+type: conflicting
+question: "Deployment.md describes a 6-step GitHub Actions pipeline, and ci-setup.md also describes GitHub Actions with matrix builds, branch protection, and deployment stages. Are these the same pipeline or two separate ones?"
+domain: skills_workflows
+difficulty: hard
+tags:
+  - edge_case
+metadata:
+  sources:
+    - name: "deployment.md"
+      claim: "GitHub Actions with 6 deployment steps including /health check"
+      authority: 8
+    - name: "ci-setup.md"
+      claim: "GitHub Actions with matrix Python 3.10/3.11/3.12, ruff+pytest+cov, branch protection, deployment stages, secrets"
+      authority: 9
+  expected_resolution: "They describe aspects of the same CI/CD system. ci-setup.md covers the full CI pipeline (testing, linting, branch protection) while deployment.md focuses specifically on the deployment steps and Docker configuration."
+  resolution_strategy: "explicit_flag"

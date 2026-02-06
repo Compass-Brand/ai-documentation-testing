@@ -1,0 +1,13 @@
+task_id: fact_extraction_016
+type: fact_extraction
+question: "What batch insert performance improvement was achieved in DataForge v2.3.0?"
+domain: project_repo
+difficulty: medium
+tags:
+  - changelog
+  - performance
+metadata:
+  expected_answer: "+40%"
+  answer_aliases: ["40%", "40 percent", "forty percent"]
+  source_location: "repo/changelog.md"
+  fact_type: "number"

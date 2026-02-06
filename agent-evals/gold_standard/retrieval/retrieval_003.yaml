@@ -1,0 +1,12 @@
+task_id: retrieval_003
+type: retrieval
+question: "I need to configure environment variables for my application. Which file should I read?"
+domain: framework_api
+difficulty: easy
+tags:
+  - config
+  - env
+metadata:
+  expected_files:
+    - "api/config.md"
+  evidence_passage: "Environment variables DATABASE_URL required, JWT_SECRET required, LOG_LEVEL default INFO"

@@ -1,0 +1,16 @@
+task_id: conflicting_013
+type: conflicting
+question: "What is the minimum required Python version — 3.10 or higher?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "ci-setup.md"
+      claim: "CI matrix tests Python 3.10, 3.11, and 3.12"
+      authority: 8
+    - name: "changelog.md"
+      claim: "v2.2.0 requires Python 3.10 minimum"
+      authority: 9
+  expected_resolution: "Python 3.10 is the minimum required version as stated in the v2.2.0 changelog. CI tests 3.10, 3.11, and 3.12 to verify compatibility."
+  resolution_strategy: "higher_authority"

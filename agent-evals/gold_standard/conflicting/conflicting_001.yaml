@@ -1,0 +1,16 @@
+task_id: conflicting_001
+type: conflicting
+question: "What is the default cache TTL — 300 seconds or 600 seconds?"
+domain: framework_api
+difficulty: easy
+tags: []
+metadata:
+  sources:
+    - name: "caching.md"
+      claim: "default_ttl=300 seconds (5 minutes) in CacheConfig"
+      authority: 9
+    - name: "caching.md"
+      claim: "@cached(ttl=600) decorator example uses 600 seconds"
+      authority: 6
+  expected_resolution: "The default TTL is 300 seconds. The 600-second value is just an example of overriding the default in the @cached decorator."
+  resolution_strategy: "explicit_flag"

@@ -1,0 +1,19 @@
+task_id: code_generation_020
+type: code_generation
+question: "Write a Settings class that loads configuration from environment variables with DATABASE_URL as required and LOG_LEVEL defaulting to INFO."
+domain: framework_api
+difficulty: medium
+tags:
+  - config
+  - settings
+metadata:
+  expected_answer: ""
+  test: |
+    class\s+Settings
+    DATABASE_URL
+    LOG_LEVEL
+    INFO
+  entry_point: "Settings"
+  canonical_solution: ""
+  libs: ["framework.config"]
+  forbidden_patterns: ["eval(", "exec("]

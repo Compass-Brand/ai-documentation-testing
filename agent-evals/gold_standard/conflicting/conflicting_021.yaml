@@ -1,0 +1,16 @@
+task_id: conflicting_021
+type: conflicting
+question: "What chunk size should I use for large data processing — 10000 or 5000?"
+domain: project_repo
+difficulty: medium
+tags: []
+metadata:
+  sources:
+    - name: "troubleshooting.md"
+      claim: "Use chunk_size=10000 for MemoryError issues with streaming"
+      authority: 8
+    - name: "troubleshooting.md"
+      claim: "Use batch_size=5000 for slow insert optimization"
+      authority: 8
+  expected_resolution: "They serve different purposes: chunk_size=10000 controls how much data is read into memory at once (for memory issues), while batch_size=5000 controls database insert batching (for performance)."
+  resolution_strategy: "explicit_flag"

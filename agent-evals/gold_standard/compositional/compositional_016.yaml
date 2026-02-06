@@ -1,0 +1,15 @@
+task_id: compositional_016
+type: compositional
+question: "How does the logging system work? What configuration class is used, what logger implementation is provided, and how are requests traced across services?"
+domain: framework_api
+difficulty: medium
+tags: [logging, structured-logging, correlation-ids]
+metadata:
+  sub_questions:
+    - "What configuration class manages logging settings?"
+    - "What logger implementation is provided?"
+    - "How are requests traced across services?"
+  expected_answers:
+    - "LogConfig"
+    - "StructuredLogger for structured log output"
+    - "Correlation IDs are used to trace requests across service boundaries"

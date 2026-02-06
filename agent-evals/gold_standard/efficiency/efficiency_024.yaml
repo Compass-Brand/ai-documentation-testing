@@ -1,0 +1,10 @@
+task_id: efficiency_024
+type: efficiency
+question: "What three key features were added in DataForge v2.3.0?"
+domain: project_repo
+difficulty: hard
+tags: []
+metadata:
+  expected_answer: "S3Source, retry support, and --dry-run flag"
+  answer_aliases: ["S3Source, retry, --dry-run"]
+  token_budget: 25

@@ -1,0 +1,13 @@
+task_id: disambiguation_024
+type: disambiguation
+question: "What's the process for releasing a new version?"
+domain: skills_workflows
+difficulty: hard
+tags: []
+metadata:
+  interpretations:
+    - label: "pypi_release"
+      answer: "5-step pre-release, 90% coverage gate, bump2version for patch/minor/major, create release/vX.Y.Z branch from develop, tag, CI publishes to PyPI"
+    - label: "docker_release"
+      answer: "Build Docker images under 150MB, deploy via Docker Compose with app+db+redis services, and GitHub Actions 6-step deployment pipeline"
+  expected_interpretation: "pypi_release"

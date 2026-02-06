@@ -1,0 +1,10 @@
+task_id: efficiency_015
+type: efficiency
+question: "What are the four code review categories?"
+domain: skills_workflows
+difficulty: medium
+tags: []
+metadata:
+  expected_answer: "correctness, quality, testing, performance"
+  answer_aliases: ["correctness, quality, testing, and performance"]
+  token_budget: 15

@@ -1,0 +1,13 @@
+task_id: disambiguation_010
+type: disambiguation
+question: "What is the default configuration for caching?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  interpretations:
+    - label: "cache_config_defaults"
+      answer: "CacheConfig uses RedisBackend or in-memory backend with default_ttl=300 seconds and supports TTL, LRU, and Write-through eviction strategies"
+    - label: "cached_decorator_defaults"
+      answer: "The @cached decorator example in caching.md uses ttl=600 seconds, which differs from the CacheConfig default_ttl of 300"
+  expected_interpretation: "cache_config_defaults"

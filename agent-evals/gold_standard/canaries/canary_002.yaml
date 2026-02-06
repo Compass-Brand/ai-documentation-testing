@@ -1,0 +1,13 @@
+task_id: canary_002
+type: fact_extraction
+question: "What programming language is DataForge written in?"
+domain: project_repo
+difficulty: easy
+tags:
+  - canary
+  - scoring_pipeline_check
+metadata:
+  expected_answer: "Python"
+  answer_aliases: []
+  source_location: "repo/README.md"
+  fact_type: "project_metadata"

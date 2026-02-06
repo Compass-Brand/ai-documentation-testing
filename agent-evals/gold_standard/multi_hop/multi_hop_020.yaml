@@ -1,0 +1,13 @@
+task_id: multi_hop_020
+type: multi_hop
+question: "How does the framework handle database isolation in tests, and what environment variable is needed for the database connection?"
+domain: framework_api
+difficulty: medium
+tags: []
+metadata:
+  question_decomposition:
+    - "How does the framework handle database isolation in tests?"
+    - "What environment variable is needed for database connection?"
+  reasoning_chain:
+    - "testing.md states each test runs in a transaction that rolls back after the test completes, using db_session()"
+    - "config.md states DATABASE_URL is a required environment variable"

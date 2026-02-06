@@ -1,0 +1,14 @@
+task_id: fact_extraction_029
+type: fact_extraction
+question: "What role is required to delete a user via the API?"
+domain: framework_api
+difficulty: hard
+tags:
+  - users
+  - auth
+  - edge_case
+metadata:
+  expected_answer: "admin"
+  answer_aliases: ["admin role", "administrator"]
+  source_location: "api/users.md"
+  fact_type: "name"

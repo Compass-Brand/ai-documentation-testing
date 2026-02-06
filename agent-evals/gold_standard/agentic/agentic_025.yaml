@@ -1,0 +1,24 @@
+task_id: agentic_025
+type: agentic
+question: "Investigate the complete release process: find the pre-release checklist, coverage threshold, branch strategy, bump2version usage, CI publishing steps, and hotfix process."
+domain: project_repo
+difficulty: hard
+tags:
+  - release
+  - contributing
+  - ci
+  - multi_step
+metadata:
+  expected_tools:
+    - name: "grep_files"
+    - name: "read_file"
+    - name: "list_files"
+  files:
+    "workflows/release.md": "Pre-release checklist 5 steps, 90% coverage, bump2version, release branch from develop, hotfix"
+    "repo/CONTRIBUTING.md": "branch strategy main/develop/feature/fix, PR process 6 steps"
+    "workflows/ci-setup.md": "deployment stages, CI publishes"
+  setup_script: ""
+  FAIL_TO_PASS: ["test_release_process_complete"]
+  PASS_TO_PASS: []
+  message_limit: 0
+  token_limit: 0
