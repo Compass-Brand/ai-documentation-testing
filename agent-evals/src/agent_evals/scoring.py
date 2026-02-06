@@ -286,3 +286,62 @@ def bootstrap_ci(
         ci_upper=float(result.confidence_interval.high),
         n_resamples=n_resamples,
     )
+
+
+# ---------------------------------------------------------------------------
+# Weight sensitivity analysis
+# ---------------------------------------------------------------------------
+
+
+def weight_sensitivity_report(
+    per_variant_type_scores: dict[str, dict[str, float]],
+) -> dict[str, object]:
+    """Check if variant rankings change under different weight schemes.
+
+    Computes the composite score for every variant under each scheme in
+    :data:`WEIGHT_SCHEMES` and flags cases where the top-ranked variant
+    differs from the default ranking.
+
+    Args:
+        per_variant_type_scores:
+            Mapping of variant_name -> {task_type -> mean_score (0-1)}.
+
+    Returns:
+        Dictionary with keys:
+            ``rankings``:
+                {scheme_name -> [(variant, composite), ...]} sorted desc.
+            ``winner_per_scheme``:
+                {scheme_name -> variant_name}.
+            ``winner_stable``:
+                ``True`` if the same variant wins in all schemes.
+            ``schemes_where_winner_changes``:
+                List of scheme names where the winner differs from default.
+    """
+    rankings: dict[str, list[tuple[str, float]]] = {}
+
+    for scheme_name, weights in WEIGHT_SCHEMES.items():
+        scored: list[tuple[str, float]] = []
+        for variant_name, type_scores in per_variant_type_scores.items():
+            comp = composite_score(type_scores, weights)
+            scored.append((variant_name, comp))
+        scored.sort(key=lambda x: x[1], reverse=True)
+        rankings[scheme_name] = scored
+
+    winner_per_scheme = {
+        name: ranked[0][0] if ranked else ""
+        for name, ranked in rankings.items()
+    }
+
+    default_winner = winner_per_scheme.get("default", "")
+    changes = [
+        name
+        for name, winner in winner_per_scheme.items()
+        if name != "default" and winner != default_winner
+    ]
+
+    return {
+        "rankings": rankings,
+        "winner_per_scheme": winner_per_scheme,
+        "winner_stable": len(changes) == 0,
+        "schemes_where_winner_changes": changes,
+    }

@@ -1,0 +1,68 @@
+"""YAML format variant (Axis 3).
+
+Renders the documentation index as a YAML document with a ``files`` list,
+one mapping per file.  Structured and human-readable.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from agent_evals.variants.base import IndexVariant, VariantMetadata
+from agent_evals.variants.registry import register_variant
+
+if TYPE_CHECKING:
+    from agent_index.models import DocTree
+
+
+def _summarise(content: str) -> str:
+    """Return first line or first ~100 chars of content as a summary."""
+    first_line = content.split("\n", 1)[0].strip()
+    if len(first_line) > 100:
+        return first_line[:97] + "..."
+    return first_line
+
+
+@register_variant
+class FormatYaml(IndexVariant):
+    """Render the documentation index as YAML.
+
+    Example output::
+
+        files:
+          - path: api/auth.md
+            section: API
+            tier: required
+            tokens: 450
+            summary: JWT authentication with AuthMiddleware
+    """
+
+    def metadata(self) -> VariantMetadata:
+        """Return metadata for the YAML format variant."""
+        return VariantMetadata(
+            name="format-yaml",
+            axis=3,
+            category="format",
+            description="YAML format for structured, human-readable indexes.",
+            token_estimate=500,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        """Render the doc tree as a YAML document.
+
+        Args:
+            doc_tree: Parsed documentation tree to render.
+
+        Returns:
+            YAML string with a ``files`` list.
+        """
+        lines: list[str] = ["files:"]
+        for _key, doc in sorted(doc_tree.files.items()):
+            summary = doc.summary if doc.summary else _summarise(doc.content)
+            tokens = doc.token_count if doc.token_count is not None else 0
+            lines.append(f"  - path: {doc.rel_path}")
+            lines.append(f"    section: {doc.section}")
+            lines.append(f"    tier: {doc.tier}")
+            lines.append(f"    tokens: {tokens}")
+            lines.append(f"    summary: {summary}")
+        return "\n".join(lines)
