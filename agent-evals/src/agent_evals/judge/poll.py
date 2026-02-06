@@ -1,10 +1,10 @@
 """Panel of LLM evaluators (PoLL) for final comparison.
 
 Implements the two-tier evaluation strategy from DESIGN.md:
-- GPT-4o-mini for routine evaluation runs
+- GPT-5-mini for routine evaluation runs
 - 3-model PoLL panel for validation / final comparison
 
-Panels of smaller models outperform a single GPT-4 judge at 7-8x lower
+Panels of smaller models outperform a single large judge at 7-8x lower
 cost (Verga et al., 2024).  The PoLL aggregate is validated against the
 routine model via Spearman correlation (target >= 0.80).
 """
@@ -22,13 +22,13 @@ from agent_evals.judge.calibrator import JudgeScore, compute_spearman
 # ---------------------------------------------------------------------------
 
 DEFAULT_PANEL: list[str] = [
-    "openrouter/openai/gpt-4o-mini",
-    "openrouter/anthropic/claude-3.5-haiku",
-    "openrouter/google/gemini-2.0-flash-001",
+    "openrouter/openai/gpt-5-mini",
+    "openrouter/anthropic/claude-haiku-4.5",
+    "openrouter/google/gemini-2.5-flash",
 ]
 """Default 3-model panel for PoLL evaluation."""
 
-ROUTINE_MODEL: str = "openrouter/openai/gpt-4o-mini"
+ROUTINE_MODEL: str = "openrouter/openai/gpt-5-mini"
 """Model used for routine (non-PoLL) evaluation runs."""
 
 # ---------------------------------------------------------------------------

@@ -25,7 +25,7 @@ from agent_evals.judge.poll import (
 def _make_judge(
     example_id: str,
     score: float = 0.8,
-    model: str = "openrouter/openai/gpt-4o-mini",
+    model: str = "openrouter/openai/gpt-5-mini",
 ) -> JudgeScore:
     return JudgeScore(
         example_id=example_id,
