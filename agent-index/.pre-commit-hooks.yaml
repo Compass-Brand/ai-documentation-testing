@@ -1,0 +1,6 @@
+- id: agent-index-validate
+  name: Validate agent-index
+  entry: agent-index --validate
+  language: python
+  types: [markdown]
+  pass_filenames: false

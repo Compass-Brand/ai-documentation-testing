@@ -5,6 +5,10 @@ Usage:
     agent-index --config agent-index.yaml
     agent-index --local ./docs --output AGENTS.md
     agent-index --local ./docs --inject README.md --marker-id DOCS
+    agent-index --auto-detect ./project
+    agent-index --init
+    agent-index --scaffold ./project
+    agent-index --validate
 """
 
 from __future__ import annotations
@@ -71,6 +75,28 @@ def parse_args(argv: list[str] | None = None) -> Namespace:
         help="Marker ID for injection (default: DOCS)",
     )
     parser.add_argument(
+        "--auto-detect",
+        metavar="PATH",
+        help="Auto-detect project structure and output YAML config",
+    )
+    parser.add_argument(
+        "--init",
+        action="store_true",
+        default=False,
+        help="Output a template config (wizard mode)",
+    )
+    parser.add_argument(
+        "--scaffold",
+        metavar="PATH",
+        help="Create directory structure with placeholder files",
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        default=False,
+        help="Validate index against docs on disk (exits non-zero on drift)",
+    )
+    parser.add_argument(
         "-h",
         "--help",
         action="help",
@@ -90,6 +116,101 @@ def run(args: Namespace) -> int:
     Returns:
         Exit code: 0 for success, 1 for error.
     """
+    # --- New UX feature branches (early return) ---
+
+    # --auto-detect: scan project and output YAML config
+    if args.auto_detect:
+        from agent_index.autodetect import auto_detect, generate_config_yaml
+
+        root = Path(args.auto_detect)
+        if not root.exists():
+            print(f"Error: Directory not found: {root}", file=sys.stderr)
+            return 1
+        config = auto_detect(root)
+        yaml_str = generate_config_yaml(config)
+        print(yaml_str, end="")
+        return 0
+
+    # --init: output a template config
+    if args.init:
+        from agent_index.autodetect import generate_config_yaml
+        from agent_index.wizard import WizardAnswers, build_config_from_answers
+
+        answers = WizardAnswers(project_name="My Project")
+        config = build_config_from_answers(answers)
+        yaml_str = generate_config_yaml(config)
+        print(yaml_str, end="")
+        return 0
+
+    # --scaffold: create directory structure
+    if args.scaffold:
+        from agent_index.scaffold import scaffold_project
+
+        root = Path(args.scaffold)
+        config = IndexConfig(index_name=args.name or "My Project")
+        created = scaffold_project(root, config)
+        for p in created:
+            print(f"Created: {p}")
+        return 0
+
+    # --validate: check index against disk
+    if args.validate:
+        from agent_index.validate import validate_index
+
+        # Need a config to know what to validate
+        config_path = Path(args.config) if args.config else find_config()
+        if config_path is None:
+            print(
+                "Error: No config file found. Use --config to specify one.",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            config = load_config(config_path)
+        except ConfigError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+        scan_path = Path(args.local) if args.local else Path.cwd() / config.root_path
+        try:
+            doc_tree = scan_local(
+                scan_path,
+                file_extensions=config.file_extensions,
+                ignore_patterns=config.ignore_patterns,
+            )
+        except (FileNotFoundError, NotADirectoryError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+        doc_tree = assign_tiers(doc_tree, config.tiers)
+        sorted_files = sort_files_bluf(list(doc_tree.files.values()), config.tiers)
+        index_content = render_index(
+            sorted_files,
+            config.tiers,
+            instruction=config.instruction,
+        )
+
+        result = validate_index(doc_tree, index_content, scan_path)
+        if result.valid:
+            print("Validation passed: index matches docs on disk.")
+            return 0
+
+        if result.missing_files:
+            print("Missing files (in index but not on disk):", file=sys.stderr)
+            for f in result.missing_files:
+                print(f"  - {f}", file=sys.stderr)
+        if result.extra_files:
+            print("Extra files (on disk but not in index):", file=sys.stderr)
+            for f in result.extra_files:
+                print(f"  - {f}", file=sys.stderr)
+        if result.stale_entries:
+            print("Stale entries (content changed):", file=sys.stderr)
+            for f in result.stale_entries:
+                print(f"  - {f}", file=sys.stderr)
+        return 1
+
+    # --- Original workflow ---
+
     config: IndexConfig
 
     # Step 1: Determine configuration source
