@@ -1,0 +1,366 @@
+"""Eval runner core: orchestrates evaluation runs across tasks and variants.
+
+This module provides:
+- TrialResult: Per-trial result dataclass with score, metrics, and metadata
+- EvalRunConfig: Configuration for an evaluation run
+- EvalRunResult: Aggregated results from a complete evaluation run
+- EvalRunner: Orchestrator that runs tasks against variants with concurrency
+"""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
+
+from agent_evals.llm.cache import ResponseCache
+from agent_evals.llm.client import GenerationResult, LLMClient
+
+if TYPE_CHECKING:
+    from agent_index.models import DocTree
+
+    from agent_evals.tasks.base import EvalTask
+    from agent_evals.variants.base import IndexVariant
+
+
+# ---------------------------------------------------------------------------
+# Data models
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TrialResult:
+    """Result of a single (task, variant, repetition) trial.
+
+    Attributes:
+        task_id: Identifier of the task that was evaluated.
+        variant_name: Name of the index variant used.
+        repetition: 1-based repetition number.
+        score: Task score between 0.0 and 1.0.
+        metrics: Additional metric name-value pairs.
+        prompt_tokens: Number of tokens in the prompt.
+        completion_tokens: Number of tokens in the completion.
+        total_tokens: Total tokens (prompt + completion).
+        cost: Monetary cost of the API call, if available.
+        latency_seconds: Wall-clock time for the trial in seconds.
+        response: Raw LLM response text.
+        cached: Whether the result came from the response cache.
+    """
+
+    task_id: str
+    variant_name: str
+    repetition: int
+    score: float
+    metrics: dict[str, float]
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    cost: float | None
+    latency_seconds: float
+    response: str
+    cached: bool
+
+
+@dataclass
+class EvalRunConfig:
+    """Configuration for an evaluation run.
+
+    Attributes:
+        repetitions: Number of times to repeat each (task, variant) pair.
+        max_connections: Maximum concurrent API connections (thread pool size).
+        max_tasks: Maximum number of tasks to process (for limiting runs).
+        temperature: LLM sampling temperature.
+        max_tokens: Maximum tokens for LLM completions.
+        use_cache: Whether to use the response cache.
+        cache_dir: Directory for cache files.
+        output_dir: Directory for output reports.
+        display_mode: Progress display mode (rich|plain|none).
+    """
+
+    repetitions: int = 10
+    max_connections: int = 10
+    max_tasks: int = 1
+    temperature: float = 0.3
+    max_tokens: int = 2048
+    use_cache: bool = True
+    cache_dir: str = ".agent-evals-cache"
+    output_dir: str = "reports"
+    display_mode: str = "rich"
+
+
+@dataclass
+class EvalRunResult:
+    """Aggregated results from a complete evaluation run.
+
+    Attributes:
+        config: The configuration used for this run.
+        trials: All trial results collected during the run.
+        total_cost: Sum of all trial costs (treating None as 0).
+        total_tokens: Sum of all trial token counts.
+        elapsed_seconds: Total wall-clock time for the run.
+    """
+
+    config: EvalRunConfig
+    trials: list[TrialResult]
+    total_cost: float
+    total_tokens: int
+    elapsed_seconds: float
+
+
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
+
+ProgressCallback = Callable[[int, int, TrialResult], None]
+
+
+class EvalRunner:
+    """Orchestrates evaluation runs across tasks and index variants.
+
+    The runner:
+    1. Calls ``variant.setup(doc_tree)`` for each variant.
+    2. For each (variant, task, repetition) triple, executes a trial:
+       renders the index, builds a prompt, queries the LLM (with caching),
+       and scores the response.
+    3. Calls ``variant.teardown()`` for each variant.
+    4. Returns an :class:`EvalRunResult` with all trial data.
+
+    Trials are executed concurrently via a :class:`ThreadPoolExecutor`
+    whose size is controlled by ``config.max_connections``.
+
+    Parameters
+    ----------
+    client:
+        LLM client for completion calls.
+    config:
+        Run configuration. Defaults to :class:`EvalRunConfig` defaults.
+    cache:
+        Response cache instance. When ``None`` and ``config.use_cache`` is
+        ``True``, a default :class:`ResponseCache` is created.
+    """
+
+    def __init__(
+        self,
+        client: LLMClient,
+        config: EvalRunConfig | None = None,
+        cache: ResponseCache | None = None,
+    ) -> None:
+        self._client = client
+        self._config = config or EvalRunConfig()
+
+        if cache is not None:
+            self._cache = cache
+        elif self._config.use_cache:
+            self._cache = ResponseCache(
+                cache_dir=self._config.cache_dir,
+                enabled=True,
+            )
+        else:
+            self._cache = ResponseCache(enabled=False)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def run(
+        self,
+        tasks: list[EvalTask],
+        variants: list[IndexVariant],
+        doc_tree: DocTree,
+        progress_callback: ProgressCallback | None = None,
+    ) -> EvalRunResult:
+        """Execute a full evaluation run.
+
+        Parameters
+        ----------
+        tasks:
+            Eval tasks to run against each variant.
+        variants:
+            Index variants to evaluate.
+        doc_tree:
+            Documentation tree passed to each variant for rendering.
+        progress_callback:
+            Optional callback invoked after each trial with
+            ``(completed, total, trial_result)``.
+
+        Returns
+        -------
+        EvalRunResult
+            Aggregated results from all trials.
+        """
+        run_start = time.monotonic()
+
+        # Setup all variants
+        for variant in variants:
+            variant.setup(doc_tree)
+
+        # Build the list of (task, variant, repetition) triples
+        work_items: list[tuple[EvalTask, IndexVariant, int]] = []
+        for variant in variants:
+            for task in tasks:
+                for rep in range(1, self._config.repetitions + 1):
+                    work_items.append((task, variant, rep))
+
+        total = len(work_items)
+        trials: list[TrialResult] = []
+        completed = 0
+
+        if total > 0:
+            with ThreadPoolExecutor(
+                max_workers=self._config.max_connections,
+            ) as executor:
+                future_to_item = {
+                    executor.submit(
+                        self._run_trial, task, variant, doc_tree, rep
+                    ): (task, variant, rep)
+                    for task, variant, rep in work_items
+                }
+
+                for future in as_completed(future_to_item):
+                    trial = future.result()
+                    trials.append(trial)
+                    completed += 1
+                    if progress_callback is not None:
+                        progress_callback(completed, total, trial)
+
+        # Teardown all variants
+        for variant in variants:
+            variant.teardown()
+
+        elapsed = time.monotonic() - run_start
+        total_cost = sum(t.cost for t in trials if t.cost is not None)
+        total_tokens = sum(t.total_tokens for t in trials)
+
+        return EvalRunResult(
+            config=self._config,
+            trials=trials,
+            total_cost=total_cost,
+            total_tokens=total_tokens,
+            elapsed_seconds=elapsed,
+        )
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _run_trial(
+        self,
+        task: EvalTask,
+        variant: IndexVariant,
+        doc_tree: DocTree,
+        repetition: int,
+    ) -> TrialResult:
+        """Execute a single (task, variant, repetition) trial.
+
+        Parameters
+        ----------
+        task:
+            The eval task to run.
+        variant:
+            The index variant providing index content.
+        doc_tree:
+            Documentation tree for rendering.
+        repetition:
+            1-based repetition number.
+
+        Returns
+        -------
+        TrialResult
+            The trial result with score, token counts, and timing.
+
+        Raises
+        ------
+        LLMClientError
+            If the LLM call fails and no cached response is available.
+        """
+        trial_start = time.monotonic()
+
+        # Render and build prompt
+        index_content = variant.render(doc_tree)
+        messages = task.build_prompt(index_content)
+
+        variant_meta = variant.metadata()
+        variant_name = variant_meta.name
+
+        # Check cache
+        cached = False
+        generation: GenerationResult | None = None
+
+        if self._config.use_cache:
+            # Include repetition in the cache key so that different
+            # repetitions within a run are NOT served from cache.
+            # DESIGN.md line 833: "Caching disabled across repetitions
+            # within a run to capture variance."  Including the repetition
+            # number means a re-run of the *same* configuration reuses
+            # the prior results (cross-run caching), while different
+            # repetitions always produce distinct API calls.
+            cache_messages = [
+                *messages,
+                {"role": "system", "content": f"__rep:{repetition}"},
+            ]
+            cache_key = self._cache.make_key(
+                model=self._client.model,
+                temperature=self._config.temperature,
+                max_tokens=self._config.max_tokens,
+                messages=cache_messages,
+            )
+            entry = self._cache.get(cache_key)
+            if entry is not None:
+                cached = True
+                resp_data: dict[str, Any] = entry.response
+                generation = GenerationResult(
+                    content=resp_data.get("content", ""),
+                    prompt_tokens=resp_data.get("prompt_tokens", 0),
+                    completion_tokens=resp_data.get("completion_tokens", 0),
+                    total_tokens=resp_data.get("total_tokens", 0),
+                    cost=resp_data.get("cost"),
+                    model=resp_data.get("model", self._client.model),
+                    generation_id=resp_data.get("generation_id"),
+                )
+
+        # Cache miss: call LLM
+        if generation is None:
+            generation = self._client.complete(
+                messages,
+                max_tokens=self._config.max_tokens,
+                temperature=self._config.temperature,
+            )
+
+            # Store in cache
+            if self._config.use_cache:
+                self._cache.put(
+                    cache_key,
+                    {
+                        "content": generation.content,
+                        "prompt_tokens": generation.prompt_tokens,
+                        "completion_tokens": generation.completion_tokens,
+                        "total_tokens": generation.total_tokens,
+                        "cost": generation.cost,
+                        "model": generation.model,
+                        "generation_id": generation.generation_id,
+                    },
+                    model=generation.model,
+                    tokens_used=generation.total_tokens,
+                )
+
+        # Score the response
+        score = task.score_response(generation.content)
+
+        latency = time.monotonic() - trial_start
+
+        return TrialResult(
+            task_id=task.definition.task_id,
+            variant_name=variant_name,
+            repetition=repetition,
+            score=score,
+            metrics={},
+            prompt_tokens=generation.prompt_tokens,
+            completion_tokens=generation.completion_tokens,
+            total_tokens=generation.total_tokens,
+            cost=generation.cost,
+            latency_seconds=latency,
+            response=generation.content,
+            cached=cached,
+        )
