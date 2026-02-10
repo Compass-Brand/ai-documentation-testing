@@ -8,19 +8,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from agent_evals.variants._utils import summarise as _summarise
 from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.registry import register_variant
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
-
-
-def _summarise(content: str) -> str:
-    """Return first line or first ~100 chars of content as a summary."""
-    first_line = content.split("\n", 1)[0].strip()
-    if len(first_line) > 100:
-        return first_line[:97] + "..."
-    return first_line
 
 
 @register_variant

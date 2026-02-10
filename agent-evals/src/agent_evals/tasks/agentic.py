@@ -1,18 +1,35 @@
 """Agentic task type for evaluating multi-step coding agent behaviour.
 
-Composite score with 3 text-based components:
+Composite score with up to 4 text-based components:
+
+When expected_tools are present (weights sum to 1.0):
+- File mention (0.3): Do expected file paths appear in the response text?
+- Content (0.3): Do key facts from file content summaries appear in the response?
+- Tool usage (0.2): Are expected tools mentioned in the correct order, penalising extras?
+- Correctness (0.2): Bonus if FAIL_TO_PASS test names appear.
+
+When no expected_tools (backward-compatible):
 - File mention (0.4): Do expected file paths appear in the response text?
 - Content (0.4): Do key facts from file content summaries appear in the response?
-- Correctness (0.2): Bonus if FAIL_TO_PASS test names appear (not penalised if absent).
+- Correctness (0.2): Bonus if FAIL_TO_PASS test names appear.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
+
+# Common tool name patterns for hallucination detection
+_TOOL_NAME_PATTERN: re.Pattern[str] = re.compile(
+    r"\b(?:read_file|write_file|search|grep_files|execute_code|run_tests|"
+    r"create_file|delete_file|list_files|edit_file|deploy_app|"
+    r"install_package|run_command|open_browser|debug|lint|format_code)\b",
+    re.IGNORECASE,
+)
 
 
 def _parse_json_or_list(value: object) -> list[str]:
@@ -84,7 +101,10 @@ class AgenticTask(EvalTask):
         ]
 
     def score_response(self, response: str, **kwargs: object) -> float:
-        """Score response purely from text using file, content, and correctness signals.
+        """Score response purely from text using file, content, tool, and correctness signals.
+
+        When expected_tools are present, weights are redistributed to include
+        tool usage scoring. Otherwise, backward-compatible weights are used.
 
         Args:
             response: The raw text response from the LLM.
@@ -97,11 +117,20 @@ class AgenticTask(EvalTask):
         content_score = self._score_content(response)
         correctness_score = self._score_correctness(response)
 
-        composite = (
-            file_mention_score * 0.4
-            + content_score * 0.4
-            + correctness_score * 0.2
-        )
+        if self.expected_tools:
+            tool_score = self._score_tool_usage(response)
+            composite = (
+                file_mention_score * 0.3
+                + content_score * 0.3
+                + tool_score * 0.2
+                + correctness_score * 0.2
+            )
+        else:
+            composite = (
+                file_mention_score * 0.4
+                + content_score * 0.4
+                + correctness_score * 0.2
+            )
         return max(0.0, min(1.0, composite))
 
     def _score_file_mentions(self, response: str) -> float:
@@ -174,6 +203,62 @@ class AgenticTask(EvalTask):
             if test_name.lower() in response_lower
         )
         return matched / len(self.fail_to_pass)
+
+    def _score_tool_usage(self, response: str) -> float:
+        """Score tool usage: mention coverage, ordering, and extra-tool penalty.
+
+        Computes three sub-scores and combines them:
+        - Coverage (0.5): fraction of expected tools mentioned
+        - Ordering (0.3): 1.0 if mentioned tools appear in expected order, 0.0 otherwise
+        - Precision (0.2): 1.0 if no extra (hallucinated) tools, scaled down by extra count
+
+        Args:
+            response: The raw text response from the LLM.
+
+        Returns:
+            Combined tool usage score between 0.0 and 1.0.
+        """
+        if not self.expected_tools:
+            return 0.0
+
+        response_lower = response.lower()
+        expected_names = [
+            tool.get("name", "").lower() for tool in self.expected_tools
+            if tool.get("name")
+        ]
+
+        if not expected_names:
+            return 0.0
+
+        # --- Coverage: fraction of expected tools mentioned ---
+        mentioned_expected = [
+            name for name in expected_names if name in response_lower
+        ]
+        coverage = len(mentioned_expected) / len(expected_names)
+
+        # If no expected tools were mentioned, the score is 0
+        if not mentioned_expected:
+            return 0.0
+
+        # --- Ordering: check if mentioned tools appear in expected order ---
+        if len(mentioned_expected) >= 2:
+            positions = [response_lower.index(name) for name in mentioned_expected]
+            ordering = 1.0 if positions == sorted(positions) else 0.0
+        else:
+            ordering = 1.0  # 1 mentioned tool is trivially in order
+
+        # --- Precision: penalise hallucinated (extra) tool mentions ---
+        all_mentioned = set(
+            m.group().lower() for m in _TOOL_NAME_PATTERN.finditer(response_lower)
+        )
+        expected_set = set(expected_names)
+        extra_tools = all_mentioned - expected_set
+        if all_mentioned:
+            precision = 1.0 - len(extra_tools) / max(len(all_mentioned), 1)
+        else:
+            precision = 1.0
+
+        return coverage * 0.5 + ordering * 0.3 + precision * 0.2
 
 
 register_task_type("agentic", AgenticTask)

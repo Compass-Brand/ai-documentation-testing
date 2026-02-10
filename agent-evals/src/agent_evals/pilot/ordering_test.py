@@ -89,10 +89,10 @@ def select_beam(
 
     candidates: list[BeamCandidate] = []
     for variant_name, trials in variant_trials.items():
-        # Group by task type (extract from task_id prefix)
+        # Group by task type
         type_scores: dict[str, list[float]] = {}
         for t in trials:
-            task_type = "_".join(t.task_id.split("_")[:-1])
+            task_type = t.task_type
             type_scores.setdefault(task_type, []).append(t.score)
 
         # Mean score per type

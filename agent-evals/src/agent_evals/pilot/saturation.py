@@ -123,9 +123,8 @@ def compute_learning_curve(
         # Compute per-type mean scores using included tasks only
         type_scores: dict[str, list[float]] = {}
         for tid in included_tasks:
-            task_type = "_".join(tid.split("_")[:-1])
             for t in task_trials.get(tid, []):
-                type_scores.setdefault(task_type, []).append(t.score)
+                type_scores.setdefault(t.task_type, []).append(t.score)
 
         per_type_means = {
             tt: sum(scores) / len(scores)
@@ -153,9 +152,8 @@ def compute_learning_curve(
         included_tasks = task_order
         type_scores_final: dict[str, list[float]] = {}
         for tid in included_tasks:
-            task_type = "_".join(tid.split("_")[:-1])
             for t in task_trials.get(tid, []):
-                type_scores_final.setdefault(task_type, []).append(t.score)
+                type_scores_final.setdefault(t.task_type, []).append(t.score)
 
         per_type_means_final = {
             tt: sum(scores) / len(scores)

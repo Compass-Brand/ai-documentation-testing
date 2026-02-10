@@ -165,7 +165,12 @@ def pairwise_wilcoxon(
     # number of non-zero differences.
     non_zero = differences[differences != 0]
     n = len(non_zero)
-    effect_size = 1.0 - (2.0 * statistic) / (n * (n + 1) / 2.0) if n > 0 else 0.0
+    denominator = n * (n + 1) / 2.0
+    # Guard against zero denominator (all pairs tied or no non-zero diffs)
+    if denominator == 0.0:
+        effect_size = 0.0
+    else:
+        effect_size = 1.0 - (2.0 * statistic) / denominator
 
     return PairwiseResult(
         variant_a=variant_a,
@@ -201,8 +206,9 @@ def holm_bonferroni(
         return []
 
     m = len(results)
-    # Sort by raw p-value ascending
-    indexed = sorted(enumerate(results), key=lambda x: x[1].p_value)
+    # Sort by raw p-value ascending; break ties by original index for
+    # deterministic ordering when p-values are identical.
+    indexed = sorted(enumerate(results), key=lambda x: (x[1].p_value, x[0]))
 
     corrected: list[tuple[int, PairwiseResult]] = []
     prev_corrected_p = 0.0
@@ -245,6 +251,9 @@ class BootstrapCI:
     n_resamples: int
 
 
+_MIN_BOOTSTRAP_RESAMPLES = 100
+
+
 def bootstrap_ci(
     data: list[float],
     statistic: Callable[[npt.NDArray[np.float64]], Any] = np.mean,
@@ -261,9 +270,30 @@ def bootstrap_ci(
 
     Returns:
         BootstrapCI with point estimate, CI bounds, and resample count.
+
+    Raises:
+        ValueError: If n_resamples < 100 (minimum for reliable bootstrap).
     """
+    if n_resamples < _MIN_BOOTSTRAP_RESAMPLES:
+        msg = (
+            f"n_resamples={n_resamples} is below the minimum of "
+            f"{_MIN_BOOTSTRAP_RESAMPLES} required for reliable bootstrap CIs"
+        )
+        raise ValueError(msg)
+
     arr = np.asarray(data, dtype=np.float64)
     point_est = float(statistic(arr))
+
+    # Zero-variance data: all values are identical, so the CI is degenerate.
+    # BCa bootstrap cannot compute acceleration for constant data (division
+    # by zero in the jackknife), so we short-circuit here.
+    if np.ptp(arr) == 0.0:
+        return BootstrapCI(
+            point_estimate=point_est,
+            ci_lower=point_est,
+            ci_upper=point_est,
+            n_resamples=n_resamples,
+        )
 
     stat_fn = statistic  # capture for lambda
 

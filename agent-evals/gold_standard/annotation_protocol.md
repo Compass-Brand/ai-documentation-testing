@@ -304,6 +304,20 @@ Each rubric maps the 0.0-1.0 scale to task-specific criteria. Annotators should 
 - For tasks with no explicit budget, this rubric does not apply. Flag such tasks as `no_budget: true`.
 
 
+## 3.12 Canary & Sentinel Tasks
+
+### Naming Convention
+
+Canary and sentinel tasks use a `canary_NNN` or `sentinel_NNN` task_id prefix regardless of which task type directory they reside in. This is intentional: their `type` field reflects the actual task type being tested (e.g., `factual_retrieval`, `negative`), while the `task_id` prefix signals their QA role.
+
+### Purpose
+
+- **Canary tasks** have trivially obvious correct answers and are used to detect annotator inattention. They are interspersed across all task type directories.
+- **Sentinel tasks** have known-difficult edge cases and are used to verify that scorers handle boundary conditions correctly.
+
+Both task categories deliberately use cross-type placement (e.g., a `canary_001` file in the `negative/` directory) to test that loaders and scorers handle tasks by their `type` field, not by directory membership.
+
+
 ## 4. Inter-Annotator Agreement Process
 
 ### Overlap Sampling

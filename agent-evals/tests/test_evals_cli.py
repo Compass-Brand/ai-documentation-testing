@@ -511,9 +511,9 @@ class TestResolveConfigMerge:
 class TestMain:
     """Tests for the main() entry point."""
 
-    def test_returns_zero_on_success(self) -> None:
+    def test_returns_one_without_model(self) -> None:
         result = main([])
-        assert result == 0
+        assert result == 1
 
     def test_help_raises_system_exit(self) -> None:
         with pytest.raises(SystemExit) as exc_info:
@@ -526,7 +526,7 @@ class TestMain:
             "model: file-model\nrepetitions: 15\n",
             encoding="utf-8",
         )
-        result = main(["--config", str(config_file)])
+        result = main(["--config", str(config_file), "--dry-run"])
         assert result == 0
 
     def test_returns_zero_with_flags(self) -> None:
@@ -550,21 +550,21 @@ class TestMain:
         config_file = tmp_path / "eval-config.yaml"
         config_file.write_text("model: auto-loaded\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
-        result = main([])
+        result = main(["--dry-run"])
         assert result == 0
 
-    def test_no_default_config_file_still_succeeds(
+    def test_no_default_config_file_returns_one_without_model(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """When no config file exists at all, main still returns 0."""
+        """When no config file exists and no model, returns 1."""
         monkeypatch.chdir(tmp_path)
         result = main([])
-        assert result == 0
+        assert result == 1
 
     def test_main_with_env_vars(self) -> None:
         with patch.dict(
             "os.environ",
             {"AGENT_EVALS_MODEL": "env/model", "AGENT_EVALS_REPETITIONS": "8"},
         ):
-            result = main([])
+            result = main(["--dry-run"])
         assert result == 0

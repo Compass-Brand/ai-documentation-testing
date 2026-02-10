@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import random
 import time
 from dataclasses import dataclass
 from typing import Any
 
 import litellm
+
+# Typed exception classes for retry decisions.  Using these instead of
+# fragile string matching (e.g. ``"429" in str(exc)``) makes the retry
+# logic robust regardless of how the provider formats error messages.
+_RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+    litellm.RateLimitError,
+    litellm.InternalServerError,
+    litellm.ServiceUnavailableError,
+    litellm.BadGatewayError,
+)
 
 
 @dataclass
@@ -105,17 +116,12 @@ class LLMClient:
                 raise
             except Exception as exc:
                 last_exc = exc
-                # Retry on rate limit (429) or server errors (5xx)
-                exc_str = str(exc).lower()
-                is_retryable = (
-                    "429" in exc_str
-                    or "rate" in exc_str
-                    or "500" in exc_str
-                    or "502" in exc_str
-                    or "503" in exc_str
-                )
+                is_retryable = isinstance(exc, _RETRYABLE_EXCEPTIONS)
                 if is_retryable and attempt < self.MAX_RETRIES - 1:
-                    delay = self.RETRY_BASE_DELAY * (2 ** attempt)
+                    # Exponential backoff with jitter: random delay in
+                    # (0, base_delay * 2^attempt] to avoid thundering herd.
+                    max_delay = self.RETRY_BASE_DELAY * (2 ** attempt)
+                    delay = random.uniform(0, max_delay)  # noqa: S311
                     time.sleep(delay)
                     continue
                 msg = (

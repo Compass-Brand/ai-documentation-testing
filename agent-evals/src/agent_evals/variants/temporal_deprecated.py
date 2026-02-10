@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from agent_evals.variants._utils import brief_summary as _brief_summary
 from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.registry import register_variant
 
@@ -26,18 +27,6 @@ _DEPRECATION_PATTERN: re.Pattern[str] = re.compile(
 def _is_deprecated(content: str) -> bool:
     """Check whether content contains deprecation signals."""
     return bool(_DEPRECATION_PATTERN.search(content))
-
-
-def _brief_summary(content: str, max_chars: int = 80) -> str:
-    """Extract a brief summary from content.
-
-    Takes the first non-empty line and truncates to *max_chars*.
-    """
-    for line in content.splitlines():
-        stripped = line.strip().lstrip("# ")
-        if stripped:
-            return stripped[:max_chars]
-    return ""
 
 
 @register_variant

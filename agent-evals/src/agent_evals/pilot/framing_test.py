@@ -150,7 +150,7 @@ def aggregate_trials(
         # Per-type scores
         type_scores: dict[str, list[float]] = {}
         for t in vtrials:
-            task_type = "_".join(t.task_id.split("_")[:-1])
+            task_type = t.task_type
             type_scores.setdefault(task_type, []).append(t.score)
 
         per_type_means = {

@@ -42,6 +42,7 @@ class TrialResult:
 
     Attributes:
         task_id: Identifier of the task that was evaluated.
+        task_type: Type of the task (e.g. 'retrieval', 'code_generation').
         variant_name: Name of the index variant used.
         repetition: 1-based repetition number.
         score: Task score between 0.0 and 1.0.
@@ -56,6 +57,7 @@ class TrialResult:
     """
 
     task_id: str
+    task_type: str
     variant_name: str
     repetition: int
     score: float
@@ -269,16 +271,12 @@ class EvalRunner:
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Build task_id -> task_type lookup from the tasks list
-        task_type_map: dict[str, str] = {
-            t.definition.task_id: t.definition.type for t in tasks
-        }
-
         # -- Trial dicts (shared between JSON and by_* aggregations) ---------
         trial_dicts: list[dict[str, Any]] = []
         for t in result.trials:
             trial_dicts.append({
                 "task_id": t.task_id,
+                "task_type": t.task_type,
                 "variant_name": t.variant_name,
                 "repetition": t.repetition,
                 "score": t.score,
@@ -313,7 +311,7 @@ class EvalRunner:
         task_type_scores: dict[str, list[float]] = defaultdict(list)
         task_type_counts: dict[str, int] = defaultdict(int)
         for t in result.trials:
-            tt = task_type_map.get(t.task_id, "unknown")
+            tt = t.task_type
             task_type_scores[tt].append(t.score)
             task_type_counts[tt] += 1
 
@@ -486,6 +484,7 @@ class EvalRunner:
 
         return TrialResult(
             task_id=task.definition.task_id,
+            task_type=task.definition.type,
             variant_name=variant_name,
             repetition=repetition,
             score=score,

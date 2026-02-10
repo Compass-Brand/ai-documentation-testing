@@ -10,44 +10,13 @@ from __future__ import annotations
 import random
 from typing import TYPE_CHECKING
 
+from agent_evals.variants._utils import brief_summary as _brief_summary
+from agent_evals.variants._utils import generate_distractors as _generate_distractors
 from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.registry import register_variant
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
-
-
-def _brief_summary(content: str, max_chars: int = 80) -> str:
-    """Extract a brief summary from content."""
-    for line in content.splitlines():
-        stripped = line.strip().lstrip("# ")
-        if stripped:
-            return stripped[:max_chars]
-    return ""
-
-
-_DISTRACTOR_SUMMARIES = [
-    "Internal reference document",
-    "Auto-generated configuration stub",
-    "Legacy migration notes",
-    "Temporary scaffolding overview",
-    "Deprecated helper utilities",
-    "Build system integration notes",
-    "Draft specification placeholder",
-    "Compatibility shim documentation",
-    "Generated type definitions",
-    "Archived design decision log",
-]
-
-
-def _generate_distractors(count: int, rng: random.Random) -> list[tuple[str, str]]:
-    """Generate *count* distractor entries as (path, summary) pairs."""
-    distractors: list[tuple[str, str]] = []
-    for i in range(count):
-        path = f"docs/internal/generated_{i + 1:03d}.md"
-        summary = rng.choice(_DISTRACTOR_SUMMARIES)
-        distractors.append((path, summary))
-    return distractors
 
 
 @register_variant

@@ -189,3 +189,100 @@ class TestEstimateCost:
             model="gpt-4",
         )
         assert result == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Default model alignment (Step 6.2)
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultModelAlignment:
+    """Tests that default model matches system's OpenRouter configuration."""
+
+    def test_count_tokens_default_model_is_openrouter(self) -> None:
+        """count_tokens default model should match system's primary model."""
+        import inspect
+
+        sig = inspect.signature(count_tokens)
+        default = sig.parameters["model"].default
+        assert default == "openrouter/anthropic/claude-sonnet-4.5", (
+            f"Expected default model 'openrouter/anthropic/claude-sonnet-4.5', "
+            f"got '{default}'"
+        )
+
+    def test_count_message_tokens_default_model_is_openrouter(self) -> None:
+        """count_message_tokens default model should match system's primary model."""
+        import inspect
+
+        sig = inspect.signature(count_message_tokens)
+        default = sig.parameters["model"].default
+        assert default == "openrouter/anthropic/claude-sonnet-4.5", (
+            f"Expected default model 'openrouter/anthropic/claude-sonnet-4.5', "
+            f"got '{default}'"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Zero-cost model handling (Step 6.2)
+# ---------------------------------------------------------------------------
+
+
+class TestZeroCostModels:
+    """Tests that free models with 0.0 cost are handled correctly."""
+
+    @patch("agent_evals.llm.token_counter.litellm")
+    def test_zero_cost_per_token_returns_zero_cost(
+        self, mock_litellm: MagicMock
+    ) -> None:
+        """A model with 0.0 cost per token should return 0.0, not be skipped."""
+        mock_litellm.model_cost = {
+            "free-model": {
+                "input_cost_per_token": 0.0,
+                "output_cost_per_token": 0.0,
+            }
+        }
+        result = estimate_cost(
+            prompt_tokens=1000,
+            completion_tokens=500,
+            model="free-model",
+        )
+        # Should return 0.0 (the computed cost), NOT skip to the fallback
+        assert result == 0.0
+
+    @patch("agent_evals.llm.token_counter.litellm")
+    def test_zero_input_cost_nonzero_output_cost(
+        self, mock_litellm: MagicMock
+    ) -> None:
+        """A model with free input but paid output should compute correctly."""
+        mock_litellm.model_cost = {
+            "free-input-model": {
+                "input_cost_per_token": 0.0,
+                "output_cost_per_token": 0.00006,
+            }
+        }
+        result = estimate_cost(
+            prompt_tokens=1000,
+            completion_tokens=500,
+            model="free-input-model",
+        )
+        # Only output cost: 500 * 0.00006 = 0.03
+        assert result == pytest.approx(0.03)
+
+    @patch("agent_evals.llm.token_counter.litellm")
+    def test_nonzero_input_cost_zero_output_cost(
+        self, mock_litellm: MagicMock
+    ) -> None:
+        """A model with paid input but free output should compute correctly."""
+        mock_litellm.model_cost = {
+            "free-output-model": {
+                "input_cost_per_token": 0.00003,
+                "output_cost_per_token": 0.0,
+            }
+        }
+        result = estimate_cost(
+            prompt_tokens=1000,
+            completion_tokens=500,
+            model="free-output-model",
+        )
+        # Only input cost: 1000 * 0.00003 = 0.03
+        assert result == pytest.approx(0.03)

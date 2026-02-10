@@ -127,6 +127,25 @@ class TestPairwiseWilcoxon:
         # effect size should reflect that
         assert result.effect_size != 0.0
 
+    def test_rank_biserial_handles_all_tied(self) -> None:
+        """When all paired observations are equal (all differences zero),
+        rank-biserial effect size should be 0.0 without division-by-zero."""
+        # Exact same scores: all differences are zero
+        scores = [0.5, 0.6, 0.7, 0.8, 0.9]
+        result = pairwise_wilcoxon(scores, scores, alpha=0.05)
+        assert result.effect_size == 0.0
+        assert result.p_value == 1.0
+        assert result.significant is False
+
+    def test_rank_biserial_near_tied(self) -> None:
+        """When almost all pairs are tied, effect size should still be valid."""
+        # All but one pair identical
+        a = [1.0, 2.0, 3.0, 4.0, 5.0]
+        b = [1.0, 2.0, 3.0, 4.0, 4.0]  # Only last differs
+        result = pairwise_wilcoxon(a, b, alpha=0.05)
+        assert -1.0 <= result.effect_size <= 1.0
+        assert isinstance(result.effect_size, float)
+
     def test_result_fields_populated(self) -> None:
         """All PairwiseResult fields should be populated."""
         rng = np.random.default_rng(7)
@@ -224,6 +243,85 @@ class TestHolmBonferroni:
         """Empty input returns empty output."""
         assert holm_bonferroni([], alpha=0.05) == []
 
+    def test_tied_p_values_deterministic(self) -> None:
+        """Tied p-values should produce deterministic, consistent corrections.
+
+        When all raw p-values are identical, Holm-Bonferroni should assign
+        the same corrected p-value to all (via monotonicity enforcement),
+        and the result should be deterministic regardless of input order.
+        """
+        results = [
+            PairwiseResult(
+                variant_a="A", variant_b="B",
+                statistic=10.0, p_value=0.03,
+                corrected_p_value=0.03, effect_size=0.5,
+                significant=True,
+            ),
+            PairwiseResult(
+                variant_a="A", variant_b="C",
+                statistic=8.0, p_value=0.03,
+                corrected_p_value=0.03, effect_size=0.3,
+                significant=True,
+            ),
+            PairwiseResult(
+                variant_a="B", variant_b="C",
+                statistic=5.0, p_value=0.03,
+                corrected_p_value=0.03, effect_size=0.2,
+                significant=True,
+            ),
+        ]
+        corrected = holm_bonferroni(results, alpha=0.05)
+
+        # All tied: first gets 0.03*3=0.09, others enforced to >= 0.09
+        for r in corrected:
+            assert r.corrected_p_value == pytest.approx(0.09)
+
+        # Verify determinism: reverse input order, same result
+        reversed_results = list(reversed(results))
+        corrected_rev = holm_bonferroni(reversed_results, alpha=0.05)
+        for r in corrected_rev:
+            assert r.corrected_p_value == pytest.approx(0.09)
+
+        # Verify original order preserved
+        assert corrected[0].variant_a == "A"
+        assert corrected[0].variant_b == "B"
+        assert corrected[2].variant_a == "B"
+        assert corrected[2].variant_b == "C"
+
+    def test_tied_p_values_partial(self) -> None:
+        """When some p-values are tied, corrections should be consistent."""
+        results = [
+            PairwiseResult(
+                variant_a="A", variant_b="B",
+                statistic=10.0, p_value=0.01,
+                corrected_p_value=0.01, effect_size=0.5,
+                significant=True,
+            ),
+            PairwiseResult(
+                variant_a="A", variant_b="C",
+                statistic=8.0, p_value=0.04,
+                corrected_p_value=0.04, effect_size=0.3,
+                significant=True,
+            ),
+            PairwiseResult(
+                variant_a="B", variant_b="C",
+                statistic=5.0, p_value=0.04,
+                corrected_p_value=0.04, effect_size=0.2,
+                significant=True,
+            ),
+        ]
+        corrected = holm_bonferroni(results, alpha=0.05)
+
+        # p=0.01 * 3 = 0.03 (significant at 0.05)
+        # p=0.04 * 2 = 0.08 (not significant)
+        # p=0.04 * 1 = 0.04, but monotonicity -> max(0.04, 0.08) = 0.08
+        sorted_corrected = sorted(corrected, key=lambda r: r.p_value)
+        assert sorted_corrected[0].corrected_p_value == pytest.approx(0.03)
+        assert sorted_corrected[0].significant is True
+        # Both tied p=0.04 results should get the same corrected p-value
+        assert sorted_corrected[1].corrected_p_value == pytest.approx(0.08)
+        assert sorted_corrected[2].corrected_p_value == pytest.approx(0.08)
+
     def test_monotonicity_enforced(self) -> None:
         """Corrected p-values must be monotonically non-decreasing."""
         results = [
@@ -303,6 +401,36 @@ class TestBootstrapCI:
         width_90 = ci_90.ci_upper - ci_90.ci_lower
         width_99 = ci_99.ci_upper - ci_99.ci_lower
         assert width_99 > width_90
+
+    def test_zero_variance_returns_degenerate_ci(self) -> None:
+        """When all data points are identical (zero variance), CI should be
+        degenerate: (value, value) with zero width."""
+        data = [0.75, 0.75, 0.75, 0.75, 0.75]
+        result = bootstrap_ci(data, n_resamples=1000, confidence=0.95)
+        assert result.point_estimate == pytest.approx(0.75)
+        assert result.ci_lower == pytest.approx(0.75)
+        assert result.ci_upper == pytest.approx(0.75)
+
+    def test_zero_variance_single_value(self) -> None:
+        """Zero-variance with many identical values should not crash."""
+        data = [42.0] * 50
+        result = bootstrap_ci(data, n_resamples=500, confidence=0.95)
+        assert result.point_estimate == pytest.approx(42.0)
+        assert result.ci_lower == pytest.approx(42.0)
+        assert result.ci_upper == pytest.approx(42.0)
+        assert result.n_resamples == 500
+
+    def test_insufficient_bootstrap_samples_raises(self) -> None:
+        """Should raise ValueError when n_resamples is too small."""
+        data = [0.5, 0.6, 0.7, 0.8, 0.9]
+        with pytest.raises(ValueError, match="n_resamples"):
+            bootstrap_ci(data, n_resamples=0)
+
+    def test_minimum_bootstrap_samples(self) -> None:
+        """Should raise ValueError when n_resamples < 100."""
+        data = [0.5, 0.6, 0.7, 0.8, 0.9]
+        with pytest.raises(ValueError, match="n_resamples"):
+            bootstrap_ci(data, n_resamples=50)
 
 
 # ---------------------------------------------------------------------------
