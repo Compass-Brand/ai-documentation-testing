@@ -58,6 +58,9 @@ Thumbs.db
 reports/
 *.log
 
+# Worktrees
+.worktrees/
+
 # Secrets
 .env
 .env.local
