@@ -10,10 +10,13 @@ are loaded before any TASK_TYPES lookups.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
+
+logger = logging.getLogger(__name__)
 
 from agent_evals.tasks.base import TASK_TYPES, EvalTask, TaskDefinition
 
@@ -32,10 +35,9 @@ def _ensure_registered() -> None:
     global _registered  # noqa: PLW0603
     if _registered:
         return
-    # Importing the package triggers __init__.py which imports every
-    # concrete task module, each of which calls register_task_type().
-    import agent_evals.tasks  # noqa: F401
+    from agent_evals.tasks.base import load_all_task_types
 
+    load_all_task_types()
     _registered = True
 
 
@@ -96,7 +98,7 @@ def load_task(path: Path) -> EvalTask:
     return task_cls(definition)
 
 
-def load_tasks(directory: Path) -> list[EvalTask]:
+def load_tasks(directory: Path, *, strict: bool = True) -> list[EvalTask]:
     """Load all YAML task definitions from a directory.
 
     Recursively scans the directory for files with .yaml or .yml extensions,
@@ -104,12 +106,15 @@ def load_tasks(directory: Path) -> list[EvalTask]:
 
     Args:
         directory: Path to a directory containing YAML task files.
+        strict: When True (default), raise on the first invalid file.
+            When False, log warnings and skip invalid files.
 
     Returns:
         List of EvalTask instances sorted by task_id.
 
     Raises:
         FileNotFoundError: If the directory does not exist.
+        ValueError: If strict=True and a file fails validation.
     """
     directory = Path(directory)
 
@@ -118,17 +123,31 @@ def load_tasks(directory: Path) -> list[EvalTask]:
         raise FileNotFoundError(msg)
 
     tasks: list[EvalTask] = []
+    errors: list[tuple[Path, Exception]] = []
 
     yaml_paths = sorted(
         [*directory.rglob("*.yaml"), *directory.rglob("*.yml")]
     )
     for yaml_path in yaml_paths:
-        task = load_task(yaml_path)
-        tasks.append(task)
+        try:
+            task = load_task(yaml_path)
+            tasks.append(task)
+        except (ValueError, FileNotFoundError) as exc:
+            if strict:
+                raise
+            errors.append((yaml_path, exc))
+            logger.warning("Skipping %s: %s", yaml_path, exc)
+
+    if errors:
+        logger.warning(
+            "Loaded %d tasks, skipped %d invalid files",
+            len(tasks), len(errors),
+        )
 
     # Check for duplicate task_ids
     seen_ids: dict[str, Path] = {}
-    for task, yaml_path in zip(tasks, yaml_paths):
+    loaded_paths = [p for p in yaml_paths if p not in {e[0] for e in errors}]
+    for task, yaml_path in zip(tasks, loaded_paths):
         tid = task.definition.task_id
         if tid in seen_ids:
             msg = (

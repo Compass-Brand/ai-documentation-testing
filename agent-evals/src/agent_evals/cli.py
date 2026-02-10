@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from agent_evals.runner import EvalRunConfig
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -129,9 +135,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-format",
         type=str,
-        choices=["json", "csv"],
+        choices=["json", "csv", "both"],
         default=None,
-        help="Output format (default: json)",
+        help="Output format (default: both)",
     )
     parser.add_argument(
         "--display",
@@ -147,6 +153,28 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Path to eval-config.yaml (default: ./eval-config.yaml)",
+    )
+
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        default=False,
+        help="Skip failed trials and report partial results",
+    )
+
+    # Verbosity (mutually exclusive)
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        default=False,
+        help="Enable debug-level logging output",
+    )
+    verbosity.add_argument(
+        "--quiet", "-q",
+        action="store_true",
+        default=False,
+        help="Suppress info-level output (warnings and errors only)",
     )
 
     return parser
@@ -166,10 +194,16 @@ def load_config(config_path: Path | None) -> dict[str, Any]:
     try:
         with open(config_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
-    except (yaml.YAMLError, OSError):
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse config file %s: %s", config_path, exc)
         return {}
 
     if not isinstance(data, dict):
+        logger.warning(
+            "Config file %s does not contain a YAML mapping (got %s)",
+            config_path,
+            type(data).__name__,
+        )
         return {}
 
     return dict(data)
@@ -195,6 +229,7 @@ _CONFIG_KEYS: dict[str, type] = {
     "output_dir": str,
     "output_format": str,
     "display": str,
+    "continue_on_error": bool,
 }
 
 
@@ -247,9 +282,11 @@ def resolve_config(
         if env_value is not None:
             try:
                 resolved[key] = _coerce_env(env_value, target_type)
-            except (ValueError, TypeError):
-                # Ignore malformed env values; fall through to config
-                pass
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "Could not parse env var %s=%r as %s: %s",
+                    env_name, env_value, target_type.__name__, exc,
+                )
             else:
                 continue
 
@@ -260,7 +297,7 @@ def resolve_config(
     return resolved
 
 
-def build_eval_run_config(resolved: dict[str, Any]) -> "EvalRunConfig":
+def build_eval_run_config(resolved: dict[str, Any]) -> EvalRunConfig:
     """Build an EvalRunConfig from a resolved config dict.
 
     Maps CLI/config/env keys to EvalRunConfig fields with appropriate defaults.
@@ -276,7 +313,9 @@ def build_eval_run_config(resolved: dict[str, Any]) -> "EvalRunConfig":
         use_cache=not resolved.get("no_cache", False),
         cache_dir=resolved.get("cache_dir", ".agent-evals-cache"),
         output_dir=resolved.get("output_dir", "reports"),
+        output_format=resolved.get("output_format", "both"),
         display_mode=resolved.get("display", "rich"),
+        continue_on_error=resolved.get("continue_on_error", False),
     )
 
 
@@ -285,20 +324,36 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
 
     Returns 0 on success, 1 on error.
     """
-    from agent_evals.runner import EvalRunConfig, EvalRunner
+    from agent_evals.runner import EvalRunner
 
     model = resolved.get("model")
     if not model:
-        print("Error: --model is required (or set in config/env)")  # noqa: T201
+        logger.error("--model is required (or set in config/env)")
         return 1
+
+    # Validate API key upfront
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        logger.error(
+            "OPENROUTER_API_KEY is not set. "
+            "Get your key at https://openrouter.ai/keys and set it:\n"
+            "  export OPENROUTER_API_KEY=sk-or-v1-..."
+        )
+        return 1
+
+    if not api_key.startswith("sk-or-"):
+        logger.warning(
+            "OPENROUTER_API_KEY does not start with 'sk-or-'. "
+            "Verify your key format at https://openrouter.ai/keys"
+        )
 
     run_config = build_eval_run_config(resolved)
 
-    # Dry-run mode: just print config and exit
+    # Dry-run mode: log config and exit
     if resolved.get("dry_run", False):
-        print("Dry-run mode: resolved configuration:")  # noqa: T201
+        logger.info("Dry-run mode: resolved configuration:")
         for key, value in sorted(resolved.items()):
-            print(f"  {key}: {value!r}")  # noqa: T201
+            logger.info("  %s: %r", key, value)
         return 0
 
     # Import heavy dependencies only when actually running
@@ -306,8 +361,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     from agent_evals.tasks.loader import load_tasks
     from agent_evals.variants.registry import get_variants_for_axis
 
-    # Build LLM client
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    # Build LLM client (api_key already validated above)
     client = LLMClient(
         model=model,
         api_key=api_key,
@@ -317,7 +371,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     # Load tasks
     gold_standard_dir = Path(__file__).resolve().parent.parent.parent / "gold_standard"
     if not gold_standard_dir.is_dir():
-        print(f"Error: gold standard directory not found: {gold_standard_dir}")  # noqa: T201
+        logger.error("Gold standard directory not found: %s", gold_standard_dir)
         return 1
 
     tasks = load_tasks(gold_standard_dir)
@@ -339,7 +393,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         tasks = tasks[:limit]
 
     if not tasks:
-        print("No tasks matched the filter criteria.")  # noqa: T201
+        logger.warning("No tasks matched the filter criteria.")
         return 1
 
     # Load variants
@@ -358,7 +412,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         variants = [v for v in variants if v.metadata().name == variant_name]
 
     if not variants:
-        print("No variants matched the filter criteria.")  # noqa: T201
+        logger.warning("No variants matched the filter criteria.")
         return 1
 
     # Load doc_tree
@@ -367,13 +421,22 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     doc_tree = load_sample_doc_tree()
 
     # Run evaluation
-    runner = EvalRunner(client=client, config=run_config)
-    result = runner.run(tasks=tasks, variants=variants, doc_tree=doc_tree)
+    from agent_evals.progress import make_progress_callback
 
-    print(  # noqa: T201
-        f"Evaluation complete: {len(result.trials)} trials, "
-        f"${result.total_cost:.4f} cost, "
-        f"{result.elapsed_seconds:.1f}s elapsed"
+    display = run_config.display_mode or "rich"
+    callback = make_progress_callback(display)
+
+    runner = EvalRunner(client=client, config=run_config)
+    result = runner.run(
+        tasks=tasks, variants=variants, doc_tree=doc_tree,
+        progress_callback=callback,
+    )
+
+    logger.info(
+        "Evaluation complete: %d trials, $%.4f cost, %.1fs elapsed",
+        len(result.trials),
+        result.total_cost,
+        result.elapsed_seconds,
     )
     return 0
 
@@ -383,8 +446,14 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns 0 on success, 1 on error.
     """
+    from agent_evals.logging_config import configure_logging
+
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # Initialize logging before anything else
+    verbosity = 1 if args.verbose else (-1 if args.quiet else 0)
+    configure_logging(verbosity)
 
     # Determine config file path
     config_path: Path | None = None

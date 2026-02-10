@@ -3,11 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from agent_evals.cli import build_parser, load_config, main, resolve_config
+from agent_evals.cli import (
+    _run_evaluation,
+    build_parser,
+    load_config,
+    main,
+    resolve_config,
+)
 
 # ---------------------------------------------------------------------------
 # build_parser tests
@@ -520,16 +527,20 @@ class TestMain:
             main(["--help"])
         assert exc_info.value.code == 0
 
-    def test_resolves_config_from_file(self, tmp_path: Path) -> None:
+    def test_resolves_config_from_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         config_file = tmp_path / "eval-config.yaml"
         config_file.write_text(
             "model: file-model\nrepetitions: 15\n",
             encoding="utf-8",
         )
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
         result = main(["--config", str(config_file), "--dry-run"])
         assert result == 0
 
-    def test_returns_zero_with_flags(self) -> None:
+    def test_returns_zero_with_flags(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
         result = main([
             "--axis", "2",
             "--model", "test/model",
@@ -550,6 +561,7 @@ class TestMain:
         config_file = tmp_path / "eval-config.yaml"
         config_file.write_text("model: auto-loaded\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
         result = main(["--dry-run"])
         assert result == 0
 
@@ -564,7 +576,146 @@ class TestMain:
     def test_main_with_env_vars(self) -> None:
         with patch.dict(
             "os.environ",
-            {"AGENT_EVALS_MODEL": "env/model", "AGENT_EVALS_REPETITIONS": "8"},
+            {
+                "AGENT_EVALS_MODEL": "env/model",
+                "AGENT_EVALS_REPETITIONS": "8",
+                "OPENROUTER_API_KEY": "sk-or-v1-test",
+            },
         ):
             result = main(["--dry-run"])
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Verbosity flags tests
+# ---------------------------------------------------------------------------
+
+
+class TestVerbosityFlags:
+    """Tests for --verbose and --quiet mutually exclusive flags."""
+
+    def test_verbose_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--verbose"])
+        assert args.verbose is True
+
+    def test_verbose_short_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["-v"])
+        assert args.verbose is True
+
+    def test_quiet_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quiet"])
+        assert args.quiet is True
+
+    def test_quiet_short_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["-q"])
+        assert args.quiet is True
+
+    def test_verbose_and_quiet_mutually_exclusive(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--verbose", "--quiet"])
+
+    def test_default_verbose_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.verbose is False
+
+    def test_default_quiet_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.quiet is False
+
+
+# ---------------------------------------------------------------------------
+# API key validation tests
+# ---------------------------------------------------------------------------
+
+
+class TestApiKeyValidation:
+    """Tests for upfront OPENROUTER_API_KEY validation."""
+
+    def test_missing_api_key_returns_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        resolved: dict[str, object] = {"model": "openrouter/anthropic/claude-sonnet-4.5"}
+        result = _run_evaluation(resolved)
+        assert result == 1
+
+    def test_invalid_prefix_logs_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setenv("OPENROUTER_API_KEY", "bad-prefix-key")
+        resolved: dict[str, object] = {
+            "model": "openrouter/anthropic/claude-sonnet-4.5",
+            "dry_run": True,
+        }
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            _run_evaluation(resolved)
+        assert "does not start with" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Task 2.1: Config file warning tests
+# ---------------------------------------------------------------------------
+
+
+class TestLoadConfigWarnings:
+    def test_warns_on_yaml_parse_error(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        bad_yaml = tmp_path / "bad.yaml"
+        bad_yaml.write_text(": : : invalid", encoding="utf-8")
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            result = load_config(bad_yaml)
+        assert result == {}
+        assert "Failed to parse" in caplog.text
+
+    def test_warns_on_non_dict_yaml(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        list_yaml = tmp_path / "list.yaml"
+        list_yaml.write_text("- item1\n- item2", encoding="utf-8")
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            result = load_config(list_yaml)
+        assert result == {}
+        assert "does not contain a YAML mapping" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Task 2.2: Env var warning tests
+# ---------------------------------------------------------------------------
+
+
+class TestEnvVarWarnings:
+    def test_warns_on_malformed_env_var(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setenv("AGENT_EVALS_MAX_CONNECTIONS", "not_a_number")
+        args = build_parser().parse_args([])
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            resolve_config(args, {})
+        assert "Could not parse" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Task 2.3: --continue-on-error flag tests
+# ---------------------------------------------------------------------------
+
+
+class TestContinueOnErrorFlag:
+    def test_continue_on_error_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--continue-on-error"])
+        assert args.continue_on_error is True
+
+    def test_default_continue_on_error_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.continue_on_error is False

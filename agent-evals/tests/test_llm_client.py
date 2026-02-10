@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import litellm as _litellm
@@ -638,3 +639,68 @@ class TestRetryBackoff:
 
         client.MAX_RETRIES = 5
         assert client.MAX_RETRIES == 5
+
+
+# ---------------------------------------------------------------------------
+# Retry logging (Step 6.6)
+# ---------------------------------------------------------------------------
+
+
+class TestRetryLogging:
+    """Tests that retry attempts produce warning logs for observability."""
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_retryable_error_logs_warning(
+        self,
+        mock_litellm: MagicMock,
+        mock_sleep: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Each retry attempt should produce a warning log."""
+        rate_limit_exc = _litellm.RateLimitError(
+            message="rate limited",
+            llm_provider="openrouter",
+            model="test/model",
+        )
+        mock_litellm.completion.side_effect = [
+            rate_limit_exc,
+            _mock_litellm_response(),
+        ]
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="test/model", api_key="test-key")
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            result = client.complete([{"role": "user", "content": "test"}])
+        assert "Retrying" in caplog.text
+        assert result.content == "Hello, world!"
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_silent_429_logs_warning(
+        self,
+        mock_litellm: MagicMock,
+        mock_sleep: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Silent 429 (empty content) should produce a warning log."""
+        empty_response = MagicMock()
+        empty_response.choices = [MagicMock()]
+        empty_response.choices[0].message.content = None
+
+        mock_litellm.completion.side_effect = [
+            empty_response,
+            _mock_litellm_response(),
+        ]
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="test/model", api_key="test-key")
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            result = client.complete([{"role": "user", "content": "test"}])
+        assert "empty content" in caplog.text.lower() or "rate limit" in caplog.text.lower()

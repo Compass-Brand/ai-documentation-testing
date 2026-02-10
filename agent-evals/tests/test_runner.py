@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -838,3 +839,57 @@ class TestEdgeCases:
         runner = EvalRunner(client=client, config=config)
 
         assert isinstance(runner._cache, ResponseCache)
+
+
+# ---------------------------------------------------------------------------
+# Output format tests
+# ---------------------------------------------------------------------------
+
+
+class TestOutputFormat:
+    """Tests for the output_format config option controlling file output."""
+
+    def test_json_only_creates_no_csv(self, tmp_path: Path) -> None:
+        config = EvalRunConfig(output_dir=str(tmp_path), output_format="json")
+        runner = EvalRunner(
+            client=MagicMock(spec=LLMClient),
+            config=config,
+        )
+        result = EvalRunResult(
+            config=config, trials=[], total_cost=0, total_tokens=0, elapsed_seconds=0,
+        )
+        paths = runner._save_results(result, [])
+        json_files = list(tmp_path.glob("*.json"))
+        csv_files = list(tmp_path.glob("*.csv"))
+        assert len(json_files) == 1
+        assert len(csv_files) == 0
+
+    def test_csv_only_creates_no_json(self, tmp_path: Path) -> None:
+        config = EvalRunConfig(output_dir=str(tmp_path), output_format="csv")
+        runner = EvalRunner(
+            client=MagicMock(spec=LLMClient),
+            config=config,
+        )
+        result = EvalRunResult(
+            config=config, trials=[], total_cost=0, total_tokens=0, elapsed_seconds=0,
+        )
+        paths = runner._save_results(result, [])
+        json_files = list(tmp_path.glob("*.json"))
+        csv_files = list(tmp_path.glob("*.csv"))
+        assert len(json_files) == 0
+        assert len(csv_files) == 1
+
+    def test_both_creates_json_and_csv(self, tmp_path: Path) -> None:
+        config = EvalRunConfig(output_dir=str(tmp_path), output_format="both")
+        runner = EvalRunner(
+            client=MagicMock(spec=LLMClient),
+            config=config,
+        )
+        result = EvalRunResult(
+            config=config, trials=[], total_cost=0, total_tokens=0, elapsed_seconds=0,
+        )
+        paths = runner._save_results(result, [])
+        json_files = list(tmp_path.glob("*.json"))
+        csv_files = list(tmp_path.glob("*.csv"))
+        assert len(json_files) == 1
+        assert len(csv_files) == 1
