@@ -55,6 +55,7 @@ VALID_DIFFICULTIES: set[str] = {
     "easy",
     "medium",
     "hard",
+    "edge",
 }
 
 TASK_ID_PATTERN: re.Pattern[str] = re.compile(

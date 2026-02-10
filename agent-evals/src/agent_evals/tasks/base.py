@@ -44,6 +44,7 @@ VALID_DIFFICULTIES: set[str] = {
     "easy",
     "medium",
     "hard",
+    "edge",
 }
 
 # Pattern: one or more lowercase word segments separated by underscores,
@@ -107,7 +108,7 @@ class TaskDefinition(BaseModel):
     @field_validator("difficulty")
     @classmethod
     def validate_difficulty(cls, v: str) -> str:
-        """Validate difficulty is one of: easy, medium, hard."""
+        """Validate difficulty is one of: easy, medium, hard, edge."""
         if v not in VALID_DIFFICULTIES:
             msg = f"difficulty '{v}' is not valid. Must be one of: {sorted(VALID_DIFFICULTIES)}"
             raise ValueError(msg)

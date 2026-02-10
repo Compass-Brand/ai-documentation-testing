@@ -112,8 +112,8 @@ class TestTaskDefinition:
             assert td.domain == domain
 
     def test_all_valid_difficulties_accepted(self) -> None:
-        """TaskDefinition accepts all 3 difficulty levels."""
-        for difficulty in ["easy", "medium", "hard"]:
+        """TaskDefinition accepts all 4 difficulty levels including edge."""
+        for difficulty in ["easy", "medium", "hard", "edge"]:
             td = TaskDefinition(**_valid_task_data(difficulty=difficulty))
             assert td.difficulty == difficulty
 
@@ -491,6 +491,20 @@ class TestLoadTasks:
         assert len(tasks) == 2
         task_ids = {t.definition.task_id for t in tasks}
         assert task_ids == {"retrieval_001", "retrieval_002"}
+
+    def test_load_tasks_rejects_duplicate_task_ids(self, tmp_path: Path) -> None:
+        """load_tasks raises ValueError when two files have the same task_id."""
+        _write_yaml(
+            tmp_path / "task1.yaml",
+            _valid_task_data(task_id="retrieval_001"),
+        )
+        _write_yaml(
+            tmp_path / "task2.yaml",
+            _valid_task_data(task_id="retrieval_001"),
+        )
+
+        with pytest.raises(ValueError, match="[Dd]uplicate.*task_id"):
+            load_tasks(tmp_path)
 
     def test_load_tasks_sorted_by_task_id(self, tmp_path: Path) -> None:
         """load_tasks returns tasks sorted by task_id."""

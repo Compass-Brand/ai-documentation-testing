@@ -100,6 +100,18 @@ def load_tasks(directory: Path) -> list[EvalTask]:
         task = load_task(yaml_path)
         tasks.append(task)
 
+    # Check for duplicate task_ids
+    seen_ids: dict[str, Path] = {}
+    for task, yaml_path in zip(tasks, yaml_paths):
+        tid = task.definition.task_id
+        if tid in seen_ids:
+            msg = (
+                f"Duplicate task_id '{tid}' found in {yaml_path} "
+                f"(first seen in {seen_ids[tid]})"
+            )
+            raise ValueError(msg)
+        seen_ids[tid] = yaml_path
+
     # Sort by task_id for deterministic ordering
     tasks.sort(key=lambda t: t.definition.task_id)
 
