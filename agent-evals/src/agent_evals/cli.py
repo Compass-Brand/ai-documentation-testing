@@ -132,9 +132,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-format",
         type=str,
-        choices=["json", "csv"],
+        choices=["json", "csv", "both"],
         default=None,
-        help="Output format (default: json)",
+        help="Output format (default: both)",
     )
     parser.add_argument(
         "--display",
@@ -150,6 +150,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default=None,
         help="Path to eval-config.yaml (default: ./eval-config.yaml)",
+    )
+
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        default=False,
+        help="Skip failed trials and report partial results",
     )
 
     # Verbosity (mutually exclusive)
@@ -184,10 +191,16 @@ def load_config(config_path: Path | None) -> dict[str, Any]:
     try:
         with open(config_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
-    except (yaml.YAMLError, OSError):
+    except (yaml.YAMLError, OSError) as exc:
+        logger.warning("Failed to parse config file %s: %s", config_path, exc)
         return {}
 
     if not isinstance(data, dict):
+        logger.warning(
+            "Config file %s does not contain a YAML mapping (got %s)",
+            config_path,
+            type(data).__name__,
+        )
         return {}
 
     return dict(data)
@@ -213,6 +226,7 @@ _CONFIG_KEYS: dict[str, type] = {
     "output_dir": str,
     "output_format": str,
     "display": str,
+    "continue_on_error": bool,
 }
 
 
@@ -265,9 +279,11 @@ def resolve_config(
         if env_value is not None:
             try:
                 resolved[key] = _coerce_env(env_value, target_type)
-            except (ValueError, TypeError):
-                # Ignore malformed env values; fall through to config
-                pass
+            except (ValueError, TypeError) as exc:
+                logger.warning(
+                    "Could not parse env var %s=%r as %s: %s",
+                    env_name, env_value, target_type.__name__, exc,
+                )
             else:
                 continue
 
@@ -294,7 +310,9 @@ def build_eval_run_config(resolved: dict[str, Any]) -> "EvalRunConfig":
         use_cache=not resolved.get("no_cache", False),
         cache_dir=resolved.get("cache_dir", ".agent-evals-cache"),
         output_dir=resolved.get("output_dir", "reports"),
+        output_format=resolved.get("output_format", "both"),
         display_mode=resolved.get("display", "rich"),
+        continue_on_error=resolved.get("continue_on_error", False),
     )
 
 

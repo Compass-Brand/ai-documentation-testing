@@ -659,3 +659,63 @@ class TestApiKeyValidation:
         with caplog.at_level(logging.WARNING, logger="agent_evals"):
             _run_evaluation(resolved)
         assert "does not start with" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Task 2.1: Config file warning tests
+# ---------------------------------------------------------------------------
+
+
+class TestLoadConfigWarnings:
+    def test_warns_on_yaml_parse_error(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        bad_yaml = tmp_path / "bad.yaml"
+        bad_yaml.write_text(": : : invalid", encoding="utf-8")
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            result = load_config(bad_yaml)
+        assert result == {}
+        assert "Failed to parse" in caplog.text
+
+    def test_warns_on_non_dict_yaml(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        list_yaml = tmp_path / "list.yaml"
+        list_yaml.write_text("- item1\n- item2", encoding="utf-8")
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            result = load_config(list_yaml)
+        assert result == {}
+        assert "does not contain a YAML mapping" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Task 2.2: Env var warning tests
+# ---------------------------------------------------------------------------
+
+
+class TestEnvVarWarnings:
+    def test_warns_on_malformed_env_var(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setenv("AGENT_EVALS_MAX_CONNECTIONS", "not_a_number")
+        args = build_parser().parse_args([])
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            resolve_config(args, {})
+        assert "Could not parse" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Task 2.3: --continue-on-error flag tests
+# ---------------------------------------------------------------------------
+
+
+class TestContinueOnErrorFlag:
+    def test_continue_on_error_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--continue-on-error"])
+        assert args.continue_on_error is True
+
+    def test_default_continue_on_error_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.continue_on_error is False
