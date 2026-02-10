@@ -438,19 +438,19 @@ tags: [single-hop, api]
 
 **Task YAML schemas per type.** All tasks share base fields (`task_id`, `type`, `question`, `domain`, `difficulty`, `tags`, `metadata`). Each type adds:
 
-| Type | Additional Fields |
+| Type | Additional Fields (in `metadata`) |
 |------|-------------------|
 | **Retrieval** | `expected_files: list[str]`, `evidence_passage: str` |
-| **Fact extraction** | `expected_answer: str`, `answer_aliases: list[str]`, `source_location: str`, `fact_type: enum` |
-| **Code generation** | `expected_answer: str`, `test: str` (unittest), `entry_point: str`, `canonical_solution: str`, `libs: list[str]`, `doc_struct: dict` |
-| **End-to-end agentic** | `expected_tools: list[ToolCall]`, `files: dict` (sandbox provisions), `setup_script: str`, `FAIL_TO_PASS: str` (JSON array), `PASS_TO_PASS: str` (JSON array), `message_limit: int`, `token_limit: int` |
-| **Multi-hop reasoning** | `expected_answer: str`, `answer_aliases: list[str]`, `paragraphs: list[{idx, title, text, is_supporting}]`, `question_decomposition: list[{id, question, answer, paragraph_support_idx}]`, `hop_count: int` |
-| **Negative/unanswerable** | `answerable: bool` (always false), `expected_behavior: enum` (abstain \| cite_absence), `nearest_miss: str` (closest-but-wrong passage) |
-| **Compositional code gen** | Same as code generation plus `apis: list[dict]` (multiple API doc structs), `integration_points: str` |
-| **Robustness** | `base_task_id: str` (unperturbed version), `perturbation: {type: enum, original_input: str, description: str}` — inherits remaining fields from base type |
-| **Disambiguation** | `interpretations: list[{interpretation, answer, matching_entry_id}]`, `ambiguity_type: enum` (lexical \| scope \| entity \| temporal), `matching_entries: list[str]` |
-| **Conflicting info** | `sources: list[{source_id, content, claim, authority_level}]`, `conflict_type: enum` (version_mismatch \| factual_contradiction \| deprecated), `resolution: {authoritative_source_id, correct_answer}`, `expected_behavior: enum` (flag_conflict \| prefer_authoritative \| present_both) |
-| **Efficiency-constrained** | `base_task_id: str`, `token_budget: int`, `message_limit: int`, `time_limit: int` — inherits remaining fields from base type |
+| **Fact extraction** | `expected_answer: str`, `answer_aliases: list[str]`, `source_location: str`, `fact_type: str` |
+| **Code generation** | `expected_answer: str`, `test: str` (multi-line regex patterns, one per line), `entry_point: str`, `canonical_solution: str`, `libs: list[str]`, `forbidden_patterns: list[str]` |
+| **End-to-end agentic** | `expected_tools: list[{name: str}]`, `files: dict[str, str]` (path -> content summary), `setup_script: str`, `FAIL_TO_PASS: list[str]`, `PASS_TO_PASS: list[str]`, `message_limit: int`, `token_limit: int` |
+| **Multi-hop reasoning** | `question_decomposition: list[str]` (sub-questions), `reasoning_chain: list[str]` (expected step-by-step answers) |
+| **Negative/unanswerable** | `expected_answer: str` (always `"unanswerable"`), `reason: str` (why unanswerable), `nearest_doc: str` (closest-but-wrong file), `nearest_content: str` (what that file covers) |
+| **Compositional** | `sub_questions: list[str]`, `expected_answers: list[str]` (parallel lists), or `sub_tasks: list[{question, expected_answer}]` |
+| **Robustness** | `perturbation_type: str` (e.g. `"typo"`), `original_question: str`, `expected_answer: str`, `perturbation_details: str`, `answer_aliases: list[str]` (optional) |
+| **Disambiguation** | `interpretations: list[{label: str, answer: str}]`, `expected_interpretation: str` (label of the correct one) |
+| **Conflicting info** | `sources: list[{name: str, claim: str, authority: int}]`, `expected_resolution: str`, `resolution_strategy: str` (e.g. `"explicit_flag"`) |
+| **Efficiency-constrained** | `expected_answer: str`, `answer_aliases: list[str]`, `token_budget: int`, `message_limit: int` (optional) |
 
 Task IDs encode type: `retrieval_001`, `multihop_042`, `robustness_retrieval_001`. Ground truth uses `expected_answer` for string-match types and `test` + `FAIL_TO_PASS` for execution-based types. At least one is required per task.
 
@@ -474,12 +474,12 @@ Task IDs encode type: `retrieval_001`, `multihop_042`, `robustness_retrieval_001
 
 **Temperature:** Primary evaluation at temperature 0.3 (matches typical agent deployment). Secondary runs at 0.0 and 0.7 to characterize robustness. Temperature 0.0 does not guarantee determinism (GPU floating-point variance); N repetitions at any temperature capture real variance.
 
-**Sensitivity analysis:** Results reported under five weighting schemes:
-- Default weights (see Task Types section)
-- Retrieval-heavy: core retrieval tasks at +0.05 each, edge cases reduced
-- Code-heavy: code generation tasks at +0.05 each, retrieval reduced
-- Agentic-heavy: end-to-end agentic (type 4) upweighted to 0.20, others reduced proportionally
-- Uniform weights: 1/11 = 0.0909 for each type (tests whether ranking is weight-dependent at all)
+**Sensitivity analysis:** Results reported under five weighting schemes (matching `scoring.WEIGHT_SCHEMES`):
+- **`default`**: Weights as listed in Task Types section
+- **`retrieval_heavy`**: +0.05 each to retrieval and fact_extraction, reduced equally from edge-case types (negative, disambiguation, conflicting, efficiency)
+- **`code_heavy`**: +0.05 each to code_generation and compositional, reduced equally from edge-case types
+- **`agentic_heavy`**: Agentic upweighted to 0.20, all others proportionally reduced to preserve sum = 1.0
+- **`uniform`**: 1/11 = 0.0909 for each type (tests whether ranking is weight-dependent at all)
 
 If the winner changes under different weights, report that fragility and prefer the most robust candidate.
 
@@ -551,7 +551,23 @@ Each axis varies one dimension while holding others at their defaults (see Defau
 | 10 | Temporal markers | none, version tags, last-modified dates, deprecation warnings | Do temporal signals prevent stale information use? |
 | V | Interaction validation | Top 2-3 from each axis, factorial | Do axes interact? Is the sequential winner the global winner? |
 
-~30-40 variants across sequential axes + ~16-24 factorial validation variants.
+**Implemented variant coverage** (47 variant classes in `agent-evals/src/agent_evals/variants/`):
+
+| Axis | # | Variant files |
+|------|---|---------------|
+| 0 - Baseline | 4 | `baselines.py`: no-index, no-docs, oracle, length-matched-random |
+| 1 - Structure | 5 | `structure_flat.py`, `structure_2tier.py`, `structure_3tier.py`, `structure_4tier.py`, `structure_inline_required.py` |
+| 2 - Metadata | 4 | `metadata_path_only.py`, `metadata_with_summary.py`, `metadata_with_tokens.py`, `metadata_with_related.py` |
+| 3 - Format | 5 | `format_pipe_delimited.py`, `format_yaml.py`, `format_markdown_list.py`, `format_markdown_table.py`, `format_plain_markdown.py` |
+| 4 - Position | 4 | `position_natural.py`, `position_bluf.py`, `position_edges.py`, `position_random.py` |
+| 5 - Transform | 5 | `transform_passthrough.py`, `transform_algorithmic.py`, `transform_llm_compressed.py`, `transform_restructured.py`, `transform_tagged.py` |
+| 6 - Scale | 5 | `scale_5.py`, `scale_15.py`, `scale_50.py`, `scale_100.py`, `scale_200.py` |
+| 7 - Noise | 4 | `noise_0.py`, `noise_25.py`, `noise_50.py`, `noise_75.py` |
+| 8 - Granularity | 4 | `granularity_file.py`, `granularity_section.py`, `granularity_function.py`, `granularity_mixed.py` |
+| 9 - Cross-ref | 3 | `xref_none.py`, `xref_light.py`, `xref_dense.py` |
+| 10 - Temporal | 4 | `temporal_none.py`, `temporal_version.py`, `temporal_modified.py`, `temporal_deprecated.py` |
+
+43 axis variants + 4 baselines = 47 total. Factorial validation variants (axis V) are not yet implemented.
 
 **Axis notes:**
 - **Axis 6 (Scale):** Variants add entries from same domains + new domains. Measures how steeply performance degrades.
@@ -567,8 +583,8 @@ Each axis varies one dimension while holding others at their defaults (see Defau
 | # | Task Type | Weight | Description |
 |---|-----------|--------|-------------|
 | 1 | **Retrieval** | 0.15 | "Which file answers this question?" F-beta (beta=2), weighting recall over precision. Missing a needed doc costs more than including an extra. Secondary: Recall@K. |
-| 2 | **Fact extraction** | 0.15 | "What does this API do?" Given index + doc content, answer factual questions. Primary: LLM-as-judge with rubric. Secondary: keyword matching with aliases. |
-| 3 | **Code generation** | 0.15 | "Write code using this API." Primary: deterministic test suite (regex patterns + forbidden anti-patterns). Secondary: LLM-as-judge (API usage, error handling, conventions). Reports disagreement rate. |
+| 2 | **Fact extraction** | 0.15 | "What does this API do?" Given index + doc content, answer factual questions. Primary: keyword matching with aliases (exact match = 1.0, fallback = keyword fraction). LLM-as-judge with rubric planned as future primary scorer. |
+| 3 | **Code generation** | 0.15 | "Write code using this API." Primary: regex pattern matching (0.7) + forbidden-pattern violation check (0.2) + syntax validation bonus (0.1). LLM-as-judge planned as secondary scorer. |
 | 4 | **End-to-end agentic** | 0.12 | Agent receives a coding problem with tool-call access to the index. Scored on: retrieval invocation, file selection, output correctness. Captures the 56% skill-non-invocation failure mode (Vercel research). |
 | 5 | **Multi-hop reasoning** | 0.10 | Requires combining 2-3 documents to answer. Tests cross-document reasoning. Accuracy drops 25-30 points vs single-hop (HotpotQA, MuSiQue data). |
 | 6 | **Negative / unanswerable** | 0.08 | Questions unanswerable from the index. Correct response: explicit abstention ("not in available documentation"). Critical: reasoning-tuned models show 24% worse abstention (AbstentionBench). |
@@ -578,44 +594,53 @@ Each axis varies one dimension while holding others at their defaults (see Defau
 | 10 | **Conflicting information** | 0.04 | Index contains contradictory entries (e.g., v2 docs say X, v3 docs say Y). Correct response: identify the conflict, prefer newer/authoritative source, or flag it. |
 | 11 | **Efficiency-constrained** | 0.03 | Standard tasks with token budget constraints. Agent must retrieve and answer within N tool-call tokens. Tests whether index format enables efficient retrieval. |
 
-**Weight sensitivity analysis:** Report results under default, retrieval-heavy (+0.05 to types 1-2, -0.05 from types 9-11), and code-heavy (+0.05 to types 3, 7; -0.05 from types 5-6) schemes. If the winner changes, report fragility.
+**Weight sensitivity analysis** (implemented in `scoring.weight_sensitivity_report()` using `WEIGHT_SCHEMES`):
+
+Five schemes are defined:
+- **`default`**: Weights as listed above (sum = 1.0).
+- **`retrieval_heavy`**: +0.05 each to retrieval and fact_extraction, reduced equally from edge-case types (negative, disambiguation, conflicting, efficiency).
+- **`code_heavy`**: +0.05 each to code_generation and compositional, reduced equally from edge-case types.
+- **`agentic_heavy`**: Agentic boosted to 0.20, all other weights proportionally reduced to preserve sum = 1.0.
+- **`uniform`**: 1/11 (~0.0909) for each type.
+
+If the top-ranked variant changes under different schemes, `weight_sensitivity_report()` flags it as fragile and reports which schemes caused the change.
 
 ### Metrics
 
-**Primary metrics per task type:**
+**Primary metrics per task type (current implementation):**
 
-| Task Type | Primary Metric | Secondary Metric |
-|-----------|---------------|------------------|
-| Retrieval | F-beta (beta=2) | Recall@K, MRR |
-| Fact extraction | LLM-judge accuracy | Keyword match accuracy |
-| Code generation | Test pass rate | LLM-judge quality score |
-| End-to-end agentic | Composite (retrieval + correctness) | Tool invocation rate |
-| Multi-hop | Answer correctness | Retrieval completeness |
-| Negative/unanswerable | Correct abstention rate | False positive rate |
-| Compositional code gen | Test pass rate | API coverage |
-| Robustness | Delta from clean baseline | Degradation curve |
-| Disambiguation | Appropriate response rate | Clarification quality |
-| Conflicting info | Conflict identification rate | Source preference accuracy |
-| Efficiency-constrained | Score within budget | Token utilization ratio |
+| Task Type | Primary Metric | Scoring Method |
+|-----------|---------------|----------------|
+| Retrieval | F-beta (beta=2) | File path extraction via regex, normalized matching with fuzzy basename partial credit (0.5) |
+| Fact extraction | Keyword match accuracy | Exact/alias match = 1.0, fallback = non-stopword keyword fraction |
+| Code generation | Pattern match + violation + syntax | `match_rate * 0.7 + (1 - violation_rate) * 0.2 + syntax_bonus * 0.1` |
+| End-to-end agentic | Composite (file + content + tool + correctness) | With tools: `file_mention*0.3 + content*0.3 + tool_usage*0.2 + correctness*0.2`; without: `file*0.4 + content*0.4 + correctness*0.2` |
+| Multi-hop | Reasoning chain step coverage | Keyword extraction from `reasoning_chain` steps, fraction of steps with at least one keyword hit |
+| Negative/unanswerable | Abstention phrase detection | 1.0 if any of 30+ abstention phrases detected, 0.0 otherwise |
+| Compositional | Sub-task answer coverage | Fraction of sub-task `expected_answer` values found (case-insensitive) in response |
+| Robustness | Keyword match accuracy | Same as fact extraction: exact/alias match = 1.0, keyword fraction fallback |
+| Disambiguation | Keyword coverage + label match | 1.0 if >= 50% of expected answer keywords match, 0.5 for label match, max of both |
+| Conflicting info | Resolution match accuracy | Exact match of `expected_resolution` = 1.0, keyword fraction fallback |
+| Efficiency-constrained | Correctness with length penalty | Base score (exact/alias/keyword match) * `min(1, token_budget / actual_tokens)` |
 
-**Cross-cutting metrics (computed for all task types):**
+**Cross-cutting metrics** (implemented in `agent-evals/src/agent_evals/metrics/`):
 
-| Metric | Description |
-|--------|-------------|
-| **Faithfulness** | Fraction of claims supported by retrieved docs. NLI-based: decompose response into claims, verify each against context. Adapted from RAGAS. |
-| **Tool call count** | File reads/searches per task. Lower is better at equal quality. |
-| **First-attempt success** | Fraction correct on first response, no revision. |
-| **Correct abstention** | On unanswerable: fraction abstaining. On answerable: fraction not abstaining. Both matter. |
-| **Navigation path quality** | For agentic tasks: actual vs. optimal file-read sequence. Penalizes backtracking. |
-| **Consistency** | Pairwise semantic similarity across N repetitions. High variance suggests weak index. |
+| Metric | Implementation | Description |
+|--------|----------------|-------------|
+| **Faithfulness** | `faithfulness.py` | Currently keyword-overlap approximation (non-stopword token overlap between response and context). NLI-based claim decomposition is planned but not yet integrated. |
+| **Tool call count** | `tool_calls.py` | Score = `1.0 - min(actual / max_expected, 1.0)`. Lower call count = higher score. Default `max_expected = 10`. |
+| **First-attempt success** | `first_attempt.py` | Binary: 1.0 if `attempt_number == 1` and `task_score >= success_threshold` (default 0.5), 0.0 otherwise. |
+| **Correct abstention** | `abstention.py` | Phrase-based detection of abstention language in response. Scores unanswerable tasks (should abstain) and answerable tasks (should not abstain). |
+| **Navigation path quality** | `navigation.py` | For agentic tasks: evaluates file-read relevance, efficiency, and backtracking from tool call sequences. |
+| **Consistency** | `consistency.py` | Pairwise Jaccard similarity on word-level tokens across N repetitions. High variance suggests weak index. |
 
-**Composite score:**
+**Composite score** (implemented in `scoring.composite_score()`):
 
 ```
-composite = sum(weight_i × score_i) for i in 1..11 task types
+composite = sum(weight_i × score_i) × 100   for i in 1..11 task types
 ```
 
-Each `score_i` is the mean across tasks of that type (0-1 normalized). The composite is one number per variant per model, used for ranking.
+Each `score_i` is the mean across tasks of that type (0.0-1.0 normalized). The composite is scaled to 0-100 and produces one number per variant per model, used for ranking.
 
 **Token efficiency metrics:**
 
@@ -627,7 +652,9 @@ Each `score_i` is the mean across tasks of that type (0-1 normalized). The compo
 
 ### Scoring Protocol
 
-**LLM-as-judge scores fact extraction and code generation quality.** Keyword matching and regex patterns calibrate as secondary scorers. The LLM judge uses structured rubrics with explicit 1-5 criteria.
+**LLM-as-judge scoring status:** The judge calibration infrastructure exists (`agent-evals/src/agent_evals/judge/calibrator.py` and `judge/poll.py`) with gold-standard calibration, Cohen's kappa, Spearman/Kendall correlation metrics, and Panel-of-LLM-evaluators (PoLL) support. However, LLM-as-judge is **not yet integrated into the task-type scorers**. Currently all 11 task types use deterministic scoring (keyword matching, regex patterns, phrase detection). LLM-as-judge integration into fact extraction and code generation scoring is planned -- the calibrator and poll modules provide the foundation for this.
+
+**Planned LLM-as-judge integration:** Once calibrated against gold standards (target: Cohen's kappa >= 0.70), the LLM judge will score fact extraction and code generation quality using structured rubrics with explicit 1-5 criteria.
 
 ```yaml
 # Example fact extraction rubric

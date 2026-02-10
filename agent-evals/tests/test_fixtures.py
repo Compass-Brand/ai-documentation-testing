@@ -10,7 +10,7 @@ from agent_evals.fixtures import (
 )
 from agent_index.models import DocFile, DocTree
 
-_VALID_TIERS = {"critical", "important", "supplementary"}
+_VALID_TIERS = {"required", "recommended", "reference"}
 
 
 # ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ class TestLoadSampleDocTree:
         assert "workflows" in sections, "Missing workflows section"
 
     def test_sample_doc_tree_files_have_valid_tiers(self) -> None:
-        """Every file has a tier of critical, important, or supplementary."""
+        """Every file has a tier of required, recommended, or reference."""
         tree = load_sample_doc_tree()
         for rel_path, doc_file in tree.files.items():
             assert doc_file.tier in _VALID_TIERS, (
