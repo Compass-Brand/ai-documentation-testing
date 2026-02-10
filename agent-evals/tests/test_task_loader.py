@@ -597,3 +597,67 @@ class TestLoaderUsesConcreteTaskTypes:
         assert has_guard or TASK_TYPES.get("retrieval") is not GenericTask, (
             "loader.py should ensure concrete task types are registered"
         )
+
+
+# ---------------------------------------------------------------------------
+# Batch validation (strict=False)
+# ---------------------------------------------------------------------------
+
+
+class TestBatchValidation:
+    """Tests for load_tasks with strict=False mode."""
+
+    def test_strict_false_collects_all_errors(self, tmp_path: Path) -> None:
+        """With strict=False, all valid tasks load and errors are logged."""
+        _write_yaml(
+            tmp_path / "good.yaml",
+            _valid_task_data(task_id="retrieval_001"),
+        )
+        # Invalid task: missing required fields
+        (tmp_path / "bad.yaml").write_text(
+            yaml.dump({"task_id": "bad_001"}),
+            encoding="utf-8",
+        )
+        tasks = load_tasks(tmp_path, strict=False)
+        assert len(tasks) == 1
+        assert tasks[0].definition.task_id == "retrieval_001"
+
+    def test_strict_true_raises_on_first_error(self, tmp_path: Path) -> None:
+        """Default strict=True preserves existing behavior."""
+        (tmp_path / "bad.yaml").write_text(
+            yaml.dump({"task_id": "bad_001"}),
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError):
+            load_tasks(tmp_path)
+
+    def test_strict_false_logs_warnings(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """With strict=False, skipped files produce warning logs."""
+        import logging
+
+        _write_yaml(
+            tmp_path / "good.yaml",
+            _valid_task_data(task_id="retrieval_001"),
+        )
+        (tmp_path / "bad.yaml").write_text(
+            yaml.dump({"task_id": "bad_001"}),
+            encoding="utf-8",
+        )
+        with caplog.at_level(logging.WARNING, logger="agent_evals"):
+            load_tasks(tmp_path, strict=False)
+        assert "Skipping" in caplog.text
+
+    def test_strict_false_all_invalid_returns_empty(self, tmp_path: Path) -> None:
+        """With strict=False and all invalid files, returns empty list."""
+        (tmp_path / "bad1.yaml").write_text(
+            yaml.dump({"task_id": "bad_001"}),
+            encoding="utf-8",
+        )
+        (tmp_path / "bad2.yaml").write_text(
+            yaml.dump({"task_id": "bad_002"}),
+            encoding="utf-8",
+        )
+        tasks = load_tasks(tmp_path, strict=False)
+        assert tasks == []
