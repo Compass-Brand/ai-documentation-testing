@@ -37,7 +37,11 @@ This file provides guidance to Claude Code when working in this repository.
 ## Commands
 
 ```bash
-# Install (UV workspace)
+# Automated setup (installs UV, dependencies, creates .env)
+bash scripts/setup.sh          # Linux/macOS
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1  # Windows
+
+# Manual install (UV workspace)
 uv sync --dev
 
 # Run all tests

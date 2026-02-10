@@ -7,18 +7,21 @@ best agent outcomes.
 ## Quick start
 
 ```bash
-# Install
-uv sync --dev
+# Automated setup (installs UV, dependencies, creates .env)
+bash scripts/setup.sh          # Linux/macOS
+# or
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1  # Windows
 
-# Set your API key
+# Manual setup
+uv sync --dev
 cp .env.example .env
 # Edit .env with your OpenRouter key from https://openrouter.ai/keys
 
 # Run a minimal evaluation
-agent-evals --config examples/minimal-config.yaml
+uv run agent-evals --config agent-evals/examples/minimal-config.yaml
 
 # Run tests
-pytest
+uv run python -m pytest
 ```
 
 ## Architecture
