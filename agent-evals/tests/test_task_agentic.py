@@ -148,11 +148,11 @@ class TestAgenticTaskScoring:
     """Tests for AgenticTask.score_response with text-based composite scoring."""
 
     def test_perfect_score_all_components(self) -> None:
-        """Response mentioning all files, all content keywords, and all test names scores 1.0."""
+        """Response mentioning all files, content keywords, tools, and test names scores 1.0."""
         task = _agentic_task()
-        # Mention both file paths, all content keywords, and both test names
+        # Mention both file paths, all content keywords, both tool names, and both test names
         response = (
-            "I found the issue in src/auth.py and src/middleware.py. "
+            "I used read_file on src/auth.py and search on src/middleware.py. "
             "The auth module uses AuthMiddleware and JWTConfig. "
             "The middleware module uses RequestHandler. "
             "The fix resolves test_auth_login and test_auth_logout."
@@ -168,15 +168,15 @@ class TestAgenticTaskScoring:
         assert score == 0.0
 
     def test_file_mention_component(self) -> None:
-        """File path mentions contribute to the score via 0.4 weight."""
+        """File path mentions contribute to the score via 0.3 weight (with tools present)."""
         task = _agentic_task()
         # Use file paths that also leak some content keywords ("auth", "middleware")
         response = "I looked at src/auth.py and src/middleware.py but found nothing."
         score = task.score_response(response)
-        # File mention: 2/2 * 0.4 = 0.4
-        # Content: "auth" and "middleware" leak as keyword matches (2/7) * 0.4 ~ 0.114
-        # Total ~ 0.514
-        assert score > 0.4
+        # File mention: 2/2 * 0.3 = 0.3
+        # Content: "auth" and "middleware" leak as keyword matches (2/7) * 0.3 ~ 0.086
+        # Total ~ 0.386
+        assert score > 0.3
 
     def test_content_component(self) -> None:
         """Content keyword overlap contributes 0.4 to the score."""
@@ -273,3 +273,57 @@ class TestAgenticTaskScoring:
         score = task.score_response(response)
         # Content keywords matched via case-insensitive check
         assert score > 0.0
+
+
+# ---------------------------------------------------------------------------
+# Step 3.3: Tool ordering validation and extra step penalty
+# ---------------------------------------------------------------------------
+
+
+class TestAgenticToolOrdering:
+    """Tests for tool ordering validation in agentic scoring."""
+
+    def test_correct_tool_order_not_penalized(self) -> None:
+        """Response mentioning tools in the expected order is not penalized."""
+        task = _agentic_task(
+            expected_tools=[
+                {"name": "read_file"},
+                {"name": "search"},
+            ],
+            files={},
+            FAIL_TO_PASS=[],
+        )
+        response = "First I used read_file to check the code, then search to find references."
+        score = task.score_response(response)
+        assert score > 0.0
+
+    def test_wrong_tool_order_penalized(self) -> None:
+        """Response mentioning tools in wrong order scores lower than correct order."""
+        task = _agentic_task(
+            expected_tools=[
+                {"name": "read_file"},
+                {"name": "search"},
+            ],
+            files={},
+            FAIL_TO_PASS=[],
+        )
+        correct_order = "First I used read_file to check the code, then search to find references."
+        wrong_order = "First I used search to find references, then read_file to check."
+        correct_score = task.score_response(correct_order)
+        wrong_score = task.score_response(wrong_order)
+        assert correct_score > wrong_score
+
+    def test_extra_tools_penalized(self) -> None:
+        """Response mentioning tools not in expected_tools is penalized."""
+        task = _agentic_task(
+            expected_tools=[
+                {"name": "read_file"},
+            ],
+            files={},
+            FAIL_TO_PASS=[],
+        )
+        clean_response = "I used read_file to check the file."
+        extra_response = "I used read_file and then execute_code and deploy_app to fix it."
+        clean_score = task.score_response(clean_response)
+        extra_score = task.score_response(extra_response)
+        assert clean_score >= extra_score

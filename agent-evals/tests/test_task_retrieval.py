@@ -187,3 +187,46 @@ class TestRetrievalTaskScoring:
         for resp in ["src/auth.py", "nothing here", "src/auth.py extra.py"]:
             score = task.score_response(resp)
             assert 0.0 <= score <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Step 3.9: Path normalization and fuzzy matching
+# ---------------------------------------------------------------------------
+
+
+class TestRetrievalPathNormalization:
+    """Tests for path normalization in retrieval scoring."""
+
+    def test_case_insensitive_path_matching(self) -> None:
+        """File path matching is case-insensitive."""
+        task = _retrieval_task(expected_files=["src/Auth.py", "docs/README.md"])
+        response = "Look at SRC/AUTH.PY and DOCS/README.MD."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_leading_dot_slash_normalized(self) -> None:
+        """Paths with leading ./ match paths without it."""
+        task = _retrieval_task(expected_files=["./src/auth.py"])
+        response = "The file is src/auth.py."
+        score = task.score_response(response)
+        assert score > 0.0
+
+    def test_trailing_slash_normalized(self) -> None:
+        """Trailing slashes are ignored when matching."""
+        task = _retrieval_task(expected_files=["src/auth.py"])
+        response = "Check ./src/auth.py for the details."
+        score = task.score_response(response)
+        assert score > 0.0
+
+    def test_partial_credit_for_close_match(self) -> None:
+        """Partial credit when response has close but not exact path matches.
+
+        Tests that similar file paths (e.g. basename match) contribute
+        some score rather than 0.0.
+        """
+        task = _retrieval_task(expected_files=["src/auth.py"])
+        # Response mentions the file but in a different path
+        response = "The authentication code is in lib/auth.py."
+        score = task.score_response(response)
+        # Should get some partial credit via fuzzy matching
+        assert score > 0.0

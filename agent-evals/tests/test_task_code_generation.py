@@ -133,10 +133,10 @@ class TestCodeGenerationTaskScoring:
         assert score >= 0.99
 
     def test_no_patterns_match_scores_low(self) -> None:
-        """Response matching no required patterns scores 0.2 (violation bonus only).
+        """Response matching no required patterns scores 0.2 (no violations, no syntax bonus).
 
-        Formula: 0.0 * 0.8 + (1.0 - 0.0) * 0.2 = 0.2
-        No patterns matched, but no forbidden violations either.
+        Formula: 0.0 * 0.7 + (1.0 - 0.0) * 0.2 + 0.0 * 0.1 = 0.2
+        No patterns matched, no forbidden violations, invalid syntax (plain text).
         """
         task = _codegen_task(
             test="def\\s+add\nreturn\\s+.*\\+",
@@ -144,7 +144,7 @@ class TestCodeGenerationTaskScoring:
         )
         response = "I don't know how to write this function."
         score = task.score_response(response)
-        assert score == 0.2
+        assert abs(score - 0.2) < 0.01
 
     def test_partial_pattern_match(self) -> None:
         """Response matching some but not all patterns scores partially."""
@@ -180,12 +180,12 @@ class TestCodeGenerationTaskScoring:
         # Both have 0 required match rate, but dirty has violation
         assert clean >= dirty
 
-    def test_empty_test_and_forbidden_returns_0(self) -> None:
+    def test_empty_test_and_forbidden_returns_low(self) -> None:
         """When no test patterns and no forbidden patterns, match rate is 0."""
         task = _codegen_task(test="", forbidden_patterns=[])
         score = task.score_response("def add(a, b): return a + b")
-        # 0 * 0.8 + 1.0 * 0.2 = 0.2 (no patterns matched, no violations)
-        assert score == 0.2
+        # 0 * 0.7 + 1.0 * 0.2 + 1.0 * 0.1 = 0.3 (no patterns matched, no violations, valid syntax)
+        assert abs(score - 0.3) < 0.01
 
     def test_all_forbidden_violated(self) -> None:
         """Violating all forbidden patterns maximizes penalty."""
@@ -195,8 +195,8 @@ class TestCodeGenerationTaskScoring:
         )
         response = "eval(exec('code'))"
         score = task.score_response(response)
-        # match_rate=1.0, violation_rate=1.0
-        # 1.0*0.8 + (1-1.0)*0.2 = 0.8
+        # match_rate=1.0, violation_rate=1.0, syntax_bonus=1.0 (valid Python expression)
+        # 1.0*0.7 + (1-1.0)*0.2 + 1.0*0.1 = 0.8
         assert abs(score - 0.8) < 0.01
 
     def test_score_clamped_between_0_and_1(self) -> None:
@@ -219,3 +219,82 @@ class TestCodeGenerationTaskScoring:
         response = "pattern_one and pattern_two and pattern_three"
         score = task.score_response(response)
         assert score >= 0.99
+
+
+# ---------------------------------------------------------------------------
+# Step 3.2: Syntax validation, case normalization, partial credit
+# ---------------------------------------------------------------------------
+
+
+class TestCodeGenerationSyntaxValidation:
+    """Tests for syntax validation via ast.parse."""
+
+    def test_valid_python_syntax_not_penalized(self) -> None:
+        """Response with valid Python syntax is not penalized."""
+        task = _codegen_task(
+            test="def\\s+add",
+            forbidden_patterns=[],
+        )
+        response = "```python\ndef add(a, b):\n    return a + b\n```"
+        score = task.score_response(response)
+        assert score >= 0.8
+
+    def test_invalid_python_syntax_penalized(self) -> None:
+        """Response with invalid Python syntax receives a penalty."""
+        task = _codegen_task(
+            test="def\\s+add",
+            forbidden_patterns=[],
+        )
+        valid_response = "def add(a, b):\n    return a + b"
+        invalid_response = "def add(a, b)\n    return a + b"  # missing colon
+        valid_score = task.score_response(valid_response)
+        invalid_score = task.score_response(invalid_response)
+        assert valid_score > invalid_score
+
+    def test_non_python_code_not_crashed(self) -> None:
+        """Non-Python code responses don't crash the scorer."""
+        task = _codegen_task(
+            test="function",
+            forbidden_patterns=[],
+        )
+        response = "function add(a, b) { return a + b; }"
+        score = task.score_response(response)
+        assert 0.0 <= score <= 1.0
+
+
+class TestCodeGenerationCaseNormalization:
+    """Tests for case-insensitive keyword matching."""
+
+    def test_case_insensitive_pattern_matching(self) -> None:
+        """Pattern matching is case-insensitive for literal patterns."""
+        task = _codegen_task(
+            test="JWTConfig\nHS256",
+            forbidden_patterns=[],
+        )
+        response = "jwtconfig with hs256 algorithm"
+        score = task.score_response(response)
+        # Both patterns should match case-insensitively
+        assert score >= 0.8
+
+
+class TestCodeGenerationPartialCredit:
+    """Tests for partial credit scaling."""
+
+    def test_partial_credit_proportional(self) -> None:
+        """Score scales proportionally with matched patterns."""
+        task = _codegen_task(
+            test="pattern_a\npattern_b\npattern_c\npattern_d",
+            forbidden_patterns=[],
+        )
+        # Match 1 of 4 patterns
+        response_1 = "pattern_a only"
+        # Match 2 of 4 patterns
+        response_2 = "pattern_a and pattern_b"
+        # Match 3 of 4 patterns
+        response_3 = "pattern_a and pattern_b and pattern_c"
+
+        score_1 = task.score_response(response_1)
+        score_2 = task.score_response(response_2)
+        score_3 = task.score_response(response_3)
+
+        assert score_1 < score_2 < score_3

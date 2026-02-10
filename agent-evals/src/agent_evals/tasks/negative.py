@@ -77,6 +77,12 @@ class NegativeTask(EvalTask):
     def __init__(self, definition: TaskDefinition) -> None:
         super().__init__(definition)
         meta: dict[str, Any] = definition.metadata
+        # YAML-sourced fields (actual gold standard schema)
+        self.expected_answer: str = meta.get("expected_answer", "")
+        self.reason: str = meta.get("reason", "")
+        self.nearest_doc: str = meta.get("nearest_doc", "")
+        self.nearest_content: str = meta.get("nearest_content", "")
+        # Legacy fields (backward compatibility)
         self.answerable: bool = meta.get("answerable", False)
         self.distractor_files: list[str] = meta.get("distractor_files", [])
 

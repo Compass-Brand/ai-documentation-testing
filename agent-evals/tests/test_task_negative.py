@@ -26,6 +26,10 @@ from agent_evals.tasks.negative import NegativeTask
 def _negative_task(**meta_overrides: Any) -> NegativeTask:
     """Create a NegativeTask with default metadata, with optional overrides."""
     meta: dict[str, Any] = {
+        "expected_answer": "unanswerable",
+        "reason": "Not covered in documentation.",
+        "nearest_doc": "docs/auth.md",
+        "nearest_content": "Auth docs covering JWT tokens.",
         "answerable": False,
         "distractor_files": ["docs/auth.md", "src/utils.py"],
     }
@@ -202,3 +206,68 @@ class TestNegativeTaskScoring:
         ]:
             score = task.score_response(resp)
             assert score in (0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Step 3.1: Metadata field mismatch fix
+# ---------------------------------------------------------------------------
+
+
+class TestNegativeTaskMetadataFields:
+    """Tests that NegativeTask uses the actual YAML field names."""
+
+    def test_uses_correct_yaml_metadata_fields(self) -> None:
+        """NegativeTask reads expected_answer, reason, nearest_doc, nearest_content from metadata."""
+        meta = {
+            "expected_answer": "unanswerable",
+            "reason": "The docs never mention connection timeout.",
+            "nearest_doc": "api/caching.md",
+            "nearest_content": "Covers CacheConfig with default_ttl=300.",
+        }
+        defn = TaskDefinition(
+            task_id="negative_003",
+            type="negative",
+            question="What is the default connection timeout?",
+            domain="framework_api",
+            difficulty="easy",
+            metadata=meta,
+        )
+        task = NegativeTask(defn)
+        assert task.expected_answer == "unanswerable"
+        assert task.reason == "The docs never mention connection timeout."
+        assert task.nearest_doc == "api/caching.md"
+        assert task.nearest_content == "Covers CacheConfig with default_ttl=300."
+
+    def test_defaults_for_yaml_metadata_fields(self) -> None:
+        """NegativeTask defaults for YAML metadata fields when absent."""
+        defn = TaskDefinition(
+            task_id="negative_004",
+            type="negative",
+            question="Some question",
+            domain="framework_api",
+            difficulty="easy",
+            metadata={},
+        )
+        task = NegativeTask(defn)
+        assert task.expected_answer == ""
+        assert task.reason == ""
+        assert task.nearest_doc == ""
+        assert task.nearest_content == ""
+
+    def test_backward_compat_answerable_still_works(self) -> None:
+        """NegativeTask still supports legacy answerable/distractor_files fields."""
+        meta = {
+            "answerable": False,
+            "distractor_files": ["docs/auth.md"],
+        }
+        defn = TaskDefinition(
+            task_id="negative_005",
+            type="negative",
+            question="Legacy question",
+            domain="framework_api",
+            difficulty="easy",
+            metadata=meta,
+        )
+        task = NegativeTask(defn)
+        assert task.answerable is False
+        assert task.distractor_files == ["docs/auth.md"]

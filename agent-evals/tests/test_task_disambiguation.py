@@ -217,3 +217,36 @@ class TestDisambiguationTaskScoring:
         ]:
             score = task.score_response(resp)
             assert 0.0 <= score <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Step 3.4: Verify dedicated scorer (not GenericTask)
+# ---------------------------------------------------------------------------
+
+
+class TestDisambiguationDedicatedScorer:
+    """Verify disambiguation has proper scoring beyond GenericTask."""
+
+    def test_not_generic_task(self) -> None:
+        """DisambiguationTask is NOT GenericTask -- it has custom scoring."""
+        from agent_evals.tasks.base import GenericTask
+        assert TASK_TYPES["disambiguation"] is not GenericTask
+        assert TASK_TYPES["disambiguation"] is DisambiguationTask
+
+    def test_ambiguity_detection_scores_correctly(self) -> None:
+        """Scorer detects and scores correct interpretation among ambiguous options."""
+        task = _disambiguation_task(
+            interpretations=[
+                {"label": "connection_pool", "answer": "Database connection pooling with 10 max connections"},
+                {"label": "thread_pool", "answer": "Worker thread pool with 4 threads"},
+                {"label": "memory_pool", "answer": "Memory allocation pool for buffers"},
+            ],
+            expected_interpretation="connection_pool",
+        )
+        # Correct interpretation
+        correct = task.score_response("This uses database connection pooling with 10 max connections.")
+        # Wrong interpretation
+        wrong = task.score_response("This uses worker thread pool with 4 threads.")
+        assert correct > wrong
+        assert correct == 1.0
+        assert wrong == 0.0
