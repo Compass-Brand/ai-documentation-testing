@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import time
 from collections import defaultdict
 from collections.abc import Callable
@@ -20,6 +21,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+logger = logging.getLogger(__name__)
 
 from agent_evals.llm.cache import ResponseCache
 from agent_evals.llm.client import GenerationResult, LLMClient
@@ -251,8 +254,8 @@ class EvalRunner:
 
         if self._config.output_dir:
             json_path, csv_path = self._save_results(result, tasks)
-            print(f"JSON report saved to: {json_path}")
-            print(f"CSV  report saved to: {csv_path}")
+            logger.info("JSON report saved to: %s", json_path)
+            logger.info("CSV  report saved to: %s", csv_path)
 
         return result
 

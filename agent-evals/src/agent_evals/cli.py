@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -12,6 +13,8 @@ import yaml
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -304,16 +307,16 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
 
     model = resolved.get("model")
     if not model:
-        print("Error: --model is required (or set in config/env)")  # noqa: T201
+        logger.error("--model is required (or set in config/env)")
         return 1
 
     run_config = build_eval_run_config(resolved)
 
-    # Dry-run mode: just print config and exit
+    # Dry-run mode: log config and exit
     if resolved.get("dry_run", False):
-        print("Dry-run mode: resolved configuration:")  # noqa: T201
+        logger.info("Dry-run mode: resolved configuration:")
         for key, value in sorted(resolved.items()):
-            print(f"  {key}: {value!r}")  # noqa: T201
+            logger.info("  %s: %r", key, value)
         return 0
 
     # Import heavy dependencies only when actually running
@@ -332,7 +335,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     # Load tasks
     gold_standard_dir = Path(__file__).resolve().parent.parent.parent / "gold_standard"
     if not gold_standard_dir.is_dir():
-        print(f"Error: gold standard directory not found: {gold_standard_dir}")  # noqa: T201
+        logger.error("Gold standard directory not found: %s", gold_standard_dir)
         return 1
 
     tasks = load_tasks(gold_standard_dir)
@@ -354,7 +357,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         tasks = tasks[:limit]
 
     if not tasks:
-        print("No tasks matched the filter criteria.")  # noqa: T201
+        logger.warning("No tasks matched the filter criteria.")
         return 1
 
     # Load variants
@@ -373,7 +376,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         variants = [v for v in variants if v.metadata().name == variant_name]
 
     if not variants:
-        print("No variants matched the filter criteria.")  # noqa: T201
+        logger.warning("No variants matched the filter criteria.")
         return 1
 
     # Load doc_tree
@@ -385,10 +388,11 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     runner = EvalRunner(client=client, config=run_config)
     result = runner.run(tasks=tasks, variants=variants, doc_tree=doc_tree)
 
-    print(  # noqa: T201
-        f"Evaluation complete: {len(result.trials)} trials, "
-        f"${result.total_cost:.4f} cost, "
-        f"{result.elapsed_seconds:.1f}s elapsed"
+    logger.info(
+        "Evaluation complete: %d trials, $%.4f cost, %.1fs elapsed",
+        len(result.trials),
+        result.total_cost,
+        result.elapsed_seconds,
     )
     return 0
 
