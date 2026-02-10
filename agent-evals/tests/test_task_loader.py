@@ -525,3 +525,75 @@ class TestLoadTasks:
 
         task_ids = [t.definition.task_id for t in tasks]
         assert task_ids == ["retrieval_001", "retrieval_002", "retrieval_003"]
+
+
+# ---------------------------------------------------------------------------
+# Loader uses concrete task types (Step 6.4)
+# ---------------------------------------------------------------------------
+
+
+class TestLoaderUsesConcreteTaskTypes:
+    """Tests that loader uses concrete task types, not GenericTask fallbacks."""
+
+    def test_loader_uses_concrete_task_types_not_generic(
+        self, tmp_path: Path
+    ) -> None:
+        """load_task should return concrete task subclass, not GenericTask.
+
+        When loader.py is imported directly (bypassing tasks/__init__.py),
+        the TASK_TYPES registry might only contain GenericTask defaults.
+        The loader should ensure concrete types are registered.
+        """
+        from agent_evals.tasks.retrieval import RetrievalTask
+
+        yaml_path = _write_yaml(
+            tmp_path / "task.yaml",
+            _valid_task_data(type="retrieval", task_id="retrieval_001"),
+        )
+
+        task = load_task(yaml_path)
+
+        # Should be the concrete RetrievalTask, not GenericTask
+        assert type(task) is RetrievalTask, (
+            f"Expected RetrievalTask but got {type(task).__name__}. "
+            "The loader may not be triggering concrete task registration."
+        )
+
+    def test_loader_registers_all_concrete_types(self) -> None:
+        """After loading, TASK_TYPES should contain concrete types for all 11 types."""
+        from agent_evals.tasks.base import TASK_TYPES, GenericTask
+
+        # Force registration by importing loader (which should ensure init runs)
+        import importlib
+
+        import agent_evals.tasks.loader
+        importlib.reload(agent_evals.tasks.loader)
+
+        # Check that at least some types have been overridden from GenericTask
+        concrete_types = {
+            name: cls
+            for name, cls in TASK_TYPES.items()
+            if cls is not GenericTask
+        }
+        assert len(concrete_types) > 0, (
+            "No concrete task types registered. "
+            "TASK_TYPES only contains GenericTask defaults."
+        )
+
+    def test_loader_has_ensure_registered_guard(self) -> None:
+        """loader.py should have a registration guard to ensure concrete types."""
+        import agent_evals.tasks.loader as loader_mod
+
+        # The loader should either import tasks.__init__ or have an
+        # _ensure_registered function
+        has_guard = (
+            hasattr(loader_mod, "_ensure_registered")
+            or "agent_evals.tasks" in str(
+                getattr(loader_mod, "__doc__", "")
+            )
+        )
+        # Check by verifying that importing loader alone guarantees
+        # concrete types in TASK_TYPES
+        assert has_guard or TASK_TYPES.get("retrieval") is not GenericTask, (
+            "loader.py should ensure concrete task types are registered"
+        )

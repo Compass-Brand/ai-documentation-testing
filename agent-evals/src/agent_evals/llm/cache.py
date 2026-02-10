@@ -4,7 +4,9 @@ Caches responses keyed on SHA-256(model + temperature + max_tokens
 + messages + cache_version) to avoid redundant API calls during evaluation
 runs.  System prompts are included as part of the messages list.
 
-Thread-safe via atomic writes (write-to-temp-then-rename).
+Thread-safe via a combination of atomic writes (write-to-temp-then-rename)
+and a per-instance ``threading.Lock`` to serialize concurrent access to the
+same cache file.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -69,6 +72,7 @@ class ResponseCache:
         self._max_size_bytes = max_size_mb * 1_024 * 1_024
         self._cache_version = cache_version
         self._enabled = enabled
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -83,14 +87,15 @@ class ResponseCache:
         if not self._enabled:
             return None
 
-        path = self._path_for(key)
-        if not path.exists():
-            return None
+        with self._lock:
+            path = self._path_for(key)
+            if not path.exists():
+                return None
 
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return None
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                return None
 
         entry = CacheEntry(**data)
 
@@ -109,7 +114,8 @@ class ResponseCache:
     ) -> None:
         """Store a response in the cache.
 
-        Uses atomic write (write-to-temp-then-rename) for thread-safety.
+        Uses atomic write (write-to-temp-then-rename) guarded by a
+        threading lock to prevent concurrent access errors on Windows.
         No-op when the cache is disabled.
         """
         if not self._enabled:
@@ -129,22 +135,25 @@ class ResponseCache:
         payload = json.dumps(asdict(entry), ensure_ascii=False, indent=2)
         target = self._path_for(key)
 
-        # Atomic write: write to a temp file in the same directory, then
-        # rename.  On POSIX ``os.replace`` is atomic; on Windows it is
-        # atomic when src and dst are on the same volume (guaranteed here
-        # because we use the same directory for the temp file).
-        fd, tmp_path = tempfile.mkstemp(
-            dir=str(self._cache_dir), suffix=".tmp"
-        )
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                f.write(payload)
-            os.replace(tmp_path, str(target))
-        except BaseException:
-            # Clean up temp file on any failure
-            with contextlib.suppress(OSError):
-                os.unlink(tmp_path)
-            raise
+        with self._lock:
+            # Atomic write: write to a temp file in the same directory, then
+            # rename.  On POSIX ``os.replace`` is atomic; on Windows it is
+            # atomic when src and dst are on the same volume (guaranteed here
+            # because we use the same directory for the temp file).  The lock
+            # serializes concurrent writers to prevent Windows PermissionError
+            # when two threads try to replace the same file simultaneously.
+            fd, tmp_path = tempfile.mkstemp(
+                dir=str(self._cache_dir), suffix=".tmp"
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(payload)
+                os.replace(tmp_path, str(target))
+            except BaseException:
+                # Clean up temp file on any failure
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
+                raise
 
     def make_key(
         self,

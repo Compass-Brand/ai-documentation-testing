@@ -10,7 +10,7 @@ import litellm
 logger = logging.getLogger(__name__)
 
 
-def count_tokens(text: str, model: str = "gpt-4") -> int:
+def count_tokens(text: str, model: str = "openrouter/anthropic/claude-sonnet-4.5") -> int:
     """Count tokens using LiteLLM's token_counter.
 
     Falls back to ~4 chars/token heuristic if model not supported.
@@ -37,7 +37,7 @@ def count_tokens(text: str, model: str = "gpt-4") -> int:
 
 
 def count_message_tokens(
-    messages: list[dict[str, Any]], model: str = "gpt-4"
+    messages: list[dict[str, Any]], model: str = "openrouter/anthropic/claude-sonnet-4.5"
 ) -> int:
     """Count tokens in a list of chat messages.
 
@@ -87,15 +87,16 @@ def estimate_cost(
     if not model_info:
         return 0.0
 
-    input_cost_per_token: float = float(
-        model_info.get("input_cost_per_token", 0.0)
-    )
-    output_cost_per_token: float = float(
-        model_info.get("output_cost_per_token", 0.0)
-    )
+    raw_input_cost = model_info.get("input_cost_per_token")
+    raw_output_cost = model_info.get("output_cost_per_token")
 
-    if not input_cost_per_token and not output_cost_per_token:
+    # Use ``is None`` instead of truthiness to correctly handle free models
+    # where cost per token is explicitly 0.0 (falsy but valid).
+    if raw_input_cost is None and raw_output_cost is None:
         return 0.0
+
+    input_cost_per_token: float = float(raw_input_cost or 0.0)
+    output_cost_per_token: float = float(raw_output_cost or 0.0)
 
     return float(
         (prompt_tokens * input_cost_per_token)

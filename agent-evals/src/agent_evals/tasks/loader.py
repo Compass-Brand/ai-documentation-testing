@@ -3,6 +3,9 @@
 This module provides:
 - load_task: Load a single YAML file into a validated EvalTask
 - load_tasks: Load all YAML files from a directory into EvalTask instances
+
+Imports ``agent_evals.tasks`` to ensure concrete task type registrations
+are loaded before any TASK_TYPES lookups.
 """
 
 from __future__ import annotations
@@ -13,6 +16,27 @@ import yaml
 from pydantic import ValidationError
 
 from agent_evals.tasks.base import TASK_TYPES, EvalTask, TaskDefinition
+
+_registered = False
+
+
+def _ensure_registered() -> None:
+    """Ensure all concrete task types have been registered.
+
+    When this module is imported directly (e.g. ``from
+    agent_evals.tasks.loader import load_task``) the package
+    ``__init__.py`` may not have run yet, leaving TASK_TYPES with only
+    GenericTask defaults.  This guard triggers the concrete imports
+    exactly once.
+    """
+    global _registered  # noqa: PLW0603
+    if _registered:
+        return
+    # Importing the package triggers __init__.py which imports every
+    # concrete task module, each of which calls register_task_type().
+    import agent_evals.tasks  # noqa: F401
+
+    _registered = True
 
 
 def load_task(path: Path) -> EvalTask:
@@ -33,6 +57,8 @@ def load_task(path: Path) -> EvalTask:
         ValueError: If the YAML is malformed, fails schema validation,
             or the task type is not registered.
     """
+    _ensure_registered()
+
     path = Path(path)
 
     if not path.exists():

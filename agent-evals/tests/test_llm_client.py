@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import litellm as _litellm
 import pytest
 from agent_evals.llm.client import GenerationResult, LLMClient, LLMClientError
 
@@ -362,3 +363,278 @@ class TestLLMClientErrors:
         client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
         with pytest.raises(LLMClientError, match="claude-sonnet-4.5"):
             client.complete(messages=[{"role": "user", "content": "hi"}])
+
+
+# ---------------------------------------------------------------------------
+# Retry logic with typed litellm exceptions (Step 6.1)
+# ---------------------------------------------------------------------------
+
+
+class TestRetryWithTypedExceptions:
+    """Tests that retry logic uses typed litellm exceptions, not string matching."""
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_retries_on_rate_limit_error(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """RateLimitError should trigger a retry and succeed on next attempt."""
+        rate_limit_exc = _litellm.RateLimitError(
+            message="Rate limit exceeded",
+            llm_provider="openrouter",
+            model="openrouter/anthropic/claude-sonnet-4.5",
+        )
+        mock_litellm.completion.side_effect = [
+            rate_limit_exc,
+            _mock_litellm_response(),
+        ]
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        result = client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        assert result.content == "Hello, world!"
+        assert mock_litellm.completion.call_count == 2
+        mock_sleep.assert_called_once()
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_retries_on_internal_server_error(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """InternalServerError (500) should trigger a retry."""
+        server_exc = _litellm.InternalServerError(
+            message="Internal server error",
+            llm_provider="openrouter",
+            model="openrouter/anthropic/claude-sonnet-4.5",
+        )
+        mock_litellm.completion.side_effect = [
+            server_exc,
+            _mock_litellm_response(),
+        ]
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        result = client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        assert result.content == "Hello, world!"
+        assert mock_litellm.completion.call_count == 2
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_retries_on_service_unavailable_error(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """ServiceUnavailableError (503) should trigger a retry."""
+        svc_exc = _litellm.ServiceUnavailableError(
+            message="Service unavailable",
+            llm_provider="openrouter",
+            model="openrouter/anthropic/claude-sonnet-4.5",
+        )
+        mock_litellm.completion.side_effect = [
+            svc_exc,
+            _mock_litellm_response(),
+        ]
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        result = client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        assert result.content == "Hello, world!"
+        assert mock_litellm.completion.call_count == 2
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_retries_on_bad_gateway_error(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """BadGatewayError (502) should trigger a retry."""
+        gw_exc = _litellm.BadGatewayError(
+            message="Bad gateway",
+            llm_provider="openrouter",
+            model="openrouter/anthropic/claude-sonnet-4.5",
+        )
+        mock_litellm.completion.side_effect = [
+            gw_exc,
+            _mock_litellm_response(),
+        ]
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        result = client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        assert result.content == "Hello, world!"
+        assert mock_litellm.completion.call_count == 2
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_no_retry_on_non_retryable_exception(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """Non-retryable exceptions should not be retried."""
+        mock_litellm.completion.side_effect = ValueError("Invalid request")
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        with pytest.raises(LLMClientError, match="Invalid request"):
+            client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        assert mock_litellm.completion.call_count == 1
+        mock_sleep.assert_not_called()
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_exhausted_retries_raises_llm_client_error(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """All retries exhausted on retryable error raises LLMClientError."""
+        rate_limit_exc = _litellm.RateLimitError(
+            message="Rate limit exceeded",
+            llm_provider="openrouter",
+            model="openrouter/anthropic/claude-sonnet-4.5",
+        )
+        mock_litellm.completion.side_effect = rate_limit_exc
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        with pytest.raises(LLMClientError, match="Rate limit exceeded"):
+            client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        assert mock_litellm.completion.call_count == client.MAX_RETRIES
+
+
+# ---------------------------------------------------------------------------
+# Exponential backoff with jitter (Step 6.5)
+# ---------------------------------------------------------------------------
+
+
+class TestRetryBackoff:
+    """Tests for configurable retry count and exponential backoff with jitter."""
+
+    @patch("agent_evals.llm.client.random.uniform", side_effect=lambda a, b: b)
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_backoff_increases_exponentially(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock, _mock_uniform: MagicMock
+    ) -> None:
+        """Sleep durations should increase exponentially between retries.
+
+        Patches random.uniform to always return the upper bound so that
+        delays are deterministic and strictly increasing.
+        """
+        rate_limit_exc = _litellm.RateLimitError(
+            message="Rate limit exceeded",
+            llm_provider="openrouter",
+            model="openrouter/anthropic/claude-sonnet-4.5",
+        )
+        mock_litellm.completion.side_effect = rate_limit_exc
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        with pytest.raises(LLMClientError):
+            client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        # Should have slept MAX_RETRIES - 1 times (no sleep after last attempt)
+        assert mock_sleep.call_count == client.MAX_RETRIES - 1
+
+        # Each delay should be larger than the previous (exponential backoff)
+        delays = [call.args[0] for call in mock_sleep.call_args_list]
+        for i in range(1, len(delays)):
+            assert delays[i] > delays[i - 1], (
+                f"Delay {i} ({delays[i]}) should be greater than "
+                f"delay {i-1} ({delays[i-1]})"
+            )
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_backoff_has_jitter(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """Backoff delays should include jitter (not exact powers of base)."""
+        rate_limit_exc = _litellm.RateLimitError(
+            message="Rate limit exceeded",
+            llm_provider="openrouter",
+            model="openrouter/anthropic/claude-sonnet-4.5",
+        )
+        mock_litellm.completion.side_effect = rate_limit_exc
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+
+        # Run multiple times to collect delays -- jitter means they should
+        # not all be identical for the same attempt index.
+        all_first_delays: list[float] = []
+        for _ in range(5):
+            mock_sleep.reset_mock()
+            mock_litellm.completion.side_effect = rate_limit_exc
+            with pytest.raises(LLMClientError):
+                client.complete(messages=[{"role": "user", "content": "hi"}])
+            if mock_sleep.call_args_list:
+                all_first_delays.append(mock_sleep.call_args_list[0].args[0])
+
+        # With jitter, not all first delays should be identical
+        # (probabilistically this is extremely likely with 5 samples)
+        assert len(set(all_first_delays)) > 1, (
+            f"Expected jitter but all first delays were identical: {all_first_delays}"
+        )
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_backoff_bounded_by_base_delay(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """Each delay should be bounded by [0, base_delay * 2^attempt]."""
+        rate_limit_exc = _litellm.RateLimitError(
+            message="Rate limit exceeded",
+            llm_provider="openrouter",
+            model="openrouter/anthropic/claude-sonnet-4.5",
+        )
+        mock_litellm.completion.side_effect = rate_limit_exc
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        with pytest.raises(LLMClientError):
+            client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        delays = [call.args[0] for call in mock_sleep.call_args_list]
+        for i, delay in enumerate(delays):
+            max_delay = client.RETRY_BASE_DELAY * (2 ** i)
+            assert 0 < delay <= max_delay, (
+                f"Delay {delay} for attempt {i} should be in "
+                f"(0, {max_delay}]"
+            )
+
+    def test_max_retries_is_configurable(self) -> None:
+        """MAX_RETRIES class attribute can be overridden on instance."""
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        assert client.MAX_RETRIES == 3  # default
+
+        client.MAX_RETRIES = 5
+        assert client.MAX_RETRIES == 5

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from agent_evals.llm.cache import CacheEntry, ResponseCache
@@ -356,3 +357,115 @@ class TestMakeKeyIncludesCacheVersion:
             model="gpt-4o", temperature=0.0, max_tokens=100, messages=messages
         )
         assert key1 != key2
+
+
+# ---------------------------------------------------------------------------
+# Concurrent access safety (Step 6.3)
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentAccess:
+    """Tests for thread-safe concurrent cache read/write operations."""
+
+    def test_concurrent_writes_same_key(self, tmp_path: Path) -> None:
+        """Multiple threads writing the same key should not corrupt data."""
+        cache = ResponseCache(cache_dir=tmp_path / "cache")
+        key = "shared-key"
+        num_threads = 10
+
+        def write_entry(i: int) -> None:
+            cache.put(
+                key,
+                {"content": f"response-{i}", "index": i},
+                model="gpt-4o",
+                tokens_used=i,
+            )
+
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures = [executor.submit(write_entry, i) for i in range(num_threads)]
+            for future in as_completed(futures):
+                future.result()  # raises if any thread failed
+
+        # The final entry should be valid JSON and parseable
+        entry = cache.get(key)
+        assert entry is not None
+        assert isinstance(entry.response, dict)
+        assert "content" in entry.response
+
+    def test_concurrent_read_write(self, tmp_path: Path) -> None:
+        """Concurrent reads and writes on the same key should not raise."""
+        cache = ResponseCache(cache_dir=tmp_path / "cache")
+        key = "rw-key"
+
+        # Seed an initial entry
+        cache.put(key, {"content": "initial"}, model="gpt-4o", tokens_used=1)
+
+        errors: list[Exception] = []
+
+        def reader() -> None:
+            for _ in range(20):
+                try:
+                    entry = cache.get(key)
+                    # entry might be None if read during a write, but
+                    # it should never be corrupted (partial JSON).
+                    if entry is not None:
+                        assert isinstance(entry.response, dict)
+                except Exception as exc:
+                    errors.append(exc)
+
+        def writer(i: int) -> None:
+            for j in range(20):
+                try:
+                    cache.put(
+                        key,
+                        {"content": f"response-{i}-{j}"},
+                        model="gpt-4o",
+                        tokens_used=j,
+                    )
+                except Exception as exc:
+                    errors.append(exc)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = []
+            for i in range(4):
+                futures.append(executor.submit(reader))
+                futures.append(executor.submit(writer, i))
+            for future in as_completed(futures):
+                future.result()
+
+        assert len(errors) == 0, f"Concurrent access errors: {errors}"
+
+    def test_concurrent_writes_different_keys(self, tmp_path: Path) -> None:
+        """Multiple threads writing different keys should all succeed."""
+        cache = ResponseCache(cache_dir=tmp_path / "cache")
+        num_threads = 10
+
+        def write_entry(i: int) -> str:
+            key = f"key-{i}"
+            cache.put(
+                key,
+                {"content": f"response-{i}"},
+                model="gpt-4o",
+                tokens_used=i,
+            )
+            return key
+
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures = [executor.submit(write_entry, i) for i in range(num_threads)]
+            keys = [f.result() for f in as_completed(futures)]
+
+        # All entries should be readable
+        for key in keys:
+            entry = cache.get(key)
+            assert entry is not None, f"Missing entry for {key}"
+            assert isinstance(entry.response, dict)
+
+    def test_cache_has_lock_attribute(self, tmp_path: Path) -> None:
+        """ResponseCache should have a threading lock for thread safety."""
+        import threading
+
+        cache = ResponseCache(cache_dir=tmp_path / "cache")
+        assert hasattr(cache, "_lock"), (
+            "ResponseCache should have a _lock attribute for thread safety"
+        )
+        assert isinstance(cache._lock, type(threading.Lock()))
