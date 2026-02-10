@@ -97,10 +97,28 @@ def compute_effects(
     n = len(y)
     k = len(factor_names)
 
+    if k < 2:
+        msg = (
+            f"Factorial interaction analysis requires at least 2 factors, "
+            f"got {k} factor(s)"
+        )
+        raise ValueError(msg)
+
     if X.shape != (n, k):
         msg = (
             f"Design matrix shape {X.shape} does not match "
             f"n={n} runs x k={k} factors"
+        )
+        raise ValueError(msg)
+
+    # Check for singular (linearly dependent) design matrix columns.
+    # A singular design matrix means some factors are perfectly correlated,
+    # making effect estimates unreliable.
+    rank = int(np.linalg.matrix_rank(X))
+    if rank < k:
+        msg = (
+            f"Design matrix is singular (rank {rank} < {k} factors). "
+            f"Factor columns are linearly dependent."
         )
         raise ValueError(msg)
 
@@ -336,8 +354,8 @@ def detect_override(
             if (
                 combo_replicated is not None
                 and winner_replicated is not None
-                and len(combo_replicated) >= 2
-                and len(winner_replicated) >= 2
+                and len(combo_replicated) >= 5
+                and len(winner_replicated) >= 5
             ):
                 min_len = min(len(combo_replicated), len(winner_replicated))
                 pw = pairwise_wilcoxon(

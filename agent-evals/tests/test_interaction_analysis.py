@@ -168,6 +168,27 @@ class TestComputeEffects:
         for e in effects:
             assert e.estimate == pytest.approx(0.0)
 
+    def test_insufficient_factors_raises(self) -> None:
+        """Factorial interaction analysis requires at least 2 factors."""
+        # Single factor: no interactions possible
+        with pytest.raises(ValueError, match="factor"):
+            compute_effects([10.0, 20.0], [[-1], [1]], ["A"])
+
+    def test_singular_design_matrix_raises(self) -> None:
+        """A singular (linearly dependent) design matrix should raise ValueError."""
+        # Columns are identical (B is a copy of A): singular design
+        y = [10.0, 20.0, 30.0, 40.0]
+        X = [[-1, -1], [1, 1], [-1, -1], [1, 1]]
+        with pytest.raises(ValueError, match="singular"):
+            compute_effects(y, X, ["A", "B"])
+
+    def test_two_factors_minimum_accepted(self) -> None:
+        """Exactly 2 factors should be accepted (boundary check)."""
+        y = [10.0, 20.0, 15.0, 25.0]
+        X = [[-1, -1], [1, -1], [-1, 1], [1, 1]]
+        effects = compute_effects(y, X, ["A", "B"])
+        assert len(effects) == 3  # 2 main + 1 interaction
+
 
 # ---------------------------------------------------------------------------
 # Tests: lenth_method
@@ -472,6 +493,63 @@ class TestDetectOverride:
         assert result.override_detected is True
         assert result.best_factorial_score == 95.0
         assert result.override_combination == {"A": "2", "B": "2"}
+
+    def test_detect_override_rejects_small_samples(self) -> None:
+        """Wilcoxon signed-rank requires n >= 5; samples with n < 5 should
+        fall back to simple comparison rather than running the statistical test."""
+        # Provide only 3 replicated scores per variant (< 5 minimum)
+        result = detect_override(
+            factorial_scores={"combo": 85.0},
+            sequential_winner_score=70.0,
+            sequential_winner_name="seq",
+            all_scores={
+                "combo": [84.0, 85.0, 86.0],
+                "seq": [69.0, 70.0, 71.0],
+            },
+            alpha=0.05,
+        )
+        # With n < 5, the Wilcoxon test should NOT be run, so override
+        # detection falls back to simple score comparison (no p-value)
+        assert result.override_detected is True
+        assert result.override_p_value is None  # No Wilcoxon p-value
+
+    def test_detect_override_rejects_4_samples(self) -> None:
+        """Boundary: n=4 should still reject Wilcoxon and fall back to simple."""
+        result = detect_override(
+            factorial_scores={"combo": 85.0},
+            sequential_winner_score=70.0,
+            sequential_winner_name="seq",
+            all_scores={
+                "combo": [84.0, 85.0, 86.0, 87.0],
+                "seq": [69.0, 70.0, 71.0, 72.0],
+            },
+            alpha=0.05,
+        )
+        assert result.override_detected is True
+        assert result.override_p_value is None
+
+    def test_detect_override_accepts_5_samples(self) -> None:
+        """Boundary: n=5 is accepted by the guard, so Wilcoxon runs.
+
+        Note: The minimum achievable two-sided p-value at n=5 is 0.0625,
+        which exceeds alpha=0.05. We verify the guard allows n=5 by checking
+        that Wilcoxon runs (no override_p_value=None from the fallback path).
+        We use alpha=0.10 here to allow the test to actually detect significance.
+        """
+        result = detect_override(
+            factorial_scores={"combo": 90.0},
+            sequential_winner_score=70.0,
+            sequential_winner_name="seq",
+            all_scores={
+                "combo": [100.0, 101.0, 102.0, 103.0, 104.0],
+                "seq": [50.0, 51.0, 52.0, 53.0, 54.0],
+            },
+            alpha=0.10,  # n=5 minimum p-value is 0.0625, need alpha > 0.0625
+        )
+        # n=5 passes the guard, so Wilcoxon runs and finds significance
+        assert result.override_detected is True
+        assert result.override_p_value is not None
+        assert result.override_p_value == pytest.approx(0.0625, abs=0.001)
 
 
 # ---------------------------------------------------------------------------
