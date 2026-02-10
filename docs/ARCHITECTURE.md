@@ -4,7 +4,7 @@ This document describes the high-level architecture of the AI Documentation Test
 
 ---
 
-## 1. Pipeline Overview
+## 1. Pipeline overview
 
 The evaluation pipeline flows from configuration through task execution to final reporting.
 
@@ -36,7 +36,7 @@ flowchart LR
 
 ---
 
-## 2. Package Structure
+## 2. Package structure
 
 The workspace is a UV monorepo with two packages.
 
@@ -87,7 +87,7 @@ graph TB
 
 ---
 
-## 3. Beam Search Cascade
+## 3. Beam search cascade
 
 The beam search processes axes in a configured order, scoring all variants per axis and pruning to a fixed beam width. Statistical parity prevents premature elimination.
 
@@ -133,7 +133,7 @@ flowchart TD
 
 ---
 
-## 4. Variant and Task Registration Flow
+## 4. Variant and task registration flow
 
 Both variants and tasks use registry patterns with auto-discovery for extensibility. Variants use `load_all()` in `registry.py` with decorator-based registration; tasks use `load_all_task_types()` in `base.py` which walks the package with `pkgutil.iter_modules`, importing each module which calls `register_task_type()` at module level.
 

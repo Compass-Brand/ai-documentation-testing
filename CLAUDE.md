@@ -19,7 +19,7 @@ This file provides guidance to Claude Code when working in this repository.
 
 ---
 
-## Tech Stack
+## Tech stack
 
 | Layer       | Technology                                  |
 | ----------- | ------------------------------------------- |
@@ -62,7 +62,7 @@ agent-evals --config <config.yaml>
 agent-evals --model openrouter/anthropic/claude-sonnet-4.5 --dry-run
 ```
 
-### Key CLI Flags
+### Key CLI flags
 
 ```bash
 # New ease-of-use flags
@@ -75,7 +75,7 @@ agent-evals --display plain        # Progress: rich, plain, none
 
 ---
 
-## Environment Variables
+## Environment variables
 
 ```bash
 OPENROUTER_API_KEY=sk-or-v1-...   # Required for LLM-based evaluation
@@ -85,7 +85,7 @@ See `.env.example` for all options.
 
 ---
 
-## Standards & Guidelines
+## Standards & guidelines
 
 This project follows Compass Brand standards:
 
@@ -94,7 +94,7 @@ This project follows Compass Brand standards:
 
 ---
 
-## Development Methodology: TDD
+## Development methodology: TDD
 
 All functional code MUST follow Test-Driven Development.
 
@@ -104,7 +104,7 @@ RED -> GREEN -> REFACTOR
 
 ---
 
-## Git Discipline (MANDATORY)
+## Git discipline (MANDATORY)
 
 **Commit early, commit often.**
 

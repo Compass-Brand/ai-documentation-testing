@@ -1,10 +1,10 @@
-# Planning Directory
+# Planning directory
 
 Research and design artifacts for the AI Documentation Testing project.
 
 ## Structure
 
-```
+```text
 planning/
   README.md              # This file
   DESIGN.md              # Master design document

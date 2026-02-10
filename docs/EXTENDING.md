@@ -2,9 +2,16 @@
 
 This guide covers the four most common extension points: adding a variant, a task type, a metric, and gold-standard tasks.
 
+## Prerequisites
+
+- Python 3.11+ installed
+- UV package manager (`pip install uv`)
+- Project cloned and dependencies installed (`uv sync --dev`)
+- Familiarity with the project structure (see `docs/ARCHITECTURE.md`)
+
 ---
 
-## 1. Adding a Variant
+## 1. Adding a variant
 
 Variants live in `agent-evals/src/agent_evals/variants/`. The registry uses auto-discovery via `pkgutil`, so any module in that package that applies `@register_variant` to a class is automatically picked up.
 
@@ -16,7 +23,7 @@ Variants live in `agent-evals/src/agent_evals/variants/`. The registry uses auto
 2. Subclass `IndexVariant` and implement `metadata()` and `render()`.
 3. Decorate the class with `@register_variant`.
 
-### Minimal Example
+### Minimal example
 
 ```python
 # agent-evals/src/agent_evals/variants/format_csv.py
@@ -52,11 +59,11 @@ class FormatCsv(IndexVariant):
         return "\n".join(lines)
 ```
 
-### Files to Modify
+### Files to modify
 
 None. Auto-discovery via `load_all()` in `registry.py` handles registration when the package is imported. No changes to `__init__.py` are required for discovery, but if you want the class exported for direct import, add it to `agent-evals/src/agent_evals/variants/__init__.py`.
 
-### How to Test
+### How to test
 
 ```bash
 pytest agent-evals/tests/ -k "variant" -v
@@ -66,7 +73,7 @@ Write a test that calls `load_all()`, then asserts your variant appears in `get_
 
 ---
 
-## 2. Adding a Task Type
+## 2. Adding a task type
 
 Task types live in `agent-evals/src/agent_evals/tasks/`. The registry uses auto-discovery via `load_all_task_types()` in `base.py` (the same pattern variants use with `pkgutil`). Each module that calls `register_task_type()` at module level is automatically discovered when the package is imported.
 
@@ -81,7 +88,7 @@ Task types live in `agent-evals/src/agent_evals/tasks/`. The registry uses auto-
 
 No `__init__.py` changes needed -- auto-discovery handles it.
 
-### Minimal Example
+### Minimal example
 
 ```python
 # agent-evals/src/agent_evals/tasks/summarization.py
@@ -122,7 +129,7 @@ class SummarizationTask(EvalTask):
 register_task_type("summarization", SummarizationTask)
 ```
 
-### Files to Modify
+### Files to modify
 
 | File | Change |
 |------|--------|
@@ -130,7 +137,7 @@ register_task_type("summarization", SummarizationTask)
 
 No changes to `__init__.py` required. Auto-discovery via `load_all_task_types()` imports all task modules automatically.
 
-### How to Test
+### How to test
 
 ```bash
 pytest agent-evals/tests/ -k "task" -v
@@ -140,7 +147,7 @@ Write tests that load a YAML file with `type: summarization`, verify the correct
 
 ---
 
-## 3. Adding a Metric
+## 3. Adding a metric
 
 Metrics live in `agent-evals/src/agent_evals/metrics/`. Each metric subclasses `Metric` and implements a `name` property and `compute()` method.
 
@@ -152,7 +159,7 @@ Metrics live in `agent-evals/src/agent_evals/metrics/`. Each metric subclasses `
 2. Subclass `Metric`, implement `name` and `compute()`.
 3. Import the new metric in `agent-evals/src/agent_evals/metrics/__init__.py`.
 
-### Minimal Example
+### Minimal example
 
 ```python
 # agent-evals/src/agent_evals/metrics/brevity.py
@@ -175,13 +182,13 @@ class BrevityMetric(Metric):
         return max(0.0, min(1.0, 50.0 / word_count))
 ```
 
-### Files to Modify
+### Files to modify
 
 | File | Change |
 |------|--------|
 | `metrics/__init__.py` | Add `from agent_evals.metrics.brevity import BrevityMetric` and update `__all__` |
 
-### How to Test
+### How to test
 
 ```bash
 pytest agent-evals/tests/ -k "metric" -v
@@ -191,13 +198,13 @@ Verify that `compute()` returns values in [0.0, 1.0] for edge cases: empty respo
 
 ---
 
-## 4. Adding Gold Standard Tasks
+## 4. Adding gold standard tasks
 
 Gold-standard tasks are YAML files loaded by `load_task()` / `load_tasks()` from `agent-evals/src/agent_evals/tasks/loader.py`. Each file must conform to the `TaskDefinition` Pydantic model.
 
 **Reference:** `agent-evals/src/agent_evals/tasks/base.py:61` (`TaskDefinition`)
 
-### Required YAML Schema
+### Required YAML schema
 
 ```yaml
 task_id: "<type>_<number>"        # e.g. retrieval_042, code_generation_python_001
@@ -212,7 +219,7 @@ metadata:                         # type-specific fields (see TASK_METADATA.md)
   expected_answer: "..."
 ```
 
-### Validation Rules
+### Validation rules
 
 - `task_id` must match the regex `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$` (e.g. `retrieval_001`, `multi_hop_042`).
 - `type` must be in `VALID_TASK_TYPES`.
@@ -238,18 +245,37 @@ metadata:
   evidence_passage: "AuthMiddleware handles JWT token validation"
 ```
 
-### Files to Create
+### Files to create
 
 Place YAML files in a task directory. The `load_tasks(directory)` function recursively scans for `.yaml` and `.yml` files.
 
-### Files to Modify
+### Files to modify
 
 None, unless you are adding a task for a new task type (see section 2 above).
 
-### How to Test
+### How to test
 
 ```bash
 pytest agent-evals/tests/ -k "loader" -v
 ```
 
 Use `load_task(Path("path/to/task.yaml"))` and verify the returned object is the correct `EvalTask` subclass. Check that invalid YAML raises `ValueError` and missing files raise `FileNotFoundError`.
+
+---
+
+## Troubleshooting
+
+**Variant not discovered after adding a new file:**
+- Verify the file is in `agent-evals/src/agent_evals/variants/`
+- Verify the class has the `@register_variant` decorator
+- Run `python -c "from agent_evals.variants.registry import load_all, get_all_variants; load_all(); print([v.metadata().name for v in get_all_variants()])"` to check
+
+**Task type not found after adding a new module:**
+- Verify the type name is in `VALID_TASK_TYPES` in `base.py`
+- Verify `register_task_type()` is called at module level (not inside a function)
+- Verify the file is in `agent-evals/src/agent_evals/tasks/` (not a subdirectory)
+
+**YAML task fails validation:**
+- Check `task_id` matches the regex `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`
+- Check `type` is in `VALID_TASK_TYPES` and `domain` is in `VALID_DOMAINS`
+- Check `difficulty` is one of: `easy`, `medium`, `hard`, `edge`

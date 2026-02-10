@@ -4,7 +4,7 @@ AI documentation optimization and evaluation framework. Transforms docs into
 AI-optimized formats and empirically tests which index structures produce the
 best agent outcomes.
 
-## Quick Start
+## Quick start
 
 ```bash
 # Install
@@ -30,11 +30,11 @@ Two complementary packages in a UV workspace:
 | `agent-index/` | Scans documentation, transforms into `.llms.md` files, generates indexes |
 | `agent-evals/` | Evaluates 10 format axes across 11 task types with 330+ gold standard tasks |
 
-```
+```text
 Config -> Task Loading -> Variant Setup -> Trial Execution -> Scoring -> Report
                               |                   |
                          (10 axes x           (LLM call per
-                          51 variants)     task x variant x rep)
+                          40+ variants)    task x variant x rep)
 ```
 
 ## Configuration
@@ -44,7 +44,7 @@ Three sources (highest priority wins): **CLI flags > environment variables > con
 See `examples/minimal-config.yaml` for a quick start, or `examples/full-config.yaml`
 for all options with documentation.
 
-### CLI Reference
+### CLI reference
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
@@ -71,17 +71,16 @@ for all options with documentation.
 | `--verbose / -v` | flag | false | Debug-level logging |
 | `--quiet / -q` | flag | false | Warnings and errors only |
 
-## Environment Variables
+## Environment variables
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `OPENROUTER_API_KEY` | Yes | API key from https://openrouter.ai/keys |
 
-Any config key can also be set as an environment variable with the `AGENT_EVALS_` prefix
-using UPPER_SNAKE_CASE. For example, `AGENT_EVALS_REPETITIONS=5` overrides the
-`repetitions` config value.
+Most config keys can also be set as environment variables with an `AGENT_EVALS_` prefix
+(e.g., `AGENT_EVALS_REPETITIONS=5`). See `.env.example` for examples.
 
-## Key Concepts
+## Key concepts
 
 See `docs/GLOSSARY.md` for a full glossary. Key terms:
 
@@ -90,6 +89,12 @@ See `docs/GLOSSARY.md` for a full glossary. Key terms:
 - **Trial**: A single (task, variant, repetition) execution scored 0.0-1.0
 - **Gold Standard**: The corpus of ~330 annotated YAML task files used for evaluation
 
+## Gotchas
+
+- The `OPENROUTER_API_KEY` must start with `sk-or-`. The CLI validates this on startup.
+- `--no-cache` is the CLI flag, but config files use `use_cache: true/false` (inverted logic).
+- `max_tokens` and `cache_dir` can only be set via config file, not CLI flags or environment variables.
+
 ## Documentation
 
 - `docs/GLOSSARY.md` - Domain vocabulary
@@ -97,5 +102,7 @@ See `docs/GLOSSARY.md` for a full glossary. Key terms:
 - `docs/ARCHITECTURE.md` - System design with diagrams
 - `docs/TASK_METADATA.md` - Per-task-type metadata field reference
 - `planning/DESIGN.md` - Full design specification
+
+This project includes a `CLAUDE.md` companion file for AI agent context.
 
 Last reviewed: 2026-02-10
