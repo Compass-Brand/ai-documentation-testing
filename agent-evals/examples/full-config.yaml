@@ -1,0 +1,31 @@
+# full-config.yaml - All configuration options
+# Usage: agent-evals run --config examples/full-config.yaml
+
+# === LLM Settings ===
+model: openrouter/anthropic/claude-sonnet-4.5  # Required: provider/model format
+judge_model: openrouter/openai/gpt-4o          # Model for LLM-as-judge scoring
+temperature: 0.3                                # Sampling temperature (0.0-1.0)
+max_tokens: 2048                                # Max tokens per LLM completion
+
+# === Evaluation Scope ===
+# axis: 1                   # Run only variants for axis N (1-10)
+# tasks: retrieval,agentic  # Filter to specific task types (comma-separated)
+# task_id: retrieval_001    # Run a single task by ID (debugging)
+# variant: scale_50         # Run a single variant by name (debugging)
+# limit: 5                  # Max tasks per type (quick iteration)
+
+# === Execution ===
+repetitions: 10             # Trials per (task, variant) pair
+max_connections: 10         # Concurrent API connections
+max_tasks: 1                # Parallel task evaluation
+continue_on_error: false    # Skip failed trials instead of aborting
+
+# === Cost Control ===
+# max_cost: 5.00            # Budget cap in dollars
+use_cache: true             # Cache LLM responses for reruns
+cache_dir: .agent-evals-cache
+
+# === Output ===
+output_dir: reports         # Directory for results
+output_format: json         # json, csv, or both
+display: rich               # Progress display: rich, plain, or none
