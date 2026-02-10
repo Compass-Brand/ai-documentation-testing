@@ -149,6 +149,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to eval-config.yaml (default: ./eval-config.yaml)",
     )
 
+    # Verbosity (mutually exclusive)
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        default=False,
+        help="Enable debug-level logging output",
+    )
+    verbosity.add_argument(
+        "--quiet", "-q",
+        action="store_true",
+        default=False,
+        help="Suppress info-level output (warnings and errors only)",
+    )
+
     return parser
 
 
@@ -383,8 +398,14 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns 0 on success, 1 on error.
     """
+    from agent_evals.logging_config import configure_logging
+
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # Initialize logging before anything else
+    verbosity = 1 if args.verbose else (-1 if args.quiet else 0)
+    configure_logging(verbosity)
 
     # Determine config file path
     config_path: Path | None = None

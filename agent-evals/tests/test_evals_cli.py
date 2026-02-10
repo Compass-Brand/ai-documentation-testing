@@ -568,3 +568,47 @@ class TestMain:
         ):
             result = main(["--dry-run"])
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Verbosity flags tests
+# ---------------------------------------------------------------------------
+
+
+class TestVerbosityFlags:
+    """Tests for --verbose and --quiet mutually exclusive flags."""
+
+    def test_verbose_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--verbose"])
+        assert args.verbose is True
+
+    def test_verbose_short_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["-v"])
+        assert args.verbose is True
+
+    def test_quiet_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quiet"])
+        assert args.quiet is True
+
+    def test_quiet_short_flag_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["-q"])
+        assert args.quiet is True
+
+    def test_verbose_and_quiet_mutually_exclusive(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--verbose", "--quiet"])
+
+    def test_default_verbose_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.verbose is False
+
+    def test_default_quiet_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.quiet is False
