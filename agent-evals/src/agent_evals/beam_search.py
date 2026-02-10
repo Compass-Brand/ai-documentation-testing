@@ -82,9 +82,7 @@ def score_variants(
         # Per-type mean scores
         type_scores: dict[str, list[float]] = {}
         for t in vtrials:
-            # Extract task type from task_id (e.g., "retrieval_001" -> "retrieval")
-            parts = t.task_id.rsplit("_", 1)
-            task_type = parts[0] if len(parts) == 2 else t.task_id
+            task_type = t.task_type
             type_scores.setdefault(task_type, []).append(t.score)
 
         per_type_means = {

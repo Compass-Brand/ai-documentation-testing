@@ -260,6 +260,124 @@ def resolve_config(
     return resolved
 
 
+def build_eval_run_config(resolved: dict[str, Any]) -> "EvalRunConfig":
+    """Build an EvalRunConfig from a resolved config dict.
+
+    Maps CLI/config/env keys to EvalRunConfig fields with appropriate defaults.
+    """
+    from agent_evals.runner import EvalRunConfig
+
+    return EvalRunConfig(
+        repetitions=resolved.get("repetitions", 10),
+        max_connections=resolved.get("max_connections", 10),
+        max_tasks=resolved.get("max_tasks", 1),
+        temperature=resolved.get("temperature", 0.3),
+        max_tokens=resolved.get("max_tokens", 2048),
+        use_cache=not resolved.get("no_cache", False),
+        cache_dir=resolved.get("cache_dir", ".agent-evals-cache"),
+        output_dir=resolved.get("output_dir", "reports"),
+        display_mode=resolved.get("display", "rich"),
+    )
+
+
+def _run_evaluation(resolved: dict[str, Any]) -> int:
+    """Execute an evaluation run from resolved configuration.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.runner import EvalRunConfig, EvalRunner
+
+    model = resolved.get("model")
+    if not model:
+        print("Error: --model is required (or set in config/env)")  # noqa: T201
+        return 1
+
+    run_config = build_eval_run_config(resolved)
+
+    # Dry-run mode: just print config and exit
+    if resolved.get("dry_run", False):
+        print("Dry-run mode: resolved configuration:")  # noqa: T201
+        for key, value in sorted(resolved.items()):
+            print(f"  {key}: {value!r}")  # noqa: T201
+        return 0
+
+    # Import heavy dependencies only when actually running
+    from agent_evals.llm.client import LLMClient
+    from agent_evals.tasks.loader import load_tasks
+    from agent_evals.variants.registry import get_variants_for_axis
+
+    # Build LLM client
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    client = LLMClient(
+        model=model,
+        api_key=api_key,
+        temperature=run_config.temperature,
+    )
+
+    # Load tasks
+    gold_standard_dir = Path(__file__).resolve().parent.parent.parent / "gold_standard"
+    if not gold_standard_dir.is_dir():
+        print(f"Error: gold standard directory not found: {gold_standard_dir}")  # noqa: T201
+        return 1
+
+    tasks = load_tasks(gold_standard_dir)
+
+    # Filter tasks by type if specified
+    task_filter = resolved.get("tasks")
+    if task_filter:
+        allowed_types = {t.strip() for t in task_filter.split(",")}
+        tasks = [t for t in tasks if t.definition.type in allowed_types]
+
+    # Filter by task_id if specified
+    task_id_filter = resolved.get("task_id")
+    if task_id_filter:
+        tasks = [t for t in tasks if t.definition.task_id == task_id_filter]
+
+    # Apply limit
+    limit = resolved.get("limit")
+    if limit is not None:
+        tasks = tasks[:limit]
+
+    if not tasks:
+        print("No tasks matched the filter criteria.")  # noqa: T201
+        return 1
+
+    # Load variants
+    from agent_evals.variants.registry import get_all_variants, load_all
+
+    load_all()  # Auto-discover all variant modules
+
+    axis = resolved.get("axis")
+    variant_name = resolved.get("variant")
+    if axis is not None:
+        variants = get_variants_for_axis(axis)
+    else:
+        variants = get_all_variants()
+
+    if variant_name:
+        variants = [v for v in variants if v.metadata().name == variant_name]
+
+    if not variants:
+        print("No variants matched the filter criteria.")  # noqa: T201
+        return 1
+
+    # Load doc_tree
+    from agent_evals.fixtures import load_sample_doc_tree
+
+    doc_tree = load_sample_doc_tree()
+
+    # Run evaluation
+    runner = EvalRunner(client=client, config=run_config)
+    result = runner.run(tasks=tasks, variants=variants, doc_tree=doc_tree)
+
+    print(  # noqa: T201
+        f"Evaluation complete: {len(result.trials)} trials, "
+        f"${result.total_cost:.4f} cost, "
+        f"{result.elapsed_seconds:.1f}s elapsed"
+    )
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``agent-evals`` CLI.
 
@@ -280,12 +398,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(config_path)
     resolved = resolve_config(args, config)
 
-    # Placeholder: print resolved config until the runner module is ready
-    print("Resolved configuration:")  # noqa: T201
-    for key, value in sorted(resolved.items()):
-        print(f"  {key}: {value!r}")  # noqa: T201
-
-    return 0
+    return _run_evaluation(resolved)
 
 
 if __name__ == "__main__":

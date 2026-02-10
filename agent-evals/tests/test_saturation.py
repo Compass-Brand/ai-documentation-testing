@@ -17,12 +17,14 @@ from agent_evals.runner import TrialResult
 
 def _make_trial(
     task_id: str = "retrieval_001",
+    task_type: str = "retrieval",
     variant_name: str = "variant_a",
     score: float = 0.8,
     repetition: int = 1,
 ) -> TrialResult:
     return TrialResult(
         task_id=task_id,
+        task_type=task_type,
         variant_name=variant_name,
         repetition=repetition,
         score=score,
@@ -59,6 +61,7 @@ def _make_trials_for_variant(
         for rep in range(1, 4):  # 3 repetitions
             trials.append(_make_trial(
                 task_id=task_id,
+                task_type=task_type,
                 variant_name=variant_name,
                 score=score + rng.uniform(-0.02, 0.02),
                 repetition=rep,

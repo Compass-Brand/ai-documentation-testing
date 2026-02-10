@@ -130,6 +130,7 @@ class TestTrialResult:
     def test_fields_are_stored(self) -> None:
         result = TrialResult(
             task_id="retrieval_001",
+            task_type="retrieval",
             variant_name="no-index",
             repetition=1,
             score=0.75,
@@ -143,6 +144,7 @@ class TestTrialResult:
             cached=False,
         )
         assert result.task_id == "retrieval_001"
+        assert result.task_type == "retrieval"
         assert result.variant_name == "no-index"
         assert result.repetition == 1
         assert result.score == 0.75
@@ -158,6 +160,7 @@ class TestTrialResult:
     def test_cost_can_be_none(self) -> None:
         result = TrialResult(
             task_id="retrieval_001",
+            task_type="retrieval",
             variant_name="v",
             repetition=1,
             score=0.0,
@@ -176,6 +179,7 @@ class TestTrialResult:
     def test_empty_metrics(self) -> None:
         result = TrialResult(
             task_id="retrieval_001",
+            task_type="retrieval",
             variant_name="v",
             repetition=1,
             score=0.5,
@@ -260,6 +264,7 @@ class TestEvalRunResult:
     def test_with_trials(self) -> None:
         trial = TrialResult(
             task_id="retrieval_001",
+            task_type="retrieval",
             variant_name="v",
             repetition=1,
             score=0.9,
