@@ -7,9 +7,12 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
+if TYPE_CHECKING:
+    from agent_evals.runner import EvalRunConfig
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -294,7 +297,7 @@ def resolve_config(
     return resolved
 
 
-def build_eval_run_config(resolved: dict[str, Any]) -> "EvalRunConfig":
+def build_eval_run_config(resolved: dict[str, Any]) -> EvalRunConfig:
     """Build an EvalRunConfig from a resolved config dict.
 
     Maps CLI/config/env keys to EvalRunConfig fields with appropriate defaults.
@@ -321,7 +324,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
 
     Returns 0 on success, 1 on error.
     """
-    from agent_evals.runner import EvalRunConfig, EvalRunner
+    from agent_evals.runner import EvalRunner
 
     model = resolved.get("model")
     if not model:
