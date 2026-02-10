@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import time
 from dataclasses import dataclass
 from typing import Any
 
 import litellm
+
+logger = logging.getLogger(__name__)
 
 # Typed exception classes for retry decisions.  Using these instead of
 # fragile string matching (e.g. ``"429" in str(exc)``) makes the retry
@@ -105,6 +108,11 @@ class LLMClient:
                 if content is None:
                     if attempt < self.MAX_RETRIES - 1:
                         delay = self.RETRY_BASE_DELAY * (2 ** attempt)
+                        logger.warning(
+                            "LLM returned empty content (attempt %d/%d, possible rate limit). "
+                            "Retrying in %.1fs...",
+                            attempt + 1, self.MAX_RETRIES, delay,
+                        )
                         time.sleep(delay)
                         continue
                     raise LLMClientError(
@@ -122,6 +130,10 @@ class LLMClient:
                     # (0, base_delay * 2^attempt] to avoid thundering herd.
                     max_delay = self.RETRY_BASE_DELAY * (2 ** attempt)
                     delay = random.uniform(0, max_delay)  # noqa: S311
+                    logger.warning(
+                        "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
+                        attempt + 1, self.MAX_RETRIES, exc, delay,
+                    )
                     time.sleep(delay)
                     continue
                 msg = (
