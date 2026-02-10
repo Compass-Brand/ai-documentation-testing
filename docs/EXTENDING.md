@@ -38,7 +38,7 @@ class FormatCsv(IndexVariant):
     def metadata(self) -> VariantMetadata:
         return VariantMetadata(
             name="format-csv",
-            axis=3,               # must be 0-10
+            axis=3,               # 0 = baseline, 1-10 = format axes
             category="format",
             description="CSV format for tabular index representation.",
             token_estimate=400,
@@ -68,7 +68,7 @@ Write a test that calls `load_all()`, then asserts your variant appears in `get_
 
 ## 2. Adding a Task Type
 
-Task types live in `agent-evals/src/agent_evals/tasks/`. Each type subclasses `EvalTask` and registers itself via `register_task_type()` at module level.
+Task types live in `agent-evals/src/agent_evals/tasks/`. The registry uses auto-discovery via `load_all_task_types()` in `base.py` (the same pattern variants use with `pkgutil`). Each module that calls `register_task_type()` at module level is automatically discovered when the package is imported.
 
 **Reference:** `agent-evals/src/agent_evals/tasks/base.py`
 
@@ -78,7 +78,8 @@ Task types live in `agent-evals/src/agent_evals/tasks/`. Each type subclasses `E
 2. Create a new module (e.g. `agent-evals/src/agent_evals/tasks/summarization.py`).
 3. Subclass `EvalTask`, implement `build_prompt()` and `score_response()`.
 4. Call `register_task_type("summarization", SummarizationTask)` at module level.
-5. Import the new module in `agent-evals/src/agent_evals/tasks/__init__.py`.
+
+No `__init__.py` changes needed -- auto-discovery handles it.
 
 ### Minimal Example
 
@@ -126,7 +127,8 @@ register_task_type("summarization", SummarizationTask)
 | File | Change |
 |------|--------|
 | `tasks/base.py` | Add `"summarization"` to `VALID_TASK_TYPES` |
-| `tasks/__init__.py` | Add `from agent_evals.tasks.summarization import SummarizationTask` and update `__all__` |
+
+No changes to `__init__.py` required. Auto-discovery via `load_all_task_types()` imports all task modules automatically.
 
 ### How to Test
 

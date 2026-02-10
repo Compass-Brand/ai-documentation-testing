@@ -27,5 +27,5 @@ cache_dir: .agent-evals-cache
 
 # === Output ===
 output_dir: reports         # Directory for results
-output_format: json         # json, csv, or both
+output_format: both         # json, csv, or both (default: both)
 display: rich               # Progress display: rich, plain, or none

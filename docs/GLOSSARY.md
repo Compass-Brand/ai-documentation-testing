@@ -4,7 +4,7 @@ Key terms used throughout the agent-evals and agent-index codebase.
 
 | Term | Definition | Code Reference |
 |------|-----------|---------------|
-| **Axis** | A numbered evaluation dimension (0--10) that groups related index variants. Axis 0 holds baselines; axes 1--10 each test one format property (structure, scale, format, etc.). | `agent-evals/src/agent_evals/variants/base.py:23` (`VariantMetadata.axis`) |
+| **Axis** | A numbered evaluation dimension (0--10). Axis 0 holds baseline variants (no-docs, full-docs); axes 1--10 each isolate one format property (structure, scale, format, metadata, etc.). | `agent-evals/src/agent_evals/variants/base.py:23` (`VariantMetadata.axis`) |
 | **Beam Search** | A cascade algorithm that evaluates variants axis-by-axis, retaining a fixed-width set of top candidates at each stage and using Wilcoxon tests to avoid premature elimination. | `agent-evals/src/agent_evals/beam_search.py:200` (`run_beam_cascade`) |
 | **Canary / Sentinel Task** | A negative (unanswerable) task included in every run to verify the agent abstains rather than hallucinating; acts as a quality-control check. | `agent-evals/src/agent_evals/tasks/negative.py:69` (`NegativeTask`) |
 | **Composite Score** | A weighted sum of per-task-type mean scores mapped to a 0--100 scale; weights are defined per scheme and must sum to 1.0. | `agent-evals/src/agent_evals/scoring.py:91` (`composite_score`) |

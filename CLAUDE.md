@@ -56,8 +56,21 @@ ruff check .
 mypy agent-index/src agent-evals/src
 
 # CLI tools
-agent-index scan <path>
-agent-evals run <config.yaml>
+agent-index --local <path>
+agent-index --config agent-index.yaml
+agent-evals --config <config.yaml>
+agent-evals --model openrouter/anthropic/claude-sonnet-4.5 --dry-run
+```
+
+### Key CLI Flags
+
+```bash
+# New ease-of-use flags
+agent-evals --verbose              # Debug-level logging
+agent-evals --quiet                # Warnings only
+agent-evals --continue-on-error    # Skip failed trials
+agent-evals --output-format both   # json, csv, or both
+agent-evals --display plain        # Progress: rich, plain, none
 ```
 
 ---

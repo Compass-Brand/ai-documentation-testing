@@ -30,6 +30,9 @@ flowchart LR
 5. **Scoring** happens per-trial via `task.score_response()`, then aggregated into per-type means and weighted into a composite score.
 6. **Beam search** cascades across axes to identify the best variant configuration.
 7. **Reports** are saved as timestamped JSON and CSV files.
+8. **Logging** via `configure_logging()` provides `--verbose`/`--quiet` control over log verbosity.
+9. **Progress callbacks** (`make_progress_callback`) report trial completion in `rich`, `plain`, or `none` display modes.
+10. **Error resilience** via `--continue-on-error` allows partial result collection when individual trials fail.
 
 ---
 
@@ -132,7 +135,7 @@ flowchart TD
 
 ## 4. Variant and Task Registration Flow
 
-Both variants and tasks use registry patterns for extensibility. Variants use decorator-based auto-discovery; tasks use explicit function-call registration triggered by module import.
+Both variants and tasks use registry patterns with auto-discovery for extensibility. Variants use `load_all()` in `registry.py` with decorator-based registration; tasks use `load_all_task_types()` in `base.py` which walks the package with `pkgutil.iter_modules`, importing each module which calls `register_task_type()` at module level.
 
 ```mermaid
 sequenceDiagram
@@ -140,32 +143,29 @@ sequenceDiagram
     participant VReg as variants/registry.py
     participant VPkg as variants/ package
     participant VMod as format_yaml.py (example)
-    participant TInit as tasks/__init__.py
-    participant TMod as retrieval.py (example)
     participant TBase as tasks/base.py
+    participant TPkg as tasks/ package
+    participant TMod as retrieval.py (example)
 
     Note over App,VReg: Variant Registration (auto-discovery)
     App->>VReg: load_all()
     VReg->>VPkg: pkgutil.iter_modules(variants.__path__)
     VPkg-->>VReg: [module_info, ...]
     loop Each module in package
-        VReg->>VMod: importlib.import_module("agent_evals.variants.format_yaml")
-        VMod->>VReg: @register_variant triggers register_variant(FormatYaml)
-        VReg->>VReg: _registry[FormatYaml] = FormatYaml()
+        VReg->>VMod: importlib.import_module()
+        VMod->>VReg: @register_variant triggers registration
     end
-    App->>VReg: get_all_variants()
-    VReg-->>App: [FormatYaml(), ...]
 
-    Note over App,TBase: Task Registration (import-triggered)
-    App->>TInit: import agent_evals.tasks
-    TInit->>TMod: from agent_evals.tasks.retrieval import RetrievalTask
-    TMod->>TBase: register_task_type("retrieval", RetrievalTask)
-    TBase->>TBase: TASK_TYPES["retrieval"] = RetrievalTask
-    Note over TBase: Repeats for all 11 task type modules
-    App->>TBase: TASK_TYPES["retrieval"]
-    TBase-->>App: RetrievalTask
+    Note over App,TBase: Task Registration (auto-discovery)
+    App->>TBase: load_all_task_types()
+    TBase->>TPkg: pkgutil.iter_modules(tasks.__path__)
+    TPkg-->>TBase: [module_info, ...]
+    loop Each module in package
+        TBase->>TMod: importlib.import_module()
+        TMod->>TBase: register_task_type("retrieval", RetrievalTask)
+    end
 ```
 
 **Variant registration** is fully automatic: placing a file in `agent-evals/src/agent_evals/variants/` and applying `@register_variant` is sufficient. The `load_all()` function walks the package with `pkgutil.iter_modules` and imports every module.
 
-**Task registration** is import-triggered: the `tasks/__init__.py` imports each concrete task module, and each module calls `register_task_type()` at module level, overriding the `GenericTask` default in the `TASK_TYPES` dict. A lazy guard in `loader.py` (`_ensure_registered()`) ensures this happens even when the loader is imported directly.
+**Task registration** follows the same auto-discovery pattern: `load_all_task_types()` in `tasks/base.py` walks the `tasks/` package with `pkgutil.iter_modules` and imports every module. Each module calls `register_task_type()` at module level, overriding the `GenericTask` default in the `TASK_TYPES` dict. The `tasks/__init__.py` simply calls `load_all_task_types()` to trigger discovery on package import.
