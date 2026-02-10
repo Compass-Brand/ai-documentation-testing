@@ -1,0 +1,71 @@
+{
+  "strictness": 2,
+  "commentTypes": ["logic", "style"],
+  "triggerOnUpdates": true,
+
+  "includeBranches": ["main", "develop"],
+  "excludeBranches": ["draft/**", "wip/**"],
+  "excludeAuthors": ["dependabot[bot]", "renovate[bot]", "github-actions[bot]"],
+
+  "ignorePatterns": "**/*.generated.*\n**/node_modules/**\n**/vendor/**\n**/.venv/**\n**/venv/**\n**/__pycache__/**\n**/.pytest_cache/**\n**/dist/**\n**/build/**\n**/.idea/**\n**/.vscode/**\n**/package-lock.json\n**/yarn.lock\n**/pnpm-lock.yaml\n**/poetry.lock\n**/uv.lock\n*.min.js\n*.min.css\n*.map",
+
+  "instructions": "This repo is an AI documentation optimization and evaluation framework. UV workspace with two packages: agent-index (doc scanning/transformation) and agent-evals (format axis testing with 330+ gold standard tasks). Python 3.11+, pytest, TDD required.",
+
+  "shouldUpdateDescription": true,
+  "statusCheck": true,
+  "fixWithAI": true,
+
+  "patternRepositories": [
+    {
+      "owner": "Compass-Brand",
+      "repo": "compass-brand",
+      "ref": "main"
+    }
+  ],
+
+  "issuesTableSection": {
+    "included": true,
+    "collapsible": true,
+    "defaultOpen": true
+  },
+
+  "summarySection": {
+    "included": true,
+    "collapsible": false
+  },
+  "customContext": {
+    "rules": [
+      {
+        "rule": "All functional code must have corresponding tests - TDD is required",
+        "scope": ["**/*.py"]
+      },
+      {
+        "rule": "No hardcoded API keys, passwords, or secrets",
+        "scope": ["**/*"]
+      },
+      {
+        "rule": "Python functions should have type hints for parameters and returns",
+        "scope": ["**/*.py"]
+      },
+      {
+        "rule": "Test names must follow the pattern 'should_<expected_behavior>_when_<condition>' or 'test_<expected_behavior>_when_<condition>'",
+        "scope": ["**/test_*.py"]
+      },
+      {
+        "rule": "Functions should not exceed 50 lines - refactor into smaller units if longer",
+        "scope": ["**/*.py"]
+      }
+    ],
+    "files": [
+      {
+        "path": "CLAUDE.md",
+        "description": "Project guidelines and methodology"
+      }
+    ],
+    "other": [
+      {
+        "content": "This repo is a submodule of compass-tests, focused on AI documentation optimization and format evaluation."
+      }
+    ]
+  }
+}

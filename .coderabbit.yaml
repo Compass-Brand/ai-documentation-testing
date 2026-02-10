@@ -1,0 +1,6 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+# Inherit settings from compass-brand parent
+inheritance: true
+
+# Project-specific overrides for AI Documentation Testing
