@@ -310,6 +310,22 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         logger.error("--model is required (or set in config/env)")
         return 1
 
+    # Validate API key upfront
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        logger.error(
+            "OPENROUTER_API_KEY is not set. "
+            "Get your key at https://openrouter.ai/keys and set it:\n"
+            "  export OPENROUTER_API_KEY=sk-or-v1-..."
+        )
+        return 1
+
+    if not api_key.startswith("sk-or-"):
+        logger.warning(
+            "OPENROUTER_API_KEY does not start with 'sk-or-'. "
+            "Verify your key format at https://openrouter.ai/keys"
+        )
+
     run_config = build_eval_run_config(resolved)
 
     # Dry-run mode: log config and exit
@@ -324,8 +340,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     from agent_evals.tasks.loader import load_tasks
     from agent_evals.variants.registry import get_variants_for_axis
 
-    # Build LLM client
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    # Build LLM client (api_key already validated above)
     client = LLMClient(
         model=model,
         api_key=api_key,
