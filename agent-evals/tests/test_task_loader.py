@@ -661,3 +661,21 @@ class TestBatchValidation:
         )
         tasks = load_tasks(tmp_path, strict=False)
         assert tasks == []
+
+
+# ---------------------------------------------------------------------------
+# Task type auto-discovery (Task 4.1)
+# ---------------------------------------------------------------------------
+
+
+class TestTaskAutoDiscovery:
+    def test_load_all_task_types_registers_concrete_types(self) -> None:
+        """Auto-discovery finds all concrete task type modules."""
+        from agent_evals.tasks.base import TASK_TYPES, load_all_task_types
+        load_all_task_types()
+        # All concrete task types should be registered (not just GenericTask defaults)
+        from agent_evals.tasks.base import GenericTask
+        assert TASK_TYPES.get("retrieval") is not GenericTask
+        assert TASK_TYPES.get("code_generation") is not GenericTask
+        assert TASK_TYPES.get("agentic") is not GenericTask
+        assert TASK_TYPES.get("negative") is not GenericTask

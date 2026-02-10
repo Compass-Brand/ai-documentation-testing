@@ -223,3 +223,26 @@ def register_task_type(type_name: str, cls: type[EvalTask]) -> None:
 # Register GenericTask as default for all standard types
 for _type_name in VALID_TASK_TYPES:
     register_task_type(_type_name, GenericTask)
+
+
+# ---------------------------------------------------------------------------
+# Auto-discovery
+# ---------------------------------------------------------------------------
+
+_TASKS_LOADED = False
+
+
+def load_all_task_types() -> None:
+    """Auto-discover and import all task type modules in this package."""
+    global _TASKS_LOADED  # noqa: PLW0603
+    if _TASKS_LOADED:
+        return
+    import importlib
+    import pkgutil
+
+    import agent_evals.tasks as tasks_pkg
+
+    for module_info in pkgutil.iter_modules(tasks_pkg.__path__):
+        if not module_info.name.startswith("_"):
+            importlib.import_module(f"agent_evals.tasks.{module_info.name}")
+    _TASKS_LOADED = True

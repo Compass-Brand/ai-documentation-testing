@@ -35,10 +35,9 @@ def _ensure_registered() -> None:
     global _registered  # noqa: PLW0603
     if _registered:
         return
-    # Importing the package triggers __init__.py which imports every
-    # concrete task module, each of which calls register_task_type().
-    import agent_evals.tasks  # noqa: F401
+    from agent_evals.tasks.base import load_all_task_types
 
+    load_all_task_types()
     _registered = True
 
 
