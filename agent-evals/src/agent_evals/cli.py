@@ -400,8 +400,16 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     doc_tree = load_sample_doc_tree()
 
     # Run evaluation
+    from agent_evals.progress import make_progress_callback
+
+    display = run_config.display_mode or "rich"
+    callback = make_progress_callback(display)
+
     runner = EvalRunner(client=client, config=run_config)
-    result = runner.run(tasks=tasks, variants=variants, doc_tree=doc_tree)
+    result = runner.run(
+        tasks=tasks, variants=variants, doc_tree=doc_tree,
+        progress_callback=callback,
+    )
 
     logger.info(
         "Evaluation complete: %d trials, $%.4f cost, %.1fs elapsed",
