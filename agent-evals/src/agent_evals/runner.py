@@ -87,6 +87,7 @@ class EvalRunConfig:
         use_cache: Whether to use the response cache.
         cache_dir: Directory for cache files.
         output_dir: Directory for output reports.
+        output_format: Output format (json|csv|both).
         display_mode: Progress display mode (rich|plain|none).
     """
 
@@ -98,7 +99,9 @@ class EvalRunConfig:
     use_cache: bool = True
     cache_dir: str = ".agent-evals-cache"
     output_dir: str = "reports"
+    output_format: str = "both"
     display_mode: str = "rich"
+    continue_on_error: bool = False
 
 
 @dataclass
@@ -230,7 +233,20 @@ class EvalRunner:
                 }
 
                 for future in as_completed(future_to_item):
-                    trial = future.result()
+                    try:
+                        trial = future.result()
+                    except Exception as exc:
+                        if not self._config.continue_on_error:
+                            raise
+                        task, variant, rep = future_to_item[future]
+                        logger.warning(
+                            "Trial failed (%s/%s rep %d): %s",
+                            task.definition.task_id,
+                            variant.metadata().name,
+                            rep,
+                            exc,
+                        )
+                        continue
                     trials.append(trial)
                     completed += 1
                     if progress_callback is not None:
@@ -253,9 +269,9 @@ class EvalRunner:
         )
 
         if self._config.output_dir:
-            json_path, csv_path = self._save_results(result, tasks)
-            logger.info("JSON report saved to: %s", json_path)
-            logger.info("CSV  report saved to: %s", csv_path)
+            saved_paths = self._save_results(result, tasks)
+            for p in saved_paths:
+                logger.info("Report saved to: %s", p)
 
         return result
 
@@ -267,12 +283,16 @@ class EvalRunner:
         self,
         result: EvalRunResult,
         tasks: list[EvalTask],
-    ) -> tuple[Path, Path]:
-        """Save results to JSON and CSV files. Returns (json_path, csv_path)."""
+    ) -> tuple[Path, ...]:
+        """Save results to JSON and/or CSV files based on output_format.
+
+        Returns a tuple of paths for the files that were written.
+        """
         output_dir = Path(self._config.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fmt = self._config.output_format
 
         # -- Trial dicts (shared between JSON and by_* aggregations) ---------
         trial_dicts: list[dict[str, Any]] = []
@@ -336,49 +356,58 @@ class EvalRunner:
             "use_cache": self._config.use_cache,
             "cache_dir": self._config.cache_dir,
             "output_dir": self._config.output_dir,
+            "output_format": self._config.output_format,
             "display_mode": self._config.display_mode,
         }
 
-        # -- JSON report -----------------------------------------------------
-        report: dict[str, Any] = {
-            "config": config_dict,
-            "summary": {
-                "total_trials": len(result.trials),
-                "total_tokens": result.total_tokens,
-                "total_cost": result.total_cost,
-                "elapsed_seconds": result.elapsed_seconds,
-            },
-            "trials": trial_dicts,
-            "by_variant": by_variant,
-            "by_task_type": by_task_type,
-        }
+        paths: list[Path] = []
 
-        json_path = output_dir / f"run_{timestamp}.json"
-        json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        # -- JSON report -----------------------------------------------------
+        if fmt in ("json", "both"):
+            report: dict[str, Any] = {
+                "config": config_dict,
+                "summary": {
+                    "total_trials": len(result.trials),
+                    "total_tokens": result.total_tokens,
+                    "total_cost": result.total_cost,
+                    "elapsed_seconds": result.elapsed_seconds,
+                },
+                "trials": trial_dicts,
+                "by_variant": by_variant,
+                "by_task_type": by_task_type,
+            }
+
+            json_path = output_dir / f"run_{timestamp}.json"
+            json_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+            paths.append(json_path)
 
         # -- CSV report ------------------------------------------------------
-        csv_fields = [
-            "task_id",
-            "variant_name",
-            "repetition",
-            "score",
-            "prompt_tokens",
-            "completion_tokens",
-            "total_tokens",
-            "cost",
-            "latency_seconds",
-            "cached",
-        ]
+        if fmt in ("csv", "both"):
+            csv_fields = [
+                "task_id",
+                "variant_name",
+                "repetition",
+                "score",
+                "prompt_tokens",
+                "completion_tokens",
+                "total_tokens",
+                "cost",
+                "latency_seconds",
+                "cached",
+            ]
 
-        csv_path = output_dir / f"run_{timestamp}.csv"
-        buf = io.StringIO()
-        writer = csv.DictWriter(buf, fieldnames=csv_fields, extrasaction="ignore")
-        writer.writeheader()
-        for td in trial_dicts:
-            writer.writerow(td)
-        csv_path.write_text(buf.getvalue(), encoding="utf-8")
+            csv_path = output_dir / f"run_{timestamp}.csv"
+            buf = io.StringIO()
+            writer = csv.DictWriter(
+                buf, fieldnames=csv_fields, extrasaction="ignore",
+            )
+            writer.writeheader()
+            for td in trial_dicts:
+                writer.writerow(td)
+            csv_path.write_text(buf.getvalue(), encoding="utf-8")
+            paths.append(csv_path)
 
-        return json_path, csv_path
+        return tuple(paths)
 
     def _run_trial(
         self,
