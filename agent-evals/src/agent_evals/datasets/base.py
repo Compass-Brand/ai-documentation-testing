@@ -67,5 +67,10 @@ class DatasetAdapter(ABC):
         return []
 
     def _generate_task_id(self, task_type: str, index: int) -> str:
-        """Generate namespaced task ID: {dataset}_{type}_{index:03d}."""
-        return f"{self.name()}_{task_type}_{index:03d}"
+        """Generate namespaced task ID: {dataset}_{type}_{index:03d}.
+
+        Hyphens in the dataset name are removed to conform to the
+        task ID pattern ``^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\\d+$``.
+        """
+        prefix = self.name().replace("-", "")
+        return f"{prefix}_{task_type}_{index:03d}"
