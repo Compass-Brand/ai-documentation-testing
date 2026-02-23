@@ -97,6 +97,10 @@ def compute_sn_ratios(
 
     for row_id, scores in row_scores.items():
         n = len(scores)
+        if n == 0:
+            raise ValueError(
+                f"Row {row_id} has no scores; cannot compute S/N ratio."
+            )
         if quality_type == "larger_is_better":
             # S/N = -10 * log10(mean(1/y^2))
             mean_inv_sq = sum(1.0 / (y * y + eps) for y in scores) / n
@@ -307,6 +311,8 @@ def predict_optimal(
 
     # 2. Compute predicted S/N (additive model)
     all_values = [v for d in main_effects.values() for v in d.values()]
+    if not all_values:
+        raise ValueError("main_effects is empty; cannot compute prediction.")
     grand_mean = sum(all_values) / len(all_values)
 
     predicted = grand_mean

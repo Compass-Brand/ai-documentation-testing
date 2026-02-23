@@ -97,13 +97,20 @@ def build_design(
     col_assignments: list[int] = []
     used_cols: set[int] = set()
     for factor in factors:
+        assigned = False
         for col_idx in range(oa.n_columns):
             if col_idx in used_cols:
                 continue
             if oa.column_levels(col_idx) >= factor.n_levels:
                 col_assignments.append(col_idx)
                 used_cols.add(col_idx)
+                assigned = True
                 break
+        if not assigned:
+            raise ValueError(
+                f"Cannot assign factor '{factor.name}' ({factor.n_levels} "
+                f"levels) to OA '{oa.name}': no suitable column available"
+            )
 
     # Build rows
     rows: list[TaguchiExperimentRow] = []

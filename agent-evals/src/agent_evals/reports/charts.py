@@ -67,6 +67,8 @@ def generate_radar_chart(
     """
     traces: list[dict[str, Any]] = []
     for model, scores in data.items():
+        if not scores:
+            continue
         categories = list(scores.keys())
         values = list(scores.values())
         # Close the polygon
