@@ -157,3 +157,82 @@ class TestCompareAPI:
     def test_compare_missing_params(self, client: TestClient) -> None:
         response = client.get("/api/compare")
         assert response.status_code == 422 or response.status_code == 400
+
+
+class TestPipelineAPI:
+    """Pipeline management endpoints."""
+
+    def test_list_pipelines(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        _store.create_run(
+            "r1", "taguchi", {"mode": "taguchi"},
+            phase="screening", pipeline_id="pipe-1",
+        )
+        _store.finish_run("r1")
+        response = client.get("/api/pipelines")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) >= 1
+        assert data[0]["pipeline_id"] == "pipe-1"
+
+    def test_list_pipelines_empty(self, client: TestClient) -> None:
+        response = client.get("/api/pipelines")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_get_pipeline_detail(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        _store.create_run(
+            "r1", "taguchi", {"mode": "taguchi"},
+            phase="screening", pipeline_id="pipe-1",
+        )
+        _store.finish_run("r1")
+        response = client.get("/api/pipelines/pipe-1")
+        assert response.status_code == 200
+        data = response.json()
+        assert "runs" in data
+        assert len(data["runs"]) == 1
+
+    def test_get_pipeline_detail_not_found(
+        self, client: TestClient
+    ) -> None:
+        response = client.get("/api/pipelines/nonexistent")
+        assert response.status_code == 404
+
+    def test_get_run_analysis(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        _store.create_run("r1", "taguchi", {"mode": "taguchi"})
+        _store.save_phase_results(
+            run_id="r1",
+            main_effects={"s": {"a": 1.0}},
+            anova={"s": {"p": 0.01}},
+            optimal={"s": "a"},
+            significant_factors=["s"],
+            quality_type="larger_is_better",
+        )
+        response = client.get("/api/runs/r1/analysis")
+        assert response.status_code == 200
+        data = response.json()
+        assert "main_effects" in data
+        assert "anova" in data
+
+    def test_get_run_analysis_missing(self, client: TestClient) -> None:
+        response = client.get("/api/runs/nonexistent/analysis")
+        assert response.status_code == 404
+
+    def test_approve_pipeline(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        _store.create_run(
+            "r1", "taguchi", {"mode": "taguchi"},
+            phase="screening", pipeline_id="pipe-1",
+        )
+        response = client.post("/api/pipelines/pipe-1/approve")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pipeline_id"] == "pipe-1"
+        assert data["approved"] is True

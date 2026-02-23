@@ -68,6 +68,17 @@ class CreateGroupRequest(BaseModel):
     models: list[str] = []
 
 
+def _get_pipeline_id(store: ObservatoryStore, run_id: str) -> str | None:
+    """Look up the pipeline_id for a given run from the database."""
+    with store._connect() as conn:
+        row = conn.execute(
+            "SELECT pipeline_id FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    return row["pipeline_id"]
+
+
 def create_router(
     store: ObservatoryStore,
     tracker: EventTracker,
@@ -242,5 +253,55 @@ def create_router(
         if model is None:
             raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
         return model
+
+    # ------------------------------------------------------------------
+    # Pipeline API
+    # ------------------------------------------------------------------
+
+    @router.get("/api/pipelines")
+    async def list_pipelines() -> list[dict[str, Any]]:
+        runs = store.list_runs()
+        pipelines: dict[str, list[dict[str, Any]]] = {}
+        for r in runs:
+            rd = asdict(r)
+            pid = _get_pipeline_id(store, r.run_id)
+            if pid is None:
+                continue
+            pipelines.setdefault(pid, []).append(rd)
+        return [
+            {
+                "pipeline_id": pid,
+                "run_count": len(pipe_runs),
+                "latest_status": pipe_runs[-1]["status"],
+            }
+            for pid, pipe_runs in pipelines.items()
+        ]
+
+    @router.get("/api/pipelines/{pipeline_id}")
+    async def get_pipeline_detail(pipeline_id: str) -> dict[str, Any]:
+        runs = store.get_pipeline_runs(pipeline_id)
+        if not runs:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Pipeline '{pipeline_id}' not found",
+            )
+        return {
+            "pipeline_id": pipeline_id,
+            "runs": [asdict(r) for r in runs],
+        }
+
+    @router.get("/api/runs/{run_id}/analysis")
+    async def get_run_analysis(run_id: str) -> dict[str, Any]:
+        results = store.get_phase_results(run_id)
+        if results is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No analysis results for run '{run_id}'",
+            )
+        return results
+
+    @router.post("/api/pipelines/{pipeline_id}/approve")
+    async def approve_pipeline(pipeline_id: str) -> dict[str, Any]:
+        return {"pipeline_id": pipeline_id, "approved": True}
 
     return router
