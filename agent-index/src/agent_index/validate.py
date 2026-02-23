@@ -105,7 +105,8 @@ def _collect_disk_files(root: Path) -> set[str]:
         return results
 
     for item in root.rglob("*"):
-        if any(part in ignore_dirs for part in item.parts):
+        rel_parts = item.relative_to(root).parts
+        if any(part in ignore_dirs for part in rel_parts):
             continue
         if item.is_file() and item.suffix.lower() in extensions:
             rel = item.relative_to(root).as_posix()

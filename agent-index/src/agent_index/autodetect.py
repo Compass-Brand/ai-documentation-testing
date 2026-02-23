@@ -192,8 +192,10 @@ def _collect_doc_files(
         return results
 
     for item in sorted(root.rglob("*")):
-        # Skip ignored directories
-        if any(part in ignore_dirs for part in item.parts):
+        # Skip ignored directories (use relative path to avoid matching
+        # ancestor directories in the absolute path)
+        rel_parts = item.relative_to(root).parts
+        if any(part in ignore_dirs for part in rel_parts):
             continue
 
         if item.is_file() and item.suffix.lower() in extensions:
@@ -220,9 +222,13 @@ def _classify_file(rel_path: str) -> str:
         # Strip extension for matching
         stem = Path(part).stem
 
-        if stem in _REQUIRED_KEYWORDS or any(kw in stem for kw in _REQUIRED_KEYWORDS):
+        # Split stem on word delimiters to get individual words
+        stem_words = set(stem.replace("-", "_").split("_"))
+
+        # Exact match against stem OR match any keyword against stem's words
+        if stem in _REQUIRED_KEYWORDS or any(kw in stem_words for kw in _REQUIRED_KEYWORDS):
             return "required"
-        if stem in _REFERENCE_KEYWORDS or any(kw in stem for kw in _REFERENCE_KEYWORDS):
+        if stem in _REFERENCE_KEYWORDS or any(kw in stem_words for kw in _REFERENCE_KEYWORDS):
             return "reference"
 
     return "recommended"

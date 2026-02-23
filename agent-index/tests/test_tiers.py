@@ -68,6 +68,23 @@ class TestAssignTiers:
         assert result.files["guide.md"].tier == "required"
         assert result.files["api.txt"].tier == "reference"  # Falls through to last tier
 
+    def test_wildcard_does_not_match_across_path_separators(self) -> None:
+        """A single * should not match across / path separators."""
+        tree = make_doctree([
+            make_docfile("file.md"),
+            make_docfile("docs/file.md"),
+        ])
+        tiers = [
+            TierConfig(name="required", instruction="Read first", patterns=["*.md"]),
+            TierConfig(name="reference", instruction="Fallback", patterns=[]),
+        ]
+
+        result = assign_tiers(tree, tiers)
+
+        assert result.files["file.md"].tier == "required"
+        # docs/file.md should NOT match *.md (single * doesn't cross /)
+        assert result.files["docs/file.md"].tier == "reference"
+
     def test_matches_double_star_pattern(self) -> None:
         """assign_tiers matches **/pattern for any directory depth."""
         tree = make_doctree([

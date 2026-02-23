@@ -8,7 +8,7 @@ This module handles:
 
 from __future__ import annotations
 
-import fnmatch
+import re
 
 from agent_index.models import DocFile, DocTree, TierConfig
 
@@ -79,7 +79,7 @@ def _glob_match(path: str, pattern: str) -> bool:
 
     Supports:
     - * matches any characters except /
-    - ** matches any characters including /
+    - ** matches any characters including / (zero or more path segments)
     - ? matches single character
 
     Args:
@@ -89,67 +89,96 @@ def _glob_match(path: str, pattern: str) -> bool:
     Returns:
         True if the path matches the pattern
     """
-    # Handle ** (matches any directory depth including none)
+    # Handle ** by converting the glob pattern to a regex.
+    # This correctly handles multiple ** segments (e.g. docs/**/api/**/*.md).
     if "**" in pattern:
-        # Convert ** to regex-friendly pattern
-        # ** should match zero or more directories
-        # Split pattern on ** and match each part
-        parts = pattern.split("**")
-
-        if len(parts) == 2:
-            prefix, suffix = parts
-
-            # Remove leading/trailing slashes from prefix and suffix
-            prefix = prefix.rstrip("/")
-            suffix = suffix.lstrip("/")
-
-            # If prefix is empty, any path that ends with suffix matches
-            if not prefix:
-                # Match suffix at any position
-                if not suffix:
-                    return True  # ** alone matches everything
-                # The suffix must match at the end (for patterns like **/README.md)
-                # or in any directory position
-                path_parts = path.split("/")
-                suffix_parts = suffix.split("/") if suffix else []
-
-                # Check if path ends with suffix parts
-                if len(path_parts) >= len(suffix_parts):
-                    # Check if the last N path parts match the suffix pattern
-                    for i in range(len(path_parts) - len(suffix_parts) + 1):
-                        candidate = "/".join(path_parts[i:i + len(suffix_parts)])
-                        if _simple_glob_match(candidate, suffix):
-                            return True
-                return False
-
-            # If prefix is present (e.g., "docs/**")
-            if not path.startswith(prefix + "/") and path != prefix:
-                return False
-
-            # Check suffix if present
-            if suffix:
-                remainder = path[len(prefix):].lstrip("/")
-                if not remainder:
-                    return False
-                # Remainder must match the suffix at some point
-                remainder_parts = remainder.split("/")
-                suffix_parts = suffix.split("/") if suffix else []
-
-                if len(remainder_parts) >= len(suffix_parts):
-                    for i in range(len(remainder_parts) - len(suffix_parts) + 1):
-                        candidate = "/".join(remainder_parts[i:i + len(suffix_parts)])
-                        if _simple_glob_match(candidate, suffix):
-                            return True
-                return False
-
-            return True
+        regex = _glob_to_regex(pattern)
+        return bool(re.fullmatch(regex, path))
 
     # Simple glob matching without **
     return _simple_glob_match(path, pattern)
 
 
+def _glob_to_regex(pattern: str) -> str:
+    """Convert a glob pattern containing ** to an equivalent regex string.
+
+    Rules:
+    - ** matches zero or more path segments (any characters including /)
+    - *  matches any characters except /
+    - ?  matches a single character except /
+    - All other characters are escaped as regex literals.
+
+    A leading or trailing **/ or /** is normalised so that:
+    - **/foo  -> foo anywhere in the path (at any depth)
+    - foo/**  -> foo followed by any deeper path
+
+    Args:
+        pattern: Glob pattern that may contain ** tokens.
+
+    Returns:
+        Regex string suitable for re.fullmatch().
+    """
+    # Split the pattern on ** to get the literal segments between them.
+    # We will join them with a regex that matches any path segment (or none).
+    double_star_parts = pattern.split("**")
+
+    regex_parts: list[str] = []
+    for i, part in enumerate(double_star_parts):
+        # Strip slashes adjacent to ** so we can handle them in the connector
+        if i > 0:
+            part = part.lstrip("/")
+        next_has_star = i < len(double_star_parts) - 1
+        if next_has_star:
+            part = part.rstrip("/")
+
+        regex_parts.append(_simple_glob_to_regex(part))
+
+        if next_has_star:
+            # ** connector: matches zero or more path segments.
+            # We absorbed adjacent slashes above, so now insert a pattern
+            # that optionally matches path segments.
+            if i == 0 and not part:
+                # Leading **: match optional path prefix (no leading /)
+                regex_parts.append("(?:.+/)?")
+            else:
+                # Middle/trailing **: match /anything including deeper paths
+                regex_parts.append("(?:/.+)*(?:/)?")
+
+    return "".join(regex_parts)
+
+
+def _simple_glob_to_regex(segment: str) -> str:
+    """Convert a simple glob segment (no **) to a regex string.
+
+    - * becomes [^/]* (any chars except slash)
+    - ? becomes [^/]  (single char except slash)
+    - Other chars are regex-escaped.
+
+    Args:
+        segment: Glob segment without **.
+
+    Returns:
+        Regex string for this segment.
+    """
+    parts: list[str] = []
+    i = 0
+    while i < len(segment):
+        ch = segment[i]
+        if ch == "*":
+            parts.append("[^/]*")
+        elif ch == "?":
+            parts.append("[^/]")
+        else:
+            parts.append(re.escape(ch))
+        i += 1
+    return "".join(parts)
+
+
 def _simple_glob_match(path: str, pattern: str) -> bool:
     """Match a path against a simple glob pattern (no **).
+
+    Uses regex conversion to ensure * does not match /,
+    unlike fnmatch which allows * to cross path separators on Linux.
 
     Args:
         path: File path to match
@@ -158,7 +187,8 @@ def _simple_glob_match(path: str, pattern: str) -> bool:
     Returns:
         True if the path matches the pattern
     """
-    return fnmatch.fnmatch(path, pattern)
+    regex = _simple_glob_to_regex(pattern)
+    return bool(re.fullmatch(regex, path))
 
 
 def _extract_section(rel_path: str) -> str:
