@@ -74,4 +74,42 @@ describe("RunConfig", () => {
     expect(screen.queryByLabelText(/Pipeline Mode/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/Quality Type/i)).not.toBeInTheDocument();
   });
+
+  it("should show help text for Taguchi mode card", () => {
+    render(<RunConfig />, { wrapper });
+    expect(screen.getByText(/orthogonal arrays/i)).toBeInTheDocument();
+  });
+
+  it("should show help text for Full mode card", () => {
+    render(<RunConfig />, { wrapper });
+    expect(screen.getByText(/every combination of variants/i)).toBeInTheDocument();
+  });
+
+  it("should show help text for Model field", () => {
+    render(<RunConfig />, { wrapper });
+    expect(screen.getByText(/openrouter format/i)).toBeInTheDocument();
+  });
+
+  it("should show help text for Repetitions field", () => {
+    render(<RunConfig />, { wrapper });
+    expect(screen.getByText(/statistical reliability/i)).toBeInTheDocument();
+  });
+
+  it("should show help text for Task Limit field", () => {
+    render(<RunConfig />, { wrapper });
+    expect(screen.getByText(/355 tasks/i)).toBeInTheDocument();
+  });
+
+  it("should show help text for OA Override field", () => {
+    render(<RunConfig />, { wrapper });
+    expect(screen.getByText(/auto-select based on factor count/i)).toBeInTheDocument();
+  });
+
+  it("should show help text for Taguchi-only fields", () => {
+    render(<RunConfig />, { wrapper });
+    expect(screen.getByText(/pauses between phases/i)).toBeInTheDocument();
+    expect(screen.getByText(/signal-to-noise ratio/i)).toBeInTheDocument();
+    expect(screen.getByText(/refinement phase/i)).toBeInTheDocument();
+    expect(screen.getByText(/95% confidence/i)).toBeInTheDocument();
+  });
 });

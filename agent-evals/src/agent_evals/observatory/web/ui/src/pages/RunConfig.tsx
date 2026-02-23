@@ -85,8 +85,8 @@ export default function RunConfig() {
                         </span>
                         <span className="text-caption text-brand-slate text-center">
                           {m === "taguchi"
-                            ? "Fractional factorial design"
-                            : "All combinations"}
+                            ? "Uses orthogonal arrays to test many factor combinations efficiently. Reduces trials from thousands to ~50 while identifying which documentation format choices matter most."
+                            : "Tests every combination of variants. Comprehensive but expensive \u2014 use for small experiments or final validation."}
                         </span>
                       </label>
                     ))}
@@ -106,6 +106,11 @@ export default function RunConfig() {
                     onChange={(e) => setModel(e.target.value)}
                     placeholder="openrouter/anthropic/claude-sonnet-4"
                   />
+                  <p className="mt-sp-1 text-caption text-brand-slate">
+                    The LLM to evaluate against. Use OpenRouter format (e.g.
+                    openrouter/anthropic/claude-sonnet-4). Separate multiple
+                    models with commas.
+                  </p>
                 </div>
               </CardContent>
             </Card>
@@ -137,6 +142,11 @@ export default function RunConfig() {
                         setRepetitions(parseInt(e.target.value) || 1)
                       }
                     />
+                    <p className="mt-sp-1 text-caption text-brand-slate">
+                      Number of times each trial is repeated for statistical
+                      reliability. Higher = more reliable but more expensive.
+                      Default: 3.
+                    </p>
                   </div>
 
                   <div>
@@ -155,6 +165,10 @@ export default function RunConfig() {
                         setTaskLimit(parseInt(e.target.value) || 0)
                       }
                     />
+                    <p className="mt-sp-1 text-caption text-brand-slate">
+                      Limit the number of gold standard tasks to evaluate. Set
+                      to 0 to use all 355 tasks. Useful for quick test runs.
+                    </p>
                   </div>
 
                   <div>
@@ -170,6 +184,11 @@ export default function RunConfig() {
                       onChange={(e) => setOaOverride(e.target.value)}
                       placeholder="e.g. L9_3_4"
                     />
+                    <p className="mt-sp-1 text-caption text-brand-slate">
+                      Force a specific orthogonal array (e.g. L9_3_4,
+                      L27_3_13). Leave blank to auto-select based on factor
+                      count.
+                    </p>
                   </div>
 
                   {mode === "taguchi" && (
@@ -199,6 +218,10 @@ export default function RunConfig() {
                             Semi (approve between phases)
                           </option>
                         </select>
+                        <p className="mt-sp-1 text-caption text-brand-slate">
+                          Auto runs all three phases automatically. Semi pauses
+                          between phases for review.
+                        </p>
                       </div>
 
                       <div>
@@ -225,6 +248,11 @@ export default function RunConfig() {
                             Nominal is Best
                           </option>
                         </select>
+                        <p className="mt-sp-1 text-caption text-brand-slate">
+                          How to optimize the signal-to-noise ratio. Larger is
+                          Better: maximize scores. Smaller is Better: minimize
+                          errors. Nominal is Best: hit a target value.
+                        </p>
                       </div>
 
                       <div>
@@ -244,6 +272,10 @@ export default function RunConfig() {
                             setTopK(parseInt(e.target.value) || 3)
                           }
                         />
+                        <p className="mt-sp-1 text-caption text-brand-slate">
+                          Number of most significant factors to carry into the
+                          refinement phase. Default: 3.
+                        </p>
                       </div>
 
                       <div>
@@ -264,6 +296,11 @@ export default function RunConfig() {
                             setAlpha(parseFloat(e.target.value) || 0.05)
                           }
                         />
+                        <p className="mt-sp-1 text-caption text-brand-slate">
+                          Statistical significance threshold for ANOVA. Factors
+                          with p-value below alpha are considered significant.
+                          Default: 0.05 (95% confidence).
+                        </p>
                       </div>
                     </>
                   )}
