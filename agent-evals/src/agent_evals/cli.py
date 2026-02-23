@@ -511,6 +511,60 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         logger.info("Dry-run mode: resolved configuration:")
         for key, value in sorted(resolved.items()):
             logger.info("  %s: %r", key, value)
+
+        # For taguchi mode, also show the OA design
+        mode = resolved.get("mode", "full")
+        if mode == "taguchi":
+            from agent_evals.variants.registry import (
+                get_all_variants,
+                get_variants_for_axis,
+                load_all,
+            )
+
+            load_all()
+            axis = resolved.get("axis")
+            if axis is not None:
+                all_variants = get_variants_for_axis(axis)
+            else:
+                all_variants = get_all_variants()
+
+            axes: dict[int, list[str]] = {}
+            for v in all_variants:
+                m = v.metadata()
+                if m.axis == 0:
+                    continue  # Baselines are not Taguchi factors
+                if m.axis not in axes:
+                    axes[m.axis] = []
+                if m.name not in axes[m.axis]:
+                    axes[m.axis].append(m.name)
+
+            models_str = resolved.get("models")
+            models_list: list[str] | None = None
+            if models_str:
+                models_list = [m.strip() for m in str(models_str).split(",")]
+
+            from agent_evals.taguchi.factors import build_design
+
+            oa_override = resolved.get("oa_type")
+            design = build_design(
+                axes,
+                models=models_list,
+                oa_override=str(oa_override) if oa_override else None,
+            )
+            logger.info(
+                "Taguchi design: OA=%s, %d runs, %d factors",
+                design.oa_name, design.n_runs, len(design.factors),
+            )
+            for factor in design.factors:
+                logger.info(
+                    "  Factor %s: %d levels %s",
+                    factor.name, factor.n_levels, factor.level_names,
+                )
+            reps = resolved.get("repetitions", 10)
+            logger.info(
+                "  Estimated trials per task: %d (OA runs) x %d (reps) = %d",
+                design.n_runs, reps, design.n_runs * int(reps),
+            )
         return 0
 
     # Validate API key upfront (only needed for actual runs)
@@ -586,7 +640,15 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
 
     doc_tree = load_sample_doc_tree()
 
-    # Run evaluation
+    # Route to the correct runner based on --mode
+    mode = resolved.get("mode", "full")
+
+    if mode == "taguchi":
+        return _run_taguchi(
+            resolved, tasks, variants, doc_tree, api_key, run_config,
+        )
+
+    # Default: full mode via EvalRunner
     from agent_evals.progress import make_progress_callback
 
     display = run_config.display_mode or "rich"
@@ -600,6 +662,98 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
 
     logger.info(
         "Evaluation complete: %d trials, $%.4f cost, %.1fs elapsed",
+        len(result.trials),
+        result.total_cost,
+        result.elapsed_seconds,
+    )
+    return 0
+
+
+def _run_taguchi(
+    resolved: dict[str, Any],
+    tasks: list,
+    variants: list,
+    doc_tree: Any,
+    api_key: str,
+    run_config: EvalRunConfig,
+) -> int:
+    """Execute a Taguchi DOE evaluation via EvalOrchestrator.
+
+    Builds a TaguchiDesign from variant axes, creates the orchestrator,
+    and runs the evaluation.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+    from agent_evals.taguchi.factors import build_design
+
+    # Build axes dict from loaded variants (exclude axis 0 baselines -
+    # they are control conditions, not experimental factors).
+    axes: dict[int, list[str]] = {}
+    for v in variants:
+        m = v.metadata()
+        if m.axis == 0:
+            continue  # Baselines are not Taguchi factors
+        if m.axis not in axes:
+            axes[m.axis] = []
+        if m.name not in axes[m.axis]:
+            axes[m.axis].append(m.name)
+
+    # Parse models list
+    models_str = resolved.get("models")
+    model = str(resolved["model"])
+    if models_str:
+        models_list = [m.strip() for m in str(models_str).split(",")]
+    else:
+        models_list = [model]
+
+    # Build Taguchi design
+    oa_override = resolved.get("oa_type")
+    design = build_design(
+        axes,
+        models=models_list if len(models_list) > 1 else None,
+        oa_override=str(oa_override) if oa_override else None,
+    )
+    logger.info(
+        "Taguchi design: OA=%s, %d runs, %d factors",
+        design.oa_name, design.n_runs, len(design.factors),
+    )
+
+    # Build variant lookup
+    variant_lookup = {v.metadata().name: v for v in variants}
+
+    # Parse model budgets
+    model_budgets: dict[str, float] | None = None
+    raw_budgets = resolved.get("model_budgets")
+    if raw_budgets and isinstance(raw_budgets, str):
+        model_budgets = {}
+        for pair in raw_budgets.split(","):
+            key, _, val = pair.partition("=")
+            model_budgets[key.strip()] = float(val.strip())
+
+    # Create orchestrator
+    orch_config = OrchestratorConfig(
+        mode="taguchi",
+        models=models_list,
+        api_key=api_key,
+        report_format=resolved.get("report"),
+        global_budget=resolved.get("budget"),
+        model_budgets=model_budgets,
+        temperature=run_config.temperature,
+        eval_config=run_config,
+    )
+    orchestrator = EvalOrchestrator(orch_config)
+
+    result = orchestrator.run(
+        tasks=tasks,
+        variants=variants,
+        doc_tree=doc_tree,
+        design=design,
+        variant_lookup=variant_lookup,
+    )
+
+    logger.info(
+        "Taguchi evaluation complete: %d trials, $%.4f cost, %.1fs elapsed",
         len(result.trials),
         result.total_cost,
         result.elapsed_seconds,

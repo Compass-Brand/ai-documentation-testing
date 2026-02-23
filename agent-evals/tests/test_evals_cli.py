@@ -1219,3 +1219,230 @@ class TestTaguchiDatasetCoexistence:
         assert args.axis == 3
         # mode is None when not explicitly set (defaults applied at resolve)
         assert args.mode is None
+
+
+# ---------------------------------------------------------------------------
+# Taguchi mode -- _run_evaluation routing
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiModeRouting:
+    """When --mode taguchi is set, _run_evaluation routes to EvalOrchestrator."""
+
+    @pytest.fixture(autouse=True)
+    def _ensure_variants_loaded(self) -> None:
+        """Ensure the variant registry is populated.
+
+        Other test files use ``clear_registry()`` with ``autouse=True``, which
+        empties the singleton registry.  The improved ``load_all()`` handles
+        re-registration of already-imported subclasses.
+        """
+        from agent_evals.variants.registry import load_all
+
+        load_all()
+
+    def test_taguchi_mode_creates_design(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Taguchi mode should build a TaguchiDesign from variant axes."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        captured: dict = {}
+
+        def fake_orchestrator_run(self, **kwargs):
+            captured["design"] = kwargs.get("design")
+            captured["variant_lookup"] = kwargs.get("variant_lookup")
+            # Return a minimal OrchestratorResult
+            from agent_evals.orchestrator import OrchestratorResult
+            return OrchestratorResult(
+                run_id="test",
+                mode="taguchi",
+                trials=[],
+                total_cost=0.0,
+                total_tokens=0,
+                elapsed_seconds=0.0,
+                report=None,
+                raw_result=None,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.run",
+            fake_orchestrator_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+        }
+        result = _run_evaluation(resolved)
+        assert result == 0
+        assert captured.get("design") is not None
+        assert captured["design"].n_runs > 0
+        assert captured.get("variant_lookup") is not None
+        assert len(captured["variant_lookup"]) > 0
+
+    def test_taguchi_mode_uses_orchestrator_not_eval_runner(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Taguchi mode should use EvalOrchestrator, not EvalRunner directly."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        orchestrator_called = False
+        eval_runner_called = False
+
+        def fake_orchestrator_run(self, **kwargs):
+            nonlocal orchestrator_called
+            orchestrator_called = True
+            from agent_evals.orchestrator import OrchestratorResult
+            return OrchestratorResult(
+                run_id="test", mode="taguchi", trials=[],
+                total_cost=0.0, total_tokens=0, elapsed_seconds=0.0,
+                report=None, raw_result=None,
+            )
+
+        def fake_eval_runner_run(self, **kwargs):
+            nonlocal eval_runner_called
+            eval_runner_called = True
+
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.run",
+            fake_orchestrator_run,
+        )
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner.run",
+            fake_eval_runner_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+        }
+        _run_evaluation(resolved)
+        assert orchestrator_called is True
+        assert eval_runner_called is False
+
+    def test_taguchi_mode_with_models_flag(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--models should be split and passed to the orchestrator."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        captured: dict = {}
+
+        def fake_orchestrator_init(self, config):
+            captured["models"] = config.models
+            self.config = config
+            # Minimal stub attributes
+            from unittest.mock import MagicMock
+            self.store = MagicMock()
+            self.tracker = MagicMock()
+            self.client_pool = MagicMock()
+            self._dashboard_thread = None
+            self._dashboard_shutdown = MagicMock()
+
+        def fake_orchestrator_run(self, **kwargs):
+            from agent_evals.orchestrator import OrchestratorResult
+            return OrchestratorResult(
+                run_id="test", mode="taguchi", trials=[],
+                total_cost=0.0, total_tokens=0, elapsed_seconds=0.0,
+                report=None, raw_result=None,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.__init__",
+            fake_orchestrator_init,
+        )
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.run",
+            fake_orchestrator_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+            "models": "openrouter/model-a,openrouter/model-b",
+        }
+        _run_evaluation(resolved)
+        assert captured["models"] == [
+            "openrouter/model-a",
+            "openrouter/model-b",
+        ]
+
+    def test_taguchi_dry_run_shows_design_info(
+        self, monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """--mode taguchi --dry-run should log the OA design info."""
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+            "dry_run": True,
+        }
+        with caplog.at_level(logging.INFO, logger="agent_evals"):
+            result = _run_evaluation(resolved)
+        assert result == 0
+        assert "L50" in caplog.text or "OA" in caplog.text.upper()
+
+    def test_taguchi_oa_override(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--oa-type should force a specific orthogonal array."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        captured: dict = {}
+
+        def fake_orchestrator_run(self, **kwargs):
+            captured["design"] = kwargs.get("design")
+            from agent_evals.orchestrator import OrchestratorResult
+            return OrchestratorResult(
+                run_id="test", mode="taguchi", trials=[],
+                total_cost=0.0, total_tokens=0, elapsed_seconds=0.0,
+                report=None, raw_result=None,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.run",
+            fake_orchestrator_run,
+        )
+
+        # L50 supports the 10-axis mixed-level problem (has 5-level columns)
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+            "oa_type": "L50",
+        }
+        _run_evaluation(resolved)
+        assert captured["design"].oa_name == "L50"
+
+    def test_full_mode_still_uses_eval_runner(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--mode full (or default) should NOT route to orchestrator."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        eval_runner_called = False
+
+        def fake_eval_runner_run(self, **kwargs):
+            nonlocal eval_runner_called
+            eval_runner_called = True
+            from agent_evals.runner import EvalRunResult
+            return EvalRunResult(
+                config=self._config,
+                trials=[],
+                total_cost=0.0,
+                total_tokens=0,
+                elapsed_seconds=0.0,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner.run",
+            fake_eval_runner_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "full",
+        }
+        _run_evaluation(resolved)
+        assert eval_runner_called is True

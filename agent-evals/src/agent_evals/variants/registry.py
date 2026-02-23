@@ -78,9 +78,29 @@ def load_all() -> None:
 
     This triggers module-level ``register_variant`` calls so that every
     variant defined in the package is available via the registry queries.
+
+    If modules were already imported (e.g. after ``clear_registry()``),
+    the import is a no-op and decorators don't re-fire.  In that case
+    we scan for concrete ``IndexVariant`` subclasses that are missing
+    from the registry and register them directly.
     """
     import agent_evals.variants as variants_pkg
 
     package_path = variants_pkg.__path__
     for module_info in pkgutil.iter_modules(package_path):
         importlib.import_module(f"agent_evals.variants.{module_info.name}")
+
+    # Re-register concrete subclasses missed when modules were already
+    # imported (clear_registry + load_all pattern).  Only include classes
+    # defined in the variants package to exclude test stubs.
+    from agent_evals.variants.base import IndexVariant
+
+    for subclass in IndexVariant.__subclasses__():
+        if (
+            subclass not in _registry
+            and subclass.__module__.startswith("agent_evals.variants.")
+        ):
+            try:
+                _registry[subclass] = subclass()
+            except TypeError:
+                pass  # Skip classes requiring constructor args
