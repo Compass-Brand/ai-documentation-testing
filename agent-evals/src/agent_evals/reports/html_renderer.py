@@ -168,6 +168,101 @@ _TEMPLATE = """\
     (range: {{ "%.3f"|format(score_range) }}).</p>
   </section>
 
+  {% if phase_results %}
+  <!-- 10. Main Effects Analysis -->
+  <section id="main-effects">
+    <h2>Main Effects Analysis</h2>
+    {% if phase_results.main_effects %}
+    <table>
+      <tr><th>Factor</th><th>Levels</th><th>Delta (max − min)</th></tr>
+      {% for factor, levels in phase_results.main_effects.items() %}
+      <tr>
+        <td>{{ factor }}</td>
+        <td>{% for level, val in levels.items() %}{{ level }}: {{ "%.2f"|format(val) }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        <td>{{ "%.2f"|format(levels.values()|list|max - levels.values()|list|min) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  </section>
+
+  <!-- 11. ANOVA Table -->
+  <section id="anova">
+    <h2>ANOVA Table</h2>
+    {% if phase_results.anova %}
+    <table>
+      <tr><th>Factor</th><th>SS</th><th>df</th><th>MS</th><th>F-ratio</th><th>p-value</th><th>&omega;&sup2;</th><th>Significance</th></tr>
+      {% for factor, a in phase_results.anova.items() %}
+      <tr>
+        <td>{{ factor }}</td>
+        <td>{{ "%.3f"|format(a.ss) }}</td>
+        <td>{{ a.df }}</td>
+        <td>{{ "%.3f"|format(a.ms) }}</td>
+        <td>{{ "%.3f"|format(a.f_ratio) }}</td>
+        <td>{{ "%.4f"|format(a.p_value) }}</td>
+        <td>{{ "%.4f"|format(a.omega_squared) }}</td>
+        <td>{% if a.p_value <= 0.001 %}***{% elif a.p_value <= 0.01 %}**{% elif a.p_value <= 0.05 %}*{% else %}n.s.{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p><small>*** p &lt; 0.001, ** p &lt; 0.01, * p &lt; 0.05, n.s. = not significant</small></p>
+    {% endif %}
+  </section>
+
+  <!-- 12. Statistical Assumptions & Power -->
+  <section id="assumptions">
+    <h2>Statistical Assumptions &amp; Power</h2>
+    <table>
+      <tr><th>Property</th><th>Value</th></tr>
+      <tr><td>Quality Type</td><td>{{ phase_results.quality_type | default("not specified") }}</td></tr>
+      <tr><td>Factors Analyzed</td><td>{{ phase_results.anova.keys()|list|length if phase_results.anova else 0 }}</td></tr>
+      {% if phase_results.significant_factors %}
+      <tr><td>Significant Factors</td><td>{{ phase_results.significant_factors|length }}</td></tr>
+      {% endif %}
+    </table>
+  </section>
+
+  <!-- 13. Post-Hoc Comparisons -->
+  <section id="post-hoc">
+    <h2>Post-Hoc Comparisons</h2>
+    {% if phase_results.significant_factors %}
+    <table>
+      <tr><th>Factor</th><th>&omega;&sup2;</th><th>Interpretation</th></tr>
+      {% for factor in phase_results.significant_factors %}
+      {% set omega = phase_results.anova[factor].omega_squared if phase_results.anova and factor in phase_results.anova else 0.0 %}
+      <tr>
+        <td>{{ factor }}</td>
+        <td>{{ "%.4f"|format(omega) }}</td>
+        <td>{% if omega >= 0.14 %}large{% elif omega >= 0.06 %}medium{% elif omega >= 0.01 %}small{% else %}negligible{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <p>No significant factors identified.</p>
+    {% endif %}
+  </section>
+
+  <!-- 14. Optimal Prediction & Confirmation -->
+  <section id="optimal-prediction">
+    <h2>Optimal Prediction &amp; Confirmation</h2>
+    {% if phase_results.optimal %}
+    <h3>Optimal Configuration</h3>
+    <table>
+      <tr><th>Factor</th><th>Best Level</th></tr>
+      {% for factor, level in phase_results.optimal.items() %}
+      <tr><td>{{ factor }}</td><td>{{ level }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+    {% if phase_results.predicted_sn is defined and phase_results.predicted_sn is not none %}
+    <p>Predicted S/N Ratio: <strong>{{ "%.2f"|format(phase_results.predicted_sn) }}</strong></p>
+    {% endif %}
+    {% if phase_results.prediction_interval %}
+    <p>Prediction Interval: [{{ "%.2f"|format(phase_results.prediction_interval[0]) }}, {{ "%.2f"|format(phase_results.prediction_interval[1]) }}]</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <!-- 9. Appendix -->
   <section id="appendix">
     <h2>Appendix</h2>
@@ -241,6 +336,7 @@ def render_html(data: ReportData) -> str:
         task_type_chart_json=task_type_chart,
         score_range=score_range,
         config_json=config_json,
+        phase_results=data.phase_results,
     )
 
 

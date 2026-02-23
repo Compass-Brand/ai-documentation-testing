@@ -37,6 +37,52 @@ def _report_data(**overrides) -> ReportData:
     return ReportData(**defaults)
 
 
+def _taguchi_report_data() -> ReportData:
+    """Create a ReportData with Taguchi phase_results for testing."""
+    phase_results = {
+        "main_effects": {
+            "structure": {"flat": 8.5, "nested": 12.3, "hierarchical": 11.0},
+            "transform": {"raw": 7.2, "summary": 11.8, "compressed": 9.5},
+        },
+        "anova": {
+            "structure": {
+                "ss": 12.34,
+                "df": 2,
+                "ms": 6.17,
+                "f_ratio": 8.72,
+                "p_value": 0.001,
+                "eta_squared": 0.12,
+                "omega_squared": 0.089,
+            },
+            "transform": {
+                "ss": 11.89,
+                "df": 2,
+                "ms": 5.95,
+                "f_ratio": 8.41,
+                "p_value": 0.001,
+                "eta_squared": 0.11,
+                "omega_squared": 0.084,
+            },
+            "granularity": {
+                "ss": 2.1,
+                "df": 2,
+                "ms": 1.05,
+                "f_ratio": 1.48,
+                "p_value": 0.24,
+                "eta_squared": 0.03,
+                "omega_squared": 0.008,
+            },
+        },
+        "optimal": {"structure": "nested", "transform": "summary"},
+        "significant_factors": ["structure", "transform"],
+        "quality_type": "larger_is_better",
+        "sn_ratios": {0: 10.5, 1: 11.2, 2: 9.8},
+        "prediction_interval": [10.0, 13.5],
+        "predicted_sn": 12.3,
+    }
+    return _report_data(phase_results=phase_results)
+
+
 # ---------------------------------------------------------------------------
 # TestHTMLStructure
 # ---------------------------------------------------------------------------
@@ -130,3 +176,76 @@ class TestSelfContained:
         html = render_html(_report_data())
         # Should not have external stylesheet links
         assert 'rel="stylesheet"' not in html
+
+
+# ---------------------------------------------------------------------------
+# TestTaguchiSections (Sections 10-14)
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiSections:
+    """Taguchi statistical sections 10-14 when phase_results present."""
+
+    def test_html_renders_main_effects_section(self) -> None:
+        """HTML report includes Main Effects Analysis when phase_results present."""
+        html = render_html(_taguchi_report_data())
+        assert "Main Effects" in html
+        assert "structure" in html
+
+    def test_html_renders_main_effects_delta(self) -> None:
+        """Main effects table shows delta (max - min) for each factor."""
+        html = render_html(_taguchi_report_data())
+        # structure: max=12.3, min=8.5, delta=3.8
+        assert "3.80" in html or "3.8" in html
+
+    def test_html_renders_anova_table(self) -> None:
+        """HTML report includes ANOVA table with p-values."""
+        html = render_html(_taguchi_report_data())
+        assert "ANOVA" in html
+        assert "0.001" in html
+
+    def test_html_renders_significance_markers(self) -> None:
+        """Significant factors (p < 0.05) are marked in HTML."""
+        html = render_html(_taguchi_report_data())
+        assert "***" in html  # p=0.001 < 0.001
+
+    def test_html_renders_non_significant_factor(self) -> None:
+        """Non-significant factors have no significance marker."""
+        html = render_html(_taguchi_report_data())
+        # granularity p=0.24, should show "ns"
+        assert "n.s." in html
+
+    def test_html_renders_assumptions_section(self) -> None:
+        """HTML report shows statistical assumptions section."""
+        html = render_html(_taguchi_report_data())
+        assert "Statistical Assumptions" in html or "Assumptions" in html
+        assert "larger_is_better" in html or "Larger is Better" in html
+
+    def test_html_renders_post_hoc_section(self) -> None:
+        """HTML report shows post-hoc comparisons section."""
+        html = render_html(_taguchi_report_data())
+        assert "Post-Hoc" in html or "Post Hoc" in html
+        assert "structure" in html
+        assert "transform" in html
+
+    def test_html_renders_optimal_prediction(self) -> None:
+        """HTML report shows the optimal configuration prediction."""
+        html = render_html(_taguchi_report_data())
+        assert "Optimal" in html or "optimal" in html
+        assert "nested" in html
+        assert "summary" in html
+
+    def test_html_renders_prediction_interval(self) -> None:
+        """HTML report shows the prediction interval."""
+        html = render_html(_taguchi_report_data())
+        assert "10.0" in html or "10.00" in html
+        assert "13.5" in html or "13.50" in html
+
+    def test_html_skips_taguchi_sections_without_phase_results(self) -> None:
+        """Non-Taguchi reports do not render Taguchi sections."""
+        data = _report_data()  # No phase_results
+        html = render_html(data)
+        assert "Main Effects" not in html
+        assert "ANOVA" not in html
+        assert "Post-Hoc" not in html
+        assert "Optimal" not in html
