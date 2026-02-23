@@ -1250,3 +1250,184 @@ class TestExtractRelevantDocs:
         result = EvalRunner._extract_relevant_docs(task, sample_doc_tree)
         assert len(result) == 1
         assert result != list(sample_doc_tree.files.keys())
+
+
+# ---------------------------------------------------------------------------
+# Source provenance tests (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+class TestSourceProvenance:
+    """Tests that TrialResult carries source provenance for cross-dataset analysis."""
+
+    def test_trial_result_source_defaults_to_gold_standard(self) -> None:
+        """TrialResult.source defaults to 'gold_standard' for backward compat."""
+        result = TrialResult(
+            task_id="retrieval_001",
+            task_type="retrieval",
+            variant_name="v",
+            repetition=1,
+            score=0.5,
+            metrics={},
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=None,
+            latency_seconds=0.1,
+            response="resp",
+            cached=False,
+        )
+        assert result.source == "gold_standard"
+
+    def test_trial_result_source_can_be_set(self) -> None:
+        """TrialResult.source can be set to a dataset name."""
+        result = TrialResult(
+            task_id="repliqa_negative_001",
+            task_type="negative",
+            variant_name="v",
+            repetition=1,
+            score=0.8,
+            metrics={},
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=None,
+            latency_seconds=0.1,
+            response="resp",
+            cached=False,
+            source="repliqa",
+        )
+        assert result.source == "repliqa"
+
+    def test_run_passes_source_to_trial_results(self) -> None:
+        """EvalRunner.run() with source= passes it through to TrialResults."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False, max_connections=1)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner.run(
+            [task], [variant], doc_tree, source="repliqa",
+        )
+
+        assert len(result.trials) == 1
+        assert result.trials[0].source == "repliqa"
+
+    def test_run_default_source_is_gold_standard(self) -> None:
+        """EvalRunner.run() without source= defaults to 'gold_standard'."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False, max_connections=1)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner.run([task], [variant], doc_tree)
+
+        assert result.trials[0].source == "gold_standard"
+
+    def test_failed_trial_preserves_source(self) -> None:
+        """Failed trials recorded via continue_on_error still carry source."""
+        client = _make_mock_client()
+        client.complete.side_effect = RuntimeError("fail")
+        config = EvalRunConfig(
+            repetitions=1, use_cache=False, max_connections=1,
+            continue_on_error=True,
+        )
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner.run(
+            [task], [variant], doc_tree, source="code-rag-bench",
+        )
+
+        assert len(result.trials) == 1
+        assert result.trials[0].source == "code-rag-bench"
+        assert result.trials[0].error is not None
+
+    def test_source_included_in_json_report(self, tmp_path: Path) -> None:
+        """JSON report includes source field in trial dicts."""
+        config = EvalRunConfig(
+            output_dir=str(tmp_path), output_format="json",
+        )
+        runner = EvalRunner(
+            client=MagicMock(spec=LLMClient), config=config,
+        )
+
+        trial = TrialResult(
+            task_id="test_001",
+            task_type="retrieval",
+            variant_name="v",
+            repetition=1,
+            score=0.9,
+            metrics={},
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=0.001,
+            latency_seconds=0.2,
+            response="resp",
+            cached=False,
+            source="ibm-techqa",
+        )
+        result = EvalRunResult(
+            config=config,
+            trials=[trial],
+            total_cost=0.001,
+            total_tokens=15,
+            elapsed_seconds=1.0,
+        )
+        runner._save_results(result, [])
+
+        json_files = list(tmp_path.glob("*.json"))
+        assert len(json_files) == 1
+        import json as json_mod
+        report = json_mod.loads(json_files[0].read_text())
+        assert report["trials"][0]["source"] == "ibm-techqa"
+
+    def test_source_included_in_csv_report(self, tmp_path: Path) -> None:
+        """CSV report includes source column."""
+        config = EvalRunConfig(
+            output_dir=str(tmp_path), output_format="csv",
+        )
+        runner = EvalRunner(
+            client=MagicMock(spec=LLMClient), config=config,
+        )
+
+        trial = TrialResult(
+            task_id="test_001",
+            task_type="retrieval",
+            variant_name="v",
+            repetition=1,
+            score=0.9,
+            metrics={},
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=0.001,
+            latency_seconds=0.2,
+            response="resp",
+            cached=False,
+            source="repliqa",
+        )
+        result = EvalRunResult(
+            config=config,
+            trials=[trial],
+            total_cost=0.001,
+            total_tokens=15,
+            elapsed_seconds=1.0,
+        )
+        runner._save_results(result, [])
+
+        csv_files = list(tmp_path.glob("*.csv"))
+        assert len(csv_files) == 1
+        content = csv_files[0].read_text()
+        assert "source" in content.splitlines()[0]
+        assert "repliqa" in content

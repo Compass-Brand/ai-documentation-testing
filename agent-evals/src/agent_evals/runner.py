@@ -77,6 +77,7 @@ class TrialResult:
     response: str
     cached: bool
     error: str | None = None
+    source: str = "gold_standard"
 
 
 @dataclass
@@ -189,6 +190,7 @@ class EvalRunner:
         variants: list[IndexVariant],
         doc_tree: DocTree,
         progress_callback: ProgressCallback | None = None,
+        source: str = "gold_standard",
     ) -> EvalRunResult:
         """Execute a full evaluation run.
 
@@ -233,7 +235,7 @@ class EvalRunner:
                 ) as executor:
                     future_to_item = {
                         executor.submit(
-                            self._run_trial, task, variant, doc_tree, rep
+                            self._run_trial, task, variant, doc_tree, rep, source
                         ): (task, variant, rep)
                         for task, variant, rep in work_items
                     }
@@ -267,6 +269,7 @@ class EvalRunner:
                                 response="",
                                 cached=False,
                                 error=str(exc),
+                                source=source,
                             )
                         trials.append(trial)
                         completed += 1
@@ -332,6 +335,7 @@ class EvalRunner:
                 "latency_seconds": t.latency_seconds,
                 "cached": t.cached,
                 "error": t.error,
+                "source": t.source,
             })
 
         # -- by_variant aggregation ------------------------------------------
@@ -418,6 +422,7 @@ class EvalRunner:
                 "latency_seconds",
                 "cached",
                 "error",
+                "source",
             ]
 
             csv_path = output_dir / f"run_{timestamp}.csv"
@@ -514,6 +519,7 @@ class EvalRunner:
         variant: IndexVariant,
         doc_tree: DocTree,
         repetition: int,
+        source: str = "gold_standard",
     ) -> TrialResult:
         """Execute a single (task, variant, repetition) trial.
 
@@ -630,4 +636,5 @@ class EvalRunner:
             latency_seconds=latency,
             response=generation.content,
             cached=cached,
+            source=source,
         )

@@ -942,3 +942,15 @@ class TestSourceFlag:
             "--dataset-limit", "10",
         ])
         assert result == 0
+
+    def test_dry_run_with_multi_source(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Dry run with comma-separated --source should succeed."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+        result = main([
+            "--model", "test/model",
+            "--dry-run",
+            "--source", "gold_standard,repliqa",
+        ])
+        assert result == 0
