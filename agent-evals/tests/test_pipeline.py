@@ -301,3 +301,134 @@ def test_pipeline_confirmation_calls_validate():
         mock_val.assert_called_once()
 
     assert result.confirmation["within_interval"] is False
+
+
+# ---------------------------------------------------------------------------
+# DOEPipeline.run_refinement tests
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_refinement_returns_phase_result():
+    """Phase 3 runs full factorial on top K factors."""
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_2": "b", "axis_3": "c"},
+        significant_factors=["axis_1", "axis_3", "axis_2"],
+        main_effects={
+            "axis_1": {"a": 12.0, "b": 10.0, "c": 8.0},
+            "axis_2": {"a": 9.0, "b": 11.0, "c": 10.0},
+            "axis_3": {"a": 8.5, "b": 10.5, "c": 11.5},
+        },
+    )
+    result = pipeline.run_refinement(
+        screening_result=screening,
+        tasks=[],
+        variants=_make_variants(),
+        doc_tree=MagicMock(),
+    )
+
+    assert isinstance(result, PhaseResult)
+    assert result.phase == "refinement"
+
+
+# ---------------------------------------------------------------------------
+# DOEPipeline.run() full pipeline tests
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_full_run_auto_mode():
+    """Full pipeline in auto mode runs all three phases."""
+    config = PipelineConfig(models=["model-a"], mode="auto")
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    with patch.object(pipeline, "run_screening") as mock_s, \
+         patch.object(pipeline, "run_confirmation") as mock_c, \
+         patch.object(pipeline, "run_refinement") as mock_r:
+        mock_s.return_value = PhaseResult(
+            run_id="r1", phase="screening", trials=[],
+            significant_factors=["axis_1"], optimal={"axis_1": "a"},
+            total_cost=1.0, elapsed_seconds=10.0,
+        )
+        mock_c.return_value = PhaseResult(
+            run_id="r2", phase="confirmation", trials=[],
+            confirmation={"within_interval": True},
+            total_cost=0.5, elapsed_seconds=5.0,
+        )
+        mock_r.return_value = PhaseResult(
+            run_id="r3", phase="refinement", trials=[],
+            optimal={"axis_1": "a"},
+            total_cost=2.0, elapsed_seconds=20.0,
+        )
+        result = pipeline.run(
+            tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+        )
+        mock_s.assert_called_once()
+        mock_c.assert_called_once()
+        mock_r.assert_called_once()
+        assert isinstance(result, PipelineResult)
+        assert result.pipeline_id == pipeline._pipeline_id
+
+
+def test_pipeline_semi_mode_with_callback():
+    """Semi mode calls phase_callback between phases."""
+    approvals = []
+
+    def approve_callback(phase_result):
+        approvals.append(phase_result.phase)
+        return True
+
+    config = PipelineConfig(models=["model-a"], mode="semi")
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    with patch.object(pipeline, "run_screening") as mock_s, \
+         patch.object(pipeline, "run_confirmation") as mock_c, \
+         patch.object(pipeline, "run_refinement") as mock_r:
+        mock_s.return_value = PhaseResult(
+            run_id="r1", phase="screening", trials=[],
+            significant_factors=["axis_1"], optimal={"axis_1": "a"},
+        )
+        mock_c.return_value = PhaseResult(
+            run_id="r2", phase="confirmation", trials=[],
+            confirmation={"within_interval": True},
+        )
+        mock_r.return_value = PhaseResult(
+            run_id="r3", phase="refinement", trials=[],
+        )
+        pipeline.run(
+            tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+            phase_callback=approve_callback,
+        )
+        assert "screening" in approvals
+        assert "confirmation" in approvals
+
+
+def test_pipeline_semi_mode_stops_on_rejection():
+    """Semi mode stops when callback returns False."""
+    config = PipelineConfig(models=["model-a"], mode="semi")
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    with patch.object(pipeline, "run_screening") as mock_s, \
+         patch.object(pipeline, "run_confirmation") as mock_c, \
+         patch.object(pipeline, "run_refinement") as mock_r:
+        mock_s.return_value = PhaseResult(
+            run_id="r1", phase="screening", trials=[],
+            significant_factors=["axis_1"], optimal={"axis_1": "a"},
+        )
+        result = pipeline.run(
+            tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+            phase_callback=lambda pr: False,  # reject after screening
+        )
+        mock_s.assert_called_once()
+        mock_c.assert_not_called()
+        mock_r.assert_not_called()
+        assert result.confirmation is None
+        assert result.refinement is None

@@ -219,3 +219,141 @@ class DOEPipeline:
                 "prediction_interval": conf_result.prediction_interval,
             },
         )
+
+    def run_refinement(
+        self,
+        screening_result: PhaseResult,
+        tasks: list[Any],
+        variants: list[Any],
+        doc_tree: Any,
+    ) -> PhaseResult:
+        """Execute Phase 3: full factorial refinement on top K factors.
+
+        Builds all combinations of the top K significant factors while
+        fixing remaining factors at their optimal levels.
+        """
+        # Build variant lookup
+        variant_lookup = {v.metadata().name: v for v in variants}
+
+        # Select top K significant factors
+        top_factors = screening_result.significant_factors[: self.config.top_k]
+
+        # Build full factorial design for top K factors
+        # Collect level names from main_effects for each top factor
+        axes: dict[int, list[str]] = {}
+        main_eff = screening_result.main_effects or {}
+        for i, fname in enumerate(top_factors):
+            if fname in main_eff:
+                axes[i + 1] = list(main_eff[fname].keys())
+
+        if axes:
+            from itertools import product as iter_product
+
+            # Build full factorial combos
+            factor_names = list(axes.keys())
+            level_lists = [axes[k] for k in factor_names]
+            combos = list(iter_product(*level_lists))
+
+            # Run trials via orchestrator
+            result = self._orchestrator.run(
+                tasks,
+                variants,
+                doc_tree,
+                variant_lookup=variant_lookup,
+                phase="refinement",
+                pipeline_id=self._pipeline_id,
+            )
+        else:
+            result = self._orchestrator.run(
+                tasks,
+                variants,
+                doc_tree,
+                variant_lookup=variant_lookup,
+                phase="refinement",
+                pipeline_id=self._pipeline_id,
+            )
+
+        return PhaseResult(
+            run_id=result.run_id,
+            phase="refinement",
+            trials=result.trials,
+            total_cost=result.total_cost,
+            total_tokens=result.total_tokens,
+            elapsed_seconds=result.elapsed_seconds,
+        )
+
+    def run(
+        self,
+        tasks: list[Any],
+        variants: list[Any],
+        doc_tree: Any,
+        *,
+        phase_callback: Any | None = None,
+    ) -> PipelineResult:
+        """Execute complete DOE pipeline: screen -> confirm -> refine.
+
+        In auto mode, runs all phases sequentially. In semi mode, calls
+        phase_callback after each phase. If callback returns False, stops.
+        """
+        # Phase 1: Screening
+        screening = self.run_screening(tasks, variants, doc_tree)
+
+        # Semi mode: check callback after screening
+        if self.config.mode == "semi" and phase_callback is not None:
+            if not phase_callback(screening):
+                return PipelineResult(
+                    pipeline_id=self._pipeline_id,
+                    screening=screening,
+                    total_trials=len(screening.trials),
+                    total_cost=screening.total_cost,
+                    elapsed_seconds=screening.elapsed_seconds,
+                )
+
+        # Phase 2: Confirmation
+        confirmation = self.run_confirmation(
+            screening, tasks, variants, doc_tree
+        )
+
+        # Semi mode: check callback after confirmation
+        if self.config.mode == "semi" and phase_callback is not None:
+            if not phase_callback(confirmation):
+                return PipelineResult(
+                    pipeline_id=self._pipeline_id,
+                    screening=screening,
+                    confirmation=confirmation,
+                    total_trials=len(screening.trials) + len(confirmation.trials),
+                    total_cost=screening.total_cost + confirmation.total_cost,
+                    elapsed_seconds=screening.elapsed_seconds + confirmation.elapsed_seconds,
+                )
+
+        # Phase 3: Refinement
+        refinement = self.run_refinement(
+            screening, tasks, variants, doc_tree
+        )
+
+        # Aggregate final results
+        final_optimal = refinement.optimal or screening.optimal or {}
+        total_trials = (
+            len(screening.trials)
+            + len(confirmation.trials)
+            + len(refinement.trials)
+        )
+        total_cost = (
+            screening.total_cost + confirmation.total_cost + refinement.total_cost
+        )
+        elapsed = (
+            screening.elapsed_seconds
+            + confirmation.elapsed_seconds
+            + refinement.elapsed_seconds
+        )
+
+        return PipelineResult(
+            pipeline_id=self._pipeline_id,
+            screening=screening,
+            confirmation=confirmation,
+            refinement=refinement,
+            final_optimal=final_optimal,
+            total_trials=total_trials,
+            total_cost=total_cost,
+            elapsed_seconds=elapsed,
+        )
