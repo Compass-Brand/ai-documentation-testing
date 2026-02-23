@@ -12,13 +12,12 @@ dependencies = [
     "numpy>=1.24",
     "tiktoken>=0.5",
     "python-dotenv>=1.0",
+    "datasets>=2.14",
+    "huggingface-hub>=0.20",
 ]
 
 [project.scripts]
 agent-evals = "agent_evals.cli:main"
-
-[project.optional-dependencies]
-datasets = ["datasets>=2.14", "huggingface-hub>=0.20"]
 
 [dependency-groups]
 dev = [

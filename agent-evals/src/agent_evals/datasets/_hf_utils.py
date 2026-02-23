@@ -1,29 +1,14 @@
-"""HuggingFace helper utilities with lazy import.
+"""HuggingFace helper utilities.
 
-The ``datasets`` library is only imported when actually needed,
-keeping the core agent-evals package free of heavy dependencies.
+Provides a thin wrapper around ``datasets.load_dataset`` with an
+optional ``limit`` parameter for cost-controlled data loading.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
-
-def _import_load_dataset() -> Callable[..., Any]:
-    """Import and return the HF ``load_dataset`` function.
-
-    Raises:
-        ImportError: With a clear message if the library is missing.
-    """
-    try:
-        from datasets import load_dataset
-    except ImportError:
-        msg = (
-            "HuggingFace datasets library required. "
-            "Install with: uv add --optional datasets 'datasets>=2.14'"
-        )
-        raise ImportError(msg)
-    return load_dataset
+from datasets import load_dataset
 
 
 def load_hf_dataset(
@@ -43,7 +28,6 @@ def load_hf_dataset(
     Returns:
         A HuggingFace Dataset object (or subset if limit is set).
     """
-    load_dataset = _import_load_dataset()
     ds = load_dataset(dataset_id, split=split, trust_remote_code=False, **kwargs)
     if limit is not None:
         ds = ds.select(range(min(limit, len(ds))))

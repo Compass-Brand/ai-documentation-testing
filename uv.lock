@@ -23,6 +23,8 @@ version = "0.1.0"
 source = { editable = "agent-evals" }
 dependencies = [
     { name = "agent-index" },
+    { name = "datasets" },
+    { name = "huggingface-hub" },
     { name = "litellm" },
     { name = "numpy" },
     { name = "pydantic" },
@@ -30,12 +32,6 @@ dependencies = [
     { name = "pyyaml" },
     { name = "scipy" },
     { name = "tiktoken" },
-]
-
-[package.optional-dependencies]
-datasets = [
-    { name = "datasets" },
-    { name = "huggingface-hub" },
 ]
 
 [package.dev-dependencies]
@@ -48,8 +44,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-index", editable = "agent-index" },
-    { name = "datasets", marker = "extra == 'datasets'", specifier = ">=2.14" },
-    { name = "huggingface-hub", marker = "extra == 'datasets'", specifier = ">=0.20" },
+    { name = "datasets", specifier = ">=2.14" },
+    { name = "huggingface-hub", specifier = ">=0.20" },
     { name = "litellm", specifier = ">=1.40" },
     { name = "numpy", specifier = ">=1.24" },
     { name = "pydantic", specifier = ">=2.0" },
@@ -58,7 +54,6 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.11" },
     { name = "tiktoken", specifier = ">=0.5" },
 ]
-provides-extras = ["datasets"]
 
 [package.metadata.requires-dev]
 dev = [
