@@ -288,9 +288,21 @@ class EvalOrchestrator:
         if not self.config.dashboard:
             return None
 
+        from agent_evals.observatory.model_catalog import ModelCatalog
+        from agent_evals.observatory.model_groups import ModelGroupManager
+        from agent_evals.observatory.model_sync import ModelSync
         from agent_evals.observatory.web.server import create_app
 
-        app = create_app(store=self.store, tracker=self.tracker)
+        catalog = ModelCatalog(self.store._db_path.parent / "models.db")
+        group_manager = ModelGroupManager(catalog)
+        model_sync = ModelSync(catalog)
+        app = create_app(
+            store=self.store,
+            tracker=self.tracker,
+            catalog=catalog,
+            group_manager=group_manager,
+            model_sync=model_sync,
+        )
         self._dashboard_shutdown.clear()
 
         def _serve() -> None:
