@@ -202,6 +202,49 @@ class TestReproducibility:
 # ---------------------------------------------------------------------------
 
 
+class TestPhaseResults:
+    """Phase results from DOE pipeline phases."""
+
+    def test_phase_results_default_none(self) -> None:
+        report = aggregate([_trial()], config=_config())
+        assert report.phase_results is None
+
+    def test_phase_results_passed_through(self) -> None:
+        phase_data = {
+            "screening": {
+                "significant_factors": ["structure", "transform"],
+                "main_effects": {"structure": {"flat": 0.7, "nested": 0.9}},
+            },
+        }
+        report = aggregate(
+            [_trial()], config=_config(), phase_results=phase_data
+        )
+        assert report.phase_results is not None
+        assert "screening" in report.phase_results
+        assert report.phase_results["screening"]["significant_factors"] == [
+            "structure",
+            "transform",
+        ]
+
+    def test_phase_results_with_confirmation(self) -> None:
+        phase_data = {
+            "screening": {"significant_factors": ["structure"]},
+            "confirmation": {
+                "within_interval": True,
+                "sigma_deviation": 0.3,
+            },
+        }
+        report = aggregate(
+            [_trial()], config=_config(), phase_results=phase_data
+        )
+        assert report.phase_results["confirmation"]["within_interval"] is True
+
+
+# ---------------------------------------------------------------------------
+# TestEmptyInput
+# ---------------------------------------------------------------------------
+
+
 class TestEmptyInput:
     """Edge cases with no trials."""
 
@@ -211,3 +254,7 @@ class TestEmptyInput:
         assert report.by_variant == {}
         assert report.by_task_type == {}
         assert report.by_source == {}
+
+    def test_empty_trials_phase_results_none(self) -> None:
+        report = aggregate([], config=_config())
+        assert report.phase_results is None

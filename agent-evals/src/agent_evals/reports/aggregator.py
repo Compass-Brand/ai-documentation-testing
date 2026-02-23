@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from agent_evals.runner import EvalRunConfig, TrialResult
 
@@ -43,6 +44,7 @@ class ReportData:
     by_task_type: dict[str, VariantSummary]
     by_source: dict[str, VariantSummary]
     model_versions: dict[str, str] = field(default_factory=dict)
+    phase_results: dict[str, Any] | None = None
 
 
 def _summarize(trials: list[TrialResult]) -> VariantSummary:
@@ -73,6 +75,7 @@ def aggregate(
     *,
     config: EvalRunConfig,
     model_versions: dict[str, str] | None = None,
+    phase_results: dict[str, Any] | None = None,
 ) -> ReportData:
     """Aggregate trial results into report data.
 
@@ -81,6 +84,8 @@ def aggregate(
         config: The evaluation run configuration.
         model_versions: Optional mapping of requested model names
             to actual API model versions.
+        phase_results: Optional DOE pipeline phase results
+            (screening, confirmation, refinement data).
 
     Returns:
         ReportData with all breakdowns computed.
@@ -95,4 +100,5 @@ def aggregate(
         by_task_type=_group_and_summarize(trials, lambda t: t.task_type),
         by_source=_group_and_summarize(trials, lambda t: t.source),
         model_versions=model_versions or {},
+        phase_results=phase_results,
     )
