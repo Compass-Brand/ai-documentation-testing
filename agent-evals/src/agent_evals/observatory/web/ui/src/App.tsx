@@ -5,6 +5,7 @@ import {
   BarChart3,
   Eye,
   History,
+  GitBranch,
   Cpu,
 } from "lucide-react";
 import { cn } from "./lib/utils";
@@ -14,6 +15,8 @@ import { ResultsExplorer } from "./pages/ResultsExplorer";
 import { Observatory } from "./pages/Observatory";
 import { History as HistoryPage } from "./pages/History";
 import { Models } from "./pages/Models";
+import { FactorAnalysis } from "./pages/FactorAnalysis";
+import { PipelineView } from "./pages/PipelineView";
 
 const navItems = [
   { to: "/", label: "Run Config", icon: Play },
@@ -21,6 +24,7 @@ const navItems = [
   { to: "/results", label: "Results", icon: BarChart3 },
   { to: "/observatory", label: "Observatory", icon: Eye },
   { to: "/history", label: "History", icon: History },
+  { to: "/pipeline", label: "Pipeline", icon: GitBranch },
   { to: "/models", label: "Models", icon: Cpu },
 ] as const;
 
@@ -62,6 +66,8 @@ export default function App() {
           <Route path="/observatory" element={<Observatory />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/models" element={<Models />} />
+          <Route path="/analysis/:runId" element={<FactorAnalysis />} />
+          <Route path="/pipeline/:pipelineId?" element={<PipelineView />} />
         </Routes>
       </main>
     </div>

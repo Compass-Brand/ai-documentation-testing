@@ -32,12 +32,25 @@ describe("App", () => {
     expect(allObservatory[0].tagName).toBe("SPAN");
   });
 
-  it("should render all six nav links", () => {
+  it("should render all seven nav links", () => {
     renderWithProviders();
     expect(screen.getByText("Run Config")).toBeInTheDocument();
     expect(screen.getByText("Live Monitor")).toBeInTheDocument();
     expect(screen.getByText("Results")).toBeInTheDocument();
     expect(screen.getByText("History")).toBeInTheDocument();
+    expect(screen.getByText("Pipeline")).toBeInTheDocument();
     expect(screen.getByText("Models")).toBeInTheDocument();
+  });
+
+  it("should render Pipeline nav link", () => {
+    renderWithProviders();
+    expect(screen.getByText("Pipeline")).toBeInTheDocument();
+  });
+
+  it("should render seven nav links total", () => {
+    renderWithProviders();
+    const nav = screen.getByRole("navigation");
+    const links = nav.querySelectorAll("a");
+    expect(links.length).toBe(7);
   });
 });
