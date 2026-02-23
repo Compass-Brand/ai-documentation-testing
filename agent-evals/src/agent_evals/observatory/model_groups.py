@@ -177,3 +177,30 @@ class ModelGroupManager:
             else:
                 missing.append(model_id)
         return ValidationResult(valid=valid, missing=missing)
+
+    def resolve_group(self, group_id: int) -> list[str]:
+        """Resolve a group to its member model IDs."""
+        return self.get_group_members(group_id)
+
+    def resolve_models(
+        self,
+        model_ids: list[str] | None = None,
+        group_id: int | None = None,
+    ) -> list[str]:
+        """Union of explicit model IDs and group members, preserving order."""
+        result: list[str] = []
+        seen: set[str] = set()
+
+        if group_id is not None:
+            for mid in self.resolve_group(group_id):
+                if mid not in seen:
+                    result.append(mid)
+                    seen.add(mid)
+
+        if model_ids is not None:
+            for mid in model_ids:
+                if mid not in seen:
+                    result.append(mid)
+                    seen.add(mid)
+
+        return result

@@ -173,3 +173,36 @@ class TestValidateModelIds:
         assert len(result.valid) == 1
         assert len(result.missing) == 1
         assert "nonexistent/model" in result.missing
+
+
+class TestResolveModels:
+    """Resolve groups and explicit model IDs to a unified list."""
+
+    def test_resolve_group_to_model_ids(self, manager, seeded_catalog):
+        group = manager.create_group("frontier")
+        manager.add_to_group(group.id, [
+            "anthropic/claude-haiku",
+            "openai/gpt-4o",
+        ])
+        ids = manager.resolve_group(group.id)
+        assert len(ids) == 2
+
+    def test_resolve_group_and_models_union(self, manager, seeded_catalog):
+        group = manager.create_group("frontier")
+        manager.add_to_group(group.id, [
+            "anthropic/claude-haiku",
+        ])
+        combined = manager.resolve_models(
+            model_ids=["openai/gpt-4o"],
+            group_id=group.id,
+        )
+        assert len(combined) == 2
+
+    def test_resolve_deduplicates(self, manager, seeded_catalog):
+        group = manager.create_group("frontier")
+        manager.add_to_group(group.id, ["anthropic/claude-haiku"])
+        combined = manager.resolve_models(
+            model_ids=["anthropic/claude-haiku"],
+            group_id=group.id,
+        )
+        assert len(combined) == 1
