@@ -166,6 +166,32 @@ class TaguchiRunner:
                 cached=False,
                 source=source,
             )
+        except Exception as exc:
+            logger.warning(
+                "Trial failed (row %d, %s rep %d): %s",
+                row.run_id,
+                task.definition.task_id,
+                repetition,
+                exc,
+            )
+            latency = time.monotonic() - trial_start
+            return TrialResult(
+                task_id=task.definition.task_id,
+                task_type=task.definition.type,
+                variant_name=composite.metadata().name,
+                repetition=repetition,
+                score=0.0,
+                metrics={"oa_row_id": float(row.run_id)},
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                cost=None,
+                latency_seconds=latency,
+                response="",
+                cached=False,
+                error=str(exc),
+                source=source,
+            )
         finally:
             composite.teardown()
 

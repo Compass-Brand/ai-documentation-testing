@@ -420,6 +420,44 @@ class TestSourcePassthrough:
             assert trial.source == "repliqa"
 
 
+class TestTrialErrorHandling:
+    """LLM failures should not abort the entire Taguchi run."""
+
+    def test_llm_error_returns_trial_with_error(self):
+        """When the LLM client raises, _run_trial returns TrialResult with error set."""
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=3, axes=axes)
+        variants = _make_variant_lookup(axes)
+
+        client = _make_mock_client()
+        client.complete.side_effect = RuntimeError("API timeout")
+        clients = {"mock-model": client}
+
+        config = EvalRunConfig(repetitions=1, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients=clients,
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [_make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        # All 3 trials should complete (not raise)
+        assert len(result.trials) == 3
+
+        for trial in result.trials:
+            assert trial.error is not None
+            assert "API timeout" in trial.error
+            assert trial.score == 0.0
+            assert trial.total_tokens == 0
+            assert trial.cost is None
+
+
 class TestTaguchiRunResult:
     """TaguchiRunResult stores design metadata and trials."""
 

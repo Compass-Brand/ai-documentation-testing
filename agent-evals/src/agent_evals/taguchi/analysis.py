@@ -93,18 +93,19 @@ def compute_sn_ratios(
         Dict mapping row_id to S/N ratio (in dB).
     """
     result: dict[int, float] = {}
+    eps = 1e-10  # guard against division by zero and log(0)
 
     for row_id, scores in row_scores.items():
         n = len(scores)
         if quality_type == "larger_is_better":
             # S/N = -10 * log10(mean(1/y^2))
-            mean_inv_sq = sum(1.0 / (y * y) for y in scores) / n
+            mean_inv_sq = sum(1.0 / (y * y + eps) for y in scores) / n
             result[row_id] = -10.0 * math.log10(mean_inv_sq)
 
         elif quality_type == "smaller_is_better":
             # S/N = -10 * log10(mean(y^2))
             mean_sq = sum(y * y for y in scores) / n
-            result[row_id] = -10.0 * math.log10(mean_sq)
+            result[row_id] = -10.0 * math.log10(max(mean_sq, eps))
 
         elif quality_type == "nominal_is_best":
             # S/N = 10 * log10(mean^2 / variance)

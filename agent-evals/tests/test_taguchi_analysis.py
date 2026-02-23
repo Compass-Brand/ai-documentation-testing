@@ -81,8 +81,9 @@ class TestComputeSNRatios:
         """Verify against hand-computed value."""
         scores = {1: [1.0, 1.0, 1.0]}
         sn = compute_sn_ratios(scores, quality_type="larger_is_better")
-        # S/N = -10*log10(mean(1/1^2)) = -10*log10(1) = 0
-        assert abs(sn[1]) < 1e-10
+        # S/N = -10*log10(mean(1/1^2)) = -10*log10(1) ≈ 0
+        # Epsilon guard (1e-10) introduces a negligible offset
+        assert abs(sn[1]) < 1e-6
 
     def test_larger_is_better_with_high_scores(self):
         """Higher scores produce higher S/N."""
@@ -112,6 +113,27 @@ class TestComputeSNRatios:
     def test_invalid_quality_type_raises(self):
         with pytest.raises(ValueError, match="quality_type"):
             compute_sn_ratios({1: [0.5]}, quality_type="invalid")
+
+    def test_larger_is_better_all_zero_scores(self):
+        """All-zero scores should not raise ZeroDivisionError."""
+        scores = {1: [0.0, 0.0, 0.0]}
+        sn = compute_sn_ratios(scores, quality_type="larger_is_better")
+        assert isinstance(sn[1], float)
+        assert math.isfinite(sn[1])
+
+    def test_larger_is_better_some_zero_scores(self):
+        """Mixed zero/non-zero scores should not raise ZeroDivisionError."""
+        scores = {1: [0.0, 0.8, 0.0, 0.9]}
+        sn = compute_sn_ratios(scores, quality_type="larger_is_better")
+        assert isinstance(sn[1], float)
+        assert math.isfinite(sn[1])
+
+    def test_smaller_is_better_all_zero_scores(self):
+        """All-zero scores should not raise ValueError (log of zero)."""
+        scores = {1: [0.0, 0.0, 0.0]}
+        sn = compute_sn_ratios(scores, quality_type="smaller_is_better")
+        assert isinstance(sn[1], float)
+        assert math.isfinite(sn[1])
 
     def test_returns_dict_of_floats(self):
         scores = {1: [0.8], 2: [0.5], 3: [0.7]}
