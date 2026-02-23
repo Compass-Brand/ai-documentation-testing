@@ -301,3 +301,112 @@ class TestConcurrency:
 
         trials = store.get_trials("run_001")
         assert len(trials) == 10
+
+
+# ---------------------------------------------------------------------------
+# TestPhaseAndPipeline
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseAndPipeline:
+    """Phase columns, pipeline queries, and phase results."""
+
+    def test_create_run_with_phase_and_pipeline(
+        self, tmp_path: Path
+    ) -> None:
+        """Runs table accepts phase and pipeline_id columns."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run(
+            "run-1", "taguchi", {"mode": "taguchi"},
+            phase="screening", pipeline_id="pipe-1",
+        )
+        runs = store.list_runs()
+        assert len(runs) == 1
+        assert runs[0].run_id == "run-1"
+
+    def test_create_run_with_parent(self, tmp_path: Path) -> None:
+        """Confirmation run links to parent screening run."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run(
+            "run-1", "taguchi", {},
+            phase="screening", pipeline_id="pipe-1",
+        )
+        store.create_run(
+            "run-2", "taguchi", {},
+            phase="confirmation", pipeline_id="pipe-1",
+            parent_run_id="run-1",
+        )
+        runs = store.list_runs()
+        assert len(runs) == 2
+
+    def test_record_trial_with_oa_row_and_phase(
+        self, tmp_path: Path
+    ) -> None:
+        """Trial records store oa_row_id and phase."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-1", "taguchi", {})
+        store.record_trial(
+            run_id="run-1", task_id="t1", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.8,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="test-model",
+            oa_row_id=3, phase="screening",
+        )
+        trials = store.get_trials("run-1")
+        assert len(trials) == 1
+
+    def test_save_and_get_phase_results(self, tmp_path: Path) -> None:
+        """Phase results round-trip through SQLite."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-1", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-1",
+            main_effects={"structure": {"flat": 10.5, "nested": 12.3}},
+            anova={"structure": {"p_value": 0.001, "omega_squared": 0.089}},
+            optimal={"structure": "nested"},
+            significant_factors=["structure", "transform"],
+            quality_type="larger_is_better",
+        )
+        result = store.get_phase_results("run-1")
+        assert result is not None
+        assert result["main_effects"]["structure"]["nested"] == 12.3
+        assert result["quality_type"] == "larger_is_better"
+
+    def test_get_phase_results_missing(self, tmp_path: Path) -> None:
+        """Returns None for runs without phase results."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        result = store.get_phase_results("nonexistent")
+        assert result is None
+
+    def test_get_pipeline_runs(self, tmp_path: Path) -> None:
+        """Lists all runs in a pipeline ordered by creation."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run(
+            "r1", "taguchi", {}, phase="screening", pipeline_id="p1",
+        )
+        store.create_run(
+            "r2", "taguchi", {},
+            phase="confirmation", pipeline_id="p1",
+        )
+        store.create_run(
+            "r3", "taguchi", {}, phase="refinement", pipeline_id="p1",
+        )
+        runs = store.get_pipeline_runs("p1")
+        assert len(runs) == 3
+        assert runs[0].run_id == "r1"
+
+    def test_schema_migration_preserves_existing_data(
+        self, tmp_path: Path
+    ) -> None:
+        """Adding new columns does not break existing data."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("old-run", "sweep", {"mode": "full"})
+        store.record_trial(
+            run_id="old-run", task_id="t1", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.5,
+            prompt_tokens=10, completion_tokens=5, total_tokens=15,
+            cost=0.001, latency_seconds=0.5, model="m1",
+        )
+        store2 = ObservatoryStore(tmp_path / "test.db")
+        trials = store2.get_trials("old-run")
+        assert len(trials) == 1

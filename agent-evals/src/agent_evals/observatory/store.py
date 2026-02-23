@@ -51,12 +51,15 @@ class RunSummary:
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS runs (
-    run_id      TEXT PRIMARY KEY,
-    run_type    TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'active',
-    config      TEXT NOT NULL DEFAULT '{}',
-    created_at  TEXT NOT NULL,
-    finished_at TEXT
+    run_id        TEXT PRIMARY KEY,
+    run_type      TEXT NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'active',
+    config        TEXT NOT NULL DEFAULT '{}',
+    created_at    TEXT NOT NULL,
+    finished_at   TEXT,
+    parent_run_id TEXT,
+    phase         TEXT,
+    pipeline_id   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trials (
@@ -75,7 +78,20 @@ CREATE TABLE IF NOT EXISTS trials (
     model            TEXT NOT NULL,
     source           TEXT NOT NULL DEFAULT 'gold_standard',
     error            TEXT,
-    created_at       TEXT NOT NULL
+    created_at       TEXT NOT NULL,
+    oa_row_id        INTEGER,
+    phase            TEXT
+);
+
+CREATE TABLE IF NOT EXISTS phase_results (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id              TEXT NOT NULL UNIQUE REFERENCES runs(run_id),
+    main_effects        TEXT NOT NULL,
+    anova               TEXT NOT NULL,
+    optimal             TEXT NOT NULL,
+    significant_factors TEXT NOT NULL,
+    quality_type        TEXT NOT NULL,
+    created_at          TEXT NOT NULL
 );
 """
 
@@ -91,11 +107,28 @@ class ObservatoryStore:
         self._db_path = db_path
         self._lock = threading.Lock()
         self._init_db()
+        self._migrate_schema()
 
     def _init_db(self) -> None:
         """Create schema if it doesn't exist."""
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+
+    def _migrate_schema(self) -> None:
+        """Add new columns to existing tables (idempotent)."""
+        migrations = [
+            "ALTER TABLE runs ADD COLUMN parent_run_id TEXT",
+            "ALTER TABLE runs ADD COLUMN phase TEXT",
+            "ALTER TABLE runs ADD COLUMN pipeline_id TEXT",
+            "ALTER TABLE trials ADD COLUMN oa_row_id INTEGER",
+            "ALTER TABLE trials ADD COLUMN phase TEXT",
+        ]
+        with self._connect() as conn:
+            for stmt in migrations:
+                try:
+                    conn.execute(stmt)
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path))
@@ -117,6 +150,10 @@ class ObservatoryStore:
         run_id: str,
         run_type: str,
         config: dict,
+        *,
+        phase: str | None = None,
+        pipeline_id: str | None = None,
+        parent_run_id: str | None = None,
     ) -> None:
         """Create a new run record.
 
@@ -124,6 +161,9 @@ class ObservatoryStore:
             run_id: Unique identifier for the run.
             run_type: Type of run (e.g. "taguchi", "sweep").
             config: Configuration dict (stored as JSON).
+            phase: Pipeline phase (e.g. "screening", "confirmation").
+            pipeline_id: Pipeline this run belongs to.
+            parent_run_id: Parent run for confirmation/refinement phases.
 
         Raises:
             ValueError: If run_id already exists.
@@ -136,9 +176,13 @@ class ObservatoryStore:
             if existing:
                 raise ValueError(f"Run '{run_id}' already exists")
             conn.execute(
-                "INSERT INTO runs (run_id, run_type, config, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (run_id, run_type, json.dumps(config), now),
+                "INSERT INTO runs (run_id, run_type, config, created_at, "
+                "parent_run_id, phase, pipeline_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run_id, run_type, json.dumps(config), now,
+                    parent_run_id, phase, pipeline_id,
+                ),
             )
 
     def record_trial(
@@ -158,6 +202,8 @@ class ObservatoryStore:
         model: str,
         source: str = "gold_standard",
         error: str | None = None,
+        oa_row_id: int | None = None,
+        phase: str | None = None,
     ) -> None:
         """Record a single trial result.
 
@@ -176,6 +222,8 @@ class ObservatoryStore:
             model: Model identifier.
             source: Task source (e.g. "gold_standard", "repliqa").
             error: Error message if trial failed.
+            oa_row_id: Orthogonal array row index (Taguchi runs).
+            phase: Pipeline phase (e.g. "screening").
         """
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
@@ -183,12 +231,14 @@ class ObservatoryStore:
                 "INSERT INTO trials "
                 "(run_id, task_id, task_type, variant_name, repetition, "
                 "score, prompt_tokens, completion_tokens, total_tokens, "
-                "cost, latency_seconds, model, source, error, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "cost, latency_seconds, model, source, error, created_at, "
+                "oa_row_id, phase) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id, task_id, task_type, variant_name, repetition,
                     score, prompt_tokens, completion_tokens, total_tokens,
                     cost, latency_seconds, model, source, error, now,
+                    oa_row_id, phase,
                 ),
             )
 
@@ -318,6 +368,104 @@ class ObservatoryStore:
                 model=r["model"],
                 source=r["source"],
                 error=r["error"],
+            )
+            for r in rows
+        ]
+
+    def save_phase_results(
+        self,
+        *,
+        run_id: str,
+        main_effects: dict,
+        anova: dict,
+        optimal: dict,
+        significant_factors: list[str],
+        quality_type: str,
+    ) -> None:
+        """Save Taguchi phase analysis results for a run.
+
+        Args:
+            run_id: The run these results belong to.
+            main_effects: Factor main-effect means (JSON-serialized).
+            anova: ANOVA table with p-values and effect sizes.
+            optimal: Optimal level per factor.
+            significant_factors: List of statistically significant factors.
+            quality_type: Quality characteristic type (e.g. "larger_is_better").
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO phase_results "
+                "(run_id, main_effects, anova, optimal, "
+                "significant_factors, quality_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    run_id,
+                    json.dumps(main_effects),
+                    json.dumps(anova),
+                    json.dumps(optimal),
+                    json.dumps(significant_factors),
+                    quality_type,
+                    now,
+                ),
+            )
+
+    def get_phase_results(self, run_id: str) -> dict | None:
+        """Retrieve phase analysis results for a run.
+
+        Args:
+            run_id: The run to query.
+
+        Returns:
+            Dict with main_effects, anova, optimal, significant_factors,
+            quality_type keys, or None if no results exist.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM phase_results WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "main_effects": json.loads(row["main_effects"]),
+            "anova": json.loads(row["anova"]),
+            "optimal": json.loads(row["optimal"]),
+            "significant_factors": json.loads(row["significant_factors"]),
+            "quality_type": row["quality_type"],
+        }
+
+    def get_pipeline_runs(self, pipeline_id: str) -> list[RunSummary]:
+        """Return all runs in a pipeline ordered by creation time.
+
+        Args:
+            pipeline_id: The pipeline to query.
+
+        Returns:
+            List of RunSummary for runs in this pipeline.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT r.run_id, r.run_type, r.status, r.created_at, "
+                "r.finished_at, "
+                "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
+                "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
+                "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
+                "FROM runs r LEFT JOIN trials t ON r.run_id = t.run_id "
+                "WHERE r.pipeline_id = ? "
+                "GROUP BY r.run_id ORDER BY r.created_at",
+                (pipeline_id,),
+            ).fetchall()
+        return [
+            RunSummary(
+                run_id=r["run_id"],
+                run_type=r["run_type"],
+                status=r["status"],
+                created_at=r["created_at"],
+                finished_at=r["finished_at"],
+                total_trials=r["total_trials"],
+                total_cost=r["total_cost"],
+                avg_latency=r["avg_latency"],
             )
             for r in rows
         ]
