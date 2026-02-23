@@ -21,7 +21,7 @@ import { AccessibleChart } from "../components/AccessibleChart";
 import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { CHART_COLORS } from "../lib/chart-theme";
-import { cn } from "../lib/utils";
+import { cn, formatRunLabel } from "../lib/utils";
 import type { ColumnDef } from "@tanstack/react-table";
 
 Chart.register(
@@ -157,7 +157,7 @@ export function ResultsExplorer() {
               <option value="">Select a run...</option>
               {runs?.map((r) => (
                 <option key={r.run_id} value={r.run_id}>
-                  {r.run_id} ({r.run_type})
+                  {formatRunLabel(r)}
                 </option>
               ))}
             </select>

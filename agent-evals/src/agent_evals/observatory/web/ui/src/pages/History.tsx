@@ -8,6 +8,7 @@ import { DataTable } from "../components/DataTable";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { StatusBadge } from "../components/StatusBadge";
 import { FadeIn } from "../components/FadeIn";
+import { shortId, formatRunDate } from "../lib/utils";
 
 const statusMap = {
   completed: "success",
@@ -16,7 +17,16 @@ const statusMap = {
 } as const;
 
 const columns: ColumnDef<Run>[] = [
-  { accessorKey: "run_id", header: "Run ID" },
+  {
+    accessorKey: "run_id",
+    header: "Run ID",
+    cell: ({ getValue }) => {
+      const id = getValue<string>();
+      return (
+        <code className="text-data text-brand-charcoal">{shortId(id)}</code>
+      );
+    },
+  },
   { accessorKey: "run_type", header: "Type" },
   {
     accessorKey: "status",
@@ -31,7 +41,11 @@ const columns: ColumnDef<Run>[] = [
       );
     },
   },
-  { accessorKey: "created_at", header: "Created" },
+  {
+    accessorKey: "created_at",
+    header: "Created",
+    cell: ({ getValue }) => formatRunDate(getValue<string>()),
+  },
 ];
 
 export function History() {
