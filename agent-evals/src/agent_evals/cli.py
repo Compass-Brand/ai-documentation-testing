@@ -331,8 +331,24 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         logger.error("--model is required (or set in config/env)")
         return 1
 
-    # Validate API key upfront
+    run_config = build_eval_run_config(resolved)
+
+    # Check API key format early so warnings are visible even in dry-run mode.
     api_key = os.environ.get("OPENROUTER_API_KEY")
+    if api_key and not api_key.startswith("sk-or-"):
+        logger.warning(
+            "OPENROUTER_API_KEY does not start with 'sk-or-'. "
+            "Verify your key format at https://openrouter.ai/keys"
+        )
+
+    # Dry-run mode: log config and exit (no API key needed)
+    if resolved.get("dry_run", False):
+        logger.info("Dry-run mode: resolved configuration:")
+        for key, value in sorted(resolved.items()):
+            logger.info("  %s: %r", key, value)
+        return 0
+
+    # Validate API key upfront (only needed for actual runs)
     if not api_key:
         logger.error(
             "OPENROUTER_API_KEY is not set. "
@@ -340,21 +356,6 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
             "  export OPENROUTER_API_KEY=sk-or-v1-..."
         )
         return 1
-
-    if not api_key.startswith("sk-or-"):
-        logger.warning(
-            "OPENROUTER_API_KEY does not start with 'sk-or-'. "
-            "Verify your key format at https://openrouter.ai/keys"
-        )
-
-    run_config = build_eval_run_config(resolved)
-
-    # Dry-run mode: log config and exit
-    if resolved.get("dry_run", False):
-        logger.info("Dry-run mode: resolved configuration:")
-        for key, value in sorted(resolved.items()):
-            logger.info("  %s: %r", key, value)
-        return 0
 
     # Import heavy dependencies only when actually running
     from agent_evals.llm.client import LLMClient

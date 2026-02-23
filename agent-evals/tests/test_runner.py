@@ -18,6 +18,10 @@ from agent_evals.runner import (
 )
 from agent_evals.tasks.base import TaskDefinition
 from agent_evals.variants.base import VariantMetadata
+from agent_evals.variants.baselines import (
+    LengthMatchedRandomBaseline,
+    OracleBaseline,
+)
 from agent_index.models import DocFile, DocTree
 
 # ---------------------------------------------------------------------------
@@ -529,6 +533,26 @@ class TestRunMethod:
         assert "render" in call_order
         assert call_order[-1] == "teardown"
 
+    def test_teardown_called_even_on_error(self) -> None:
+        """Teardown is called even when a trial raises and continue_on_error is False."""
+        client = _make_mock_client()
+        client.complete.side_effect = RuntimeError("API failure")
+        config = EvalRunConfig(
+            repetitions=1, use_cache=False, max_connections=1,
+            continue_on_error=False,
+        )
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        with pytest.raises(RuntimeError, match="API failure"):
+            runner.run([task], [variant], doc_tree)
+
+        # Teardown must still be called despite the exception
+        variant.teardown.assert_called_once()
+
     def test_multiple_variants_each_get_setup_teardown(self) -> None:
         """Each variant gets its own setup and teardown call."""
         client = _make_mock_client()
@@ -893,3 +917,249 @@ class TestOutputFormat:
         csv_files = list(tmp_path.glob("*.csv"))
         assert len(json_files) == 1
         assert len(csv_files) == 1
+
+
+# ---------------------------------------------------------------------------
+# Oracle / Length-Matched-Random baseline wiring tests
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_task_with_metadata(
+    *,
+    task_id: str = "retrieval_001",
+    task_type: str = "retrieval",
+    score: float = 0.85,
+    metadata: dict | None = None,
+) -> MagicMock:
+    """Create a mock EvalTask with specific metadata."""
+    task = MagicMock()
+    task.definition = TaskDefinition(
+        task_id=task_id,
+        type=task_type,
+        question="What is authentication?",
+        domain="framework_api",
+        difficulty="easy",
+        metadata=metadata or {},
+    )
+    task.build_prompt.return_value = [
+        {"role": "system", "content": "Use this index."},
+        {"role": "user", "content": "What is auth?"},
+    ]
+    task.score_response.return_value = score
+    return task
+
+
+class TestOracleBaselineWiring:
+    """Tests that the runner wires up OracleBaseline.set_relevant_docs before render."""
+
+    def test_oracle_renders_nonempty_with_expected_files(self) -> None:
+        """Oracle baseline renders non-empty when task has expected_files metadata."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False, max_connections=1)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task_with_metadata(
+            metadata={"expected_files": ["guides/auth.md"]},
+        )
+        variant = OracleBaseline()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, 1)
+
+        # The oracle should have rendered non-empty content
+        # (not identical to no-index which returns "")
+        call_args = task.build_prompt.call_args[0][0]
+        assert len(call_args) > 0, "Oracle should render non-empty index content"
+        assert "guides/auth.md" in call_args
+
+    def test_oracle_renders_nonempty_with_nearest_doc(self) -> None:
+        """Oracle baseline renders non-empty when task has nearest_doc metadata."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False, max_connections=1)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task_with_metadata(
+            task_id="negative_001",
+            task_type="negative",
+            metadata={"nearest_doc": "guides/auth.md"},
+        )
+        variant = OracleBaseline()
+        doc_tree = _make_sample_doc_tree()
+
+        runner._run_trial(task, variant, doc_tree, 1)
+
+        call_args = task.build_prompt.call_args[0][0]
+        assert len(call_args) > 0, "Oracle should render non-empty with nearest_doc"
+
+    def test_oracle_renders_nonempty_with_sources(self) -> None:
+        """Oracle baseline renders non-empty when task has sources metadata."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False, max_connections=1)
+        runner = EvalRunner(client=client, config=config)
+
+        doc_tree = DocTree(
+            files={
+                "api/caching.md": DocFile(
+                    rel_path="api/caching.md",
+                    content="# Caching\nCache docs.",
+                    size_bytes=30,
+                    token_count=8,
+                    tier="recommended",
+                    section="API",
+                ),
+            },
+            scanned_at=datetime(2024, 1, 1, tzinfo=UTC),
+            source="/tmp/docs",
+            total_tokens=8,
+        )
+
+        task = _make_mock_task_with_metadata(
+            task_id="conflicting_001",
+            task_type="conflicting",
+            metadata={
+                "sources": [
+                    {"name": "caching.md", "claim": "TTL=300", "authority": 9},
+                ],
+            },
+        )
+        variant = OracleBaseline()
+
+        runner._run_trial(task, variant, doc_tree, 1)
+
+        call_args = task.build_prompt.call_args[0][0]
+        assert len(call_args) > 0, "Oracle should render non-empty with sources"
+
+
+class TestLengthMatchedRandomWiring:
+    """Tests that the runner wires up LengthMatchedRandomBaseline.set_target_tokens."""
+
+    def test_lmr_renders_nonempty_with_expected_files(self) -> None:
+        """Length-matched-random renders non-empty when task has expected_files."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False, max_connections=1)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task_with_metadata(
+            metadata={"expected_files": ["guides/auth.md"]},
+        )
+        variant = LengthMatchedRandomBaseline()
+        doc_tree = _make_sample_doc_tree()
+
+        runner._run_trial(task, variant, doc_tree, 1)
+
+        call_args = task.build_prompt.call_args[0][0]
+        assert len(call_args) > 0, "LMR should render non-empty index content"
+
+
+# ---------------------------------------------------------------------------
+# Failed trial recording tests
+# ---------------------------------------------------------------------------
+
+
+class TestFailedTrialRecording:
+    """Tests that failed trials are recorded in results instead of silently dropped."""
+
+    def test_failed_trial_recorded_with_continue_on_error(self) -> None:
+        """When continue_on_error=True, failed trials appear in results with error."""
+        client = _make_mock_client()
+        client.complete.side_effect = LLMClientError("Rate limit exceeded")
+
+        config = EvalRunConfig(
+            repetitions=1, use_cache=False, max_connections=1,
+            continue_on_error=True,
+        )
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner.run([task], [variant], doc_tree)
+
+        # Trial should be recorded, not silently dropped
+        assert len(result.trials) == 1, "Failed trial should be recorded in results"
+        trial = result.trials[0]
+        assert trial.error is not None, "Failed trial should have error field set"
+        assert "Rate limit" in trial.error
+        assert trial.score == 0.0
+        assert trial.task_id == "retrieval_001"
+        assert trial.variant_name == "test-variant"
+
+    def test_failed_trial_error_in_csv(self, tmp_path: Path) -> None:
+        """Failed trials include error column in CSV output."""
+        config = EvalRunConfig(
+            output_dir=str(tmp_path), output_format="csv",
+        )
+        runner = EvalRunner(
+            client=MagicMock(spec=LLMClient),
+            config=config,
+        )
+
+        error_trial = TrialResult(
+            task_id="test_001",
+            task_type="retrieval",
+            variant_name="v",
+            repetition=1,
+            score=0.0,
+            metrics={},
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            cost=None,
+            latency_seconds=0.1,
+            response="",
+            cached=False,
+            error="Rate limit exceeded",
+        )
+
+        result = EvalRunResult(
+            config=config,
+            trials=[error_trial],
+            total_cost=0,
+            total_tokens=0,
+            elapsed_seconds=0,
+        )
+        runner._save_results(result, [])
+
+        csv_files = list(tmp_path.glob("*.csv"))
+        assert len(csv_files) == 1
+        content = csv_files[0].read_text()
+        assert "error" in content.splitlines()[0], "CSV should have error column"
+        assert "Rate limit exceeded" in content
+
+    def test_trial_result_has_error_field(self) -> None:
+        """TrialResult supports an error field defaulting to None."""
+        result = TrialResult(
+            task_id="test_001",
+            task_type="retrieval",
+            variant_name="v",
+            repetition=1,
+            score=0.0,
+            metrics={},
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            cost=None,
+            latency_seconds=0.0,
+            response="",
+            cached=False,
+        )
+        assert result.error is None
+
+        result_with_error = TrialResult(
+            task_id="test_001",
+            task_type="retrieval",
+            variant_name="v",
+            repetition=1,
+            score=0.0,
+            metrics={},
+            prompt_tokens=0,
+            completion_tokens=0,
+            total_tokens=0,
+            cost=None,
+            latency_seconds=0.0,
+            response="",
+            cached=False,
+            error="Some error message",
+        )
+        assert result_with_error.error == "Some error message"

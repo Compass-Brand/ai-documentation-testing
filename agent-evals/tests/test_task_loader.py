@@ -506,6 +506,20 @@ class TestLoadTasks:
         with pytest.raises(ValueError, match="[Dd]uplicate.*task_id"):
             load_tasks(tmp_path)
 
+    def test_load_tasks_skips_schema_yaml(self, tmp_path: Path) -> None:
+        """load_tasks skips schema.yaml files that are not task definitions."""
+        _write_yaml(tmp_path / "task.yaml", _valid_task_data())
+        # schema.yaml is a schema documentation file, not a task
+        (tmp_path / "schema.yaml").write_text(
+            yaml.dump({"schema": {"version": "1.0"}}),
+            encoding="utf-8",
+        )
+
+        tasks = load_tasks(tmp_path)
+
+        assert len(tasks) == 1
+        assert tasks[0].definition.task_id == "retrieval_001"
+
     def test_load_tasks_sorted_by_task_id(self, tmp_path: Path) -> None:
         """load_tasks returns tasks sorted by task_id."""
         _write_yaml(

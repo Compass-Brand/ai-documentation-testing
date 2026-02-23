@@ -496,14 +496,14 @@ class TestGranularityFileRender:
     def test_render_entry_count(self, doc_tree: MagicMock) -> None:
         """File-level render has exactly one entry per file."""
         result = GranularityFileVariant().render(doc_tree)
-        lines = [line for line in result.splitlines() if line.startswith("- ")]
+        lines = [line for line in result.splitlines() if line.startswith("[FILE]")]
         assert len(lines) == 4
 
     def test_render_sorted_by_path(self, doc_tree: MagicMock) -> None:
         """File-level render entries are sorted alphabetically."""
         result = GranularityFileVariant().render(doc_tree)
-        lines = [line for line in result.splitlines() if line.startswith("- ")]
-        paths = [line.split(":")[0].lstrip("- ") for line in lines]
+        lines = [line for line in result.splitlines() if line.startswith("[FILE]")]
+        paths = [line.split(":")[0].replace("[FILE] ", "") for line in lines]
         assert paths == sorted(paths)
 
     def test_render_empty_tree(self, empty_tree: MagicMock) -> None:

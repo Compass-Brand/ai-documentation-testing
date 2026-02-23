@@ -35,13 +35,18 @@ class StructureFlatVariant(IndexVariant):
         )
 
     def render(self, doc_tree: DocTree) -> str:
-        """Render all files as a flat bulleted list.
+        """Render all files as a flat bulleted list with tier and summary.
+
+        Uses the ``doc.summary`` field (full summary from doc tree metadata)
+        and includes tier classification to differentiate from the noise-0
+        variant which uses only ``brief_summary`` (first content line).
 
         Args:
             doc_tree: Documentation tree to render.
 
         Returns:
-            A newline-separated flat list of ``- path: summary`` entries.
+            A newline-separated flat list of
+            ``- path (tier): summary`` entries.
         """
         if not doc_tree.files:
             return ""
@@ -49,6 +54,6 @@ class StructureFlatVariant(IndexVariant):
         lines: list[str] = []
         for rel_path in sorted(doc_tree.files):
             doc = doc_tree.files[rel_path]
-            summary = _brief_summary(doc.content)
-            lines.append(f"- {rel_path}: {summary}")
+            summary = doc.summary if doc.summary else _brief_summary(doc.content)
+            lines.append(f"- {rel_path} ({doc.tier}): {summary}")
         return "\n".join(lines)

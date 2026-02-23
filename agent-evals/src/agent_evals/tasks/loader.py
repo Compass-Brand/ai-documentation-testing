@@ -129,6 +129,10 @@ def load_tasks(directory: Path, *, strict: bool = True) -> list[EvalTask]:
         [*directory.rglob("*.yaml"), *directory.rglob("*.yml")]
     )
     for yaml_path in yaml_paths:
+        # Skip known non-task YAML files (schema definitions, config, etc.)
+        if yaml_path.name == "schema.yaml":
+            logger.debug("Skipping schema file: %s", yaml_path)
+            continue
         try:
             task = load_task(yaml_path)
             tasks.append(task)

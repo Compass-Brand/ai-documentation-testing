@@ -660,6 +660,17 @@ class TestApiKeyValidation:
             _run_evaluation(resolved)
         assert "does not start with" in caplog.text
 
+    def test_dry_run_does_not_require_api_key(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        resolved: dict[str, object] = {
+            "model": "openrouter/anthropic/claude-sonnet-4.5",
+            "dry_run": True,
+        }
+        result = _run_evaluation(resolved)
+        assert result == 0
+
 
 # ---------------------------------------------------------------------------
 # Task 2.1: Config file warning tests

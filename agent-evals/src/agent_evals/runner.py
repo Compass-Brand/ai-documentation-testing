@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 from agent_evals.llm.cache import ResponseCache
 from agent_evals.llm.client import GenerationResult, LLMClient
+from agent_evals.variants.baselines import (
+    LengthMatchedRandomBaseline,
+    OracleBaseline,
+)
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
@@ -72,6 +76,7 @@ class TrialResult:
     latency_seconds: float
     response: str
     cached: bool
+    error: str | None = None
 
 
 @dataclass
@@ -221,40 +226,56 @@ class EvalRunner:
         trials: list[TrialResult] = []
         completed = 0
 
-        if total > 0:
-            with ThreadPoolExecutor(
-                max_workers=self._config.max_connections,
-            ) as executor:
-                future_to_item = {
-                    executor.submit(
-                        self._run_trial, task, variant, doc_tree, rep
-                    ): (task, variant, rep)
-                    for task, variant, rep in work_items
-                }
+        try:
+            if total > 0:
+                with ThreadPoolExecutor(
+                    max_workers=self._config.max_connections,
+                ) as executor:
+                    future_to_item = {
+                        executor.submit(
+                            self._run_trial, task, variant, doc_tree, rep
+                        ): (task, variant, rep)
+                        for task, variant, rep in work_items
+                    }
 
-                for future in as_completed(future_to_item):
-                    try:
-                        trial = future.result()
-                    except Exception as exc:
-                        if not self._config.continue_on_error:
-                            raise
-                        task, variant, rep = future_to_item[future]
-                        logger.warning(
-                            "Trial failed (%s/%s rep %d): %s",
-                            task.definition.task_id,
-                            variant.metadata().name,
-                            rep,
-                            exc,
-                        )
-                        continue
-                    trials.append(trial)
-                    completed += 1
-                    if progress_callback is not None:
-                        progress_callback(completed, total, trial)
-
-        # Teardown all variants
-        for variant in variants:
-            variant.teardown()
+                    for future in as_completed(future_to_item):
+                        try:
+                            trial = future.result()
+                        except Exception as exc:
+                            if not self._config.continue_on_error:
+                                raise
+                            task, variant, rep = future_to_item[future]
+                            logger.warning(
+                                "Trial failed (%s/%s rep %d): %s",
+                                task.definition.task_id,
+                                variant.metadata().name,
+                                rep,
+                                exc,
+                            )
+                            trial = TrialResult(
+                                task_id=task.definition.task_id,
+                                task_type=task.definition.type,
+                                variant_name=variant.metadata().name,
+                                repetition=rep,
+                                score=0.0,
+                                metrics={},
+                                prompt_tokens=0,
+                                completion_tokens=0,
+                                total_tokens=0,
+                                cost=None,
+                                latency_seconds=0.0,
+                                response="",
+                                cached=False,
+                                error=str(exc),
+                            )
+                        trials.append(trial)
+                        completed += 1
+                        if progress_callback is not None:
+                            progress_callback(completed, total, trial)
+        finally:
+            # Teardown all variants even if an exception occurred
+            for variant in variants:
+                variant.teardown()
 
         elapsed = time.monotonic() - run_start
         total_cost = sum(t.cost for t in trials if t.cost is not None)
@@ -310,6 +331,7 @@ class EvalRunner:
                 "cost": t.cost,
                 "latency_seconds": t.latency_seconds,
                 "cached": t.cached,
+                "error": t.error,
             })
 
         # -- by_variant aggregation ------------------------------------------
@@ -385,6 +407,7 @@ class EvalRunner:
         if fmt in ("csv", "both"):
             csv_fields = [
                 "task_id",
+                "task_type",
                 "variant_name",
                 "repetition",
                 "score",
@@ -394,6 +417,7 @@ class EvalRunner:
                 "cost",
                 "latency_seconds",
                 "cached",
+                "error",
             ]
 
             csv_path = output_dir / f"run_{timestamp}.csv"
@@ -408,6 +432,76 @@ class EvalRunner:
             paths.append(csv_path)
 
         return tuple(paths)
+
+    @staticmethod
+    def _extract_relevant_docs(
+        task: EvalTask,
+        doc_tree: DocTree,
+    ) -> list[str]:
+        """Extract relevant doc paths from task metadata.
+
+        Maps from various metadata keys used by different task types:
+        - ``expected_files`` → direct list (retrieval, canary, sentinel tasks)
+        - ``sources[].name`` → filenames matched against doc tree (conflicting)
+        - ``nearest_doc`` → single doc path (negative tasks)
+
+        Falls back to all doc tree paths when no file references are found.
+        """
+        meta = task.definition.metadata
+
+        # Direct file list
+        expected_files = meta.get("expected_files")
+        if expected_files and isinstance(expected_files, list):
+            return list(expected_files)
+
+        # Sources with name field (conflicting tasks)
+        sources = meta.get("sources")
+        if sources and isinstance(sources, list):
+            doc_paths: list[str] = []
+            for source in sources:
+                name = source.get("name", "") if isinstance(source, dict) else ""
+                if not name:
+                    continue
+                # Match filename against doc tree paths
+                for path in doc_tree.files:
+                    if path.endswith(name) or path.endswith(f"/{name}"):
+                        doc_paths.append(path)
+                        break
+            if doc_paths:
+                return doc_paths
+
+        # Single nearest doc (negative tasks)
+        nearest_doc = meta.get("nearest_doc")
+        if nearest_doc and isinstance(nearest_doc, str):
+            return [nearest_doc]
+
+        # Fallback: all docs (degrades oracle to full-index)
+        return list(doc_tree.files.keys())
+
+    def _setup_variant_for_task(
+        self,
+        variant: IndexVariant,
+        task: EvalTask,
+        doc_tree: DocTree,
+    ) -> None:
+        """Configure task-specific variant parameters before rendering.
+
+        For baseline variants that require per-task setup (oracle and
+        length-matched-random), this method extracts the relevant
+        information from task metadata and calls the appropriate setter.
+        """
+        if isinstance(variant, OracleBaseline):
+            relevant = self._extract_relevant_docs(task, doc_tree)
+            variant.set_relevant_docs(relevant)
+        elif isinstance(variant, LengthMatchedRandomBaseline):
+            relevant = self._extract_relevant_docs(task, doc_tree)
+            oracle_tokens = sum(
+                (doc_tree.files[p].token_count or 0)
+                for p in relevant
+                if p in doc_tree.files
+                and doc_tree.files[p].token_count is not None
+            )
+            variant.set_target_tokens(oracle_tokens)
 
     def _run_trial(
         self,
@@ -440,6 +534,9 @@ class EvalRunner:
             If the LLM call fails and no cached response is available.
         """
         trial_start = time.monotonic()
+
+        # Configure task-specific variant parameters (oracle, LMR)
+        self._setup_variant_for_task(variant, task, doc_tree)
 
         # Render and build prompt
         index_content = variant.render(doc_tree)

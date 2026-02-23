@@ -27,10 +27,10 @@ class TestLoadSampleDocTree:
         assert isinstance(tree, DocTree)
 
     def test_sample_doc_tree_has_expected_file_count(self) -> None:
-        """The fixture contains between 15 and 25 files."""
+        """The fixture contains between 50 and 80 files."""
         tree = load_sample_doc_tree()
         count = len(tree.files)
-        assert 15 <= count <= 25, f"Expected 15-25 files, got {count}"
+        assert 50 <= count <= 80, f"Expected 50-80 files, got {count}"
 
     def test_sample_doc_tree_files_have_content(self) -> None:
         """Every file in the tree has non-empty content."""

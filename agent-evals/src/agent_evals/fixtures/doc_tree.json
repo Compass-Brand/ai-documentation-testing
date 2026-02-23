@@ -328,9 +328,577 @@
         "repo/changelog.md",
         "workflows/ci-setup.md"
       ]
+    },
+    "guides/quickstart.md": {
+      "rel_path": "guides/quickstart.md",
+      "content": "# Quickstart\n\nGet DataForge running locally in under 5 minutes.\n\n## Prerequisites\n\n- Python 3.11+\n- PostgreSQL 14+\n- Redis (optional, for caching)\n\n## Installation\n\n```bash\npip install dataforge\ndataforge init my-project\ncd my-project\n```\n\n## First Run\n\n```bash\ndataforge serve --reload\n```\n\nVisit http://localhost:8000/docs to see the auto-generated API docs.\n\n## Next Steps\n\n- [Authentication](../api/auth.md) for securing endpoints\n- [Database](../api/database.md) for data models\n- [Configuration](../api/config.md) for environment setup\n",
+      "size_bytes": 542,
+      "token_count": 120,
+      "tier": "required",
+      "section": "guides",
+      "priority": 10,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Quick installation and first run guide for DataForge",
+      "related": [
+        "api/auth.md",
+        "api/database.md",
+        "api/config.md"
+      ]
+    },
+    "guides/project-structure.md": {
+      "rel_path": "guides/project-structure.md",
+      "content": "# Project Structure\n\nStandard DataForge project layout and file organization.\n\n## Directory Layout\n\n```\nmy-project/\n\u251c\u2500\u2500 src/\n\u2502   \u251c\u2500\u2500 models/       # ORM models\n\u2502   \u251c\u2500\u2500 routes/       # API endpoint handlers\n\u2502   \u251c\u2500\u2500 services/     # Business logic\n\u2502   \u251c\u2500\u2500 middleware/    # Request/response middleware\n\u2502   \u2514\u2500\u2500 utils/        # Shared utilities\n\u251c\u2500\u2500 tests/\n\u2502   \u251c\u2500\u2500 unit/         # Unit tests\n\u2502   \u2514\u2500\u2500 integration/  # Integration tests\n\u251c\u2500\u2500 migrations/       # Alembic database migrations\n\u251c\u2500\u2500 config/           # Configuration profiles\n\u2514\u2500\u2500 pyproject.toml    # Project metadata\n```\n\n## Naming Conventions\n\n- Models: singular PascalCase (e.g. User, OrderItem)\n- Routes: plural lowercase (e.g. users.py, orders.py)\n- Services: singular with suffix (e.g. user_service.py)\n\nSee [Architecture](../repo/architecture.md) for design philosophy.\n",
+      "size_bytes": 912,
+      "token_count": 150,
+      "tier": "recommended",
+      "section": "guides",
+      "priority": 7,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Standard directory layout and naming conventions for DataForge projects",
+      "related": [
+        "repo/architecture.md"
+      ]
+    },
+    "guides/environment-setup.md": {
+      "rel_path": "guides/environment-setup.md",
+      "content": "# Environment Setup\n\nDetailed development environment configuration for DataForge.\n\n## System Requirements\n\n| Component | Minimum | Recommended |\n|-----------|---------|-------------|\n| Python | 3.11 | 3.12 |\n| PostgreSQL | 14 | 16 |\n| RAM | 4 GB | 8 GB |\n| Disk | 2 GB | 5 GB |\n\n## Virtual Environment\n\n```bash\npython -m venv .venv\nsource .venv/bin/activate  # Linux/macOS\n.venv\\Scripts\\activate      # Windows\npip install -e \".[dev]\"\n```\n\n## IDE Configuration\n\n### VS Code\n\nInstall recommended extensions:\n- Python (Microsoft)\n- Pylance\n- Ruff\n\n### PyCharm\n\nEnable the Django/FastAPI plugin for template support.\n\nSee [Configuration](../api/config.md) for runtime settings.\n",
+      "size_bytes": 676,
+      "token_count": 140,
+      "tier": "recommended",
+      "section": "guides",
+      "priority": 6,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Development environment setup with IDE configuration",
+      "related": [
+        "api/config.md",
+        "guides/quickstart.md"
+      ]
+    },
+    "guides/data-modeling.md": {
+      "rel_path": "guides/data-modeling.md",
+      "content": "# Data Modeling\n\nDesign patterns for SQLAlchemy models in DataForge.\n\n## Base Model\n\nAll models inherit from the framework base with automatic timestamps:\n\n```python\nfrom framework.database import Base, TimestampMixin\n\nclass Product(Base, TimestampMixin):\n    __tablename__ = \"products\"\n    id = Column(Integer, primary_key=True)\n    name = Column(String(255), nullable=False)\n    price = Column(Numeric(10, 2), nullable=False)\n```\n\n## Relationships\n\nUse SQLAlchemy relationship patterns:\n\n```python\nclass Order(Base):\n    items = relationship(\"OrderItem\", back_populates=\"order\")\n\nclass OrderItem(Base):\n    order_id = Column(ForeignKey(\"orders.id\"))\n    order = relationship(\"Order\", back_populates=\"items\")\n```\n\n## Soft Deletes\n\nEnable soft deletes with the SoftDeleteMixin:\n\n```python\nclass User(Base, SoftDeleteMixin):\n    # adds deleted_at column, filters queries automatically\n    pass\n```\n\nSee [Database](../api/database.md) for connection setup and [Testing](../api/testing.md) for model tests.\n",
+      "size_bytes": 1004,
+      "token_count": 170,
+      "tier": "recommended",
+      "section": "guides",
+      "priority": 7,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "SQLAlchemy model patterns including relationships and soft deletes",
+      "related": [
+        "api/database.md",
+        "api/testing.md"
+      ]
+    },
+    "guides/error-handling-guide.md": {
+      "rel_path": "guides/error-handling-guide.md",
+      "content": "# Error Handling Guide\n\nBest practices for handling errors across your DataForge application.\n\n## Layered Error Strategy\n\n1. **Route layer**: Catch known errors, return appropriate HTTP status\n2. **Service layer**: Raise domain-specific exceptions\n3. **Middleware**: Catch unhandled exceptions, log and return 500\n\n## Custom Exceptions\n\n```python\nfrom framework.errors import DomainError\n\nclass InsufficientFundsError(DomainError):\n    code = \"INSUFFICIENT_FUNDS\"\n    status_code = 422\n```\n\n## Error Logging\n\nErrors are automatically logged with context:\n\n```python\nlogger.error(\"Payment failed\", extra={\n    \"user_id\": user.id,\n    \"amount\": amount,\n    \"error_code\": exc.code,\n})\n```\n\nSee [Error Handling](../api/errors.md) for response format and [Logging](../api/logging.md) for log configuration.\n",
+      "size_bytes": 802,
+      "token_count": 145,
+      "tier": "recommended",
+      "section": "guides",
+      "priority": 6,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Layered error handling strategy with custom exceptions and logging",
+      "related": [
+        "api/errors.md",
+        "api/logging.md"
+      ]
+    },
+    "guides/pagination.md": {
+      "rel_path": "guides/pagination.md",
+      "content": "# Pagination\n\nBuilt-in pagination support for list endpoints.\n\n## Cursor-Based Pagination\n\n```python\nfrom framework.pagination import CursorPaginator\n\n@app.get(\"/api/products\")\nasync def list_products(cursor: str = None, limit: int = 20):\n    paginator = CursorPaginator(Product, limit=limit)\n    return await paginator.paginate(cursor=cursor)\n```\n\n## Offset-Based Pagination\n\n```python\nfrom framework.pagination import OffsetPaginator\n\n@app.get(\"/api/orders\")\nasync def list_orders(page: int = 1, per_page: int = 25):\n    paginator = OffsetPaginator(Order, per_page=per_page)\n    return await paginator.paginate(page=page)\n```\n\n## Response Format\n\n```json\n{\n  \"data\": [...],\n  \"pagination\": {\n    \"next_cursor\": \"abc123\",\n    \"has_more\": true,\n    \"total\": 150\n  }\n}\n```\n\nSee [Users API](../api/users.md) for pagination examples in practice.\n",
+      "size_bytes": 843,
+      "token_count": 155,
+      "tier": "recommended",
+      "section": "guides",
+      "priority": 5,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Cursor and offset pagination for list endpoints",
+      "related": [
+        "api/users.md",
+        "api/database.md"
+      ]
+    },
+    "guides/validation.md": {
+      "rel_path": "guides/validation.md",
+      "content": "# Input Validation\n\nRequest validation using Pydantic models.\n\n## Schema Definition\n\n```python\nfrom pydantic import BaseModel, EmailStr, Field\n\nclass CreateUserRequest(BaseModel):\n    email: EmailStr\n    name: str = Field(min_length=1, max_length=100)\n    age: int = Field(ge=0, le=150)\n```\n\n## Automatic Validation\n\nRoute handlers with typed parameters validate automatically:\n\n```python\n@app.post(\"/api/users\")\nasync def create_user(data: CreateUserRequest):\n    # data is already validated\n    return await user_service.create(data)\n```\n\n## Custom Validators\n\n```python\nfrom pydantic import field_validator\n\nclass TransferRequest(BaseModel):\n    amount: float\n\n    @field_validator(\"amount\")\n    @classmethod\n    def amount_must_be_positive(cls, v):\n        if v <= 0:\n            raise ValueError(\"Amount must be positive\")\n        return v\n```\n\nSee [Error Handling](../api/errors.md) for validation error response format.\n",
+      "size_bytes": 927,
+      "token_count": 150,
+      "tier": "recommended",
+      "section": "guides",
+      "priority": 7,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Pydantic-based request validation with custom validators",
+      "related": [
+        "api/errors.md",
+        "api/users.md"
+      ]
+    },
+    "guides/background-tasks.md": {
+      "rel_path": "guides/background-tasks.md",
+      "content": "# Background Tasks\n\nRunning async background work in DataForge.\n\n## Simple Tasks\n\n```python\nfrom framework.tasks import background_task\n\n@background_task\nasync def send_welcome_email(user_id: int):\n    user = await user_service.get(user_id)\n    await email_service.send_template(\"welcome\", user.email)\n```\n\n## Task Queues\n\nFor reliable task processing, use the Celery integration:\n\n```python\nfrom framework.tasks import celery_app\n\n@celery_app.task(bind=True, max_retries=3)\ndef process_payment(self, order_id: int):\n    try:\n        payment_service.charge(order_id)\n    except PaymentError as exc:\n        self.retry(exc=exc, countdown=60)\n```\n\n## Scheduled Tasks\n\n```python\nfrom framework.tasks import scheduler\n\n@scheduler.cron(\"0 */6 * * *\")  # every 6 hours\nasync def cleanup_expired_tokens():\n    await auth_service.purge_expired()\n```\n\nSee [Deployment](../api/deployment.md) for worker configuration.\n",
+      "size_bytes": 908,
+      "token_count": 155,
+      "tier": "reference",
+      "section": "guides",
+      "priority": 4,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Background task execution with Celery queues and scheduling",
+      "related": [
+        "api/deployment.md"
+      ]
+    },
+    "integrations/email.md": {
+      "rel_path": "integrations/email.md",
+      "content": "# Email Integration\n\nSending transactional emails from DataForge.\n\n## Configuration\n\n```python\nEMAIL_PROVIDER=sendgrid\nSENDGRID_API_KEY=SG.xxx\nEMAIL_FROM=noreply@example.com\n```\n\n## Sending Emails\n\n```python\nfrom framework.email import send_email\n\nawait send_email(\n    to=\"user@example.com\",\n    subject=\"Welcome!\",\n    template=\"welcome\",\n    context={\"name\": \"Alice\"},\n)\n```\n\n## Templates\n\nEmail templates use Jinja2 and live in templates/email/:\n\n```html\n<h1>Welcome, {{ name }}!</h1>\n<p>Your account has been created.</p>\n```\n\nSee [Configuration](../api/config.md) for email provider settings.\n",
+      "size_bytes": 599,
+      "token_count": 120,
+      "tier": "reference",
+      "section": "integrations",
+      "priority": 4,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Transactional email with SendGrid and Jinja2 templates",
+      "related": [
+        "api/config.md"
+      ]
+    },
+    "integrations/storage.md": {
+      "rel_path": "integrations/storage.md",
+      "content": "# File Storage\n\nCloud and local file storage abstraction.\n\n## Storage Backends\n\n```python\nfrom framework.storage import Storage, S3Backend, LocalBackend\n\n# Production\nstorage = Storage(backend=S3Backend(\n    bucket=\"my-app-files\",\n    region=\"us-east-1\",\n))\n\n# Development\nstorage = Storage(backend=LocalBackend(path=\"./uploads\"))\n```\n\n## Uploading Files\n\n```python\n@app.post(\"/api/files/upload\")\nasync def upload_file(file: UploadFile):\n    url = await storage.put(\n        key=f\"uploads/{file.filename}\",\n        data=await file.read(),\n        content_type=file.content_type,\n    )\n    return {\"url\": url}\n```\n\n## Signed URLs\n\nGenerate time-limited access URLs:\n\n```python\nurl = await storage.signed_url(\"uploads/report.pdf\", expires=3600)\n```\n\nSee [Configuration](../api/config.md) for AWS credential setup.\n",
+      "size_bytes": 812,
+      "token_count": 145,
+      "tier": "reference",
+      "section": "integrations",
+      "priority": 4,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Cloud and local file storage with S3 and signed URLs",
+      "related": [
+        "api/config.md"
+      ]
+    },
+    "integrations/search.md": {
+      "rel_path": "integrations/search.md",
+      "content": "# Search Integration\n\nFull-text search with Elasticsearch or Meilisearch.\n\n## Configuration\n\n```python\nSEARCH_BACKEND=meilisearch\nMEILISEARCH_URL=http://localhost:7700\nMEILISEARCH_API_KEY=masterKey\n```\n\n## Indexing Documents\n\n```python\nfrom framework.search import SearchIndex\n\nindex = SearchIndex(\"products\")\nawait index.add_documents([\n    {\"id\": 1, \"name\": \"Widget\", \"description\": \"A useful widget\"},\n    {\"id\": 2, \"name\": \"Gadget\", \"description\": \"A handy gadget\"},\n])\n```\n\n## Searching\n\n```python\nresults = await index.search(\"widget\", filters={\"category\": \"tools\"})\nfor hit in results.hits:\n    print(hit.name, hit.score)\n```\n\nSee [Database](../api/database.md) for keeping search indexes in sync with models.\n",
+      "size_bytes": 717,
+      "token_count": 135,
+      "tier": "reference",
+      "section": "integrations",
+      "priority": 3,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Full-text search with Meilisearch or Elasticsearch",
+      "related": [
+        "api/database.md",
+        "api/config.md"
+      ]
+    },
+    "integrations/monitoring.md": {
+      "rel_path": "integrations/monitoring.md",
+      "content": "# Monitoring Integration\n\nApplication performance monitoring and alerting.\n\n## Metrics Collection\n\n```python\nfrom framework.monitoring import metrics\n\n@app.middleware(\"http\")\nasync def track_requests(request, call_next):\n    with metrics.timer(\"http_request_duration\"):\n        response = await call_next(request)\n    metrics.increment(\"http_requests_total\", tags={\n        \"method\": request.method,\n        \"status\": response.status_code,\n    })\n    return response\n```\n\n## Health Checks\n\n```python\nfrom framework.monitoring import health\n\nhealth.register(\"database\", check_db_connection)\nhealth.register(\"redis\", check_redis_connection)\nhealth.register(\"storage\", check_s3_access)\n```\n\n## Alerting\n\nConfigure alerts in monitoring.yaml:\n\n```yaml\nalerts:\n  - name: high_error_rate\n    condition: \"rate(http_5xx) > 0.05\"\n    channel: slack\n```\n\nSee [Logging](../api/logging.md) for structured log integration.\n",
+      "size_bytes": 909,
+      "token_count": 150,
+      "tier": "reference",
+      "section": "integrations",
+      "priority": 4,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Application metrics collection, health checks, and alerting",
+      "related": [
+        "api/logging.md",
+        "api/deployment.md"
+      ]
+    },
+    "integrations/webhooks.md": {
+      "rel_path": "integrations/webhooks.md",
+      "content": "# Webhook Integration\n\nSending and receiving webhooks in DataForge.\n\n## Sending Webhooks\n\n```python\nfrom framework.webhooks import WebhookSender\n\nsender = WebhookSender()\nawait sender.send(\n    url=\"https://api.partner.com/webhook\",\n    event=\"order.completed\",\n    payload={\"order_id\": 123, \"total\": 99.99},\n)\n```\n\n## Receiving Webhooks\n\n```python\nfrom framework.webhooks import verify_signature\n\n@app.post(\"/webhooks/stripe\")\nasync def handle_stripe(request: Request):\n    payload = await request.body()\n    verify_signature(payload, request.headers[\"stripe-signature\"])\n    event = json.loads(payload)\n    await process_stripe_event(event)\n```\n\n## Retry Policy\n\nFailed webhook deliveries retry with exponential backoff:\n- Attempt 1: immediate\n- Attempt 2: 1 minute\n- Attempt 3: 5 minutes\n- Attempt 4: 30 minutes\n- Attempt 5: 2 hours\n\nSee [Error Handling](../api/errors.md) for webhook error responses.\n",
+      "size_bytes": 905,
+      "token_count": 155,
+      "tier": "reference",
+      "section": "integrations",
+      "priority": 3,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Webhook sending, receiving, signature verification, and retry policy",
+      "related": [
+        "api/errors.md"
+      ]
+    },
+    "integrations/oauth.md": {
+      "rel_path": "integrations/oauth.md",
+      "content": "# OAuth Integration\n\nSocial login and OAuth2 provider support.\n\n## Supported Providers\n\n- Google\n- GitHub\n- Microsoft Azure AD\n- Custom OIDC\n\n## Configuration\n\n```python\nOAUTH_GOOGLE_CLIENT_ID=xxx.apps.googleusercontent.com\nOAUTH_GOOGLE_CLIENT_SECRET=xxx\nOAUTH_GITHUB_CLIENT_ID=xxx\nOAUTH_GITHUB_CLIENT_SECRET=xxx\n```\n\n## Login Flow\n\n```python\nfrom framework.oauth import OAuthRouter\n\noauth = OAuthRouter()\n\n@oauth.login(\"google\")\nasync def google_callback(user_info):\n    user = await user_service.find_or_create(\n        email=user_info.email,\n        provider=\"google\",\n    )\n    return create_session(user)\n```\n\nSee [Authentication](../api/auth.md) for JWT integration with OAuth.\n",
+      "size_bytes": 684,
+      "token_count": 130,
+      "tier": "recommended",
+      "section": "integrations",
+      "priority": 6,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Social login with Google, GitHub, and custom OIDC providers",
+      "related": [
+        "api/auth.md",
+        "api/config.md"
+      ]
+    },
+    "integrations/notifications.md": {
+      "rel_path": "integrations/notifications.md",
+      "content": "# Notifications\n\nMulti-channel notification delivery.\n\n## Channels\n\n- Email (SendGrid, SES)\n- SMS (Twilio)\n- Push (Firebase Cloud Messaging)\n- In-app (WebSocket)\n\n## Sending Notifications\n\n```python\nfrom framework.notifications import notify\n\nawait notify(\n    user_id=123,\n    template=\"order_shipped\",\n    channels=[\"email\", \"push\"],\n    context={\"tracking_number\": \"1Z999AA10123456784\"},\n)\n```\n\n## Notification Preferences\n\nUsers control which channels they receive on:\n\n```python\nprefs = await notification_service.get_preferences(user_id=123)\n# {\"email\": True, \"sms\": False, \"push\": True}\n```\n\nSee [Email](email.md) for email-specific configuration.\n",
+      "size_bytes": 655,
+      "token_count": 125,
+      "tier": "reference",
+      "section": "integrations",
+      "priority": 3,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Multi-channel notifications via email, SMS, push, and in-app",
+      "related": [
+        "integrations/email.md"
+      ]
+    },
+    "sdks/python-sdk.md": {
+      "rel_path": "sdks/python-sdk.md",
+      "content": "# Python SDK\n\nOfficial Python client for the DataForge API.\n\n## Installation\n\n```bash\npip install dataforge-sdk\n```\n\n## Authentication\n\n```python\nfrom dataforge import Client\n\nclient = Client(\n    base_url=\"https://api.example.com\",\n    api_key=\"df_live_xxx\",\n)\n```\n\n## Usage Examples\n\n```python\n# List users\nusers = client.users.list(page=1, per_page=10)\n\n# Create a user\nuser = client.users.create(\n    email=\"alice@example.com\",\n    name=\"Alice\",\n)\n\n# Get user by ID\nuser = client.users.get(user_id=123)\n```\n\n## Error Handling\n\n```python\nfrom dataforge.exceptions import APIError, RateLimitError\n\ntry:\n    client.users.create(email=\"duplicate@example.com\")\nexcept RateLimitError:\n    time.sleep(60)\nexcept APIError as e:\n    print(f\"Error {e.code}: {e.message}\")\n```\n\nSee [Users API](../api/users.md) for endpoint details.\n",
+      "size_bytes": 826,
+      "token_count": 155,
+      "tier": "recommended",
+      "section": "sdks",
+      "priority": 6,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Official Python client SDK with authentication and error handling",
+      "related": [
+        "api/users.md",
+        "api/auth.md"
+      ]
+    },
+    "sdks/javascript-sdk.md": {
+      "rel_path": "sdks/javascript-sdk.md",
+      "content": "# JavaScript SDK\n\nOfficial JavaScript/TypeScript client for DataForge.\n\n## Installation\n\n```bash\nnpm install @dataforge/sdk\n```\n\n## Setup\n\n```typescript\nimport { DataForge } from \"@dataforge/sdk\";\n\nconst client = new DataForge({\n  baseUrl: \"https://api.example.com\",\n  apiKey: \"df_live_xxx\",\n});\n```\n\n## Usage\n\n```typescript\n// Async/await\nconst users = await client.users.list({ page: 1 });\n\n// Create user\nconst user = await client.users.create({\n  email: \"bob@example.com\",\n  name: \"Bob\",\n});\n```\n\n## TypeScript Types\n\nAll responses are fully typed:\n\n```typescript\nimport type { User, PaginatedResponse } from \"@dataforge/sdk\";\n\nconst response: PaginatedResponse<User> = await client.users.list();\n```\n\nSee [Authentication](../api/auth.md) for token-based auth in browser apps.\n",
+      "size_bytes": 781,
+      "token_count": 145,
+      "tier": "recommended",
+      "section": "sdks",
+      "priority": 6,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "JavaScript/TypeScript SDK with full type support",
+      "related": [
+        "api/auth.md",
+        "api/users.md"
+      ]
+    },
+    "sdks/cli.md": {
+      "rel_path": "sdks/cli.md",
+      "content": "# CLI Reference\n\nDataForge command-line interface for project management.\n\n## Global Commands\n\n```bash\ndataforge init <name>       # Create new project\ndataforge serve              # Start development server\ndataforge serve --reload     # Auto-reload on changes\ndataforge test               # Run test suite\ndataforge lint               # Run linter\n```\n\n## Database Commands\n\n```bash\ndataforge db migrate         # Apply pending migrations\ndataforge db rollback        # Revert last migration\ndataforge db seed             # Seed development data\ndataforge db reset            # Drop and recreate database\n```\n\n## Code Generation\n\n```bash\ndataforge generate model User email:str name:str\ndataforge generate route users --crud\ndataforge generate migration add_users_table\n```\n\n## Configuration\n\n```bash\ndataforge config show        # Display current configuration\ndataforge config set KEY=VAL # Set configuration value\n```\n\nSee [Configuration](../api/config.md) for environment variable reference.\n",
+      "size_bytes": 998,
+      "token_count": 160,
+      "tier": "required",
+      "section": "sdks",
+      "priority": 8,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "CLI commands for project management, database, and code generation",
+      "related": [
+        "api/config.md",
+        "api/database.md"
+      ]
+    },
+    "sdks/rest-api.md": {
+      "rel_path": "sdks/rest-api.md",
+      "content": "# REST API Reference\n\nComplete endpoint reference for the DataForge API.\n\n## Base URL\n\n```\nhttps://api.example.com/v1\n```\n\n## Authentication\n\nAll requests require a Bearer token:\n\n```\nAuthorization: Bearer <access_token>\n```\n\n## Endpoints\n\n### Users\n\n| Method | Path | Description |\n|--------|------|-------------|\n| GET | /users | List users |\n| POST | /users | Create user |\n| GET | /users/:id | Get user |\n| PATCH | /users/:id | Update user |\n| DELETE | /users/:id | Delete user |\n\n### Products\n\n| Method | Path | Description |\n|--------|------|-------------|\n| GET | /products | List products |\n| POST | /products | Create product |\n| GET | /products/:id | Get product |\n\n## Rate Limiting\n\n- 100 requests per minute per API key\n- 429 response when exceeded\n- Retry-After header indicates wait time\n\nSee [Error Handling](../api/errors.md) for error response format.\n",
+      "size_bytes": 869,
+      "token_count": 160,
+      "tier": "required",
+      "section": "sdks",
+      "priority": 9,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Complete REST API endpoint reference with rate limiting",
+      "related": [
+        "api/errors.md",
+        "api/auth.md",
+        "api/users.md"
+      ]
+    },
+    "sdks/graphql.md": {
+      "rel_path": "sdks/graphql.md",
+      "content": "# GraphQL API\n\nOptional GraphQL layer for the DataForge API.\n\n## Schema\n\n```graphql\ntype Query {\n  user(id: ID!): User\n  users(page: Int, perPage: Int): UserConnection!\n  product(id: ID!): Product\n}\n\ntype Mutation {\n  createUser(input: CreateUserInput!): User!\n  updateUser(id: ID!, input: UpdateUserInput!): User!\n}\n```\n\n## Queries\n\n```graphql\nquery GetUser {\n  user(id: \"123\") {\n    id\n    email\n    name\n    orders {\n      id\n      total\n    }\n  }\n}\n```\n\n## Subscriptions\n\n```graphql\nsubscription OrderUpdates {\n  orderStatusChanged(userId: \"123\") {\n    orderId\n    status\n  }\n}\n```\n\nSee [Authentication](../api/auth.md) for GraphQL auth headers.\n",
+      "size_bytes": 650,
+      "token_count": 140,
+      "tier": "reference",
+      "section": "sdks",
+      "priority": 4,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "GraphQL schema, queries, mutations, and subscriptions",
+      "related": [
+        "api/auth.md",
+        "api/users.md"
+      ]
+    },
+    "sdks/openapi.md": {
+      "rel_path": "sdks/openapi.md",
+      "content": "# OpenAPI Specification\n\nAuto-generated API documentation from code.\n\n## Accessing Docs\n\n- Swagger UI: http://localhost:8000/docs\n- ReDoc: http://localhost:8000/redoc\n- OpenAPI JSON: http://localhost:8000/openapi.json\n\n## Customizing Docs\n\n```python\nfrom framework.docs import configure_docs\n\nconfigure_docs(\n    title=\"My API\",\n    version=\"2.0.0\",\n    description=\"Production API for MyApp\",\n)\n```\n\n## Adding Examples\n\n```python\nclass CreateUserRequest(BaseModel):\n    email: str\n    name: str\n\n    model_config = {\n        \"json_schema_extra\": {\n            \"examples\": [{\n                \"email\": \"alice@example.com\",\n                \"name\": \"Alice\",\n            }]\n        }\n    }\n```\n\nSee [REST API](rest-api.md) for endpoint reference.\n",
+      "size_bytes": 743,
+      "token_count": 130,
+      "tier": "reference",
+      "section": "sdks",
+      "priority": 3,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Auto-generated OpenAPI documentation with Swagger and ReDoc",
+      "related": [
+        "sdks/rest-api.md"
+      ]
+    },
+    "sdks/websockets.md": {
+      "rel_path": "sdks/websockets.md",
+      "content": "# WebSocket API\n\nReal-time communication via WebSockets.\n\n## Connection\n\n```javascript\nconst ws = new WebSocket(\"wss://api.example.com/ws\");\n\nws.onopen = () => {\n  ws.send(JSON.stringify({\n    type: \"auth\",\n    token: \"<access_token>\",\n  }));\n};\n```\n\n## Events\n\n```javascript\nws.onmessage = (event) => {\n  const data = JSON.parse(event.data);\n  switch (data.type) {\n    case \"notification\":\n      handleNotification(data.payload);\n      break;\n    case \"order_update\":\n      handleOrderUpdate(data.payload);\n      break;\n  }\n};\n```\n\n## Server-Side\n\n```python\nfrom framework.websockets import WebSocketRouter\n\nws_router = WebSocketRouter()\n\n@ws_router.on(\"chat_message\")\nasync def handle_chat(ws, data):\n    await ws.broadcast(\"chat_message\", data)\n```\n\nSee [Authentication](../api/auth.md) for WebSocket auth flow.\n",
+      "size_bytes": 815,
+      "token_count": 150,
+      "tier": "reference",
+      "section": "sdks",
+      "priority": 4,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Real-time WebSocket communication with auth and event handling",
+      "related": [
+        "api/auth.md"
+      ]
+    },
+    "tutorials/build-rest-api.md": {
+      "rel_path": "tutorials/build-rest-api.md",
+      "content": "# Tutorial: Build a REST API\n\nStep-by-step guide to building a complete CRUD API.\n\n## Step 1: Create Project\n\n```bash\ndataforge init todo-api\ncd todo-api\n```\n\n## Step 2: Define Model\n\n```python\n# src/models/todo.py\nfrom framework.database import Base\nfrom sqlalchemy import Column, Integer, String, Boolean\n\nclass Todo(Base):\n    __tablename__ = \"todos\"\n    id = Column(Integer, primary_key=True)\n    title = Column(String(200), nullable=False)\n    completed = Column(Boolean, default=False)\n```\n\n## Step 3: Create Routes\n\n```python\n# src/routes/todos.py\n@app.get(\"/api/todos\")\nasync def list_todos():\n    return await Todo.all()\n\n@app.post(\"/api/todos\")\nasync def create_todo(data: CreateTodoRequest):\n    return await Todo.create(**data.model_dump())\n```\n\n## Step 4: Run and Test\n\n```bash\ndataforge db migrate\ndataforge serve --reload\ncurl http://localhost:8000/api/todos\n```\n\nSee [Database](../api/database.md) for model details and [Testing](../api/testing.md) for writing API tests.\n",
+      "size_bytes": 988,
+      "token_count": 175,
+      "tier": "recommended",
+      "section": "tutorials",
+      "priority": 7,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Step-by-step tutorial building a complete CRUD REST API",
+      "related": [
+        "api/database.md",
+        "api/testing.md"
+      ]
+    },
+    "tutorials/authentication-flow.md": {
+      "rel_path": "tutorials/authentication-flow.md",
+      "content": "# Tutorial: Authentication Flow\n\nImplement complete auth with login, registration, and password reset.\n\n## Step 1: User Registration\n\n```python\n@app.post(\"/api/auth/register\")\nasync def register(data: RegisterRequest):\n    hashed = hash_password(data.password)\n    user = await user_service.create(\n        email=data.email, password_hash=hashed\n    )\n    token = create_access_token(user.id)\n    return {\"access_token\": token}\n```\n\n## Step 2: Login\n\n```python\n@app.post(\"/api/auth/login\")\nasync def login(data: LoginRequest):\n    user = await user_service.authenticate(\n        data.email, data.password\n    )\n    if not user:\n        raise APIError(401, \"INVALID_CREDENTIALS\")\n    return {\"access_token\": create_access_token(user.id)}\n```\n\n## Step 3: Password Reset\n\n```python\n@app.post(\"/api/auth/forgot-password\")\nasync def forgot_password(data: ForgotPasswordRequest):\n    token = await auth_service.create_reset_token(data.email)\n    await send_email(data.email, \"reset_password\", {\"token\": token})\n```\n\nSee [Authentication](../api/auth.md) for middleware details.\n",
+      "size_bytes": 1071,
+      "token_count": 170,
+      "tier": "recommended",
+      "section": "tutorials",
+      "priority": 7,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Complete auth tutorial with registration, login, and password reset",
+      "related": [
+        "api/auth.md",
+        "integrations/email.md"
+      ]
+    },
+    "tutorials/testing-guide.md": {
+      "rel_path": "tutorials/testing-guide.md",
+      "content": "# Tutorial: Writing Tests\n\nComprehensive guide to testing DataForge applications.\n\n## Unit Tests\n\n```python\nimport pytest\nfrom src.services.user_service import UserService\n\n@pytest.fixture\ndef user_service(db_session):\n    return UserService(db_session)\n\nasync def test_create_user(user_service):\n    user = await user_service.create(\n        email=\"test@example.com\", name=\"Test\"\n    )\n    assert user.email == \"test@example.com\"\n    assert user.id is not None\n```\n\n## Integration Tests\n\n```python\nasync def test_create_user_endpoint(client):\n    response = await client.post(\"/api/users\", json={\n        \"email\": \"new@example.com\",\n        \"name\": \"New User\",\n    })\n    assert response.status_code == 201\n    assert response.json()[\"email\"] == \"new@example.com\"\n```\n\n## Test Database\n\nEach test gets an isolated database transaction that rolls back:\n\n```python\n@pytest.fixture\nasync def db_session():\n    async with test_engine.begin() as conn:\n        yield conn\n        await conn.rollback()\n```\n\nSee [Testing](../api/testing.md) for framework test utilities.\n",
+      "size_bytes": 1065,
+      "token_count": 165,
+      "tier": "recommended",
+      "section": "tutorials",
+      "priority": 7,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Testing guide covering unit tests, integration tests, and test database setup",
+      "related": [
+        "api/testing.md",
+        "api/database.md"
+      ]
+    },
+    "tutorials/deployment-guide.md": {
+      "rel_path": "tutorials/deployment-guide.md",
+      "content": "# Tutorial: Production Deployment\n\nDeploy DataForge to production with Docker and CI/CD.\n\n## Step 1: Dockerfile\n\n```dockerfile\nFROM python:3.12-slim as builder\nWORKDIR /app\nCOPY pyproject.toml .\nRUN pip install --no-cache-dir .\n\nFROM python:3.12-slim\nCOPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12\nCOPY src/ /app/src/\nCMD [\"uvicorn\", \"src.main:app\", \"--host\", \"0.0.0.0\"]\n```\n\n## Step 2: Environment\n\nCreate .env.production with production values:\n\n```\nDATABASE_URL=postgresql://prod_user:xxx@db.host/myapp\nJWT_SECRET=<generated-secret>\nLOG_LEVEL=WARNING\n```\n\n## Step 3: Database Migration\n\n```bash\ndataforge db migrate --env production\n```\n\n## Step 4: Health Checks\n\nVerify deployment:\n\n```bash\ncurl https://api.example.com/health\n# {\"status\": \"ok\", \"database\": \"connected\", \"cache\": \"connected\"}\n```\n\nSee [Deployment](../api/deployment.md) for Docker Compose and CI/CD details.\n",
+      "size_bytes": 904,
+      "token_count": 155,
+      "tier": "recommended",
+      "section": "tutorials",
+      "priority": 6,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Production deployment tutorial with Docker and health checks",
+      "related": [
+        "api/deployment.md",
+        "api/config.md"
+      ]
+    },
+    "tutorials/file-uploads.md": {
+      "rel_path": "tutorials/file-uploads.md",
+      "content": "# Tutorial: File Uploads\n\nHandle file uploads with validation and cloud storage.\n\n## Step 1: Upload Endpoint\n\n```python\nfrom fastapi import UploadFile\n\n@app.post(\"/api/files\")\nasync def upload(file: UploadFile):\n    if file.size > 10_000_000:  # 10 MB limit\n        raise APIError(413, \"FILE_TOO_LARGE\")\n\n    key = f\"uploads/{uuid4()}/{file.filename}\"\n    url = await storage.put(key, await file.read())\n    return {\"url\": url, \"filename\": file.filename}\n```\n\n## Step 2: Image Processing\n\n```python\nfrom PIL import Image\n\nasync def create_thumbnail(file_key: str):\n    data = await storage.get(file_key)\n    img = Image.open(io.BytesIO(data))\n    img.thumbnail((200, 200))\n    thumb_key = file_key.replace(\"uploads/\", \"thumbs/\")\n    await storage.put(thumb_key, img_to_bytes(img))\n```\n\n## Step 3: Download\n\n```python\n@app.get(\"/api/files/{file_id}/download\")\nasync def download(file_id: str):\n    url = await storage.signed_url(f\"uploads/{file_id}\")\n    return RedirectResponse(url)\n```\n\nSee [Storage](../integrations/storage.md) for backend configuration.\n",
+      "size_bytes": 1057,
+      "token_count": 160,
+      "tier": "reference",
+      "section": "tutorials",
+      "priority": 5,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "File upload tutorial with validation, thumbnails, and cloud storage",
+      "related": [
+        "integrations/storage.md",
+        "api/errors.md"
+      ]
+    },
+    "tutorials/rate-limiting.md": {
+      "rel_path": "tutorials/rate-limiting.md",
+      "content": "# Tutorial: Rate Limiting\n\nProtect your API with configurable rate limits.\n\n## Basic Rate Limiting\n\n```python\nfrom framework.ratelimit import RateLimiter\n\nlimiter = RateLimiter(\n    default_limit=\"100/minute\",\n    storage=\"redis://localhost:6379\",\n)\napp.add_middleware(limiter.middleware)\n```\n\n## Per-Endpoint Limits\n\n```python\n@app.post(\"/api/auth/login\")\n@limiter.limit(\"5/minute\")\nasync def login(data: LoginRequest):\n    return await auth_service.login(data)\n\n@app.get(\"/api/products\")\n@limiter.limit(\"200/minute\")\nasync def list_products():\n    return await product_service.list()\n```\n\n## Custom Keys\n\nRate limit by user ID instead of IP:\n\n```python\n@limiter.limit(\"50/minute\", key_func=lambda req: req.state.user.id)\nasync def create_order(data: OrderRequest):\n    ...\n```\n\n## Response Headers\n\nResponses include rate limit headers:\n- X-RateLimit-Limit: 100\n- X-RateLimit-Remaining: 95\n- X-RateLimit-Reset: 1640000000\n\nSee [Caching](../api/caching.md) for Redis configuration.\n",
+      "size_bytes": 983,
+      "token_count": 165,
+      "tier": "reference",
+      "section": "tutorials",
+      "priority": 5,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Rate limiting with per-endpoint limits and Redis storage",
+      "related": [
+        "api/caching.md",
+        "api/middleware.md"
+      ]
+    },
+    "tutorials/websocket-chat.md": {
+      "rel_path": "tutorials/websocket-chat.md",
+      "content": "# Tutorial: WebSocket Chat\n\nBuild a real-time chat application with WebSockets.\n\n## Step 1: Server Setup\n\n```python\nfrom framework.websockets import WebSocketRouter\n\nchat = WebSocketRouter(prefix=\"/ws/chat\")\n\nconnected_users = {}\n\n@chat.on_connect\nasync def handle_connect(ws, user):\n    connected_users[user.id] = ws\n    await ws.broadcast(\"user_joined\", {\"user\": user.name})\n\n@chat.on_disconnect\nasync def handle_disconnect(ws, user):\n    del connected_users[user.id]\n    await ws.broadcast(\"user_left\", {\"user\": user.name})\n```\n\n## Step 2: Message Handling\n\n```python\n@chat.on(\"message\")\nasync def handle_message(ws, data):\n    await ws.broadcast(\"message\", {\n        \"user\": ws.user.name,\n        \"text\": data[\"text\"],\n        \"timestamp\": datetime.utcnow().isoformat(),\n    })\n```\n\n## Step 3: Client\n\n```javascript\nconst ws = new WebSocket(\"wss://api.example.com/ws/chat\");\nws.send(JSON.stringify({type: \"message\", text: \"Hello!\"}));\n```\n\nSee [WebSockets](../sdks/websockets.md) for connection details.\n",
+      "size_bytes": 1008,
+      "token_count": 170,
+      "tier": "reference",
+      "section": "tutorials",
+      "priority": 4,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Real-time WebSocket chat tutorial with connection management",
+      "related": [
+        "sdks/websockets.md",
+        "api/auth.md"
+      ]
+    },
+    "reference/permissions.md": {
+      "rel_path": "reference/permissions.md",
+      "content": "# Permissions Reference\n\nRole-based access control (RBAC) system.\n\n## Built-in Roles\n\n| Role | Description | Level |\n|------|-------------|-------|\n| admin | Full system access | 100 |\n| manager | Team and resource management | 75 |\n| editor | Content creation and editing | 50 |\n| viewer | Read-only access | 25 |\n\n## Permission Decorators\n\n```python\nfrom framework.auth import require_role, require_permission\n\n@app.delete(\"/api/users/{id}\")\n@require_role(\"admin\")\nasync def delete_user(id: int):\n    await user_service.delete(id)\n\n@app.patch(\"/api/posts/{id}\")\n@require_permission(\"posts.edit\")\nasync def edit_post(id: int, data: EditPostRequest):\n    return await post_service.update(id, data)\n```\n\n## Custom Permissions\n\n```python\nfrom framework.auth import Permission\n\nclass Permissions:\n    MANAGE_USERS = Permission(\"users.manage\")\n    EDIT_POSTS = Permission(\"posts.edit\")\n    VIEW_REPORTS = Permission(\"reports.view\")\n```\n\nSee [Authentication](../api/auth.md) for token-based auth.\n",
+      "size_bytes": 992,
+      "token_count": 155,
+      "tier": "recommended",
+      "section": "reference",
+      "priority": 7,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Role-based access control with built-in roles and permission decorators",
+      "related": [
+        "api/auth.md",
+        "api/users.md"
+      ]
+    },
+    "reference/environment-variables.md": {
+      "rel_path": "reference/environment-variables.md",
+      "content": "# Environment Variables Reference\n\nComplete list of all configuration variables.\n\n## Core\n\n| Variable | Required | Default | Description |\n|----------|----------|---------|-------------|\n| APP_NAME | No | DataForge | Application name |\n| APP_ENV | No | development | Environment name |\n| APP_DEBUG | No | false | Debug mode |\n| APP_PORT | No | 8000 | Server port |\n| APP_HOST | No | 0.0.0.0 | Server host |\n\n## Database\n\n| Variable | Required | Default | Description |\n|----------|----------|---------|-------------|\n| DATABASE_URL | Yes | -- | PostgreSQL URL |\n| POOL_SIZE | No | 10 | Connection pool size |\n| MAX_OVERFLOW | No | 20 | Max overflow connections |\n\n## Authentication\n\n| Variable | Required | Default | Description |\n|----------|----------|---------|-------------|\n| JWT_SECRET | Yes | -- | Token signing key |\n| JWT_ALGORITHM | No | HS256 | Signing algorithm |\n| JWT_EXPIRY | No | 3600 | Token TTL in seconds |\n\n## Cache\n\n| Variable | Required | Default | Description |\n|----------|----------|---------|-------------|\n| REDIS_URL | No | -- | Redis connection URL |\n| CACHE_TTL | No | 300 | Default cache TTL |\n\nSee [Configuration](../api/config.md) for loading behavior.\n",
+      "size_bytes": 1186,
+      "token_count": 185,
+      "tier": "required",
+      "section": "reference",
+      "priority": 8,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Complete environment variable reference for all configuration options",
+      "related": [
+        "api/config.md",
+        "api/database.md",
+        "api/auth.md"
+      ]
+    },
+    "reference/migration-guide.md": {
+      "rel_path": "reference/migration-guide.md",
+      "content": "# Migration Guide\n\nUpgrading between major DataForge versions.\n\n## v1.x to v2.0\n\n### Breaking Changes\n\n1. **Database sessions**: Sync sessions removed, async only\n   ```python\n   # Before (v1)\n   session = SessionLocal()\n   # After (v2)\n   async with SessionLocal() as session:\n   ```\n\n2. **Auth middleware**: Constructor signature changed\n   ```python\n   # Before\n   AuthMiddleware(secret=\"xxx\")\n   # After\n   AuthMiddleware(JWTConfig(secret_key=\"xxx\"))\n   ```\n\n3. **Error responses**: Envelope format standardized\n   ```json\n   // Before: {\"detail\": \"Not found\"}\n   // After: {\"error\": {\"code\": \"NOT_FOUND\", \"message\": \"...\"}}\n   ```\n\n### Migration Steps\n\n1. Update dependency: pip install dataforge>=2.0\n2. Run migration script: dataforge migrate-config\n3. Update import paths (see changelog)\n4. Run test suite and fix any failures\n\nSee [Changelog](../repo/changelog.md) for full version history.\n",
+      "size_bytes": 900,
+      "token_count": 165,
+      "tier": "reference",
+      "section": "reference",
+      "priority": 4,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Version migration guide with breaking changes and upgrade steps",
+      "related": [
+        "repo/changelog.md",
+        "api/auth.md"
+      ]
+    },
+    "reference/glossary.md": {
+      "rel_path": "reference/glossary.md",
+      "content": "# Glossary\n\nKey terms and definitions used across DataForge documentation.\n\n## Terms\n\n**Access Token** -- Short-lived JWT used to authenticate API requests. Expires after 1 hour.\n\n**Alembic** -- Database migration tool for SQLAlchemy. Manages schema changes.\n\n**Background Task** -- Async operation that runs outside the request-response cycle.\n\n**CORS** -- Cross-Origin Resource Sharing. Controls which domains can access the API.\n\n**Cursor Pagination** -- Pagination method using an opaque cursor for efficient page traversal.\n\n**DocTree** -- Hierarchical representation of documentation files used by the indexer.\n\n**Middleware** -- Request/response processing layer. Runs before and after route handlers.\n\n**RBAC** -- Role-Based Access Control. Authorization model using roles and permissions.\n\n**Refresh Token** -- Long-lived token used to obtain new access tokens without re-authentication.\n\n**Soft Delete** -- Marks records as deleted without removing from the database.\n\n**TTL** -- Time To Live. Duration before a cached value expires.\n\n**Webhook** -- HTTP callback triggered by an event. Used for integrations.\n\nSee [Architecture](../repo/architecture.md) for system design concepts.\n",
+      "size_bytes": 1193,
+      "token_count": 175,
+      "tier": "reference",
+      "section": "reference",
+      "priority": 2,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Glossary of key terms and definitions for DataForge concepts",
+      "related": [
+        "repo/architecture.md"
+      ]
+    },
+    "reference/status-codes.md": {
+      "rel_path": "reference/status-codes.md",
+      "content": "# Status Codes Reference\n\nHTTP status codes used by the DataForge API.\n\n## Success Codes\n\n| Code | Name | Usage |\n|------|------|-------|\n| 200 | OK | Successful GET, PATCH, DELETE |\n| 201 | Created | Successful POST creating a resource |\n| 204 | No Content | Successful DELETE with no body |\n\n## Client Error Codes\n\n| Code | Name | Usage |\n|------|------|-------|\n| 400 | Bad Request | Malformed request syntax |\n| 401 | Unauthorized | Missing or invalid auth token |\n| 403 | Forbidden | Valid token but insufficient permissions |\n| 404 | Not Found | Resource does not exist |\n| 409 | Conflict | Duplicate or state conflict |\n| 413 | Payload Too Large | File upload exceeds limit |\n| 422 | Unprocessable Entity | Validation failure |\n| 429 | Too Many Requests | Rate limit exceeded |\n\n## Server Error Codes\n\n| Code | Name | Usage |\n|------|------|-------|\n| 500 | Internal Server Error | Unhandled exception |\n| 502 | Bad Gateway | Upstream service failure |\n| 503 | Service Unavailable | Maintenance or overload |\n\nSee [Error Handling](../api/errors.md) for response format.\n",
+      "size_bytes": 1077,
+      "token_count": 170,
+      "tier": "reference",
+      "section": "reference",
+      "priority": 5,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "HTTP status code reference for success, client, and server errors",
+      "related": [
+        "api/errors.md"
+      ]
+    },
+    "reference/api-versioning.md": {
+      "rel_path": "reference/api-versioning.md",
+      "content": "# API Versioning\n\nStrategy for managing API version changes.\n\n## URL-Based Versioning\n\n```\nhttps://api.example.com/v1/users\nhttps://api.example.com/v2/users\n```\n\n## Configuring Versions\n\n```python\nfrom framework.versioning import APIVersion\n\nv1 = APIVersion(\"v1\")\nv2 = APIVersion(\"v2\")\n\n@v1.get(\"/users\")\nasync def list_users_v1():\n    return await user_service.list(format=\"v1\")\n\n@v2.get(\"/users\")\nasync def list_users_v2():\n    return await user_service.list(format=\"v2\")\n```\n\n## Deprecation\n\nMark deprecated endpoints:\n\n```python\n@v1.get(\"/users\", deprecated=True)\nasync def list_users_v1():\n    ...\n```\n\nDeprecated endpoints return a Deprecation header:\n```\nDeprecation: true\nSunset: 2025-01-01\nLink: <https://api.example.com/v2/users>; rel=\"successor-version\"\n```\n\n## Sunset Policy\n\n- v(N-2) sunsets 6 months after v(N) release\n- Breaking changes only in major versions\n- Additive changes (new fields) allowed in minor versions\n\nSee [REST API](../sdks/rest-api.md) for current endpoints.\n",
+      "size_bytes": 993,
+      "token_count": 175,
+      "tier": "reference",
+      "section": "reference",
+      "priority": 4,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "URL-based API versioning with deprecation and sunset policies",
+      "related": [
+        "sdks/rest-api.md"
+      ]
+    },
+    "reference/data-types.md": {
+      "rel_path": "reference/data-types.md",
+      "content": "# Data Types Reference\n\nStandard data types and serialization formats.\n\n## Date and Time\n\nAll timestamps use ISO 8601 in UTC:\n\n```json\n{\n  \"created_at\": \"2024-03-15T14:30:00Z\",\n  \"updated_at\": \"2024-03-15T14:30:00Z\"\n}\n```\n\n## IDs\n\nResources use integer IDs:\n\n```json\n{\"id\": 12345}\n```\n\n## Money\n\nMonetary values use string representation to avoid floating-point issues:\n\n```json\n{\"amount\": \"99.99\", \"currency\": \"USD\"}\n```\n\n## Pagination\n\n```json\n{\n  \"data\": [...],\n  \"meta\": {\n    \"total\": 150,\n    \"page\": 1,\n    \"per_page\": 25,\n    \"total_pages\": 6\n  }\n}\n```\n\n## Enums\n\nEnums are serialized as lowercase strings:\n\n```json\n{\"status\": \"active\", \"role\": \"admin\"}\n```\n\nSee [REST API](../sdks/rest-api.md) for response schemas.\n",
+      "size_bytes": 725,
+      "token_count": 150,
+      "tier": "reference",
+      "section": "reference",
+      "priority": 3,
+      "content_hash": "",
+      "last_modified": null,
+      "summary": "Standard data types for timestamps, IDs, money, and pagination",
+      "related": [
+        "sdks/rest-api.md",
+        "api/users.md"
+      ]
     }
   },
   "scanned_at": "2025-01-15T12:00:00Z",
   "source": "fixtures/sample_docs",
-  "total_tokens": 4127
+  "total_tokens": 9647
 }

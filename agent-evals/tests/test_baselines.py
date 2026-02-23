@@ -12,6 +12,12 @@ from agent_evals.variants.baselines import (
     NoIndexBaseline,
     OracleBaseline,
 )
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.variants.granularity_file import GranularityFileVariant
+from agent_evals.variants.noise_0 import Noise0Variant
+from agent_evals.variants.scale_50 import Scale50Variant
+from agent_evals.variants.scale_100 import Scale100Variant
+from agent_evals.variants.structure_flat import StructureFlatVariant
 from agent_evals.variants.registry import (
     clear_registry,
     get_all_variants,
@@ -356,3 +362,82 @@ class TestBaselineRegistration:
             description="Test that axis=0 is valid",
         )
         assert meta.axis == 0
+
+
+# ---------------------------------------------------------------------------
+# Variant differentiation tests
+# ---------------------------------------------------------------------------
+
+
+class TestVariantDifferentiation:
+    """Tests that baseline variants produce distinct output from each other."""
+
+    def test_structure_flat_differs_from_noise_0(
+        self, sample_doc_tree: DocTree
+    ) -> None:
+        """structure-flat should produce different output from noise-0."""
+        noise_0 = Noise0Variant()
+        structure_flat = StructureFlatVariant()
+
+        n0_output = noise_0.render(sample_doc_tree)
+        sf_output = structure_flat.render(sample_doc_tree)
+
+        assert n0_output != sf_output, (
+            "structure-flat and noise-0 must produce different output"
+        )
+
+    def test_granularity_file_differs_from_noise_0(
+        self, sample_doc_tree: DocTree
+    ) -> None:
+        """granularity-file should produce different output from noise-0."""
+        noise_0 = Noise0Variant()
+        granularity_file = GranularityFileVariant()
+
+        n0_output = noise_0.render(sample_doc_tree)
+        gf_output = granularity_file.render(sample_doc_tree)
+
+        assert n0_output != gf_output, (
+            "granularity-file and noise-0 must produce different output"
+        )
+
+    def test_structure_flat_includes_tier_info(
+        self, sample_doc_tree: DocTree
+    ) -> None:
+        """structure-flat output should include tier information."""
+        variant = StructureFlatVariant()
+        output = variant.render(sample_doc_tree)
+
+        assert "required" in output or "recommended" in output or "reference" in output, (
+            "structure-flat should include tier information"
+        )
+
+    def test_granularity_file_uses_file_prefix(
+        self, sample_doc_tree: DocTree
+    ) -> None:
+        """granularity-file output should use a distinct format prefix."""
+        variant = GranularityFileVariant()
+        output = variant.render(sample_doc_tree)
+
+        # Must use a format distinct from noise-0's "- path: brief_summary"
+        # e.g. "[FILE] path: summary" or similar
+        noise_0_output = Noise0Variant().render(sample_doc_tree)
+        # Check that at least one line differs in format
+        n0_lines = set(noise_0_output.splitlines())
+        gf_lines = set(output.splitlines())
+        assert n0_lines != gf_lines, (
+            "granularity-file lines should differ from noise-0 lines"
+        )
+
+    def test_scale_50_differs_from_scale_100_with_fixture(self) -> None:
+        """scale-50 and scale-100 produce different output with production fixture."""
+        fixture_tree = load_sample_doc_tree()
+        scale_50 = Scale50Variant()
+        scale_100 = Scale100Variant()
+
+        s50_output = scale_50.render(fixture_tree)
+        s100_output = scale_100.render(fixture_tree)
+
+        assert s50_output != s100_output, (
+            "scale-50 and scale-100 must produce different output "
+            f"(fixture has {len(fixture_tree.files)} files, need >50)"
+        )

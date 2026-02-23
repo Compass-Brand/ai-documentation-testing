@@ -47,6 +47,7 @@ def _make_doc_tree() -> MagicMock:
         doc.tier = tier
         doc.section = section
         doc.priority = 0
+        doc.summary = None
         files[path] = doc
     tree.files = files
     return tree
