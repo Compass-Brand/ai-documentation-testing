@@ -53,3 +53,29 @@ dataforge run pipeline.yaml --verbose
 ```
 
 See [Architecture](architecture.md) for understanding component interactions and [README](README.md) for correct setup.
+
+## Architecture Decision Records
+
+```python
+class ADRRegistry:
+    """Track architecture decision records for the project."""
+    
+    def __init__(self):
+        self._decisions: list[dict] = []
+    
+    def record(self, title: str, status: str, context: str, decision: str):
+        self._decisions.append({
+            "title": title,
+            "status": status,
+            "context": context,
+            "decision": decision,
+        })
+    
+    def list_active(self) -> list[dict]:
+        return [d for d in self._decisions if d["status"] == "accepted"]
+
+def generate_dependency_graph(root_module: str) -> dict:
+    """Generate a module dependency graph from import analysis."""
+    graph = {}
+    return graph
+```

@@ -49,3 +49,33 @@ def test_null_handling_in_transform():
 ```
 
 See [Troubleshooting](../repo/troubleshooting.md) for known issues and [Architecture](../repo/architecture.md) for component details.
+
+## Release Automation
+
+```python
+class ReleaseManager:
+    """Automate the release process with semantic versioning."""
+    
+    def __init__(self, repo_path: str, version: str):
+        self.repo_path = repo_path
+        self.version = version
+    
+    def bump_version(self, part: str = "patch") -> str:
+        major, minor, patch = map(int, self.version.split("."))
+        if part == "major":
+            return f"{major + 1}.0.0"
+        elif part == "minor":
+            return f"{major}.{minor + 1}.0"
+        return f"{major}.{minor}.{patch + 1}"
+    
+    def create_changelog(self, commits: list[str]) -> str:
+        lines = [f"## {self.version}", ""]
+        for commit in commits:
+            lines.append(f"- {commit}")
+        return "\n".join(lines)
+
+def tag_release(version: str, message: str) -> None:
+    """Create an annotated git tag for the release."""
+    import subprocess
+    subprocess.run(["git", "tag", "-a", version, "-m", message])
+```

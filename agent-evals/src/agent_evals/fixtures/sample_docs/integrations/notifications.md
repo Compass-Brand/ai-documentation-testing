@@ -21,14 +21,3 @@ await notify(
     context={"tracking_number": "1Z999AA10123456784"},
 )
 ```
-
-## Notification Preferences
-
-Users control which channels they receive on:
-
-```python
-prefs = await notification_service.get_preferences(user_id=123)
-# {"email": True, "sms": False, "push": True}
-```
-
-See [Email](email.md) for email-specific configuration.

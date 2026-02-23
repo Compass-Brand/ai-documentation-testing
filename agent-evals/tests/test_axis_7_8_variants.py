@@ -711,3 +711,42 @@ class TestAxisRegistration:
         register_variant(Noise0Variant)
         register_variant(Noise0Variant)
         assert len(get_all_variants()) == 1
+
+
+# ---------------------------------------------------------------------------
+# Real fixture integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestGranularityMixedRealFixture:
+    """Test granularity-mixed against the real fixture (not mocks)."""
+
+    def test_real_fixture_produces_all_three_granularity_levels(self) -> None:
+        """On the real fixture, granularity-mixed should produce file, section, AND function entries."""
+        from agent_evals.fixtures import load_sample_doc_tree
+
+        tree = load_sample_doc_tree()
+        result = GranularityMixedVariant().render(tree)
+        lines = result.splitlines()
+
+        # File-level: lines without # or :: after the path
+        # Section-level: lines with # in path portion
+        # Function-level: lines with :: in path portion
+        has_file_level = False
+        has_section_level = False
+        has_function_level = False
+
+        for line in lines:
+            if not line.startswith("- "):
+                continue
+            # Extract path portion (between "- " and ":")
+            if "::" in line:
+                has_function_level = True
+            elif "#" in line.split(":")[0]:
+                has_section_level = True
+            else:
+                has_file_level = True
+
+        assert has_file_level, "Expected file-level entries from small files"
+        assert has_section_level, "Expected section-level entries from medium files"
+        assert has_function_level, "Expected function-level entries from large code files"

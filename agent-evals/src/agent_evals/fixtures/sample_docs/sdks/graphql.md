@@ -24,24 +24,3 @@ query GetUser {
   user(id: "123") {
     id
     email
-    name
-    orders {
-      id
-      total
-    }
-  }
-}
-```
-
-## Subscriptions
-
-```graphql
-subscription OrderUpdates {
-  orderStatusChanged(userId: "123") {
-    orderId
-    status
-  }
-}
-```
-
-See [Authentication](../api/auth.md) for GraphQL auth headers.

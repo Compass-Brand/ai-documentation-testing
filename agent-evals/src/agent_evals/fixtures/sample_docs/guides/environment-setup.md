@@ -16,21 +16,3 @@ Detailed development environment configuration for DataForge.
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Linux/macOS
-.venv\Scripts\activate      # Windows
-pip install -e ".[dev]"
-```
-
-## IDE Configuration
-
-### VS Code
-
-Install recommended extensions:
-- Python (Microsoft)
-- Pylance
-- Ruff
-
-### PyCharm
-
-Enable the Django/FastAPI plugin for template support.
-
-See [Configuration](../api/config.md) for runtime settings.

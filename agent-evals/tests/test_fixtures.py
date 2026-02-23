@@ -105,3 +105,83 @@ class TestSampleDocsDirectory:
             f"  On disk only: {on_disk - in_json}\n"
             f"  In JSON only: {in_json - on_disk}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Fixture quality tests (timestamp + size distribution)
+# ---------------------------------------------------------------------------
+
+
+class TestFixtureTimestamps:
+    """Tests for last_modified timestamp distribution in the fixture."""
+
+    def test_most_files_have_timestamps(self) -> None:
+        """At least 80% of files should have non-null last_modified."""
+        tree = load_sample_doc_tree()
+        with_ts = sum(
+            1 for doc in tree.files.values() if doc.last_modified is not None
+        )
+        ratio = with_ts / len(tree.files)
+        assert ratio >= 0.80, (
+            f"Only {with_ts}/{len(tree.files)} files have timestamps ({ratio:.0%})"
+        )
+
+    def test_some_files_have_null_timestamps(self) -> None:
+        """3-5 files should have null last_modified for fallback testing."""
+        tree = load_sample_doc_tree()
+        null_count = sum(
+            1 for doc in tree.files.values() if doc.last_modified is None
+        )
+        assert 3 <= null_count <= 5, (
+            f"Expected 3-5 null timestamps, got {null_count}"
+        )
+
+
+class TestFixtureSizeDistribution:
+    """Tests for file size distribution enabling granularity-mixed."""
+
+    def test_has_small_files(self) -> None:
+        """At least 4 files should be <500 bytes (small bucket)."""
+        tree = load_sample_doc_tree()
+        small = [
+            p for p, doc in tree.files.items() if doc.size_bytes < 500
+        ]
+        assert len(small) >= 4, (
+            f"Expected >=4 small files (<500 bytes), got {len(small)}: {small}"
+        )
+
+    def test_has_large_files(self) -> None:
+        """At least 4 files should be >2000 bytes (large bucket)."""
+        tree = load_sample_doc_tree()
+        large = [
+            p for p, doc in tree.files.items() if doc.size_bytes > 2000
+        ]
+        assert len(large) >= 4, (
+            f"Expected >=4 large files (>2000 bytes), got {len(large)}: {large}"
+        )
+
+    def test_has_medium_files(self) -> None:
+        """At least 10 files should be 500-2000 bytes (medium bucket)."""
+        tree = load_sample_doc_tree()
+        medium = [
+            p for p, doc in tree.files.items()
+            if 500 <= doc.size_bytes <= 2000
+        ]
+        assert len(medium) >= 10, (
+            f"Expected >=10 medium files (500-2000 bytes), got {len(medium)}"
+        )
+
+    def test_large_files_contain_code_definitions(self) -> None:
+        """Large files (>2000 bytes) should contain def or class definitions."""
+        tree = load_sample_doc_tree()
+        large_files = [
+            (p, doc) for p, doc in tree.files.items() if doc.size_bytes > 2000
+        ]
+        has_defs = sum(
+            1
+            for _, doc in large_files
+            if "def " in doc.content or "class " in doc.content
+        )
+        assert has_defs >= 3, (
+            f"Expected >=3 large files with def/class, got {has_defs}"
+        )

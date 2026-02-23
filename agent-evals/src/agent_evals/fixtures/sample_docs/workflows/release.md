@@ -52,3 +52,35 @@ For critical production bugs:
 3. PR to both `main` and `develop`
 
 See [Contributing](../repo/CONTRIBUTING.md) for branch strategy and [Changelog](../repo/changelog.md) for version history format.
+
+## Debug Utilities
+
+```python
+class DebugContext:
+    """Context manager for structured debug sessions."""
+    
+    def __init__(self, module: str, level: str = "INFO"):
+        self.module = module
+        self.level = level
+        self._start = None
+    
+    def __enter__(self):
+        import time
+        self._start = time.monotonic()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        import time
+        elapsed = time.monotonic() - self._start
+        print(f"[{self.module}] completed in {elapsed:.3f}s")
+        return False
+
+def trace_calls(func):
+    """Decorator to trace function calls with arguments."""
+    def wrapper(*args, **kwargs):
+        print(f"TRACE: {func.__name__}({args}, {kwargs})")
+        result = func(*args, **kwargs)
+        print(f"TRACE: {func.__name__} -> {result!r}")
+        return result
+    return wrapper
+```

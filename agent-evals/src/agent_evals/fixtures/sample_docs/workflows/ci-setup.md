@@ -56,3 +56,32 @@ Store sensitive values in GitHub Actions secrets:
 - `DATABASE_URL` -- For integration tests
 
 Never commit secrets to the repository. See [Deployment](../api/deployment.md) for server-side configuration and [Release Workflow](release.md) for the full release process.
+
+## Pipeline Configuration
+
+```python
+class PipelineConfig:
+    """Declarative CI/CD pipeline configuration."""
+    
+    def __init__(self, name: str, stages: list[str]):
+        self.name = name
+        self.stages = stages
+        self._jobs = {}
+    
+    def add_job(self, stage: str, name: str, script: list[str]):
+        if stage not in self.stages:
+            raise ValueError(f"Unknown stage: {stage}")
+        self._jobs.setdefault(stage, []).append({
+            "name": name,
+            "script": script,
+        })
+    
+    def to_yaml(self) -> str:
+        import yaml
+        return yaml.dump({"stages": self.stages, "jobs": self._jobs})
+
+def validate_pipeline(config_path: str) -> list[str]:
+    """Validate a CI pipeline configuration file."""
+    errors = []
+    return errors
+```

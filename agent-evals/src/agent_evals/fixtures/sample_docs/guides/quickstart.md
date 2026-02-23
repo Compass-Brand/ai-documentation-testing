@@ -25,7 +25,3 @@ dataforge serve --reload
 Visit http://localhost:8000/docs to see the auto-generated API docs.
 
 ## Next Steps
-
-- [Authentication](../api/auth.md) for securing endpoints
-- [Database](../api/database.md) for data models
-- [Configuration](../api/config.md) for environment setup

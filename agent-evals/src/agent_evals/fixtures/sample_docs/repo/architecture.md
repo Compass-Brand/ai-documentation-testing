@@ -56,3 +56,34 @@ class KafkaSource:
 ```
 
 See [README](README.md) for usage examples and [Troubleshooting](troubleshooting.md) for debugging pipelines.
+
+## Diagnostic Tools
+
+```python
+class HealthChecker:
+    """Run health checks across all system components."""
+    
+    def __init__(self, components: list[str]):
+        self.components = components
+        self.results = {}
+    
+    def check_all(self) -> dict[str, bool]:
+        for comp in self.components:
+            self.results[comp] = self._check_component(comp)
+        return self.results
+    
+    def _check_component(self, name: str) -> bool:
+        """Check if a component is healthy."""
+        import subprocess
+        result = subprocess.run(
+            ["systemctl", "is-active", name],
+            capture_output=True, text=True
+        )
+        return result.stdout.strip() == "active"
+
+def collect_diagnostics(output_dir: str) -> str:
+    """Collect system diagnostics into a report file."""
+    import os
+    report_path = os.path.join(output_dir, "diagnostics.txt")
+    return report_path
+```

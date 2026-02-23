@@ -24,12 +24,3 @@ await send_email(
 ```
 
 ## Templates
-
-Email templates use Jinja2 and live in templates/email/:
-
-```html
-<h1>Welcome, {{ name }}!</h1>
-<p>Your account has been created.</p>
-```
-
-See [Configuration](../api/config.md) for email provider settings.
