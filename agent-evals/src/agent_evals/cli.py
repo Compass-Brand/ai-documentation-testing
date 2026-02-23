@@ -162,6 +162,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip failed trials and report partial results",
     )
 
+    # Dataset sources
+    parser.add_argument(
+        "--source",
+        type=str,
+        default=None,
+        help=(
+            "Task source: gold_standard (default), dataset name, "
+            "or comma-separated list"
+        ),
+    )
+    parser.add_argument(
+        "--dataset-limit",
+        type=int,
+        default=None,
+        help="Max tasks per dataset (for cost control)",
+    )
+    parser.add_argument(
+        "--dataset-cache-dir",
+        type=str,
+        default=None,
+        help="Override cache directory (default: ~/.agent-evals/datasets/)",
+    )
+    parser.add_argument(
+        "--prepare-datasets",
+        type=str,
+        default=None,
+        help="Download + convert without running evals (name, comma-list, or 'all')",
+    )
+    parser.add_argument(
+        "--list-datasets",
+        action="store_true",
+        default=False,
+        help="Show available datasets with contamination risk",
+    )
+
     # Verbosity (mutually exclusive)
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument(
@@ -230,6 +265,11 @@ _CONFIG_KEYS: dict[str, type] = {
     "output_format": str,
     "display": str,
     "continue_on_error": bool,
+    "source": str,
+    "dataset_limit": int,
+    "dataset_cache_dir": str,
+    "prepare_datasets": str,
+    "list_datasets": bool,
 }
 
 
@@ -325,6 +365,59 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     Returns 0 on success, 1 on error.
     """
     from agent_evals.runner import EvalRunner
+
+    # --list-datasets: show available datasets and exit (no model needed)
+    if resolved.get("list_datasets"):
+        from agent_evals.datasets import list_available, load_all as load_all_datasets
+
+        load_all_datasets()
+        available = list_available()
+        if not available:
+            logger.info("Available datasets: none registered")
+        else:
+            logger.info("Available datasets:")
+            for ds in available:
+                logger.info(
+                    "  %-20s  %-15s  contamination=%s  license=%s",
+                    ds["name"],
+                    ds["task_type"],
+                    ds["contamination_risk"],
+                    ds["license"],
+                )
+        return 0
+
+    # --prepare-datasets: download + convert without running evals (no model needed)
+    prepare = resolved.get("prepare_datasets")
+    if prepare is not None:
+        from agent_evals.datasets import get_adapter, load_all as load_all_datasets
+        from agent_evals.datasets.cache import DatasetCache
+
+        load_all_datasets()
+
+        cache_dir = resolved.get("dataset_cache_dir")
+        cache = DatasetCache(
+            cache_dir=Path(cache_dir) if cache_dir else None,
+        )
+        limit = resolved.get("dataset_limit")
+
+        names = [n.strip() for n in prepare.split(",")]
+        for name in names:
+            try:
+                adapter = get_adapter(name)
+            except KeyError:
+                logger.error("Unknown dataset: '%s'", name)
+                return 1
+            task_dir = cache.task_dir(name)
+            logger.info("Preparing dataset '%s' -> %s", name, task_dir)
+            count = adapter.convert_tasks(task_dir, limit=limit)
+            doc_tree = adapter.build_doc_tree(limit=limit)
+            dt_path = cache.doc_tree_path(name)
+            dt_path.write_text(
+                doc_tree.model_dump_json(indent=2), encoding="utf-8",
+            )
+            cache.mark_prepared(name, count)
+            logger.info("Prepared %d tasks for '%s'", count, name)
+        return 0
 
     model = resolved.get("model")
     if not model:

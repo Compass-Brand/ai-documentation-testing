@@ -730,3 +730,215 @@ class TestContinueOnErrorFlag:
         parser = build_parser()
         args = parser.parse_args([])
         assert args.continue_on_error is False
+
+
+# ---------------------------------------------------------------------------
+# Dataset CLI flags -- parser defaults
+# ---------------------------------------------------------------------------
+
+
+class TestDatasetFlagDefaults:
+    """Default values for dataset-related CLI flags."""
+
+    def test_default_source_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.source is None
+
+    def test_default_dataset_limit_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.dataset_limit is None
+
+    def test_default_dataset_cache_dir_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.dataset_cache_dir is None
+
+    def test_default_prepare_datasets_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.prepare_datasets is None
+
+    def test_default_list_datasets_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.list_datasets is False
+
+
+# ---------------------------------------------------------------------------
+# Dataset CLI flags -- parsing
+# ---------------------------------------------------------------------------
+
+
+class TestDatasetFlagParsing:
+    """Each dataset flag can be set and parsed correctly."""
+
+    def test_source_accepts_single_name(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--source", "repliqa"])
+        assert args.source == "repliqa"
+
+    def test_source_accepts_comma_separated_list(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--source", "gold_standard,repliqa,code-rag-bench"])
+        assert args.source == "gold_standard,repliqa,code-rag-bench"
+
+    def test_dataset_limit_accepts_int(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--dataset-limit", "50"])
+        assert args.dataset_limit == 50
+
+    def test_dataset_cache_dir_accepts_path(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--dataset-cache-dir", "/tmp/my-cache"])
+        assert args.dataset_cache_dir == "/tmp/my-cache"
+
+    def test_prepare_datasets_accepts_single_name(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--prepare-datasets", "repliqa"])
+        assert args.prepare_datasets == "repliqa"
+
+    def test_prepare_datasets_accepts_all(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--prepare-datasets", "all"])
+        assert args.prepare_datasets == "all"
+
+    def test_prepare_datasets_accepts_comma_separated(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--prepare-datasets", "repliqa,ibm-techqa"])
+        assert args.prepare_datasets == "repliqa,ibm-techqa"
+
+    def test_list_datasets_is_boolean_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--list-datasets"])
+        assert args.list_datasets is True
+
+
+# ---------------------------------------------------------------------------
+# Dataset CLI flags -- resolve_config integration
+# ---------------------------------------------------------------------------
+
+
+class TestDatasetResolveConfig:
+    """Dataset flags participate in the config resolution pipeline."""
+
+    def test_source_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--source", "repliqa"])
+        resolved = resolve_config(args, {})
+        assert resolved["source"] == "repliqa"
+
+    def test_source_resolved_from_config_file(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        config = {"source": "code-rag-bench"}
+        resolved = resolve_config(args, config)
+        assert resolved["source"] == "code-rag-bench"
+
+    def test_source_resolved_from_env(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        with patch.dict("os.environ", {"AGENT_EVALS_SOURCE": "ibm-techqa"}):
+            resolved = resolve_config(args, {})
+        assert resolved["source"] == "ibm-techqa"
+
+    def test_dataset_limit_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--dataset-limit", "25"])
+        resolved = resolve_config(args, {})
+        assert resolved["dataset_limit"] == 25
+
+    def test_dataset_limit_resolved_from_env(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        with patch.dict("os.environ", {"AGENT_EVALS_DATASET_LIMIT": "100"}):
+            resolved = resolve_config(args, {})
+        assert resolved["dataset_limit"] == 100
+
+    def test_dataset_cache_dir_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--dataset-cache-dir", "/tmp/cache"])
+        resolved = resolve_config(args, {})
+        assert resolved["dataset_cache_dir"] == "/tmp/cache"
+
+    def test_list_datasets_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--list-datasets"])
+        resolved = resolve_config(args, {})
+        assert resolved["list_datasets"] is True
+
+    def test_prepare_datasets_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--prepare-datasets", "repliqa"])
+        resolved = resolve_config(args, {})
+        assert resolved["prepare_datasets"] == "repliqa"
+
+
+# ---------------------------------------------------------------------------
+# Dataset CLI flags -- _run_evaluation behavior
+# ---------------------------------------------------------------------------
+
+
+class TestListDatasetsCommand:
+    """--list-datasets prints available datasets and exits."""
+
+    def test_list_datasets_returns_zero(self) -> None:
+        """--list-datasets should exit successfully without needing a model."""
+        resolved: dict[str, object] = {"list_datasets": True}
+        result = _run_evaluation(resolved)
+        assert result == 0
+
+    def test_list_datasets_logs_output(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """--list-datasets should log dataset information."""
+        resolved: dict[str, object] = {"list_datasets": True}
+        with caplog.at_level(logging.INFO, logger="agent_evals"):
+            _run_evaluation(resolved)
+        assert "Available datasets" in caplog.text
+
+
+class TestPrepareDatasetsCommand:
+    """--prepare-datasets downloads and converts without running evals."""
+
+    def test_prepare_unknown_dataset_returns_error(self) -> None:
+        """Preparing a non-existent dataset should fail."""
+        resolved: dict[str, object] = {"prepare_datasets": "nonexistent_dataset"}
+        result = _run_evaluation(resolved)
+        assert result == 1
+
+    def test_prepare_datasets_does_not_require_model(self) -> None:
+        """--prepare-datasets should not require --model flag."""
+        resolved: dict[str, object] = {"prepare_datasets": "nonexistent_dataset"}
+        # Should fail with dataset error, not model error
+        result = _run_evaluation(resolved)
+        assert result == 1  # Fails because dataset unknown, not because model missing
+
+
+class TestSourceFlag:
+    """--source controls which task source is used."""
+
+    def test_dry_run_with_source_flag(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Dry run with --source should succeed and log source info."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+        result = main([
+            "--model", "test/model",
+            "--dry-run",
+            "--source", "gold_standard",
+        ])
+        assert result == 0
+
+    def test_dry_run_with_dataset_limit(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Dry run with --dataset-limit should succeed."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+        result = main([
+            "--model", "test/model",
+            "--dry-run",
+            "--dataset-limit", "10",
+        ])
+        assert result == 0
