@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 def _now_iso() -> str:
@@ -28,9 +30,21 @@ class ModelCatalog:
 
     def __init__(self, db_path: str | Path) -> None:
         self._db_path = str(db_path)
+        self._lock = threading.Lock()
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._create_tables()
+
+    @contextmanager
+    def connection(self) -> Iterator[sqlite3.Connection]:
+        """Yield the database connection while holding the lock.
+
+        Use this to execute queries against the shared connection in
+        a thread-safe manner.  External code (e.g. ``ModelGroupManager``)
+        should prefer this over accessing ``_conn`` directly.
+        """
+        with self._lock:
+            yield self._conn
 
     def _create_tables(self) -> None:
         """Create schema if not present."""
@@ -76,50 +90,56 @@ class ModelCatalog:
         """Insert or update a model, preserving ``first_seen``."""
         now = _now_iso()
         params_json = json.dumps(supported_params or [])
-        existing = self.get_model(id)
-        if existing is not None:
-            self._conn.execute(
-                """UPDATE models SET
-                       name=?, context_length=?, prompt_price=?,
-                       completion_price=?, modality=?, tokenizer=?,
-                       supported_params=?, last_seen=?
-                   WHERE id=?""",
-                (name, context_length, prompt_price, completion_price,
-                 modality, tokenizer, params_json, now, id),
-            )
-        else:
-            self._conn.execute(
-                """INSERT INTO models
-                   (id, name, context_length, prompt_price, completion_price,
-                    modality, tokenizer, supported_params, first_seen, last_seen)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (id, name, context_length, prompt_price, completion_price,
-                 modality, tokenizer, params_json, now, now),
-            )
-        self._conn.commit()
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT * FROM models WHERE id=?", (id,)
+            ).fetchone()
+            if existing is not None:
+                self._conn.execute(
+                    """UPDATE models SET
+                           name=?, context_length=?, prompt_price=?,
+                           completion_price=?, modality=?, tokenizer=?,
+                           supported_params=?, last_seen=?
+                       WHERE id=?""",
+                    (name, context_length, prompt_price, completion_price,
+                     modality, tokenizer, params_json, now, id),
+                )
+            else:
+                self._conn.execute(
+                    """INSERT INTO models
+                       (id, name, context_length, prompt_price, completion_price,
+                        modality, tokenizer, supported_params, first_seen, last_seen)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (id, name, context_length, prompt_price, completion_price,
+                     modality, tokenizer, params_json, now, now),
+                )
+            self._conn.commit()
 
     def get_model(self, model_id: str) -> dict[str, Any] | None:
         """Return model metadata as a dict, or ``None`` if not found."""
-        row = self._conn.execute(
-            "SELECT * FROM models WHERE id=?", (model_id,)
-        ).fetchone()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM models WHERE id=?", (model_id,)
+            ).fetchone()
         if row is None:
             return None
         return self._row_to_dict(row)
 
     def mark_removed(self, model_id: str) -> None:
         """Soft-delete a model by setting ``removed_at``."""
-        self._conn.execute(
-            "UPDATE models SET removed_at=? WHERE id=?",
-            (_now_iso(), model_id),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "UPDATE models SET removed_at=? WHERE id=?",
+                (_now_iso(), model_id),
+            )
+            self._conn.commit()
 
     def get_active_models(self) -> list[dict[str, Any]]:
         """Return all models that have not been soft-deleted."""
-        rows = self._conn.execute(
-            "SELECT * FROM models WHERE removed_at IS NULL"
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM models WHERE removed_at IS NULL"
+            ).fetchall()
         return [self._row_to_dict(r) for r in rows]
 
     # ------------------------------------------------------------------
@@ -159,9 +179,10 @@ class ModelCatalog:
             params.append(tokenizer)
 
         where = " AND ".join(clauses)
-        rows = self._conn.execute(
-            f"SELECT * FROM models WHERE {where}", params  # noqa: S608
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT * FROM models WHERE {where}", params  # noqa: S608
+            ).fetchall()
 
         results = [self._row_to_dict(r) for r in rows]
 
@@ -185,18 +206,20 @@ class ModelCatalog:
         total: int,
     ) -> None:
         """Record a sync run in the log."""
-        self._conn.execute(
-            """INSERT INTO sync_log (timestamp, models_added, models_removed, total_count)
-               VALUES (?, ?, ?, ?)""",
-            (_now_iso(), added, removed, total),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                """INSERT INTO sync_log (timestamp, models_added, models_removed, total_count)
+                   VALUES (?, ?, ?, ?)""",
+                (_now_iso(), added, removed, total),
+            )
+            self._conn.commit()
 
     def get_sync_history(self) -> list[dict[str, Any]]:
         """Return sync history ordered by most recent first."""
-        rows = self._conn.execute(
-            "SELECT * FROM sync_log ORDER BY id DESC"
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM sync_log ORDER BY id DESC"
+            ).fetchall()
         return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------

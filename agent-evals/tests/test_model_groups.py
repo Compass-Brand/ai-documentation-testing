@@ -49,18 +49,20 @@ class TestGroupSchema:
     """Model groups tables are created."""
 
     def test_creates_model_groups_table(self, manager):
-        cursor = manager._catalog._conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='model_groups'"
-        )
-        assert cursor.fetchone() is not None
+        with manager._catalog.connection() as conn:
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='model_groups'"
+            )
+            assert cursor.fetchone() is not None
 
     def test_creates_model_group_members_table(self, manager):
-        cursor = manager._catalog._conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='model_group_members'"
-        )
-        assert cursor.fetchone() is not None
+        with manager._catalog.connection() as conn:
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='table' AND name='model_group_members'"
+            )
+            assert cursor.fetchone() is not None
 
 
 class TestCreateGroup:
@@ -147,11 +149,12 @@ class TestDeleteGroup:
         group = manager.create_group("temp")
         manager.add_to_group(group.id, ["anthropic/claude-haiku"])
         manager.delete_group(group.id)
-        cursor = manager._catalog._conn.execute(
-            "SELECT COUNT(*) FROM model_group_members WHERE group_id = ?",
-            (group.id,),
-        )
-        assert cursor.fetchone()[0] == 0
+        with manager._catalog.connection() as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM model_group_members WHERE group_id = ?",
+                (group.id,),
+            )
+            assert cursor.fetchone()[0] == 0
 
 
 class TestValidateModelIds:

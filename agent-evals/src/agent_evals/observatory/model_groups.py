@@ -41,20 +41,21 @@ class ModelGroupManager:
 
     def _create_tables(self) -> None:
         """Create group tables if not present."""
-        self._catalog._conn.executescript("""
-            CREATE TABLE IF NOT EXISTS model_groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE NOT NULL,
-                description TEXT DEFAULT ''
-            );
-            CREATE TABLE IF NOT EXISTS model_group_members (
-                group_id INTEGER NOT NULL,
-                model_id TEXT NOT NULL,
-                PRIMARY KEY (group_id, model_id),
-                FOREIGN KEY (group_id) REFERENCES model_groups(id)
-            );
-        """)
-        self._catalog._conn.commit()
+        with self._catalog.connection() as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS model_groups (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE NOT NULL,
+                    description TEXT DEFAULT ''
+                );
+                CREATE TABLE IF NOT EXISTS model_group_members (
+                    group_id INTEGER NOT NULL,
+                    model_id TEXT NOT NULL,
+                    PRIMARY KEY (group_id, model_id),
+                    FOREIGN KEY (group_id) REFERENCES model_groups(id)
+                );
+            """)
+            conn.commit()
 
     def create_group(
         self,
@@ -66,17 +67,18 @@ class ModelGroupManager:
         Raises:
             ValueError: If a group with the same name already exists.
         """
-        existing = self._catalog._conn.execute(
-            "SELECT id FROM model_groups WHERE name = ?", (name,)
-        ).fetchone()
-        if existing is not None:
-            raise ValueError(f"Group '{name}' already exists")
+        with self._catalog.connection() as conn:
+            existing = conn.execute(
+                "SELECT id FROM model_groups WHERE name = ?", (name,)
+            ).fetchone()
+            if existing is not None:
+                raise ValueError(f"Group '{name}' already exists")
 
-        cursor = self._catalog._conn.execute(
-            "INSERT INTO model_groups (name, description) VALUES (?, ?)",
-            (name, description),
-        )
-        self._catalog._conn.commit()
+            cursor = conn.execute(
+                "INSERT INTO model_groups (name, description) VALUES (?, ?)",
+                (name, description),
+            )
+            conn.commit()
         return ModelGroup(
             id=cursor.lastrowid,
             name=name,
@@ -96,12 +98,14 @@ class ModelGroupManager:
                 warnings.append(f"Model '{model_id}' not found in catalog")
                 logger.warning("Model '%s' not found in catalog", model_id)
                 continue
-            self._catalog._conn.execute(
-                "INSERT OR IGNORE INTO model_group_members "
-                "(group_id, model_id) VALUES (?, ?)",
-                (group_id, model_id),
-            )
-        self._catalog._conn.commit()
+            with self._catalog.connection() as conn:
+                conn.execute(
+                    "INSERT OR IGNORE INTO model_group_members "
+                    "(group_id, model_id) VALUES (?, ?)",
+                    (group_id, model_id),
+                )
+        with self._catalog.connection() as conn:
+            conn.commit()
         return warnings
 
     def remove_from_group(
@@ -110,27 +114,30 @@ class ModelGroupManager:
         model_ids: list[str],
     ) -> None:
         """Remove models from a group."""
-        for model_id in model_ids:
-            self._catalog._conn.execute(
-                "DELETE FROM model_group_members "
-                "WHERE group_id = ? AND model_id = ?",
-                (group_id, model_id),
-            )
-        self._catalog._conn.commit()
+        with self._catalog.connection() as conn:
+            for model_id in model_ids:
+                conn.execute(
+                    "DELETE FROM model_group_members "
+                    "WHERE group_id = ? AND model_id = ?",
+                    (group_id, model_id),
+                )
+            conn.commit()
 
     def get_group_members(self, group_id: int) -> list[str]:
         """Return list of model IDs in the group."""
-        rows = self._catalog._conn.execute(
-            "SELECT model_id FROM model_group_members WHERE group_id = ?",
-            (group_id,),
-        ).fetchall()
+        with self._catalog.connection() as conn:
+            rows = conn.execute(
+                "SELECT model_id FROM model_group_members WHERE group_id = ?",
+                (group_id,),
+            ).fetchall()
         return [row[0] for row in rows]
 
     def list_groups(self) -> list[ModelGroup]:
         """Return all groups (without member lists)."""
-        rows = self._catalog._conn.execute(
-            "SELECT id, name, description FROM model_groups ORDER BY name"
-        ).fetchall()
+        with self._catalog.connection() as conn:
+            rows = conn.execute(
+                "SELECT id, name, description FROM model_groups ORDER BY name"
+            ).fetchall()
         return [
             ModelGroup(id=row[0], name=row[1], description=row[2])
             for row in rows
@@ -138,10 +145,11 @@ class ModelGroupManager:
 
     def show_group(self, group_id: int) -> ModelGroup:
         """Return a group with its member IDs populated."""
-        row = self._catalog._conn.execute(
-            "SELECT id, name, description FROM model_groups WHERE id = ?",
-            (group_id,),
-        ).fetchone()
+        with self._catalog.connection() as conn:
+            row = conn.execute(
+                "SELECT id, name, description FROM model_groups WHERE id = ?",
+                (group_id,),
+            ).fetchone()
         if row is None:
             raise KeyError(f"Group {group_id} not found")
         members = self.get_group_members(group_id)
@@ -154,15 +162,16 @@ class ModelGroupManager:
 
     def delete_group(self, group_id: int) -> None:
         """Delete a group and its memberships."""
-        self._catalog._conn.execute(
-            "DELETE FROM model_group_members WHERE group_id = ?",
-            (group_id,),
-        )
-        self._catalog._conn.execute(
-            "DELETE FROM model_groups WHERE id = ?",
-            (group_id,),
-        )
-        self._catalog._conn.commit()
+        with self._catalog.connection() as conn:
+            conn.execute(
+                "DELETE FROM model_group_members WHERE group_id = ?",
+                (group_id,),
+            )
+            conn.execute(
+                "DELETE FROM model_groups WHERE id = ?",
+                (group_id,),
+            )
+            conn.commit()
 
     def validate_model_ids(
         self,
