@@ -693,3 +693,44 @@ class TestTaskAutoDiscovery:
         assert TASK_TYPES.get("code_generation") is not GenericTask
         assert TASK_TYPES.get("agentic") is not GenericTask
         assert TASK_TYPES.get("negative") is not GenericTask
+
+
+# ---------------------------------------------------------------------------
+# Public dataset domain validation
+# ---------------------------------------------------------------------------
+
+
+class TestPublicDatasetDomains:
+    """Verify new domains for public dataset integration."""
+
+    NEW_DOMAINS = [
+        "library_docs",
+        "technical_qa",
+        "code_repository",
+        "news_articles",
+        "synthetic_docs",
+        "general_knowledge",
+    ]
+
+    @pytest.mark.parametrize("domain", NEW_DOMAINS)
+    def test_new_domain_passes_validation(self, domain: str) -> None:
+        """Tasks with public dataset domains pass TaskDefinition validation."""
+        defn = TaskDefinition(
+            task_id="test_domain_001",
+            type="retrieval",
+            question="Test question?",
+            domain=domain,
+            difficulty="easy",
+        )
+        assert defn.domain == domain
+
+    def test_invalid_domain_still_rejected(self) -> None:
+        """Unknown domains are still rejected."""
+        with pytest.raises(ValueError, match="domain"):
+            TaskDefinition(
+                task_id="test_domain_001",
+                type="retrieval",
+                question="Test question?",
+                domain="nonexistent_domain",
+                difficulty="easy",
+            )

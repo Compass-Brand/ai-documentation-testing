@@ -49,6 +49,13 @@ VALID_DOMAINS: set[str] = {
     "framework_api",
     "project_repo",
     "skills_workflows",
+    # Public dataset domains
+    "library_docs",
+    "technical_qa",
+    "code_repository",
+    "news_articles",
+    "synthetic_docs",
+    "general_knowledge",
 }
 
 VALID_DIFFICULTIES: set[str] = {
