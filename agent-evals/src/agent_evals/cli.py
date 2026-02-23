@@ -223,6 +223,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of confirmation runs for optimal config (Taguchi mode)",
     )
     parser.add_argument(
+        "--pipeline",
+        choices=["auto", "semi"],
+        default=None,
+        help="Run full three-phase DOE pipeline (auto or semi-automatic)",
+    )
+    parser.add_argument(
+        "--phase",
+        choices=["screening", "confirmation", "refinement"],
+        default=None,
+        help="Run a single phase manually",
+    )
+    parser.add_argument(
+        "--parent-run",
+        type=str,
+        default=None,
+        help="Link to prior screening run ID for phase continuation",
+    )
+    parser.add_argument(
+        "--quality-type",
+        choices=["larger_is_better", "smaller_is_better", "nominal_is_best"],
+        default="larger_is_better",
+        help="S/N ratio quality type",
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=3,
+        help="Number of top factors for Phase 3 factorial refinement",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.05,
+        help="Significance threshold for ANOVA",
+    )
+    parser.add_argument(
         "--report",
         choices=["html", "markdown", "both", "none"],
         default=None,
@@ -336,6 +372,12 @@ _CONFIG_KEYS: dict[str, type] = {
     "models": str,
     "oa_type": str,
     "confirmation_runs": int,
+    "pipeline": str,
+    "phase": str,
+    "parent_run": str,
+    "quality_type": str,
+    "top_k": int,
+    "alpha": float,
     "report": str,
     "budget": float,
     "model_budgets": str,
@@ -644,6 +686,11 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     mode = resolved.get("mode", "full")
 
     if mode == "taguchi":
+        pipeline_mode = resolved.get("pipeline")
+        if pipeline_mode:
+            return _run_pipeline(
+                resolved, tasks, variants, doc_tree, api_key, run_config,
+            )
         return _run_taguchi(
             resolved, tasks, variants, doc_tree, api_key, run_config,
         )
@@ -755,6 +802,83 @@ def _run_taguchi(
     logger.info(
         "Taguchi evaluation complete: %d trials, $%.4f cost, %.1fs elapsed",
         len(result.trials),
+        result.total_cost,
+        result.elapsed_seconds,
+    )
+    return 0
+
+
+def _run_pipeline(
+    resolved: dict[str, Any],
+    tasks: list,
+    variants: list,
+    doc_tree: Any,
+    api_key: str,
+    run_config: EvalRunConfig,
+) -> int:
+    """Execute a multi-phase DOE pipeline via DOEPipeline.
+
+    Builds a PipelineConfig from resolved params and runs the full
+    screening -> confirmation -> refinement flow.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+    from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+    # Parse models list
+    models_str = resolved.get("models")
+    model = str(resolved["model"])
+    if models_str:
+        models_list = [m.strip() for m in str(models_str).split(",")]
+    else:
+        models_list = [model]
+
+    # Parse model budgets
+    model_budgets: dict[str, float] | None = None
+    raw_budgets = resolved.get("model_budgets")
+    if raw_budgets and isinstance(raw_budgets, str):
+        model_budgets = {}
+        for pair in raw_budgets.split(","):
+            key, _, val = pair.partition("=")
+            model_budgets[key.strip()] = float(val.strip())
+
+    # Build orchestrator
+    orch_config = OrchestratorConfig(
+        mode="taguchi",
+        models=models_list,
+        api_key=api_key,
+        report_format=resolved.get("report"),
+        global_budget=resolved.get("budget"),
+        model_budgets=model_budgets,
+        temperature=run_config.temperature,
+        eval_config=run_config,
+    )
+    orchestrator = EvalOrchestrator(orch_config)
+
+    # Build pipeline config
+    pipeline_config = PipelineConfig(
+        models=models_list,
+        mode=str(resolved.get("pipeline", "auto")),
+        quality_type=str(resolved.get("quality_type", "larger_is_better")),
+        alpha=float(resolved.get("alpha", 0.05)),
+        top_k=int(resolved.get("top_k", 3)),
+        oa_override=resolved.get("oa_type"),
+        report_format=resolved.get("report"),
+        api_key=api_key,
+        dashboard=resolved.get("dashboard", False),
+        temperature=run_config.temperature,
+        global_budget=resolved.get("budget"),
+        model_budgets=model_budgets,
+    )
+
+    pipeline = DOEPipeline(config=pipeline_config, orchestrator=orchestrator)
+
+    result = pipeline.run(tasks=tasks, variants=variants, doc_tree=doc_tree)
+
+    logger.info(
+        "DOE pipeline complete: %d trials, $%.4f cost, %.1fs elapsed",
+        result.total_trials,
         result.total_cost,
         result.elapsed_seconds,
     )

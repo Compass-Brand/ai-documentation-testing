@@ -452,12 +452,16 @@ class TestResolveConfigFileDefaults:
         assert resolved["repetitions"] == 10
         assert resolved["temperature"] == pytest.approx(0.3)
 
-    def test_empty_config_yields_no_extras(self) -> None:
+    def test_empty_config_yields_only_defaults(self) -> None:
         parser = build_parser()
         args = parser.parse_args([])
         resolved = resolve_config(args, {})
-        # No CLI, no env, no config => empty resolved
-        assert resolved == {}
+        # No CLI, no env, no config => only flags with non-None defaults
+        assert resolved == {
+            "quality_type": "larger_is_better",
+            "top_k": 3,
+            "alpha": 0.05,
+        }
 
     def test_unknown_config_keys_ignored(self) -> None:
         parser = build_parser()
@@ -1384,6 +1388,42 @@ class TestTaguchiModeRouting:
         assert result == 0
         assert "L50" in caplog.text or "OA" in caplog.text.upper()
 
+    def test_taguchi_pipeline_auto_routing(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--pipeline auto should route to DOEPipeline."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        pipeline_called = False
+
+        def fake_pipeline_run(self, tasks, variants, doc_tree, **kwargs):
+            nonlocal pipeline_called
+            pipeline_called = True
+            from agent_evals.pipeline import PhaseResult, PipelineResult
+            screening = PhaseResult(
+                run_id="test-screen", phase="screening", trials=[],
+            )
+            return PipelineResult(
+                pipeline_id="test",
+                screening=screening,
+                total_cost=0.0,
+                elapsed_seconds=0.0,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.pipeline.DOEPipeline.run",
+            fake_pipeline_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+            "pipeline": "auto",
+        }
+        result = _run_evaluation(resolved)
+        assert result == 0
+        assert pipeline_called is True
+
     def test_taguchi_oa_override(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -1446,3 +1486,157 @@ class TestTaguchiModeRouting:
         }
         _run_evaluation(resolved)
         assert eval_runner_called is True
+
+
+# ---------------------------------------------------------------------------
+# DOE Pipeline CLI flags -- parser
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineFlagParsing:
+    """New DOE pipeline flags are parsed correctly."""
+
+    def test_pipeline_auto_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--pipeline", "auto"])
+        assert args.pipeline == "auto"
+
+    def test_pipeline_semi_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--pipeline", "semi"])
+        assert args.pipeline == "semi"
+
+    def test_pipeline_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--pipeline", "manual"])
+
+    def test_pipeline_default_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.pipeline is None
+
+    def test_phase_screening_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--phase", "screening"])
+        assert args.phase == "screening"
+
+    def test_phase_confirmation_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--phase", "confirmation"])
+        assert args.phase == "confirmation"
+
+    def test_phase_refinement_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--phase", "refinement"])
+        assert args.phase == "refinement"
+
+    def test_phase_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--phase", "exploration"])
+
+    def test_phase_default_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.phase is None
+
+    def test_parent_run_accepts_string(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--parent-run", "abc123"])
+        assert args.parent_run == "abc123"
+
+    def test_parent_run_default_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.parent_run is None
+
+    def test_quality_type_larger_is_better(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quality-type", "larger_is_better"])
+        assert args.quality_type == "larger_is_better"
+
+    def test_quality_type_smaller_is_better(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quality-type", "smaller_is_better"])
+        assert args.quality_type == "smaller_is_better"
+
+    def test_quality_type_nominal_is_best(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quality-type", "nominal_is_best"])
+        assert args.quality_type == "nominal_is_best"
+
+    def test_quality_type_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--quality-type", "bad_value"])
+
+    def test_quality_type_default_is_larger(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.quality_type == "larger_is_better"
+
+    def test_top_k_accepts_int(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--top-k", "4"])
+        assert args.top_k == 4
+
+    def test_top_k_default_is_three(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.top_k == 3
+
+    def test_alpha_accepts_float(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--alpha", "0.01"])
+        assert args.alpha == pytest.approx(0.01)
+
+    def test_alpha_default_is_005(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.alpha == pytest.approx(0.05)
+
+
+# ---------------------------------------------------------------------------
+# DOE Pipeline CLI flags -- resolve_config
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineResolveConfig:
+    """Pipeline flags participate in the config resolution pipeline."""
+
+    def test_pipeline_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--pipeline", "auto"])
+        resolved = resolve_config(args, {})
+        assert resolved["pipeline"] == "auto"
+
+    def test_phase_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--phase", "confirmation"])
+        resolved = resolve_config(args, {})
+        assert resolved["phase"] == "confirmation"
+
+    def test_parent_run_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--parent-run", "abc123"])
+        resolved = resolve_config(args, {})
+        assert resolved["parent_run"] == "abc123"
+
+    def test_quality_type_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quality-type", "smaller_is_better"])
+        resolved = resolve_config(args, {})
+        assert resolved["quality_type"] == "smaller_is_better"
+
+    def test_top_k_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--top-k", "5"])
+        resolved = resolve_config(args, {})
+        assert resolved["top_k"] == 5
+
+    def test_alpha_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--alpha", "0.01"])
+        resolved = resolve_config(args, {})
+        assert resolved["alpha"] == pytest.approx(0.01)
