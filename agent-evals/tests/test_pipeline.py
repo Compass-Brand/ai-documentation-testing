@@ -228,3 +228,76 @@ def test_pipeline_screening_identifies_significant_factors(
 
     # Should include only significant factors, sorted by omega_squared desc
     assert result.significant_factors == ["axis_1", "axis_3"]
+
+
+# ---------------------------------------------------------------------------
+# DOEPipeline.run_confirmation tests
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_confirmation_returns_phase_result():
+    """Phase 2 returns a PhaseResult with confirmation data."""
+    config = PipelineConfig(models=["model-a"], confirmation_reps=5)
+    orch = _make_mock_orchestrator(score=0.7)
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_2": "b"},
+        significant_factors=["axis_1", "axis_2"],
+    )
+
+    with patch("agent_evals.pipeline.validate_confirmation") as mock_val:
+        mock_val.return_value = MagicMock(
+            within_interval=True,
+            sigma_deviation=0.3,
+            observed_sn=11.5,
+            predicted_sn=12.0,
+            prediction_interval=(10.0, 14.0),
+        )
+        result = pipeline.run_confirmation(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+    assert isinstance(result, PhaseResult)
+    assert result.phase == "confirmation"
+    assert result.confirmation is not None
+    assert result.confirmation["within_interval"] is True
+
+
+def test_pipeline_confirmation_calls_validate():
+    """Phase 2 calls validate_confirmation with optimal scores."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator(score=0.8)
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a"},
+        significant_factors=["axis_1"],
+    )
+
+    with patch("agent_evals.pipeline.validate_confirmation") as mock_val:
+        mock_val.return_value = MagicMock(
+            within_interval=False,
+            sigma_deviation=2.1,
+            observed_sn=8.0,
+            predicted_sn=12.0,
+            prediction_interval=(10.0, 14.0),
+        )
+        result = pipeline.run_confirmation(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+        mock_val.assert_called_once()
+
+    assert result.confirmation["within_interval"] is False

@@ -12,6 +12,7 @@ from agent_evals.taguchi.analysis import (
     compute_sn_ratios,
     predict_optimal,
     run_anova,
+    validate_confirmation,
 )
 from agent_evals.taguchi.factors import build_design
 
@@ -159,4 +160,62 @@ class DOEPipeline:
             anova=anova,
             optimal=optimal.optimal_assignment,
             significant_factors=[f.factor_name for f in sig_factors],
+        )
+
+    def run_confirmation(
+        self,
+        screening_result: PhaseResult,
+        tasks: list[Any],
+        variants: list[Any],
+        doc_tree: Any,
+    ) -> PhaseResult:
+        """Execute Phase 2: confirmation experiment.
+
+        Runs the predicted optimal config from Phase 1 against all tasks,
+        then validates that observed performance falls within the prediction
+        interval.
+        """
+        # Build variant lookup
+        variant_lookup = {v.metadata().name: v for v in variants}
+
+        # Run optimal config trials via orchestrator (full mode, not Taguchi)
+        result = self._orchestrator.run(
+            tasks,
+            variants,
+            doc_tree,
+            variant_lookup=variant_lookup,
+            phase="confirmation",
+            pipeline_id=self._pipeline_id,
+        )
+
+        # Gather observed scores
+        optimal_scores = [t.score for t in result.trials]
+
+        # Build an OptimalPrediction from screening results for validation
+        from agent_evals.taguchi.analysis import OptimalPrediction
+
+        prediction = OptimalPrediction(
+            optimal_assignment=screening_result.optimal or {},
+            predicted_sn=0.0,
+        )
+
+        # Validate observed against prediction
+        conf_result = validate_confirmation(
+            prediction, optimal_scores, self.config.quality_type
+        )
+
+        return PhaseResult(
+            run_id=result.run_id,
+            phase="confirmation",
+            trials=result.trials,
+            total_cost=result.total_cost,
+            total_tokens=result.total_tokens,
+            elapsed_seconds=result.elapsed_seconds,
+            confirmation={
+                "within_interval": conf_result.within_interval,
+                "sigma_deviation": conf_result.sigma_deviation,
+                "observed_sn": conf_result.observed_sn,
+                "predicted_sn": conf_result.predicted_sn,
+                "prediction_interval": conf_result.prediction_interval,
+            },
         )
