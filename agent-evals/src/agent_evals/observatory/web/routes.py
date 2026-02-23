@@ -114,6 +114,8 @@ def create_router(
 
         def _on_event(event: Any) -> None:
             try:
+                if event.data.get("run_id") != run_id:
+                    return
                 queue.put_nowait({
                     "event_type": event.event_type,
                     "data": event.data,
@@ -135,7 +137,7 @@ def create_router(
                             "event": event["event_type"],
                             "data": json.dumps(event["data"]),
                         }
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         yield {"comment": "keepalive"}
             finally:
                 tracker.remove_listener(_on_event)
@@ -193,7 +195,7 @@ def create_router(
             else None
         )
         results = catalog.filter_models(
-            free=free if free else None,
+            free=free,
             max_price=max_price,
             min_context=min_context,
             modality=modality,
