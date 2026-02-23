@@ -788,16 +788,22 @@ def _run_taguchi(
         model_budgets=model_budgets,
         temperature=run_config.temperature,
         eval_config=run_config,
+        dashboard=resolved.get("dashboard", False),
+        dashboard_port=int(resolved.get("dashboard_port", 8501)),
     )
     orchestrator = EvalOrchestrator(orch_config)
 
-    result = orchestrator.run(
-        tasks=tasks,
-        variants=variants,
-        doc_tree=doc_tree,
-        design=design,
-        variant_lookup=variant_lookup,
-    )
+    orchestrator.start_dashboard()
+    try:
+        result = orchestrator.run(
+            tasks=tasks,
+            variants=variants,
+            doc_tree=doc_tree,
+            design=design,
+            variant_lookup=variant_lookup,
+        )
+    finally:
+        orchestrator.stop_dashboard()
 
     logger.info(
         "Taguchi evaluation complete: %d trials, $%.4f cost, %.1fs elapsed",
@@ -853,6 +859,8 @@ def _run_pipeline(
         model_budgets=model_budgets,
         temperature=run_config.temperature,
         eval_config=run_config,
+        dashboard=resolved.get("dashboard", False),
+        dashboard_port=int(resolved.get("dashboard_port", 8501)),
     )
     orchestrator = EvalOrchestrator(orch_config)
 
@@ -874,7 +882,11 @@ def _run_pipeline(
 
     pipeline = DOEPipeline(config=pipeline_config, orchestrator=orchestrator)
 
-    result = pipeline.run(tasks=tasks, variants=variants, doc_tree=doc_tree)
+    orchestrator.start_dashboard()
+    try:
+        result = pipeline.run(tasks=tasks, variants=variants, doc_tree=doc_tree)
+    finally:
+        orchestrator.stop_dashboard()
 
     logger.info(
         "DOE pipeline complete: %d trials, $%.4f cost, %.1fs elapsed",
