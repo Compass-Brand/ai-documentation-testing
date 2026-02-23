@@ -71,6 +71,7 @@ class TaguchiRunner:
         doc_tree: DocTree,
         progress_callback: ProgressCallback | None = None,
         source: str = "gold_standard",
+        phase: str | None = None,
     ) -> TaguchiRunResult:
         """Execute trials for all OA rows x tasks x repetitions.
 
@@ -79,6 +80,7 @@ class TaguchiRunner:
             doc_tree: Documentation tree for variant rendering.
             progress_callback: Optional ``(completed, total, trial)`` callback.
             source: Source tag for all resulting TrialResults.
+            phase: Pipeline phase name (e.g. "screening", "confirmation").
 
         Returns:
             TaguchiRunResult with all trials and aggregated metrics.
@@ -97,7 +99,7 @@ class TaguchiRunner:
         completed = 0
 
         for row, task, rep in work_items:
-            trial = self._run_trial(row, task, doc_tree, rep, source)
+            trial = self._run_trial(row, task, doc_tree, rep, source, phase)
             all_trials.append(trial)
             completed += 1
             if progress_callback is not None:
@@ -123,6 +125,7 @@ class TaguchiRunner:
         doc_tree: DocTree,
         repetition: int,
         source: str,
+        phase: str | None = None,
     ) -> TrialResult:
         """Execute a single trial for an OA row + task + repetition."""
         trial_start = time.monotonic()
@@ -130,6 +133,11 @@ class TaguchiRunner:
         # Build composite variant from row assignments
         composite = self._build_composite(row)
         composite.setup(doc_tree)
+
+        # Build metrics dict with optional phase
+        metrics: dict[str, float | str] = {"oa_row_id": float(row.run_id)}
+        if phase is not None:
+            metrics["phase"] = phase
 
         try:
             # Select client
@@ -156,7 +164,7 @@ class TaguchiRunner:
                 variant_name=composite.metadata().name,
                 repetition=repetition,
                 score=score,
-                metrics={"oa_row_id": float(row.run_id)},
+                metrics=metrics,
                 prompt_tokens=generation.prompt_tokens,
                 completion_tokens=generation.completion_tokens,
                 total_tokens=generation.total_tokens,
@@ -181,7 +189,7 @@ class TaguchiRunner:
                 variant_name=composite.metadata().name,
                 repetition=repetition,
                 score=0.0,
-                metrics={"oa_row_id": float(row.run_id)},
+                metrics=metrics,
                 prompt_tokens=0,
                 completion_tokens=0,
                 total_tokens=0,

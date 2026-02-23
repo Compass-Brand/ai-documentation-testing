@@ -527,3 +527,80 @@ class TestTaguchiRunResult:
 
         assert isinstance(result.elapsed_seconds, float)
         assert result.elapsed_seconds >= 0
+
+
+class TestPhaseMetadata:
+    """TaguchiRunner passes phase through to trial metrics."""
+
+    def test_phase_stored_in_trial_metrics(self):
+        """When phase is passed to run(), all trials include it in metrics."""
+        design = _make_simple_design(n_rows=2)
+        axes = {1: ["flat", "2tier", "3tier"]}
+        variants = _make_variant_lookup(axes)
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [_make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree, phase="screening")
+
+        for trial in result.trials:
+            assert trial.metrics["phase"] == "screening"
+
+    def test_phase_none_by_default(self):
+        """When phase is not passed, metrics still have oa_row_id but no phase."""
+        design = _make_simple_design(n_rows=2)
+        axes = {1: ["flat", "2tier", "3tier"]}
+        variants = _make_variant_lookup(axes)
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [_make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        for trial in result.trials:
+            assert "oa_row_id" in trial.metrics
+            assert "phase" not in trial.metrics
+
+    def test_phase_in_error_trials(self):
+        """Phase metadata is preserved even when the LLM call fails."""
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=2, axes=axes)
+        variants = _make_variant_lookup(axes)
+
+        client = _make_mock_client()
+        client.complete.side_effect = RuntimeError("boom")
+        config = EvalRunConfig(repetitions=1, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [_make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree, phase="confirmation")
+
+        for trial in result.trials:
+            assert trial.error is not None
+            assert trial.metrics["phase"] == "confirmation"
