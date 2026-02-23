@@ -954,3 +954,268 @@ class TestSourceFlag:
             "--source", "gold_standard,repliqa",
         ])
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Taguchi / multi-model CLI flags -- defaults
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiModeDefaults:
+    """Default values for Taguchi and multi-model flags."""
+
+    def test_default_mode_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.mode is None
+
+    def test_default_models_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.models is None
+
+    def test_default_oa_type_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.oa_type is None
+
+    def test_default_confirmation_runs_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.confirmation_runs is None
+
+    def test_default_report_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.report is None
+
+    def test_default_budget_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.budget is None
+
+    def test_default_model_budgets_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.model_budgets is None
+
+    def test_default_dashboard_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.dashboard is False
+
+    def test_default_model_group_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.model_group is None
+
+    def test_default_sync_interval_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.sync_interval is None
+
+
+# ---------------------------------------------------------------------------
+# Taguchi / multi-model CLI flags -- parsing
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiModeParsing:
+    """Each Taguchi/multi-model flag can be set and parsed correctly."""
+
+    def test_mode_taguchi_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--mode", "taguchi"])
+        assert args.mode == "taguchi"
+
+    def test_mode_factorial_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--mode", "factorial"])
+        assert args.mode == "factorial"
+
+    def test_mode_full_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--mode", "full"])
+        assert args.mode == "full"
+
+    def test_mode_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--mode", "invalid"])
+
+    def test_models_accepts_comma_separated(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--models", "claude,gpt-4o,gemini"])
+        assert args.models == "claude,gpt-4o,gemini"
+
+    def test_oa_type_accepts_string(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--oa-type", "L54"])
+        assert args.oa_type == "L54"
+
+    def test_confirmation_runs_accepts_int(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--confirmation-runs", "3"])
+        assert args.confirmation_runs == 3
+
+    def test_report_html_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "html"])
+        assert args.report == "html"
+
+    def test_report_markdown_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "markdown"])
+        assert args.report == "markdown"
+
+    def test_report_both_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "both"])
+        assert args.report == "both"
+
+    def test_report_none_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "none"])
+        assert args.report == "none"
+
+    def test_report_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--report", "pdf"])
+
+    def test_budget_accepts_float(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--budget", "50.00"])
+        assert args.budget == pytest.approx(50.0)
+
+    def test_model_budgets_accepts_string(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model-budgets", "claude=20.00,gpt-4o=30.00"])
+        assert args.model_budgets == "claude=20.00,gpt-4o=30.00"
+
+    def test_dashboard_is_boolean_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--dashboard"])
+        assert args.dashboard is True
+
+    def test_model_group_accepts_string(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model-group", "fast-cheap"])
+        assert args.model_group == "fast-cheap"
+
+    def test_sync_interval_accepts_float(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--sync-interval", "12.0"])
+        assert args.sync_interval == pytest.approx(12.0)
+
+
+# ---------------------------------------------------------------------------
+# Taguchi / multi-model CLI flags -- resolve_config
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiResolveConfig:
+    """Taguchi flags participate in the config resolution pipeline."""
+
+    def test_mode_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--mode", "taguchi"])
+        resolved = resolve_config(args, {})
+        assert resolved["mode"] == "taguchi"
+
+    def test_mode_resolved_from_config_file(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        config = {"mode": "taguchi"}
+        resolved = resolve_config(args, config)
+        assert resolved["mode"] == "taguchi"
+
+    def test_models_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--models", "claude,gpt-4o"])
+        resolved = resolve_config(args, {})
+        assert resolved["models"] == "claude,gpt-4o"
+
+    def test_oa_type_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--oa-type", "L54"])
+        resolved = resolve_config(args, {})
+        assert resolved["oa_type"] == "L54"
+
+    def test_confirmation_runs_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--confirmation-runs", "5"])
+        resolved = resolve_config(args, {})
+        assert resolved["confirmation_runs"] == 5
+
+    def test_report_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "both"])
+        resolved = resolve_config(args, {})
+        assert resolved["report"] == "both"
+
+    def test_budget_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--budget", "50.0"])
+        resolved = resolve_config(args, {})
+        assert resolved["budget"] == pytest.approx(50.0)
+
+    def test_dashboard_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--dashboard"])
+        resolved = resolve_config(args, {})
+        assert resolved["dashboard"] is True
+
+    def test_model_group_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model-group", "fast-cheap"])
+        resolved = resolve_config(args, {})
+        assert resolved["model_group"] == "fast-cheap"
+
+    def test_sync_interval_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--sync-interval", "12.0"])
+        resolved = resolve_config(args, {})
+        assert resolved["sync_interval"] == pytest.approx(12.0)
+
+
+# ---------------------------------------------------------------------------
+# Taguchi / multi-model CLI flags -- coexistence with dataset flags
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiDatasetCoexistence:
+    """New Taguchi flags coexist with existing dataset flags."""
+
+    def test_taguchi_and_dataset_flags_together(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([
+            "--mode", "taguchi",
+            "--models", "claude,gpt-4o",
+            "--source", "repliqa",
+            "--dataset-limit", "10",
+        ])
+        assert args.mode == "taguchi"
+        assert args.models == "claude,gpt-4o"
+        assert args.source == "repliqa"
+        assert args.dataset_limit == 10
+
+    def test_dry_run_with_taguchi_flags(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+        result = main([
+            "--model", "test/model",
+            "--dry-run",
+            "--mode", "taguchi",
+            "--models", "claude,gpt-4o",
+        ])
+        assert result == 0
+
+    def test_backward_compat_old_flags_work(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model", "claude", "--axis", "3"])
+        assert args.model == "claude"
+        assert args.axis == 3
+        # mode is None when not explicitly set (defaults applied at resolve)
+        assert args.mode is None

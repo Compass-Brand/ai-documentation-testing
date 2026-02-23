@@ -197,6 +197,68 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show available datasets with contamination risk",
     )
 
+    # Taguchi / multi-model configuration
+    parser.add_argument(
+        "--mode",
+        choices=["full", "taguchi", "factorial"],
+        default=None,
+        help="Evaluation mode (default: full)",
+    )
+    parser.add_argument(
+        "--models",
+        type=str,
+        default=None,
+        help="Comma-separated list of models for multi-model evaluation",
+    )
+    parser.add_argument(
+        "--oa-type",
+        type=str,
+        default=None,
+        help="Force specific Taguchi OA (e.g. L54). Default: auto-select",
+    )
+    parser.add_argument(
+        "--confirmation-runs",
+        type=int,
+        default=None,
+        help="Number of confirmation runs for optimal config (Taguchi mode)",
+    )
+    parser.add_argument(
+        "--report",
+        choices=["html", "markdown", "both", "none"],
+        default=None,
+        help="Research report format (in addition to JSON/CSV)",
+    )
+    parser.add_argument(
+        "--budget",
+        type=float,
+        default=None,
+        help="Budget cap in dollars",
+    )
+    parser.add_argument(
+        "--model-budgets",
+        type=str,
+        default=None,
+        help='Per-model budget caps, e.g. "claude=20.00,gpt-4o=30.00"',
+    )
+    parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        default=False,
+        help="Start web dashboard on localhost:8080",
+    )
+    parser.add_argument(
+        "--model-group",
+        type=str,
+        default=None,
+        help="Model group name to use (combinable with --models, union)",
+    )
+    parser.add_argument(
+        "--sync-interval",
+        type=float,
+        default=None,
+        help="Model sync interval in hours (default: 6)",
+    )
+
     # Verbosity (mutually exclusive)
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument(
@@ -270,6 +332,16 @@ _CONFIG_KEYS: dict[str, type] = {
     "dataset_cache_dir": str,
     "prepare_datasets": str,
     "list_datasets": bool,
+    "mode": str,
+    "models": str,
+    "oa_type": str,
+    "confirmation_runs": int,
+    "report": str,
+    "budget": float,
+    "model_budgets": str,
+    "dashboard": bool,
+    "model_group": str,
+    "sync_interval": float,
 }
 
 
