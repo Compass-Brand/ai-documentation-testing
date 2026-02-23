@@ -8,6 +8,10 @@ import {
   Cpu,
 } from "lucide-react";
 import { cn } from "./lib/utils";
+import RunConfig from "./pages/RunConfig";
+import LiveMonitor from "./pages/LiveMonitor";
+import { ResultsExplorer } from "./pages/ResultsExplorer";
+import { Observatory } from "./pages/Observatory";
 
 function Placeholder({ name }: { name: string }) {
   return (
@@ -59,10 +63,10 @@ export default function App() {
 
       <main>
         <Routes>
-          <Route path="/" element={<Placeholder name="Run Configuration" />} />
-          <Route path="/live/:runId?" element={<Placeholder name="Live Monitor" />} />
-          <Route path="/results/:runId?" element={<Placeholder name="Results Explorer" />} />
-          <Route path="/observatory" element={<Placeholder name="Observatory" />} />
+          <Route path="/" element={<RunConfig />} />
+          <Route path="/live/:runId?" element={<LiveMonitor />} />
+          <Route path="/results/:runId?" element={<ResultsExplorer />} />
+          <Route path="/observatory" element={<Observatory />} />
           <Route path="/history" element={<Placeholder name="History" />} />
           <Route path="/models" element={<Placeholder name="Models" />} />
         </Routes>
