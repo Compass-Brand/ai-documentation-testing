@@ -1,1 +1,1 @@
-"""Observatory – persistent telemetry storage and querying."""
+"""Observatory - persistent telemetry storage and querying."""

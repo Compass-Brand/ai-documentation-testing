@@ -393,7 +393,7 @@ def select_oa(level_counts: list[int]) -> OrthogonalArray:
             reverse=True,
         )
         needed = sorted(level_counts, reverse=True)
-        if all(a >= n for a, n in zip(available_levels, needed)):
+        if all(a >= n for a, n in zip(available_levels[:n_factors], needed, strict=True)):
             return oa
 
     msg = (

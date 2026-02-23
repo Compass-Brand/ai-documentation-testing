@@ -116,7 +116,7 @@ def build_design(
     rows: list[TaguchiExperimentRow] = []
     for run_id in range(oa.n_runs):
         assignments: dict[str, str] = {}
-        for factor, col_idx in zip(factors, col_assignments):
+        for factor, col_idx in zip(factors, col_assignments, strict=True):
             raw_level = int(oa.matrix[run_id, col_idx])
             # Map OA level (0-indexed) to actual level name (mod n_levels)
             mapped_level = raw_level % factor.n_levels

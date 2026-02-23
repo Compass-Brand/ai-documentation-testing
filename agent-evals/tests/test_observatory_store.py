@@ -1,4 +1,4 @@
-"""Tests for ObservatoryStore – SQLite-backed telemetry storage."""
+"""Tests for ObservatoryStore - SQLite-backed telemetry storage."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def _make_trial_kwargs(
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def store(tmp_path: Path) -> ObservatoryStore:
     """Create a fresh ObservatoryStore in a temp directory."""
     return ObservatoryStore(db_path=tmp_path / "observatory.db")

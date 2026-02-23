@@ -1,4 +1,4 @@
-"""Tests for TaguchiRunner – OA-based evaluation execution."""
+"""Tests for TaguchiRunner - OA-based evaluation execution."""
 
 from __future__ import annotations
 
@@ -215,7 +215,7 @@ class TestCompositeVariantAssignment:
         runner.run(tasks, doc_tree)
 
         # Variants should have had setup called
-        for v in variants.values():
+        for _v in variants.values():
             # setup is called on the individual variants via CompositeVariant
             pass  # Just verify no errors; composite delegates setup
 
@@ -330,7 +330,7 @@ class TestResultGrouping:
         # Should have 3 groups (one per OA row)
         assert len(grouped) == 3
         # Each group should have 2 trials (1 task * 2 reps)
-        for row_id, trials in grouped.items():
+        for _row_id, trials in grouped.items():
             assert len(trials) == 2
 
 

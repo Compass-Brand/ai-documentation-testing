@@ -37,7 +37,7 @@ def _clear_registry() -> None:
     clear_registry()
 
 
-@pytest.fixture()
+@pytest.fixture
 def sample_doc_tree() -> DocTree:
     """Create a minimal DocTree for testing."""
     return DocTree(

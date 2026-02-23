@@ -53,7 +53,7 @@ class ModelGroupManager:
                     group_id INTEGER NOT NULL,
                     model_id TEXT NOT NULL,
                     PRIMARY KEY (group_id, model_id),
-                    FOREIGN KEY (group_id) REFERENCES model_groups(id)
+                    FOREIGN KEY (group_id) REFERENCES model_groups(id) ON DELETE CASCADE
                 );
             """)
             conn.commit()

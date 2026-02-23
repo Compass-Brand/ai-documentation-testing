@@ -76,13 +76,23 @@ class ModelSync:
 
         price_changes: list[dict[str, Any]] = []
         for model_id in local_ids & remote_ids:
-            old_price = local[model_id].get("prompt_price")
-            new_price = remote[model_id].get("prompt_price")
-            if old_price is not None and new_price is not None and old_price != new_price:
+            old_prompt = local[model_id].get("prompt_price")
+            new_prompt = remote[model_id].get("prompt_price")
+            if old_prompt is not None and new_prompt is not None and old_prompt != new_prompt:
                 price_changes.append({
                     "id": model_id,
-                    "old": old_price,
-                    "new": new_price,
+                    "field": "prompt_price",
+                    "old": old_prompt,
+                    "new": new_prompt,
+                })
+            old_comp = local[model_id].get("completion_price")
+            new_comp = remote[model_id].get("completion_price")
+            if old_comp is not None and new_comp is not None and old_comp != new_comp:
+                price_changes.append({
+                    "id": model_id,
+                    "field": "completion_price",
+                    "old": old_comp,
+                    "new": new_comp,
                 })
 
         return SyncDiff(added=added, removed=removed, price_changes=price_changes)
@@ -103,7 +113,7 @@ class ModelSync:
         try:
             remote_models = self.fetch_remote_models()
         except Exception as exc:
-            logger.error("Model sync failed: %s", exc)
+            logger.exception("Model sync failed: %s", exc)
             return SyncResult(error=str(exc))
 
         # Build remote lookup by id.
@@ -166,9 +176,10 @@ class ModelSync:
     def stop_periodic(self) -> None:
         """Stop periodic sync."""
         self._running = False
-        if self._timer is not None:
-            self._timer.cancel()
-            self._timer = None
+        timer = self._timer
+        self._timer = None
+        if timer is not None:
+            timer.cancel()
 
     def _schedule_next(self) -> None:
         """Schedule the next sync run."""

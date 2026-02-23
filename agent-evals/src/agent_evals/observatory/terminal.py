@@ -6,6 +6,8 @@ using Rich renderables.
 
 from __future__ import annotations
 
+from collections import deque
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -32,7 +34,7 @@ class TerminalDashboard:
         self._tracker = tracker
         self._total_trials = total_trials
         self._budget = budget
-        self._alerts: list[str] = []
+        self._alerts: deque[str] = deque(maxlen=100)
 
     def add_alert(self, message: str) -> None:
         """Add an alert message to the feed."""

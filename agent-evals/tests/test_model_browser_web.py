@@ -19,7 +19,7 @@ from agent_evals.observatory.tracker import EventTracker
 from agent_evals.observatory.web.server import create_app
 
 
-@pytest.fixture()
+@pytest.fixture
 def catalog(tmp_path: Path) -> ModelCatalog:
     cat = ModelCatalog(tmp_path / "models.db")
     # Seed with test models.
@@ -43,7 +43,7 @@ def catalog(tmp_path: Path) -> ModelCatalog:
     return cat
 
 
-@pytest.fixture()
+@pytest.fixture
 def client(tmp_path: Path, catalog: ModelCatalog) -> TestClient:
     store = ObservatoryStore(tmp_path / "obs.db")
     tracker = EventTracker(store=store)

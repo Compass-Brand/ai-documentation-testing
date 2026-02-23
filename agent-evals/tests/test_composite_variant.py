@@ -1,4 +1,4 @@
-"""Tests for CompositeVariant – combines one variant per axis into a single render."""
+"""Tests for CompositeVariant - combines one variant per axis into a single render."""
 
 from __future__ import annotations
 
@@ -55,22 +55,22 @@ def _make_doc_tree() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
+@pytest.fixture
 def doc_tree() -> MagicMock:
     return _make_doc_tree()
 
 
-@pytest.fixture()
+@pytest.fixture
 def stub_a() -> StubVariant:
     return StubVariant(name="flat", axis=1, output="STRUCTURE_OUTPUT")
 
 
-@pytest.fixture()
+@pytest.fixture
 def stub_b() -> StubVariant:
     return StubVariant(name="summary", axis=2, output="METADATA_OUTPUT")
 
 
-@pytest.fixture()
+@pytest.fixture
 def stub_c() -> StubVariant:
     return StubVariant(name="yaml", axis=7, output="FORMAT_OUTPUT")
 

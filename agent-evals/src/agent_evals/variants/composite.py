@@ -1,4 +1,4 @@
-"""CompositeVariant – combines one variant per axis into a single render.
+"""CompositeVariant - combines one variant per axis into a single render.
 
 Used by TaguchiRunner to create combined configurations from orthogonal
 array rows, where each row specifies one variant level per axis.

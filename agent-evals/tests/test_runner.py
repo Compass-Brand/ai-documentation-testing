@@ -1173,7 +1173,7 @@ class TestFailedTrialRecording:
 class TestExtractRelevantDocs:
     """Tests for EvalRunner._extract_relevant_docs."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def sample_doc_tree(self) -> DocTree:
         """Create a minimal DocTree for testing."""
         return DocTree(

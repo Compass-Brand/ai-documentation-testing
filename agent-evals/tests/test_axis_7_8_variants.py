@@ -158,19 +158,19 @@ def _clear_registry() -> None:
     clear_registry()
 
 
-@pytest.fixture()
+@pytest.fixture
 def doc_tree() -> MagicMock:
     """Provide a mock DocTree with varied content."""
     return _make_doc_tree()
 
 
-@pytest.fixture()
+@pytest.fixture
 def empty_tree() -> MagicMock:
     """Provide an empty mock DocTree."""
     return _make_empty_tree()
 
 
-@pytest.fixture()
+@pytest.fixture
 def mixed_size_tree() -> MagicMock:
     """Provide a mock DocTree with varied file sizes."""
     return _make_mixed_size_tree()

@@ -1,4 +1,4 @@
-"""TaguchiRunner – executes trials based on a Taguchi OA design.
+"""TaguchiRunner - executes trials based on a Taguchi OA design.
 
 Instead of the full Cartesian product of variants, this runner generates
 work items from OA rows.  Each row specifies one variant per axis (and

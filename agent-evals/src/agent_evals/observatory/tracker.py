@@ -6,6 +6,7 @@ running average), enforces per-model budget caps, and monitors burn rate.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections import deque
@@ -254,7 +255,7 @@ class EventTracker:
             try:
                 listener(event)
             except Exception:  # noqa: BLE001
-                pass
+                logging.getLogger(__name__).debug("Listener error", exc_info=True)
 
 
 class _ModelStats:

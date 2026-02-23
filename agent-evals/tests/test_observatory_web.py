@@ -16,18 +16,18 @@ from agent_evals.observatory.tracker import EventTracker
 from agent_evals.observatory.web.server import create_app
 
 
-@pytest.fixture()
+@pytest.fixture
 def _store(tmp_path: Path) -> ObservatoryStore:
     store = ObservatoryStore(tmp_path / "test.db")
     return store
 
 
-@pytest.fixture()
+@pytest.fixture
 def _tracker(_store: ObservatoryStore) -> EventTracker:
     return EventTracker(store=_store)
 
 
-@pytest.fixture()
+@pytest.fixture
 def client(_store: ObservatoryStore, _tracker: EventTracker) -> TestClient:
     app = create_app(store=_store, tracker=_tracker)
     return TestClient(app)

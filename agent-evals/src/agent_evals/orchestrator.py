@@ -207,7 +207,7 @@ class EvalOrchestrator:
                 total_tokens=trial.total_tokens,
                 cost=trial.cost,
                 latency_seconds=trial.latency_seconds,
-                model=model_name,
+                model=getattr(trial, "model", model_name),
                 source=trial.source,
                 error=trial.error,
             )
