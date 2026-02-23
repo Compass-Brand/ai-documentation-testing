@@ -18,7 +18,7 @@ import {
   Filler,
   Tooltip,
 } from "chart.js";
-import { useRun, useTrials } from "../api/hooks";
+import { useRuns, useRun, useTrials } from "../api/hooks";
 import { useSSE } from "../hooks/useSSE";
 import { Card, CardContent, CardTitle } from "../components/Card";
 import { FadeIn } from "../components/FadeIn";
@@ -36,9 +36,24 @@ ChartJS.register(
 );
 
 export default function LiveMonitor() {
-  const { runId } = useParams<{ runId: string }>();
-  const { data: summary, isLoading } = useRun(runId ?? null);
-  const { data: trials } = useTrials(runId ?? null);
+  const { runId: paramRunId } = useParams<{ runId: string }>();
+  const { data: runs, isLoading: runsLoading } = useRuns();
+
+  // Auto-detect most recent active run when no runId in URL
+  const effectiveRunId = useMemo(() => {
+    if (paramRunId) return paramRunId;
+    if (!runs) return null;
+    const activeRuns = runs
+      .filter((r) => r.status === "active")
+      .sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      );
+    return activeRuns[0]?.run_id ?? null;
+  }, [paramRunId, runs]);
+
+  const { data: summary, isLoading } = useRun(effectiveRunId);
+  const { data: trials } = useTrials(effectiveRunId);
   const [recentTrials, setRecentTrials] = useState<Trial[]>([]);
   const [scores, setScores] = useState<number[]>([]);
 
@@ -52,7 +67,7 @@ export default function LiveMonitor() {
   }, []);
 
   useSSE({
-    runId: runId ?? null,
+    runId: effectiveRunId,
     onTrialComplete,
     onRunComplete,
   });
@@ -107,10 +122,24 @@ export default function LiveMonitor() {
   // Display list: recent SSE trials first, then fetched trials
   const displayTrials = recentTrials.length > 0 ? recentTrials : (trials ?? []).slice().reverse().slice(0, 20);
 
-  if (isLoading) {
+  if ((!paramRunId && runsLoading) || isLoading) {
     return (
       <div className="mx-auto max-w-wide px-sp-6 py-sp-8">
         <p className="text-body text-brand-slate">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!paramRunId && !effectiveRunId) {
+    return (
+      <div className="mx-auto max-w-wide px-sp-6 py-sp-8">
+        <div className="flex items-center gap-sp-3 mb-sp-6">
+          <Activity className="h-6 w-6 text-brand-goldenrod" />
+          <h1 className="text-h2 text-brand-charcoal">Live Monitor</h1>
+        </div>
+        <p className="text-body text-brand-slate">
+          No active runs. Start an evaluation to see live results.
+        </p>
       </div>
     );
   }
