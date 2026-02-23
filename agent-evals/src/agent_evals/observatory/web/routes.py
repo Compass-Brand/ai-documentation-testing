@@ -166,6 +166,15 @@ def create_router(
             "by_model": by_model_out,
         }
 
+    @router.post("/api/runs/{run_id}/finish")
+    async def finish_run(run_id: str) -> dict[str, Any]:
+        try:
+            store.get_run_summary(run_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        store.finish_run(run_id)
+        return {"run_id": run_id, "status": "completed"}
+
     @router.get("/api/runs/{run_id}/trials")
     async def get_trials(run_id: str) -> list[dict[str, Any]]:
         trials = store.get_trials(run_id)

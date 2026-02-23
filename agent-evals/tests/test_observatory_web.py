@@ -100,6 +100,22 @@ class TestRunsAPI:
         assert data["total_tokens"] == 600
         assert data["by_model"]["claude"]["trial_count"] == 1
 
+    def test_finish_run(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        _store.create_run("run-1", "test", {})
+        response = client.post("/api/runs/run-1/finish")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "completed"
+        # Verify the run is now completed in the store
+        summary = _store.get_run_summary("run-1")
+        assert summary.status == "completed"
+
+    def test_finish_run_not_found(self, client: TestClient) -> None:
+        response = client.post("/api/runs/nonexistent/finish")
+        assert response.status_code == 404
+
     def test_get_run_not_found(self, client: TestClient) -> None:
         response = client.get("/api/runs/nonexistent")
         assert response.status_code == 404
