@@ -361,6 +361,17 @@ class TestTemporalNoneRender:
     def test_render_empty_tree(self) -> None:
         assert TemporalNoneVariant().render(_empty_tree()) == ""
 
+    def test_render_contains_no_date_marker(self, doc_tree: MagicMock) -> None:
+        """Temporal-none should include [no-date] to differentiate from xref-none."""
+        result = TemporalNoneVariant().render(doc_tree)
+        assert "[no-date]" in result
+
+    def test_render_differs_from_xref_none(self, doc_tree: MagicMock) -> None:
+        """Temporal-none and xref-none must produce different output."""
+        temporal = TemporalNoneVariant().render(doc_tree)
+        xref = XrefNoneVariant().render(doc_tree)
+        assert temporal != xref
+
 
 class TestTemporalVersionMetadata:
     """Verify metadata() for TemporalVersionVariant."""

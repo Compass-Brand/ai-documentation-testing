@@ -454,6 +454,11 @@ class EvalRunner:
         if expected_files and isinstance(expected_files, list):
             return list(expected_files)
 
+        # Agentic task file dict (path -> summary)
+        files_dict = meta.get("files")
+        if files_dict and isinstance(files_dict, dict):
+            return list(files_dict.keys())
+
         # Sources with name field (conflicting tasks)
         sources = meta.get("sources")
         if sources and isinstance(sources, list):

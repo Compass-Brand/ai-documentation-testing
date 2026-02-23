@@ -1163,3 +1163,90 @@ class TestFailedTrialRecording:
             error="Some error message",
         )
         assert result_with_error.error == "Some error message"
+
+
+# ---------------------------------------------------------------------------
+# _extract_relevant_docs tests
+# ---------------------------------------------------------------------------
+
+
+class TestExtractRelevantDocs:
+    """Tests for EvalRunner._extract_relevant_docs."""
+
+    @pytest.fixture()
+    def sample_doc_tree(self) -> DocTree:
+        """Create a minimal DocTree for testing."""
+        return DocTree(
+            files={
+                "api/auth.md": DocFile(
+                    rel_path="api/auth.md",
+                    content="Auth docs",
+                    size_bytes=50,
+                    token_count=10,
+                    tier="required",
+                    section="api",
+                ),
+                "guides/setup.md": DocFile(
+                    rel_path="guides/setup.md",
+                    content="Setup guide",
+                    size_bytes=60,
+                    token_count=12,
+                    tier="recommended",
+                    section="guides",
+                ),
+                "reference/config.md": DocFile(
+                    rel_path="reference/config.md",
+                    content="Config ref",
+                    size_bytes=55,
+                    token_count=11,
+                    tier="reference",
+                    section="reference",
+                ),
+            },
+            source="test",
+            total_tokens=33,
+            scanned_at="2025-01-01T00:00:00Z",
+        )
+
+    def _make_task(self, metadata: dict) -> "EvalTask":
+        """Create a minimal EvalTask with the given metadata."""
+        from agent_evals.tasks.base import TASK_TYPES
+
+        defn = TaskDefinition(
+            task_id="test_extract_001",
+            type="retrieval",
+            question="test?",
+            domain="framework_api",
+            difficulty="easy",
+            metadata=metadata,
+        )
+        task_cls = TASK_TYPES["retrieval"]
+        return task_cls(defn)
+
+    def test_agentic_files_dict_extracts_keys(self, sample_doc_tree: DocTree) -> None:
+        """Agentic tasks with files dict should extract dict keys as paths."""
+        task = self._make_task(
+            metadata={
+                "files": {
+                    "api/auth.md": "Authentication module",
+                    "guides/setup.md": "Setup instructions",
+                },
+            },
+        )
+        result = EvalRunner._extract_relevant_docs(task, sample_doc_tree)
+        assert result == ["api/auth.md", "guides/setup.md"]
+
+    def test_agentic_files_dict_not_fallback_to_all(
+        self, sample_doc_tree: DocTree
+    ) -> None:
+        """Agentic files dict should NOT fall back to all docs."""
+        task = self._make_task(
+            metadata={
+                "files": {
+                    "api/auth.md": "Auth module",
+                },
+            },
+        )
+        result = EvalRunner._extract_relevant_docs(task, sample_doc_tree)
+        assert len(result) == 1
+        assert result != list(sample_doc_tree.files.keys())

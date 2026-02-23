@@ -41,7 +41,7 @@ class TemporalNoneVariant(IndexVariant):
             doc_tree: Documentation tree to render.
 
         Returns:
-            A newline-separated list of ``- path: summary`` entries.
+            A newline-separated list of ``- path [no-date]: summary`` entries.
         """
         if not doc_tree.files:
             return ""
@@ -50,5 +50,5 @@ class TemporalNoneVariant(IndexVariant):
         for rel_path in sorted(doc_tree.files):
             doc = doc_tree.files[rel_path]
             summary = doc.summary or _brief_summary(doc.content)
-            lines.append(f"- {rel_path}: {summary}")
+            lines.append(f"- {rel_path} [no-date]: {summary}")
         return "\n".join(lines)
