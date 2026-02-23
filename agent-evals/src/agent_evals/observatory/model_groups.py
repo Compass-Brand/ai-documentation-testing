@@ -7,6 +7,7 @@ selections across evaluation runs.
 from __future__ import annotations
 
 import logging
+import sqlite3
 from dataclasses import dataclass, field
 
 from agent_evals.observatory.model_catalog import ModelCatalog
@@ -68,17 +69,14 @@ class ModelGroupManager:
             ValueError: If a group with the same name already exists.
         """
         with self._catalog.connection() as conn:
-            existing = conn.execute(
-                "SELECT id FROM model_groups WHERE name = ?", (name,)
-            ).fetchone()
-            if existing is not None:
+            try:
+                cursor = conn.execute(
+                    "INSERT INTO model_groups (name, description) VALUES (?, ?)",
+                    (name, description),
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
                 raise ValueError(f"Group '{name}' already exists")
-
-            cursor = conn.execute(
-                "INSERT INTO model_groups (name, description) VALUES (?, ?)",
-                (name, description),
-            )
-            conn.commit()
         return ModelGroup(
             id=cursor.lastrowid,
             name=name,
@@ -92,19 +90,22 @@ class ModelGroupManager:
     ) -> list[str]:
         """Add models to a group. Returns warnings for missing models."""
         warnings: list[str] = []
+        valid_ids: list[str] = []
         for model_id in model_ids:
             model = self._catalog.get_model(model_id)
             if model is None:
                 warnings.append(f"Model '{model_id}' not found in catalog")
                 logger.warning("Model '%s' not found in catalog", model_id)
                 continue
-            with self._catalog.connection() as conn:
+            valid_ids.append(model_id)
+
+        with self._catalog.connection() as conn:
+            for model_id in valid_ids:
                 conn.execute(
                     "INSERT OR IGNORE INTO model_group_members "
                     "(group_id, model_id) VALUES (?, ?)",
                     (group_id, model_id),
                 )
-        with self._catalog.connection() as conn:
             conn.commit()
         return warnings
 

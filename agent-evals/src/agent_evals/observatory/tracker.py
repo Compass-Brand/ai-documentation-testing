@@ -152,6 +152,10 @@ class EventTracker:
                     self._BURN_RATE_WINDOW_SECONDS / 60.0
                 )
 
+            # Capture values needed outside the lock.
+            count_after = model_stats.count
+            total_cost_after = model_stats.total_cost
+
             # Snapshot listeners for notification outside lock.
             listeners = list(self._listeners)
 
@@ -170,7 +174,7 @@ class EventTracker:
         # Anomaly detection: cost > 3x running average (need >1 samples).
         if (
             avg_before > 0
-            and model_stats.count > 1
+            and count_after > 1
             and trial_cost > self.ANOMALY_MULTIPLIER * avg_before
         ):
             anomaly_event = TrackerEvent(
@@ -186,13 +190,13 @@ class EventTracker:
 
         # Per-model budget check.
         budget = self._model_budgets.get(model)
-        if budget is not None and model_stats.total_cost > budget:
+        if budget is not None and total_cost_after > budget:
             budget_event = TrackerEvent(
                 event_type="model_budget_exceeded",
                 data={
                     "model": model,
                     "budget": budget,
-                    "spent": model_stats.total_cost,
+                    "spent": total_cost_after,
                 },
             )
             self._notify(listeners, budget_event)
