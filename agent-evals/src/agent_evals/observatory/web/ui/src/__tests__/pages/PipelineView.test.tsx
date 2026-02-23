@@ -73,18 +73,26 @@ describe("PipelineView", () => {
     ).toBeInTheDocument();
   });
 
+  it("should render DOE pipeline description", async () => {
+    const { PipelineView } = await import("../../pages/PipelineView");
+    render(createElement(PipelineView), { wrapper: createWrapper() });
+    expect(screen.getByText(/three phases/i)).toBeInTheDocument();
+  });
+
   it("should render three phase cards", async () => {
     const { PipelineView } = await import("../../pages/PipelineView");
     render(createElement(PipelineView), { wrapper: createWrapper() });
-    expect(screen.getByText(/Screening/i)).toBeInTheDocument();
-    expect(screen.getByText(/Confirmation/i)).toBeInTheDocument();
-    expect(screen.getByText(/Refinement/i)).toBeInTheDocument();
+    // Phase headings appear as h3 elements in card headers
+    const headings = screen.getAllByRole("heading", { level: 3 });
+    const headingTexts = headings.map((h) => h.textContent);
+    expect(headingTexts).toContain("Screening");
+    expect(headingTexts).toContain("Confirmation");
+    expect(headingTexts).toContain("Refinement");
   });
 
   it("should show pipeline ID in the details section", async () => {
     const { PipelineView } = await import("../../pages/PipelineView");
     render(createElement(PipelineView), { wrapper: createWrapper() });
-    // The pipeline ID should appear in a styled label, not just in the selector
     const pipelineLabel = screen.getByText("pipe-1", {
       selector: ".font-medium",
     });
@@ -112,5 +120,14 @@ describe("PipelineView", () => {
     expect(
       screen.getByText(/select a pipeline to view/i),
     ).toBeInTheDocument();
+  });
+
+  it("should show empty state when no pipelines exist", async () => {
+    mockUsePipelines.mockReturnValue({ data: [], isLoading: false });
+    mockUsePipeline.mockReturnValue({ data: undefined, isLoading: false });
+    const { PipelineView } = await import("../../pages/PipelineView");
+    render(createElement(PipelineView), { wrapper: createWrapper(["/pipeline"]) });
+    expect(screen.getByText(/no pipelines yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/--pipeline auto/i)).toBeInTheDocument();
   });
 });

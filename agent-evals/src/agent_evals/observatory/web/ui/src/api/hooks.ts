@@ -3,7 +3,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { api, type ModelFilters, type Pipeline, type PhaseResults } from "./client";
+import { api, type ModelFilters } from "./client";
 
 // --- Runs ---
 export function useRuns() {

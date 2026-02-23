@@ -122,12 +122,15 @@ export interface SyncResult {
 
 // --- Pipeline Types ---
 
+export interface PipelineListItem {
+  pipeline_id: string;
+  run_count: number;
+  latest_status: string;
+}
+
 export interface Pipeline {
   pipeline_id: string;
   runs: Run[];
-  phase: string;
-  total_trials: number;
-  total_cost: number;
 }
 
 export interface PhaseResults {
@@ -232,7 +235,7 @@ export const api = {
     fetchApi<SyncResult>("/api/models/sync", { method: "POST" }),
 
   // Pipelines
-  listPipelines: () => fetchApi<Pipeline[]>("/api/pipelines"),
+  listPipelines: () => fetchApi<PipelineListItem[]>("/api/pipelines"),
   getPipeline: (id: string) =>
     fetchApi<Pipeline>(`/api/pipelines/${id}`),
   getRunAnalysis: (runId: string) =>
