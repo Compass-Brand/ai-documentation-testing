@@ -91,8 +91,14 @@ class TestRunsAPI:
         response = client.get("/api/runs/run-1")
         assert response.status_code == 200
         data = response.json()
-        assert data["run_id"] == "run-1"
+        assert data["run"]["run_id"] == "run-1"
         assert data["total_trials"] == 1
+        assert data["completed_trials"] == 1
+        assert data["mean_score"] == pytest.approx(0.85)
+        assert "flat" in data["by_variant"]
+        assert data["by_variant"]["flat"]["trial_count"] == 1
+        assert data["total_tokens"] == 600
+        assert data["by_model"]["claude"]["trial_count"] == 1
 
     def test_get_run_not_found(self, client: TestClient) -> None:
         response = client.get("/api/runs/nonexistent")

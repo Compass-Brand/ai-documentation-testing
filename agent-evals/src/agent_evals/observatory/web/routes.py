@@ -112,7 +112,59 @@ def create_router(
             summary = store.get_run_summary(run_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return asdict(summary)
+
+        trials = store.get_trials(run_id)
+
+        # Compute by_variant aggregation
+        by_variant: dict[str, dict[str, Any]] = {}
+        for t in trials:
+            entry = by_variant.setdefault(
+                t.variant_name, {"total_score": 0.0, "trial_count": 0}
+            )
+            entry["total_score"] += t.score
+            entry["trial_count"] += 1
+        by_variant_out = {
+            k: {"mean_score": v["total_score"] / v["trial_count"], "trial_count": v["trial_count"]}
+            for k, v in by_variant.items()
+        }
+
+        # Compute by_model aggregation
+        by_model: dict[str, dict[str, Any]] = {}
+        for t in trials:
+            if not t.model:
+                continue
+            entry = by_model.setdefault(
+                t.model, {"total_score": 0.0, "trial_count": 0, "cost": 0.0}
+            )
+            entry["total_score"] += t.score
+            entry["trial_count"] += 1
+            entry["cost"] += t.cost or 0.0
+        by_model_out = {
+            k: {"mean_score": v["total_score"] / v["trial_count"], "trial_count": v["trial_count"], "cost": v["cost"]}
+            for k, v in by_model.items()
+        } or None
+
+        completed_trials = sum(1 for t in trials if t.error is None)
+        total_tokens = sum(t.total_tokens for t in trials)
+        mean_score = (sum(t.score for t in trials) / len(trials)) if trials else 0.0
+
+        return {
+            "run": {
+                "run_id": summary.run_id,
+                "run_type": summary.run_type,
+                "status": summary.status,
+                "config": {},
+                "created_at": summary.created_at,
+                "finished_at": summary.finished_at,
+            },
+            "total_trials": summary.total_trials,
+            "completed_trials": completed_trials,
+            "total_cost": summary.total_cost,
+            "total_tokens": total_tokens,
+            "mean_score": mean_score,
+            "by_variant": by_variant_out,
+            "by_model": by_model_out,
+        }
 
     @router.get("/api/runs/{run_id}/trials")
     async def get_trials(run_id: str) -> list[dict[str, Any]]:

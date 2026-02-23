@@ -94,7 +94,7 @@ export function ResultsExplorer() {
   const { data: analysis } = useRunAnalysis(runId ?? null);
 
   const variantRows: VariantRow[] = summary
-    ? Object.entries(summary.by_variant).map(([name, v]) => ({
+    ? Object.entries(summary.by_variant ?? {}).map(([name, v]) => ({
         name,
         mean_score: v.mean_score,
         trial_count: v.trial_count,
@@ -123,7 +123,7 @@ export function ResultsExplorer() {
   };
 
   const modelEntries = summary?.by_model
-    ? Object.entries(summary.by_model)
+    ? Object.entries(summary.by_model ?? {})
     : [];
 
   const radarData = {
@@ -226,7 +226,7 @@ export function ResultsExplorer() {
                     </CardHeader>
                     <CardContent>
                       <span className="text-h2 text-brand-charcoal">
-                        {summary.mean_score.toFixed(2)}
+                        {(summary.mean_score ?? 0).toFixed(2)}
                       </span>
                     </CardContent>
                   </Card>
