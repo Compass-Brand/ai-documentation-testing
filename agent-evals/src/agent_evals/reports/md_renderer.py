@@ -6,7 +6,113 @@ for variant, task-type, and source breakdowns.
 
 from __future__ import annotations
 
+from typing import Any
+
 from agent_evals.reports.aggregator import ReportData
+
+
+def _significance_stars(p_value: float) -> str:
+    """Return significance marker for a p-value."""
+    if p_value <= 0.001:
+        return "***"
+    if p_value <= 0.01:
+        return "**"
+    if p_value <= 0.05:
+        return "*"
+    return ""
+
+
+def _render_taguchi_sections(phase: dict[str, Any]) -> list[str]:
+    """Render Taguchi DOE sections 10-14 from phase_results."""
+    sections: list[str] = []
+
+    # Section 10: Main Effects Response Table
+    main_effects = phase.get("main_effects", {})
+    if main_effects:
+        sections.append("## Main Effects\n")
+        all_levels: set[str] = set()
+        for levels in main_effects.values():
+            all_levels.update(levels.keys())
+        sorted_levels = sorted(all_levels)
+        header = "| Factor | " + " | ".join(sorted_levels) + " | Delta |"
+        sep = "| --- | " + " | ".join("---:" for _ in sorted_levels) + " | ---: |"
+        sections.append(header)
+        sections.append(sep)
+        for factor, levels in main_effects.items():
+            vals = [levels.get(lv, 0.0) for lv in sorted_levels]
+            delta = max(vals) - min(vals) if vals else 0.0
+            cells = " | ".join(f"{v:.1f}" for v in vals)
+            sections.append(f"| {factor} | {cells} | {delta:.1f} |")
+        sections.append("")
+
+    # Section 11: ANOVA Table
+    anova = phase.get("anova", {})
+    if anova:
+        sections.append("## ANOVA\n")
+        sections.append(
+            "| Factor | SS | df | MS | F-ratio "
+            "| p-value | \u03c9\u00b2 | Sig |"
+        )
+        sections.append(
+            "| --- | ---: | ---: | ---: | ---: "
+            "| ---: | ---: | :---: |"
+        )
+        for factor, stats in anova.items():
+            sig = _significance_stars(stats["p_value"])
+            sections.append(
+                f"| {factor} "
+                f"| {stats['ss']:.2f} "
+                f"| {stats['df']} "
+                f"| {stats['ms']:.2f} "
+                f"| {stats['f_ratio']:.2f} "
+                f"| {stats['p_value']:.4f} "
+                f"| {stats['omega_squared']:.3f} "
+                f"| {sig} |"
+            )
+        sections.append("")
+
+    # Section 12: Assumptions & Quality Type
+    quality_type = phase.get("quality_type", "")
+    sections.append("## Assumptions & Quality Type\n")
+    sections.append(f"- **Quality Type:** {quality_type}")
+    sections.append(
+        f"- **Factors Analyzed:** {len(anova) if anova else 0}"
+    )
+    sections.append("")
+
+    # Section 13: Significant Factors
+    significant = phase.get("significant_factors", [])
+    sections.append("## Significant Factors\n")
+    if significant:
+        sections.append("| Factor | \u03c9\u00b2 |")
+        sections.append("| --- | ---: |")
+        for factor in significant:
+            omega = (
+                anova[factor]["omega_squared"]
+                if factor in anova
+                else 0.0
+            )
+            sections.append(f"| {factor} | {omega:.3f} |")
+    else:
+        sections.append("No statistically significant factors found.")
+    sections.append("")
+
+    # Section 14: Optimal Configuration
+    optimal = phase.get("optimal", {})
+    if optimal:
+        sections.append("## Optimal Configuration\n")
+        sections.append("| Factor | Best Level |")
+        sections.append("| --- | --- |")
+        for factor, level in optimal.items():
+            sections.append(f"| {factor} | {level} |")
+        prediction = phase.get("prediction_interval")
+        if prediction:
+            sections.append(
+                f"\nPrediction interval: {prediction}"
+            )
+        sections.append("")
+
+    return sections
 
 
 def render_markdown(data: ReportData) -> str:
@@ -114,6 +220,10 @@ def render_markdown(data: ReportData) -> str:
         f"(range: {score_range:.3f})"
     )
     sections.append("")
+
+    # Sections 10-14: Taguchi DOE (conditional)
+    if data.phase_results:
+        sections.extend(_render_taguchi_sections(data.phase_results))
 
     # 9. Appendix
     sections.append("## Appendix\n")

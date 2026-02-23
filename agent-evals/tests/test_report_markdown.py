@@ -156,3 +156,176 @@ class TestMarkdownTables:
     def test_contains_pipe_characters(self) -> None:
         md = render_markdown(_report_data())
         assert "|" in md
+
+
+# ---------------------------------------------------------------------------
+# Helpers – Taguchi phase_results
+# ---------------------------------------------------------------------------
+
+
+def _taguchi_report_data() -> ReportData:
+    """Create ReportData with Taguchi DOE phase_results."""
+    return _report_data(
+        phase_results={
+            "main_effects": {
+                "structure": {"flat": 8.5, "nested": 12.3, "hierarchical": 11.0},
+                "transform": {"raw": 7.2, "summary": 11.8, "compressed": 9.5},
+            },
+            "anova": {
+                "structure": {
+                    "ss": 12.34,
+                    "df": 2,
+                    "ms": 6.17,
+                    "f_ratio": 8.72,
+                    "p_value": 0.001,
+                    "eta_squared": 0.12,
+                    "omega_squared": 0.089,
+                },
+                "transform": {
+                    "ss": 11.89,
+                    "df": 2,
+                    "ms": 5.95,
+                    "f_ratio": 8.41,
+                    "p_value": 0.001,
+                    "eta_squared": 0.11,
+                    "omega_squared": 0.084,
+                },
+                "granularity": {
+                    "ss": 2.1,
+                    "df": 2,
+                    "ms": 1.05,
+                    "f_ratio": 1.48,
+                    "p_value": 0.24,
+                    "eta_squared": 0.03,
+                    "omega_squared": 0.008,
+                },
+            },
+            "optimal": {"structure": "nested", "transform": "summary"},
+            "significant_factors": ["structure", "transform"],
+            "quality_type": "larger_is_better",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# TestTaguchiMainEffects
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiMainEffects:
+    """Section 10: Main Effects Response Table."""
+
+    def test_main_effects_heading_present(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "Main Effects" in md
+
+    def test_main_effects_shows_delta(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "Delta" in md
+
+    def test_main_effects_shows_factor_levels(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "flat" in md
+        assert "nested" in md
+        assert "12.3" in md
+
+
+# ---------------------------------------------------------------------------
+# TestTaguchiAnova
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiAnova:
+    """Section 11: ANOVA Table."""
+
+    def test_anova_heading_present(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "ANOVA" in md
+
+    def test_anova_shows_p_value(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "0.001" in md
+
+    def test_anova_shows_omega_squared(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        # omega squared column header
+        assert "\u03c9\u00b2" in md or "omega" in md.lower()
+
+    def test_anova_shows_significance_stars(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        # p=0.001 should get *** marker
+        assert "***" in md
+
+
+# ---------------------------------------------------------------------------
+# TestTaguchiAssumptions
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiAssumptions:
+    """Section 12: Assumptions & Quality Type."""
+
+    def test_assumptions_heading_present(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "Assumptions" in md or "Quality" in md
+
+    def test_quality_type_shown(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "larger_is_better" in md or "Larger is Better" in md
+
+
+# ---------------------------------------------------------------------------
+# TestTaguchiSignificantFactors
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiSignificantFactors:
+    """Section 13: Significant Factors."""
+
+    def test_significant_factors_listed(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "structure" in md
+        assert "transform" in md
+
+    def test_significant_factors_heading(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "Significant" in md
+
+
+# ---------------------------------------------------------------------------
+# TestTaguchiOptimalConfig
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiOptimalConfig:
+    """Section 14: Optimal Configuration."""
+
+    def test_optimal_heading_present(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "Optimal" in md
+
+    def test_optimal_levels_shown(self) -> None:
+        md = render_markdown(_taguchi_report_data())
+        assert "nested" in md
+        assert "summary" in md
+
+
+# ---------------------------------------------------------------------------
+# TestTaguchiSkippedWithoutPhaseResults
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiSkippedWithoutPhaseResults:
+    """Taguchi sections omitted when phase_results is None."""
+
+    def test_no_anova_without_phase_results(self) -> None:
+        md = render_markdown(_report_data())
+        assert "ANOVA" not in md
+
+    def test_no_optimal_without_phase_results(self) -> None:
+        md = render_markdown(_report_data())
+        assert "Optimal Configuration" not in md
+
+    def test_no_main_effects_without_phase_results(self) -> None:
+        md = render_markdown(_report_data())
+        assert "Main Effects" not in md
