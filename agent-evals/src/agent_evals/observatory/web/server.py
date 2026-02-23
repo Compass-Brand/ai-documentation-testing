@@ -6,7 +6,12 @@ model browser, and historical analytics endpoints.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import FileResponse, Response
 
 from agent_evals.observatory.model_catalog import ModelCatalog
 from agent_evals.observatory.model_groups import ModelGroupManager
@@ -14,6 +19,8 @@ from agent_evals.observatory.model_sync import ModelSync
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
 from agent_evals.observatory.web.routes import create_router
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_app(
@@ -44,5 +51,25 @@ def create_app(
         model_sync=model_sync,
     )
     app.include_router(router)
+
+    if STATIC_DIR.exists():
+        assets_dir = STATIC_DIR / "assets"
+        if assets_dir.exists():
+            app.mount(
+                "/assets",
+                StaticFiles(directory=assets_dir),
+                name="assets",
+            )
+
+        @app.get("/{path:path}", response_model=None)
+        async def spa_fallback(path: str) -> Response:
+            """Return index.html for client-side routing."""
+            index = STATIC_DIR / "index.html"
+            if index.exists():
+                return FileResponse(index)
+            return JSONResponse(
+                {"error": "Frontend not built. Run: npm run build"},
+                status_code=404,
+            )
 
     return app
