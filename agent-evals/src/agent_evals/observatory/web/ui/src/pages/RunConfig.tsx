@@ -16,6 +16,10 @@ export default function RunConfig() {
   const [repetitions, setRepetitions] = useState(3);
   const [taskLimit, setTaskLimit] = useState(0);
   const [oaOverride, setOaOverride] = useState("");
+  const [pipelineMode, setPipelineMode] = useState<"auto" | "semi">("auto");
+  const [qualityType, setQualityType] = useState("larger_is_better");
+  const [topK, setTopK] = useState(3);
+  const [alpha, setAlpha] = useState(0.05);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -27,6 +31,12 @@ export default function RunConfig() {
     });
     if (taskLimit > 0) params.set("task_limit", String(taskLimit));
     if (oaOverride) params.set("oa_override", oaOverride);
+    if (mode === "taguchi") {
+      params.set("pipeline", pipelineMode);
+      params.set("quality_type", qualityType);
+      params.set("top_k", String(topK));
+      params.set("alpha", String(alpha));
+    }
     navigate(`/live?${params.toString()}`);
   }
 
@@ -161,6 +171,102 @@ export default function RunConfig() {
                       placeholder="e.g. L9_3_4"
                     />
                   </div>
+
+                  {mode === "taguchi" && (
+                    <>
+                      <div>
+                        <label
+                          htmlFor="pipelineMode"
+                          className="mb-sp-2 block text-body-sm font-medium text-brand-charcoal"
+                        >
+                          Pipeline Mode
+                        </label>
+                        <select
+                          id="pipelineMode"
+                          aria-label="Pipeline Mode"
+                          value={pipelineMode}
+                          onChange={(e) =>
+                            setPipelineMode(
+                              e.target.value as "auto" | "semi",
+                            )
+                          }
+                          className="h-11 w-full rounded-card border border-brand-mist bg-brand-bone px-sp-4 py-sp-2 text-body-sm text-brand-charcoal"
+                        >
+                          <option value="auto">
+                            Auto (run all phases)
+                          </option>
+                          <option value="semi">
+                            Semi (approve between phases)
+                          </option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="qualityType"
+                          className="mb-sp-2 block text-body-sm font-medium text-brand-charcoal"
+                        >
+                          Quality Type
+                        </label>
+                        <select
+                          id="qualityType"
+                          aria-label="Quality Type"
+                          value={qualityType}
+                          onChange={(e) => setQualityType(e.target.value)}
+                          className="h-11 w-full rounded-card border border-brand-mist bg-brand-bone px-sp-4 py-sp-2 text-body-sm text-brand-charcoal"
+                        >
+                          <option value="larger_is_better">
+                            Larger is Better
+                          </option>
+                          <option value="smaller_is_better">
+                            Smaller is Better
+                          </option>
+                          <option value="nominal_is_best">
+                            Nominal is Best
+                          </option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="topK"
+                          className="mb-sp-2 block text-body-sm font-medium text-brand-charcoal"
+                        >
+                          Top-K Factors
+                        </label>
+                        <Input
+                          id="topK"
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={topK}
+                          onChange={(e) =>
+                            setTopK(parseInt(e.target.value) || 3)
+                          }
+                        />
+                      </div>
+
+                      <div>
+                        <label
+                          htmlFor="alpha"
+                          className="mb-sp-2 block text-body-sm font-medium text-brand-charcoal"
+                        >
+                          Alpha (significance level)
+                        </label>
+                        <Input
+                          id="alpha"
+                          type="number"
+                          min={0.001}
+                          max={0.1}
+                          step={0.01}
+                          value={alpha}
+                          onChange={(e) =>
+                            setAlpha(parseFloat(e.target.value) || 0.05)
+                          }
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>

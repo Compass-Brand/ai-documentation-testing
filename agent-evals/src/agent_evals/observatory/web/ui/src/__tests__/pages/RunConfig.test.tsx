@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -54,5 +55,23 @@ describe("RunConfig", () => {
     render(<RunConfig />, { wrapper });
     const taguchiRadio = screen.getByLabelText("Taguchi");
     expect(taguchiRadio).toBeChecked();
+  });
+
+  it("should show pipeline options when Taguchi mode is selected", () => {
+    render(<RunConfig />, { wrapper });
+    // Taguchi is default, so pipeline options should be visible
+    expect(screen.getByLabelText(/Pipeline Mode/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Quality Type/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Top-K/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Alpha/i)).toBeInTheDocument();
+  });
+
+  it("should hide pipeline options when Full mode is selected", async () => {
+    render(<RunConfig />, { wrapper });
+    // Click Full mode radio
+    const fullRadio = screen.getByLabelText("Full");
+    await userEvent.click(fullRadio);
+    expect(screen.queryByLabelText(/Pipeline Mode/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Quality Type/i)).not.toBeInTheDocument();
   });
 });
