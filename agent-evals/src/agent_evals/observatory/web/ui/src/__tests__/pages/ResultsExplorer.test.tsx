@@ -30,11 +30,13 @@ vi.mock("chart.js", () => ({
 const mockUseRuns = vi.fn();
 const mockUseRun = vi.fn();
 const mockUseTrials = vi.fn();
+const mockUseRunAnalysis = vi.fn();
 
 vi.mock("../../api/hooks", () => ({
   useRuns: () => mockUseRuns(),
   useRun: (id: string | null) => mockUseRun(id),
   useTrials: (id: string | null) => mockUseTrials(id),
+  useRunAnalysis: (id: string | null) => mockUseRunAnalysis(id),
 }));
 
 const sampleRuns = [
@@ -111,6 +113,7 @@ describe("ResultsExplorer", () => {
       isLoading: false,
     });
     mockUseTrials.mockReturnValue({ data: [], isLoading: false });
+    mockUseRunAnalysis.mockReturnValue({ data: undefined, isLoading: false });
   });
 
   it("should render page heading with BarChart3 icon", async () => {
@@ -209,5 +212,42 @@ describe("ResultsExplorer", () => {
     expect(
       screen.getByText(/select a run to view results/i),
     ).toBeInTheDocument();
+  });
+
+  it("should show Factor Analysis tab for Taguchi runs with analysis data", async () => {
+    mockUseRunAnalysis.mockReturnValue({
+      data: {
+        main_effects: { structure: { flat: 10.0, nested: 12.0 } },
+        anova: {
+          structure: {
+            ss: 15.2,
+            df: 1,
+            ms: 15.2,
+            f_ratio: 8.9,
+            p_value: 0.001,
+            eta_squared: 0.12,
+            omega_squared: 0.089,
+          },
+        },
+        optimal: { structure: "nested" },
+        significant_factors: ["structure"],
+        quality_type: "larger_is_better",
+      },
+      isLoading: false,
+    });
+
+    const { ResultsExplorer } = await import("../../pages/ResultsExplorer");
+    const wrapper = createWrapper();
+    render(createElement(ResultsExplorer), { wrapper });
+    expect(screen.getByText(/Factor Analysis/i)).toBeInTheDocument();
+  });
+
+  it("should hide Factor Analysis tab when no analysis data", async () => {
+    mockUseRunAnalysis.mockReturnValue({ data: undefined, isLoading: false });
+
+    const { ResultsExplorer } = await import("../../pages/ResultsExplorer");
+    const wrapper = createWrapper();
+    render(createElement(ResultsExplorer), { wrapper });
+    expect(screen.queryByText(/Factor Analysis/i)).not.toBeInTheDocument();
   });
 });
