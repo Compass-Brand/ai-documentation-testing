@@ -6,13 +6,14 @@ Covers E3-S2: Observatory Event Tracker.
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from agent_evals.observatory.store import ObservatoryStore
-from agent_evals.observatory.tracker import EventTracker, TrackerEvent
+from agent_evals.observatory.tracker import EventTracker, TrackerEvent, _ModelStats
 
 
 def _make_store(tmp_path: Path) -> ObservatoryStore:
@@ -218,3 +219,130 @@ class TestBudgetEnforcement:
         tracker = EventTracker(store=store)
         tracker.record_trial(**_trial_kwargs(model="claude", cost=100.0))
         assert tracker.is_model_over_budget("claude") is False
+
+
+class TestBoundedCosts:
+    """Costs deque is bounded and does not grow without limit."""
+
+    def test_costs_deque_bounded_at_maxlen(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store)
+        # Record more trials than the deque maxlen (100).
+        for i in range(150):
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.01))
+        # Access internal stats to verify deque length.
+        with tracker._lock:
+            stats = tracker._per_model["claude"]
+            assert len(stats.costs) == _ModelStats._COSTS_MAXLEN
+            assert stats.count == 150
+            assert stats.total_cost == pytest.approx(150 * 0.01)
+
+    def test_average_cost_uses_total_not_deque(self, tmp_path: Path) -> None:
+        """average_cost should use total_cost/count, not sum(deque)/len(deque)."""
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store)
+        # Record 110 trials: first 100 at $0.10, next 10 at $0.01.
+        for _ in range(100):
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.10))
+        for _ in range(10):
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.01))
+        with tracker._lock:
+            stats = tracker._per_model["claude"]
+            # True average: (100*0.10 + 10*0.01) / 110 = 10.10/110 ~ 0.09182
+            expected_avg = (100 * 0.10 + 10 * 0.01) / 110
+            assert stats.average_cost == pytest.approx(expected_avg)
+
+
+class TestBurnRateAlert:
+    """Burn rate monitoring and alerting."""
+
+    def test_burn_rate_alert_emitted_when_exceeds_threshold(
+        self, tmp_path: Path
+    ) -> None:
+        store = _make_store(tmp_path)
+        # Threshold: $0.50/min.  We'll simulate rapid spending.
+        tracker = EventTracker(
+            store=store,
+            burn_rate_threshold=0.50,
+        )
+        listener = MagicMock()
+        tracker.add_listener(listener)
+
+        # Use a fixed monotonic time so all trials appear within 60s.
+        fake_time = 1000.0
+
+        with patch("agent_evals.observatory.tracker.time") as mock_time:
+            mock_time.monotonic.return_value = fake_time
+            # First trial (burn_rate requires >1 sample).
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.30))
+            # Second trial at same time: window_cost = 0.60, rate = 0.60/min.
+            mock_time.monotonic.return_value = fake_time + 1.0
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.30))
+
+        events = [call[0][0] for call in listener.call_args_list]
+        burn_events = [e for e in events if e.event_type == "burn_rate_alert"]
+        assert len(burn_events) == 1
+        assert burn_events[0].data["model"] == "claude"
+        assert burn_events[0].data["burn_rate_per_minute"] > 0.50
+        assert burn_events[0].data["threshold_per_minute"] == 0.50
+
+    def test_burn_rate_alert_not_emitted_when_below_threshold(
+        self, tmp_path: Path
+    ) -> None:
+        store = _make_store(tmp_path)
+        # Threshold: $10.00/min - very high, should never trigger.
+        tracker = EventTracker(
+            store=store,
+            burn_rate_threshold=10.0,
+        )
+        listener = MagicMock()
+        tracker.add_listener(listener)
+
+        for _ in range(5):
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.01))
+
+        events = [call[0][0] for call in listener.call_args_list]
+        burn_events = [e for e in events if e.event_type == "burn_rate_alert"]
+        assert len(burn_events) == 0
+
+    def test_burn_rate_disabled_when_threshold_is_none(
+        self, tmp_path: Path
+    ) -> None:
+        store = _make_store(tmp_path)
+        # Default: burn_rate_threshold=None -> disabled.
+        tracker = EventTracker(store=store)
+        listener = MagicMock()
+        tracker.add_listener(listener)
+
+        for _ in range(10):
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=1.00))
+
+        events = [call[0][0] for call in listener.call_args_list]
+        burn_events = [e for e in events if e.event_type == "burn_rate_alert"]
+        assert len(burn_events) == 0
+
+    def test_burn_rate_window_expires_old_entries(
+        self, tmp_path: Path
+    ) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(
+            store=store,
+            burn_rate_threshold=0.50,
+        )
+        listener = MagicMock()
+        tracker.add_listener(listener)
+
+        with patch("agent_evals.observatory.tracker.time") as mock_time:
+            # Record an expensive trial at t=0.
+            mock_time.monotonic.return_value = 1000.0
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=5.00))
+
+            # Record a cheap trial 120s later (beyond window).
+            mock_time.monotonic.return_value = 1120.0
+            listener.reset_mock()
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.001))
+
+        # The second trial alone is too cheap to trigger burn rate alert.
+        events = [call[0][0] for call in listener.call_args_list]
+        burn_events = [e for e in events if e.event_type == "burn_rate_alert"]
+        assert len(burn_events) == 0

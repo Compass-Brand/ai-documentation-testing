@@ -1,12 +1,14 @@
 """Thread-safe event tracker with listeners, anomaly detection, and budgets.
 
 Records trial events, notifies listeners, detects cost anomalies (>3x
-running average), and enforces per-model budget caps.
+running average), enforces per-model budget caps, and monitors burn rate.
 """
 
 from __future__ import annotations
 
 import threading
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -37,17 +39,24 @@ class EventTracker:
     Args:
         store: The ObservatoryStore to persist trial records.
         model_budgets: Optional per-model budget caps (model -> dollars).
+        burn_rate_threshold: Optional burn rate threshold in dollars per
+            minute.  When the cost accumulated over a 60-second sliding
+            window exceeds this rate, a ``burn_rate_alert`` event is
+            emitted.  ``None`` (default) disables burn rate monitoring.
     """
 
     ANOMALY_MULTIPLIER: float = 3.0
+    _BURN_RATE_WINDOW_SECONDS: float = 60.0
 
     def __init__(
         self,
         store: ObservatoryStore,
         model_budgets: dict[str, float] | None = None,
+        burn_rate_threshold: float | None = None,
     ) -> None:
         self._store = store
         self._model_budgets: dict[str, float] = dict(model_budgets or {})
+        self._burn_rate_threshold = burn_rate_threshold
         self._listeners: list[ListenerCallback] = []
         self._lock = threading.Lock()
 
@@ -104,6 +113,7 @@ class EventTracker:
         )
 
         trial_cost = cost or 0.0
+        now = time.monotonic()
 
         with self._lock:
             # Update aggregates.
@@ -118,6 +128,29 @@ class EventTracker:
             model_stats.count += 1
             model_stats.total_cost += trial_cost
             model_stats.costs.append(trial_cost)
+
+            # Update burn-rate sliding window.
+            model_stats.cost_timestamps.append((now, trial_cost))
+            cutoff = now - self._BURN_RATE_WINDOW_SECONDS
+            while (
+                model_stats.cost_timestamps
+                and model_stats.cost_timestamps[0][0] < cutoff
+            ):
+                model_stats.cost_timestamps.popleft()
+
+            # Compute burn rate (dollars per minute) over the window.
+            burn_rate: float | None = None
+            if (
+                self._burn_rate_threshold is not None
+                and len(model_stats.cost_timestamps) > 1
+            ):
+                window_cost = sum(
+                    c for _, c in model_stats.cost_timestamps
+                )
+                # dollars per minute
+                burn_rate = window_cost / (
+                    self._BURN_RATE_WINDOW_SECONDS / 60.0
+                )
 
             # Snapshot listeners for notification outside lock.
             listeners = list(self._listeners)
@@ -164,6 +197,22 @@ class EventTracker:
             )
             self._notify(listeners, budget_event)
 
+        # Burn rate alert.
+        if (
+            burn_rate is not None
+            and self._burn_rate_threshold is not None
+            and burn_rate > self._burn_rate_threshold
+        ):
+            burn_event = TrackerEvent(
+                event_type="burn_rate_alert",
+                data={
+                    "model": model,
+                    "burn_rate_per_minute": burn_rate,
+                    "threshold_per_minute": self._burn_rate_threshold,
+                },
+            )
+            self._notify(listeners, burn_event)
+
     def is_model_over_budget(self, model: str) -> bool:
         """Check whether a model has exceeded its per-model budget."""
         budget = self._model_budgets.get(model)
@@ -205,14 +254,22 @@ class EventTracker:
 
 
 class _ModelStats:
-    """Internal per-model aggregation."""
+    """Internal per-model aggregation.
 
-    __slots__ = ("count", "total_cost", "costs")
+    The ``costs`` deque keeps at most the last 100 trial costs for
+    anomaly-detection's rolling-window comparison.  The overall average
+    is derived from ``total_cost / count`` (not from the deque).
+    """
+
+    _COSTS_MAXLEN: int = 100
+
+    __slots__ = ("count", "total_cost", "costs", "cost_timestamps")
 
     def __init__(self) -> None:
         self.count: int = 0
         self.total_cost: float = 0.0
-        self.costs: list[float] = []
+        self.costs: deque[float] = deque(maxlen=self._COSTS_MAXLEN)
+        self.cost_timestamps: deque[tuple[float, float]] = deque()
 
     @property
     def average_cost(self) -> float:
