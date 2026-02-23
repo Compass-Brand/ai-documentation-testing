@@ -12,15 +12,8 @@ import RunConfig from "./pages/RunConfig";
 import LiveMonitor from "./pages/LiveMonitor";
 import { ResultsExplorer } from "./pages/ResultsExplorer";
 import { Observatory } from "./pages/Observatory";
-
-function Placeholder({ name }: { name: string }) {
-  return (
-    <div className="px-sp-6 py-sp-8">
-      <h1 className="text-h2 text-brand-charcoal">{name}</h1>
-      <p className="text-body text-brand-slate mt-sp-2">Coming soon.</p>
-    </div>
-  );
-}
+import { History as HistoryPage } from "./pages/History";
+import { Models } from "./pages/Models";
 
 const navItems = [
   { to: "/", label: "Run Config", icon: Play },
@@ -67,8 +60,8 @@ export default function App() {
           <Route path="/live/:runId?" element={<LiveMonitor />} />
           <Route path="/results/:runId?" element={<ResultsExplorer />} />
           <Route path="/observatory" element={<Observatory />} />
-          <Route path="/history" element={<Placeholder name="History" />} />
-          <Route path="/models" element={<Placeholder name="Models" />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/models" element={<Models />} />
         </Routes>
       </main>
     </div>
