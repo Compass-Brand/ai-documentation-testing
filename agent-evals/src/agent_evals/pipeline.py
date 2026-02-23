@@ -2,8 +2,21 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
+
+from agent_evals.taguchi.analysis import (
+    compute_main_effects,
+    compute_sn_ratios,
+    predict_optimal,
+    run_anova,
+)
+from agent_evals.taguchi.factors import build_design
+
+if TYPE_CHECKING:
+    from agent_evals.orchestrator import EvalOrchestrator
 
 
 @dataclass
@@ -58,3 +71,92 @@ class PipelineResult:
     total_trials: int = 0
     total_cost: float = 0.0
     elapsed_seconds: float = 0.0
+
+
+class DOEPipeline:
+    """Multi-phase DOE pipeline orchestrator.
+
+    Coordinates screening, confirmation, and refinement phases
+    using Taguchi experimental design methodology.
+    """
+
+    def __init__(
+        self,
+        config: PipelineConfig,
+        orchestrator: EvalOrchestrator,
+    ) -> None:
+        self.config = config
+        self._orchestrator = orchestrator
+        self._pipeline_id = uuid4().hex[:12]
+
+    def run_screening(
+        self,
+        tasks: list[Any],
+        variants: list[Any],
+        doc_tree: Any,
+    ) -> PhaseResult:
+        """Execute Phase 1: screening experiment.
+
+        Builds a Taguchi design from variant axes, runs trials via
+        the orchestrator, then computes S/N ratios, main effects,
+        ANOVA, and optimal prediction.
+        """
+        # 1. Build axes dict from variants
+        axes: dict[int, list[str]] = defaultdict(list)
+        for v in variants:
+            meta = v.metadata()
+            if meta.name not in axes[meta.axis]:
+                axes[meta.axis].append(meta.name)
+
+        # 2. Build the Taguchi experimental design
+        design = build_design(
+            dict(axes), self.config.models, self.config.oa_override
+        )
+
+        # 3. Build variant lookup
+        variant_lookup = {v.metadata().name: v for v in variants}
+
+        # 4. Run trials via orchestrator
+        result = self._orchestrator.run(
+            tasks,
+            variants,
+            doc_tree,
+            design=design,
+            variant_lookup=variant_lookup,
+            phase="screening",
+            pipeline_id=self._pipeline_id,
+        )
+
+        # 5. Group trial scores by OA row
+        row_scores: dict[int, list[float]] = defaultdict(list)
+        for trial in result.trials:
+            row_id = trial.metrics["oa_row_id"]
+            row_scores[row_id].append(trial.score)
+
+        # 6-9. Statistical analysis
+        sn_ratios = compute_sn_ratios(
+            dict(row_scores), self.config.quality_type
+        )
+        main_effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        optimal = predict_optimal(main_effects, sn_ratios)
+
+        # 10. Extract significant factors (p < alpha), sorted by omega_squared
+        sig_factors = sorted(
+            (f for f in anova.factors if f.p_value < self.config.alpha),
+            key=lambda f: f.omega_squared,
+            reverse=True,
+        )
+
+        return PhaseResult(
+            run_id=result.run_id,
+            phase="screening",
+            trials=result.trials,
+            total_cost=result.total_cost,
+            total_tokens=result.total_tokens,
+            elapsed_seconds=result.elapsed_seconds,
+            main_effects=main_effects,
+            anova=anova,
+            optimal=optimal.optimal_assignment,
+            significant_factors=[f.factor_name for f in sig_factors],
+        )
