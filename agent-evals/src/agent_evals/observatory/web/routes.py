@@ -106,16 +106,11 @@ def create_router(
         runs = store.list_runs()
         return [asdict(r) for r in runs]
 
-    @router.get("/api/runs/{run_id}")
-    async def get_run(run_id: str) -> dict[str, Any]:
-        try:
-            summary = store.get_run_summary(run_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-
+    def _enrich_run(run_id: str) -> dict[str, Any]:
+        """Build enriched run summary with variant/model aggregations."""
+        summary = store.get_run_summary(run_id)
         trials = store.get_trials(run_id)
 
-        # Compute by_variant aggregation
         by_variant: dict[str, dict[str, Any]] = {}
         for t in trials:
             entry = by_variant.setdefault(
@@ -124,11 +119,13 @@ def create_router(
             entry["total_score"] += t.score
             entry["trial_count"] += 1
         by_variant_out = {
-            k: {"mean_score": v["total_score"] / v["trial_count"], "trial_count": v["trial_count"]}
+            k: {
+                "mean_score": v["total_score"] / v["trial_count"],
+                "trial_count": v["trial_count"],
+            }
             for k, v in by_variant.items()
         }
 
-        # Compute by_model aggregation
         by_model: dict[str, dict[str, Any]] = {}
         for t in trials:
             if not t.model:
@@ -140,13 +137,19 @@ def create_router(
             entry["trial_count"] += 1
             entry["cost"] += t.cost or 0.0
         by_model_out = {
-            k: {"mean_score": v["total_score"] / v["trial_count"], "trial_count": v["trial_count"], "cost": v["cost"]}
+            k: {
+                "mean_score": v["total_score"] / v["trial_count"],
+                "trial_count": v["trial_count"],
+                "cost": v["cost"],
+            }
             for k, v in by_model.items()
         } or None
 
         completed_trials = sum(1 for t in trials if t.error is None)
         total_tokens = sum(t.total_tokens for t in trials)
-        mean_score = (sum(t.score for t in trials) / len(trials)) if trials else 0.0
+        mean_score = (
+            (sum(t.score for t in trials) / len(trials)) if trials else 0.0
+        )
 
         return {
             "run": {
@@ -165,6 +168,13 @@ def create_router(
             "by_variant": by_variant_out,
             "by_model": by_model_out,
         }
+
+    @router.get("/api/runs/{run_id}")
+    async def get_run(run_id: str) -> dict[str, Any]:
+        try:
+            return _enrich_run(run_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @router.post("/api/runs/{run_id}/finish")
     async def finish_run(run_id: str) -> dict[str, Any]:
@@ -239,8 +249,7 @@ def create_router(
         results = []
         for run_id in run_ids:
             try:
-                summary = store.get_run_summary(run_id)
-                results.append(asdict(summary))
+                results.append(_enrich_run(run_id))
             except ValueError:
                 results.append({"run_id": run_id, "error": "not found"})
         return results

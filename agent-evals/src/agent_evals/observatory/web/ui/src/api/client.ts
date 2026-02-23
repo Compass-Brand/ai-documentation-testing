@@ -171,7 +171,7 @@ export const api = {
 
   // Comparison and history
   compareRuns: (ids: string[]) =>
-    fetchApi<Record<string, unknown>>(
+    fetchApi<RunSummary[]>(
       `/api/compare?ids=${ids.join(",")}`,
     ),
   costTrend: () =>
