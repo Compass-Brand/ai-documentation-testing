@@ -17,6 +17,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
 import { FadeIn } from "../components/FadeIn";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { CHART_COLORS } from "../lib/chart-theme";
+import { formatRunLabel } from "../lib/utils";
 
 Chart.register(
   CategoryScale,
@@ -49,11 +50,11 @@ export function Observatory() {
 
   const costPerTrial =
     summary && summary.total_trials > 0
-      ? summary.total_cost / summary.total_trials
+      ? (summary.total_cost ?? 0) / summary.total_trials
       : 0;
 
   const modelEntries = summary?.by_model
-    ? Object.entries(summary.by_model)
+    ? Object.entries(summary.by_model ?? {})
     : [];
 
   // Cost trend chart data
@@ -128,7 +129,7 @@ export function Observatory() {
               <option value="">Select a run...</option>
               {runs?.map((r) => (
                 <option key={r.run_id} value={r.run_id}>
-                  {r.run_id} ({r.run_type})
+                  {formatRunLabel(r)}
                 </option>
               ))}
             </select>
@@ -150,7 +151,7 @@ export function Observatory() {
                 </CardHeader>
                 <CardContent>
                   <span className="text-h2 text-brand-charcoal">
-                    {formatCurrency(summary.total_cost)}
+                    {formatCurrency(summary.total_cost ?? 0)}
                   </span>
                 </CardContent>
               </Card>
@@ -160,7 +161,7 @@ export function Observatory() {
                 </CardHeader>
                 <CardContent>
                   <span className="text-h2 text-brand-charcoal">
-                    {formatTokens(summary.total_tokens)}
+                    {formatTokens(summary.total_tokens ?? 0)}
                   </span>
                 </CardContent>
               </Card>
