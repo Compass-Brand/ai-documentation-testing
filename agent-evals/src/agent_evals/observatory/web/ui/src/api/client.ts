@@ -120,6 +120,42 @@ export interface SyncResult {
   updated: number;
 }
 
+// --- Pipeline Types ---
+
+export interface Pipeline {
+  pipeline_id: string;
+  runs: Run[];
+  phase: string;
+  total_trials: number;
+  total_cost: number;
+}
+
+export interface PhaseResults {
+  main_effects: Record<string, Record<string, number>>;
+  anova: Record<
+    string,
+    {
+      ss: number;
+      df: number;
+      ms: number;
+      f_ratio: number;
+      p_value: number;
+      eta_squared: number;
+      omega_squared: number;
+    }
+  >;
+  optimal: Record<string, string>;
+  significant_factors: string[];
+  quality_type: string;
+  confirmation?: {
+    within_interval: boolean;
+    sigma_deviation: number;
+    observed_sn: number;
+    predicted_sn: number;
+    prediction_interval: [number, number];
+  };
+}
+
 // --- API Methods ---
 
 export const api = {
@@ -194,4 +230,15 @@ export const api = {
   syncStatus: () => fetchApi<SyncStatus>("/api/models/sync"),
   triggerSync: () =>
     fetchApi<SyncResult>("/api/models/sync", { method: "POST" }),
+
+  // Pipelines
+  listPipelines: () => fetchApi<Pipeline[]>("/api/pipelines"),
+  getPipeline: (id: string) =>
+    fetchApi<Pipeline>(`/api/pipelines/${id}`),
+  getRunAnalysis: (runId: string) =>
+    fetchApi<PhaseResults>(`/api/runs/${runId}/analysis`),
+  approvePipeline: (id: string) =>
+    fetchApi<{ status: string }>(`/api/pipelines/${id}/approve`, {
+      method: "POST",
+    }),
 };

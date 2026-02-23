@@ -3,7 +3,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { api, type ModelFilters } from "./client";
+import { api, type ModelFilters, type Pipeline, type PhaseResults } from "./client";
 
 // --- Runs ---
 export function useRuns() {
@@ -130,6 +130,40 @@ export function useTriggerSync() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["models"] });
       qc.invalidateQueries({ queryKey: ["sync-status"] });
+    },
+  });
+}
+
+// --- Pipelines ---
+export function usePipelines() {
+  return useQuery({
+    queryKey: ["pipelines"],
+    queryFn: api.listPipelines,
+  });
+}
+
+export function usePipeline(id: string | null) {
+  return useQuery({
+    queryKey: ["pipeline", id],
+    queryFn: () => api.getPipeline(id!),
+    enabled: !!id,
+  });
+}
+
+export function useRunAnalysis(runId: string | null) {
+  return useQuery({
+    queryKey: ["analysis", runId],
+    queryFn: () => api.getRunAnalysis(runId!),
+    enabled: !!runId,
+  });
+}
+
+export function useApprovePipeline() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.approvePipeline(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pipelines"] });
     },
   });
 }
