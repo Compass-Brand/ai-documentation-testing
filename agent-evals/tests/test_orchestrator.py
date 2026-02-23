@@ -657,6 +657,138 @@ class TestRunFullIntegration:
 # ---------------------------------------------------------------------------
 
 
+class TestPhaseRouting:
+    """Phase and pipeline_id flow through orchestrator to store and runner."""
+
+    def test_run_passes_phase_and_pipeline_id_to_store_create_run(
+        self, tmp_path: Path
+    ) -> None:
+        orch = _make_orchestrator(tmp_path, mode="full")
+        eval_result = _make_eval_run_result()
+
+        with patch.object(orch, "_run_full", return_value=eval_result), \
+             patch.object(orch.store, "create_run", wraps=orch.store.create_run) as mock_create:
+            orch.run(
+                tasks=[_make_mock_task()],
+                variants=[_make_mock_variant()],
+                doc_tree=MagicMock(),
+                phase="screening",
+                pipeline_id="pipe_001",
+            )
+
+        mock_create.assert_called_once()
+        call_kwargs = mock_create.call_args
+        assert call_kwargs.kwargs.get("phase") == "screening"
+        assert call_kwargs.kwargs.get("pipeline_id") == "pipe_001"
+
+    def test_run_passes_phase_to_taguchi_runner(
+        self, tmp_path: Path
+    ) -> None:
+        orch = _make_orchestrator(tmp_path, mode="taguchi")
+        taguchi_result = _make_taguchi_run_result()
+
+        with patch.object(
+            orch, "_run_taguchi", return_value=taguchi_result
+        ) as mock_tag:
+            orch.run(
+                tasks=[_make_mock_task()],
+                variants=[_make_mock_variant()],
+                doc_tree=MagicMock(),
+                design=MagicMock(),
+                variant_lookup={"flat": _make_mock_variant()},
+                phase="confirmation",
+            )
+
+        mock_tag.assert_called_once()
+        call_kwargs = mock_tag.call_args
+        assert call_kwargs.kwargs.get("phase") == "confirmation"
+
+    def test_run_defaults_phase_and_pipeline_id_to_none(
+        self, tmp_path: Path
+    ) -> None:
+        orch = _make_orchestrator(tmp_path, mode="full")
+        eval_result = _make_eval_run_result()
+
+        with patch.object(orch, "_run_full", return_value=eval_result), \
+             patch.object(orch.store, "create_run", wraps=orch.store.create_run) as mock_create:
+            orch.run(
+                tasks=[_make_mock_task()],
+                variants=[_make_mock_variant()],
+                doc_tree=MagicMock(),
+            )
+
+        call_kwargs = mock_create.call_args
+        assert call_kwargs.kwargs.get("phase") is None
+        assert call_kwargs.kwargs.get("pipeline_id") is None
+
+    def test_trial_oa_row_id_and_phase_passed_to_tracker(
+        self, tmp_path: Path
+    ) -> None:
+        orch = _make_orchestrator(tmp_path, mode="full")
+
+        trial = _make_trial()
+        trial.metrics["oa_row_id"] = 3
+        trial.metrics["phase"] = "screening"
+        trials = [trial]
+        eval_result = _make_eval_run_result(trials)
+
+        with patch.object(
+            orch.tracker, "record_trial", wraps=orch.tracker.record_trial
+        ) as mock_record, \
+             patch.object(orch, "_run_full") as mock_full:
+
+            def fake_run_full(
+                tasks, variants, doc_tree, eval_config, progress_callback, source
+            ):
+                for i, t in enumerate(trials):
+                    progress_callback(i + 1, len(trials), t)
+                return eval_result
+
+            mock_full.side_effect = fake_run_full
+            orch.run(
+                tasks=[_make_mock_task()],
+                variants=[_make_mock_variant()],
+                doc_tree=MagicMock(),
+            )
+
+        mock_record.assert_called_once()
+        call_kwargs = mock_record.call_args
+        assert call_kwargs.kwargs.get("oa_row_id") == 3
+        assert call_kwargs.kwargs.get("phase") == "screening"
+
+    def test_taguchi_run_passes_phase_through_to_runner(
+        self, tmp_path: Path
+    ) -> None:
+        orch = _make_orchestrator(
+            tmp_path, mode="taguchi", models=["model-a"]
+        )
+        mock_client = _make_mock_client("model-a")
+        taguchi_result = _make_taguchi_run_result()
+
+        with patch.object(
+            orch.client_pool, "get_client", return_value=mock_client
+        ), patch(
+            "agent_evals.taguchi.runner.TaguchiRunner"
+        ) as mock_runner_cls:
+            mock_runner = MagicMock()
+            mock_runner.run.return_value = taguchi_result
+            mock_runner_cls.return_value = mock_runner
+
+            orch._run_taguchi(
+                tasks=[_make_mock_task()],
+                doc_tree=MagicMock(),
+                eval_config=EvalRunConfig(),
+                design=MagicMock(),
+                variant_lookup={"flat": _make_mock_variant()},
+                progress_callback=None,
+                source="gold_standard",
+                phase="screening",
+            )
+
+            run_kwargs = mock_runner.run.call_args
+            assert run_kwargs.kwargs.get("phase") == "screening"
+
+
 class TestMultiModel:
     """Orchestrator manages multiple models."""
 

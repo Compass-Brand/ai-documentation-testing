@@ -145,6 +145,8 @@ class EvalOrchestrator:
         design: TaguchiDesign | None = None,
         variant_lookup: dict[str, IndexVariant] | None = None,
         source: str = "gold_standard",
+        phase: str | None = None,
+        pipeline_id: str | None = None,
     ) -> OrchestratorResult:
         """Execute a full evaluation run with telemetry and reporting.
 
@@ -167,6 +169,10 @@ class EvalOrchestrator:
             ``"taguchi"`` mode).
         source:
             Source tag for all resulting TrialResults.
+        phase:
+            Pipeline phase name (e.g. ``"screening"``, ``"confirmation"``).
+        pipeline_id:
+            Pipeline run identifier for DOE multi-phase experiments.
 
         Returns
         -------
@@ -187,6 +193,8 @@ class EvalOrchestrator:
             run_id=run_id,
             run_type=self.config.mode,
             config={"mode": self.config.mode, "models": self.config.models},
+            phase=phase,
+            pipeline_id=pipeline_id,
         )
 
         # Wire up telemetry: bridge trial progress to the EventTracker.
@@ -195,6 +203,8 @@ class EvalOrchestrator:
         def _on_trial_progress(
             completed: int, total: int, trial: TrialResult
         ) -> None:
+            trial_oa_row_id = trial.metrics.get("oa_row_id") if trial.metrics else None
+            trial_phase = trial.metrics.get("phase") if trial.metrics else None
             self.tracker.record_trial(
                 run_id=run_id,
                 task_id=trial.task_id,
@@ -210,6 +220,8 @@ class EvalOrchestrator:
                 model=getattr(trial, "model", model_name),
                 source=trial.source,
                 error=trial.error,
+                oa_row_id=trial_oa_row_id,
+                phase=trial_phase,
             )
 
         # Route to the correct runner.
@@ -222,6 +234,7 @@ class EvalOrchestrator:
                 variant_lookup=variant_lookup,
                 progress_callback=_on_trial_progress,
                 source=source,
+                phase=phase,
             )
         else:
             raw_result = self._run_full(
@@ -352,6 +365,7 @@ class EvalOrchestrator:
         variant_lookup: dict[str, IndexVariant] | None,
         progress_callback: Any,
         source: str,
+        phase: str | None = None,
     ) -> Any:
         """Run a Taguchi-design evaluation via TaguchiRunner."""
         if design is None:
@@ -379,4 +393,5 @@ class EvalOrchestrator:
             doc_tree=doc_tree,
             progress_callback=progress_callback,
             source=source,
+            phase=phase,
         )

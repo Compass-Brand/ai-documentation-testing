@@ -93,6 +93,8 @@ class EventTracker:
         model: str,
         source: str = "gold_standard",
         error: str | None = None,
+        oa_row_id: int | None = None,
+        phase: str | None = None,
     ) -> None:
         """Record a trial, persist it, update stats, and notify listeners."""
         # Persist to store.
@@ -111,6 +113,8 @@ class EventTracker:
             model=model,
             source=source,
             error=error,
+            oa_row_id=oa_row_id,
+            phase=phase,
         )
 
         trial_cost = cost or 0.0
