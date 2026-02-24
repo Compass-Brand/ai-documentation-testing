@@ -10,72 +10,44 @@ vi.mock("../../hooks/useSSE", () => ({
   useSSE: vi.fn(() => ({ disconnect: vi.fn() })),
 }));
 
-const mockUseRuns = vi.fn();
-const mockUseRun = vi.fn();
-const mockUseTrials = vi.fn();
+const mockUseLiveMonitorState = vi.fn();
 
-vi.mock("../../api/hooks", () => ({
-  useRuns: (...args: unknown[]) => mockUseRuns(...args),
-  useRun: (...args: unknown[]) => mockUseRun(...args),
-  useTrials: (...args: unknown[]) => mockUseTrials(...args),
+vi.mock("../../hooks/useLiveMonitorState", () => ({
+  useLiveMonitorState: (...args: unknown[]) => mockUseLiveMonitorState(...args),
 }));
 
-const sampleRunSummary = {
-  run: {
-    run_id: "run-1",
-    run_type: "taguchi",
-    status: "active",
-    config: {},
-    created_at: "2026-02-23T00:00:00Z",
-    finished_at: null,
-  },
-  total_trials: 10,
-  completed_trials: 3,
-  total_cost: 0.15,
-  total_tokens: 5000,
-  mean_score: 0.82,
-  by_variant: { flat: { mean_score: 0.82, trial_count: 3 } },
+const mockUseActiveRuns = vi.fn();
+
+vi.mock("../../api/hooks", () => ({
+  useActiveRuns: (...args: unknown[]) => mockUseActiveRuns(...args),
+}));
+
+const defaultState = {
+  selectedRunId: "run-1",
+  setSelectedRunId: vi.fn(),
+  recentTrials: [],
+  alerts: [],
+  progress: 30,
+  trialsCompleted: 3,
+  trialsTotal: 10,
+  uniqueTasksSeen: 2,
+  totalTasks: 355,
+  trialsPerMin: 5.0,
+  estimatedRemainingMinutes: 1.4,
+  meanScore: 0.82,
+  totalCost: 0.15,
+  totalTokens: 5000,
+  avgLatency: 1.2,
+  errorCount: 0,
+  byModel: { claude: { mean_score: 0.82, trial_count: 3, cost: 0.15 } },
+  byVariant: { flat: { mean_score: 0.82, trial_count: 3 } },
+  isConnected: true,
+  lastUpdated: new Date(),
+  isLoading: false,
+  scores: [0.8, 0.85, 0.82],
 };
 
-const sampleTrials = [
-  {
-    task_id: "t1",
-    task_type: "retrieval",
-    variant_name: "flat",
-    repetition: 1,
-    score: 0.85,
-    cost: 0.05,
-    latency_seconds: 1.2,
-    error: null,
-    prompt_tokens: 100,
-    completion_tokens: 50,
-    total_tokens: 150,
-    cached: false,
-    source: "claude",
-    metrics: {},
-  },
-];
-
-beforeEach(() => {
-  mockUseRuns.mockReturnValue({ data: [], isLoading: false });
-  mockUseRun.mockReturnValue({ data: sampleRunSummary, isLoading: false, error: null });
-  mockUseTrials.mockReturnValue({ data: sampleTrials, isLoading: false });
-});
-
-function renderAtRoute(runId: string) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter initialEntries={[`/live/${runId}`]}>
-        <Routes>
-          <Route path="/live/:runId" element={<LiveMonitor />} />
-        </Routes>
-      </MemoryRouter>
-    </QueryClientProvider>,
-  );
-}
-
-function renderNoRunId() {
+function renderMonitor() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -88,91 +60,92 @@ function renderNoRunId() {
   );
 }
 
+beforeEach(() => {
+  mockUseLiveMonitorState.mockReturnValue(defaultState);
+  mockUseActiveRuns.mockReturnValue({ data: { runs: [], count: 0 } });
+});
+
 describe("LiveMonitor", () => {
   it("should render the page heading", () => {
-    renderAtRoute("run-1");
+    renderMonitor();
     expect(screen.getByText("Live Monitor")).toBeInTheDocument();
   });
 
   it("should display progress information", () => {
-    renderAtRoute("run-1");
-    // Should show "3 / 10 trials" progress text
+    renderMonitor();
     expect(screen.getByText(/3\s*\/\s*10\s*trials/)).toBeInTheDocument();
   });
 
+  it("should display task progress", () => {
+    renderMonitor();
+    expect(screen.getByText(/2\s*\/\s*355\s*tasks/)).toBeInTheDocument();
+  });
+
   it("should display mean score stat", () => {
-    renderAtRoute("run-1");
-    expect(screen.getByText(/0\.82/)).toBeInTheDocument();
+    renderMonitor();
+    // Score appears in stat card and model/variant tables
+    expect(screen.getAllByText("0.82").length).toBeGreaterThanOrEqual(1);
   });
 
   it("should display total cost stat", () => {
-    renderAtRoute("run-1");
-    expect(screen.getByText(/0\.15/)).toBeInTheDocument();
+    renderMonitor();
+    // Cost appears in stat card and model breakdown table
+    expect(screen.getAllByText("$0.15").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("should render trial feed entries", () => {
-    renderAtRoute("run-1");
-    // Should show trial task ID or score
-    expect(screen.getByText(/t1/i)).toBeInTheDocument();
+  it("should display tokens stat", () => {
+    renderMonitor();
+    expect(screen.getByText("5K")).toBeInTheDocument();
   });
 
-  describe("auto-detection (no runId in URL)", () => {
-    it("should auto-select the most recent active run", () => {
-      mockUseRuns.mockReturnValue({
-        data: [
-          {
-            run_id: "old-run",
-            status: "completed",
-            created_at: "2026-02-20T00:00:00Z",
-            finished_at: "2026-02-20T01:00:00Z",
-          },
-          {
-            run_id: "active-old",
-            status: "active",
-            created_at: "2026-02-21T00:00:00Z",
-            finished_at: null,
-          },
-          {
-            run_id: "active-latest",
-            status: "active",
-            created_at: "2026-02-23T00:00:00Z",
-            finished_at: null,
-          },
-        ],
-        isLoading: false,
+  it("should display latency stat", () => {
+    renderMonitor();
+    expect(screen.getByText("1.2s")).toBeInTheDocument();
+  });
+
+  it("should show Live indicator when connected", () => {
+    renderMonitor();
+    expect(screen.getByText("Live")).toBeInTheDocument();
+  });
+
+  it("should show ETA", () => {
+    renderMonitor();
+    expect(screen.getByText(/~2m left/)).toBeInTheDocument();
+  });
+
+  it("should render model breakdown section", () => {
+    renderMonitor();
+    expect(screen.getByText("Per-Model Breakdown")).toBeInTheDocument();
+    expect(screen.getByText("claude")).toBeInTheDocument();
+  });
+
+  it("should render variant summary section", () => {
+    renderMonitor();
+    expect(screen.getByText("Variant Summary")).toBeInTheDocument();
+    expect(screen.getByText("flat")).toBeInTheDocument();
+  });
+
+  it("should render alerts section", () => {
+    renderMonitor();
+    expect(screen.getByText("Alerts")).toBeInTheDocument();
+  });
+
+  describe("empty state", () => {
+    it("should show EmptyState when no selected run", () => {
+      mockUseLiveMonitorState.mockReturnValue({
+        ...defaultState,
+        selectedRunId: null,
       });
-
-      renderNoRunId();
-
-      // useRun should have been called with the latest active run
-      expect(mockUseRun).toHaveBeenCalledWith("active-latest");
+      renderMonitor();
+      expect(screen.getByText("No Active Runs")).toBeInTheDocument();
     });
 
-    it("should show no-active-runs message when none are active", () => {
-      mockUseRuns.mockReturnValue({
-        data: [
-          {
-            run_id: "old-run",
-            status: "completed",
-            created_at: "2026-02-20T00:00:00Z",
-            finished_at: "2026-02-20T01:00:00Z",
-          },
-        ],
-        isLoading: false,
+    it("should show loading when isLoading", () => {
+      mockUseLiveMonitorState.mockReturnValue({
+        ...defaultState,
+        isLoading: true,
       });
-      mockUseRun.mockReturnValue({ data: undefined, isLoading: false, error: null });
-
-      renderNoRunId();
-
-      expect(screen.getByText(/no active runs/i)).toBeInTheDocument();
-    });
-
-    it("should show loading while fetching runs list", () => {
-      mockUseRuns.mockReturnValue({ data: undefined, isLoading: true });
-      mockUseRun.mockReturnValue({ data: undefined, isLoading: false, error: null });
-
-      renderNoRunId();
-
+      renderMonitor();
       expect(screen.getByText("Loading...")).toBeInTheDocument();
     });
   });

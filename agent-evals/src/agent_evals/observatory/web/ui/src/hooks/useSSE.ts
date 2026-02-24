@@ -2,11 +2,17 @@ import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Trial } from "../api/client";
 
+export interface SSEAlert {
+  type: string;
+  data: Record<string, unknown>;
+}
+
 interface UseSSEOptions {
   runId: string | null;
   onTrialComplete?: (trial: Trial) => void;
   onRunComplete?: () => void;
   onError?: (error: string) => void;
+  onAlert?: (alert: SSEAlert) => void;
 }
 
 export function useSSE({
@@ -14,6 +20,7 @@ export function useSSE({
   onTrialComplete,
   onRunComplete,
   onError,
+  onAlert,
 }: UseSSEOptions) {
   const sourceRef = useRef<EventSource | null>(null);
   const qc = useQueryClient();
@@ -39,6 +46,18 @@ export function useSSE({
       onTrialComplete?.(trial);
       qc.invalidateQueries({ queryKey: ["run", runId] });
     });
+
+    const alertTypes = [
+      "anomaly_alert",
+      "model_budget_exceeded",
+      "burn_rate_alert",
+    ];
+    for (const alertType of alertTypes) {
+      source.addEventListener(alertType, (e: MessageEvent) => {
+        const data: Record<string, unknown> = JSON.parse(e.data);
+        onAlert?.({ type: alertType, data });
+      });
+    }
 
     // Backend does not emit a run_complete event.
     // Poll the run summary to detect completion instead.
@@ -73,7 +92,7 @@ export function useSSE({
       clearInterval(pollInterval);
       disconnect();
     };
-  }, [runId, onTrialComplete, onRunComplete, onError, qc, disconnect]);
+  }, [runId, onTrialComplete, onRunComplete, onError, onAlert, qc, disconnect]);
 
   return { disconnect };
 }

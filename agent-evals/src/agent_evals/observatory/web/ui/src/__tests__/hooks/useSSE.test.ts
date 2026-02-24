@@ -200,4 +200,42 @@ describe("useSSE", () => {
     const source = MockEventSource.instances[0];
     expect(source.listeners["error"]).toBeDefined();
   });
+
+  it("should listen for alert event types", async () => {
+    const { useSSE } = await import("../../hooks/useSSE");
+    const wrapper = createWrapper();
+    const onAlert = vi.fn();
+
+    renderHook(
+      () => useSSE({ runId: "run-1", onAlert }),
+      { wrapper },
+    );
+
+    const source = MockEventSource.instances[0];
+    expect(source.listeners["anomaly_alert"]).toBeDefined();
+    expect(source.listeners["model_budget_exceeded"]).toBeDefined();
+    expect(source.listeners["burn_rate_alert"]).toBeDefined();
+  });
+
+  it("should call onAlert with parsed alert data", async () => {
+    const { useSSE } = await import("../../hooks/useSSE");
+    const wrapper = createWrapper();
+    const onAlert = vi.fn();
+
+    renderHook(
+      () => useSSE({ runId: "run-1", onAlert }),
+      { wrapper },
+    );
+
+    const source = MockEventSource.instances[0];
+    const alertData = { model: "claude", cost: 0.08, average_cost: 0.02 };
+    act(() => {
+      source.emit("anomaly_alert", alertData);
+    });
+
+    expect(onAlert).toHaveBeenCalledWith({
+      type: "anomaly_alert",
+      data: alertData,
+    });
+  });
 });
