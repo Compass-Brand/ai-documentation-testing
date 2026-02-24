@@ -59,14 +59,17 @@ def client(tmp_path: Path, catalog: ModelCatalog) -> TestClient:
 class TestModelAPIEndpoints:
     """REST API endpoints for model browsing."""
 
-    def test_get_models_returns_list(self, client: TestClient) -> None:
+    def test_get_models_returns_wrapped_format(self, client: TestClient) -> None:
         response = client.get("/api/models")
         assert response.status_code == 200
-        assert isinstance(response.json(), list)
+        data = response.json()
+        assert "models" in data
+        assert "total" in data
+        assert isinstance(data["models"], list)
 
     def test_get_models_returns_seeded_data(self, client: TestClient) -> None:
         response = client.get("/api/models")
-        ids = [m["id"] for m in response.json()]
+        ids = [m["id"] for m in response.json()["models"]]
         assert "test-model" in ids
         assert "cheap-model" in ids
 
@@ -102,41 +105,41 @@ class TestModelFilterAPI:
     def test_filter_free_models(self, client: TestClient) -> None:
         response = client.get("/api/models?free=true")
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["models"]
         assert len(data) == 1
         assert data[0]["id"] == "cheap-model"
 
     def test_filter_by_max_price(self, client: TestClient) -> None:
         response = client.get("/api/models?max_price=0.001")
         assert response.status_code == 200
-        for m in response.json():
+        for m in response.json()["models"]:
             assert m["prompt_price"] <= 0.001
 
     def test_filter_by_min_context(self, client: TestClient) -> None:
         response = client.get("/api/models?min_context=100000")
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["models"]
         for m in data:
             assert m["context_length"] >= 100000
 
     def test_filter_by_modality(self, client: TestClient) -> None:
         response = client.get("/api/models?modality=text%2Bimage")
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["models"]
         assert len(data) == 1
         assert data[0]["id"] == "test-model"
 
     def test_filter_by_capabilities(self, client: TestClient) -> None:
         response = client.get("/api/models?capabilities=tools,json_mode")
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["models"]
         assert len(data) == 1
         assert data[0]["id"] == "test-model"
 
     def test_filter_by_tokenizer(self, client: TestClient) -> None:
         response = client.get("/api/models?tokenizer=claude")
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["models"]
         assert all(m["tokenizer"] == "claude" for m in data)
 
     def test_combined_filters(self, client: TestClient) -> None:
@@ -146,7 +149,7 @@ class TestModelFilterAPI:
     def test_search_query(self, client: TestClient) -> None:
         response = client.get("/api/models?search=cheap")
         assert response.status_code == 200
-        data = response.json()
+        data = response.json()["models"]
         assert any("cheap" in m["name"].lower() for m in data)
 
 
