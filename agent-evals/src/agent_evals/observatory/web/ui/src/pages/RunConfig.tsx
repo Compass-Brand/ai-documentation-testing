@@ -1,17 +1,20 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Play, Loader2 } from "lucide-react";
+import { Play, Loader2, CheckCircle } from "lucide-react";
 import { Button } from "../components/Button";
 import { Card, CardContent } from "../components/Card";
 import { Input } from "../components/Input";
+import { Select } from "../components/Select";
 import { FadeIn } from "../components/FadeIn";
 import { cn } from "../lib/utils";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useStartRun, useActiveRuns } from "../api/hooks";
 import type { StartRunPayload } from "../api/client";
 
 type RunMode = "taguchi" | "full";
 
 export default function RunConfig() {
+  useDocumentTitle("Run Config");
   const navigate = useNavigate();
   const startRun = useStartRun();
   const activeRuns = useActiveRuns();
@@ -87,13 +90,16 @@ export default function RunConfig() {
                       <label
                         key={m}
                         className={cn(
-                          "flex cursor-pointer flex-col items-center gap-sp-2",
+                          "relative flex cursor-pointer flex-col items-center gap-sp-2",
                           "rounded-card border-2 p-sp-6 transition-all duration-micro",
                           mode === m
-                            ? "border-brand-goldenrod bg-brand-goldenrod/5"
+                            ? "border-brand-goldenrod bg-brand-goldenrod/8"
                             : "border-brand-mist hover:border-brand-slate",
                         )}
                       >
+                        {mode === m && (
+                          <CheckCircle className="absolute right-sp-3 top-sp-3 h-5 w-5 text-brand-goldenrod" />
+                        )}
                         <input
                           type="radio"
                           name="mode"
@@ -223,24 +229,17 @@ export default function RunConfig() {
                         >
                           Pipeline Mode
                         </label>
-                        <select
-                          id="pipelineMode"
+                        <Select
                           aria-label="Pipeline Mode"
                           value={pipelineMode}
-                          onChange={(e) =>
-                            setPipelineMode(
-                              e.target.value as "auto" | "semi",
-                            )
+                          onValueChange={(v) =>
+                            setPipelineMode(v as "auto" | "semi")
                           }
-                          className="h-11 w-full rounded-card border border-brand-mist bg-brand-bone px-sp-4 py-sp-2 text-body-sm text-brand-charcoal"
-                        >
-                          <option value="auto">
-                            Auto (run all phases)
-                          </option>
-                          <option value="semi">
-                            Semi (approve between phases)
-                          </option>
-                        </select>
+                          options={[
+                            { value: "auto", label: "Auto (run all phases)" },
+                            { value: "semi", label: "Semi (approve between phases)" },
+                          ]}
+                        />
                         <p className="mt-sp-1 text-caption text-brand-slate">
                           Auto runs all three phases automatically. Semi pauses
                           between phases for review.
@@ -254,23 +253,16 @@ export default function RunConfig() {
                         >
                           Quality Type
                         </label>
-                        <select
-                          id="qualityType"
+                        <Select
                           aria-label="Quality Type"
                           value={qualityType}
-                          onChange={(e) => setQualityType(e.target.value)}
-                          className="h-11 w-full rounded-card border border-brand-mist bg-brand-bone px-sp-4 py-sp-2 text-body-sm text-brand-charcoal"
-                        >
-                          <option value="larger_is_better">
-                            Larger is Better
-                          </option>
-                          <option value="smaller_is_better">
-                            Smaller is Better
-                          </option>
-                          <option value="nominal_is_best">
-                            Nominal is Best
-                          </option>
-                        </select>
+                          onValueChange={setQualityType}
+                          options={[
+                            { value: "larger_is_better", label: "Larger is Better" },
+                            { value: "smaller_is_better", label: "Smaller is Better" },
+                            { value: "nominal_is_best", label: "Nominal is Best" },
+                          ]}
+                        />
                         <p className="mt-sp-1 text-caption text-brand-slate">
                           How to optimize the signal-to-noise ratio. Larger is
                           Better: maximize scores. Smaller is Better: minimize

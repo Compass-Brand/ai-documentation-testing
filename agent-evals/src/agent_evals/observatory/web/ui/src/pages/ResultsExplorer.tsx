@@ -21,7 +21,10 @@ import { AccessibleChart } from "../components/AccessibleChart";
 import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { CHART_COLORS } from "../lib/chart-theme";
-import { cn, formatRunLabel } from "../lib/utils";
+import { formatRunLabel } from "../lib/utils";
+import { Select } from "../components/Select";
+import { TabBar } from "../components/TabBar";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import type { ColumnDef } from "@tanstack/react-table";
 
 Chart.register(
@@ -84,6 +87,7 @@ const inlineAnovaColumns: ColumnDef<InlineAnovaRow>[] = [
 ];
 
 export function ResultsExplorer() {
+  useDocumentTitle("Results");
   const { runId } = useParams<{ runId: string }>();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<"overview" | "analysis">(
@@ -145,23 +149,20 @@ export function ResultsExplorer() {
             <BarChart3 className="h-8 w-8 text-brand-goldenrod" />
             Results Explorer
           </h1>
-          <label className="flex items-center gap-sp-3 text-body-sm text-brand-slate">
-            <span className="sr-only">Select run</span>
-            <select
+          <div className="w-64">
+            <Select
               aria-label="Select run"
-              role="combobox"
               value={runId ?? ""}
-              onChange={(e) => navigate(`/results/${e.target.value}`)}
-              className="h-11 rounded-card border border-brand-mist bg-brand-bone px-sp-4 py-sp-2 text-body-sm text-brand-charcoal"
-            >
-              <option value="">Select a run...</option>
-              {runs?.map((r) => (
-                <option key={r.run_id} value={r.run_id}>
-                  {formatRunLabel(r)}
-                </option>
-              ))}
-            </select>
-          </label>
+              onValueChange={(v) => navigate(`/results/${v}`)}
+              placeholder="Select a run..."
+              options={
+                runs?.map((r) => ({
+                  value: r.run_id,
+                  label: formatRunLabel(r),
+                })) ?? []
+              }
+            />
+          </div>
         </div>
       </FadeIn>
 
@@ -179,29 +180,15 @@ export function ResultsExplorer() {
         <>
           {analysis && (
             <FadeIn>
-              <div className="mb-sp-6 flex gap-sp-2 border-b border-brand-mist">
-                <button
-                  onClick={() => setActiveTab("overview")}
-                  className={cn(
-                    "px-sp-4 py-sp-2 text-body-sm font-medium transition-colors",
-                    activeTab === "overview"
-                      ? "border-b-2 border-brand-goldenrod text-brand-goldenrod"
-                      : "text-brand-slate hover:text-brand-charcoal",
-                  )}
-                >
-                  Overview
-                </button>
-                <button
-                  onClick={() => setActiveTab("analysis")}
-                  className={cn(
-                    "px-sp-4 py-sp-2 text-body-sm font-medium transition-colors",
-                    activeTab === "analysis"
-                      ? "border-b-2 border-brand-goldenrod text-brand-goldenrod"
-                      : "text-brand-slate hover:text-brand-charcoal",
-                  )}
-                >
-                  Factor Analysis
-                </button>
+              <div className="mb-sp-6">
+                <TabBar
+                  tabs={[
+                    { key: "overview", label: "Overview" },
+                    { key: "analysis", label: "Factor Analysis" },
+                  ]}
+                  activeKey={activeTab}
+                  onTabChange={(key) => setActiveTab(key as "overview" | "analysis")}
+                />
               </div>
             </FadeIn>
           )}

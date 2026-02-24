@@ -33,7 +33,9 @@ import { Button } from "../components/Button";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatusDot } from "../components/StatusDot";
 import { FadeIn } from "../components/FadeIn";
+import { TabBar } from "../components/TabBar";
 import { cn } from "../lib/utils";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 type ViewMode = "table" | "cards";
 type PanelTab = "overview" | "providers" | "history";
@@ -168,6 +170,7 @@ function ModelCard({
 }
 
 export function Models() {
+  useDocumentTitle("Models");
   const [filters, setFilters] = useFilterParams();
   const { data: modelsData, isLoading } = useModels(filters);
   const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
@@ -260,7 +263,7 @@ export function Models() {
   }
 
   return (
-    <div className="px-sp-6 py-sp-8 max-w-full mx-auto">
+    <div className="px-sp-6 py-sp-8 max-w-full 2xl:max-w-[1400px] mx-auto">
       <FadeIn>
         <h1 className="text-h2 text-brand-charcoal inline-flex items-center gap-sp-3 mb-sp-8">
           <Cpu className="h-8 w-8 text-brand-goldenrod" />
@@ -270,7 +273,7 @@ export function Models() {
 
       <div className="flex gap-sp-6">
         {/* Left sidebar -- 264px */}
-        <aside className="w-[264px] shrink-0">
+        <aside className="hidden lg:block w-[264px] shrink-0">
           <FadeIn delay={1}>
             <Input
               placeholder="Search models..."
@@ -439,22 +442,16 @@ export function Models() {
         width="lg"
       >
         {/* Tabs */}
-        <div className="flex gap-sp-1 mb-sp-6 border-b border-brand-mist">
-          {(["overview", "providers", "history"] as PanelTab[]).map((tab) => (
-            <button
-              key={tab}
-              className={cn(
-                "px-sp-4 py-sp-2 text-body-sm font-medium transition-colors duration-micro",
-                "border-b-2 -mb-px",
-                panelTab === tab
-                  ? "border-brand-goldenrod text-brand-charcoal"
-                  : "border-transparent text-brand-slate hover:text-brand-charcoal",
-              )}
-              onClick={() => setPanelTab(tab)}
-            >
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
-            </button>
-          ))}
+        <div className="mb-sp-6">
+          <TabBar
+            tabs={[
+              { key: "overview", label: "Overview" },
+              { key: "providers", label: "Providers" },
+              { key: "history", label: "History" },
+            ]}
+            activeKey={panelTab}
+            onTabChange={(key) => setPanelTab(key as PanelTab)}
+          />
         </div>
 
         {/* Tab content */}

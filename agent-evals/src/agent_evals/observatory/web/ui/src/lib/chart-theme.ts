@@ -38,3 +38,8 @@ export const CHART_PROJECTION = {
   borderColor: "#1A1A1A", // Deep Charcoal
   borderWidth: 1,
 } as const;
+
+export const CHART_ANIMATION = {
+  duration: 600,
+  easing: "easeOutQuart" as const,
+} as const;

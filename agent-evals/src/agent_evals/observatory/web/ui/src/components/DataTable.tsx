@@ -6,7 +6,7 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { ArrowUpDown } from "lucide-react";
+import { ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
 import { CompassCheckbox } from "./CompassCheckbox";
@@ -49,8 +49,9 @@ export function DataTable<T>({
                   key={header.id}
                   className={cn(
                     "px-sp-4 py-sp-3 text-left font-medium text-brand-slate",
+                    "border-l-2 border-transparent",
                     header.column.getCanSort() &&
-                      "cursor-pointer select-none",
+                      "cursor-pointer select-none hover:border-l-2 hover:border-brand-goldenrod",
                   )}
                   onClick={header.column.getToggleSortingHandler()}
                 >
@@ -60,7 +61,13 @@ export function DataTable<T>({
                       header.getContext(),
                     )}
                     {header.column.getCanSort() && (
-                      <ArrowUpDown className="h-4 w-4 text-brand-slate/50" />
+                      header.column.getIsSorted() === "asc" ? (
+                        <ChevronUp className="h-4 w-4 text-brand-goldenrod" />
+                      ) : header.column.getIsSorted() === "desc" ? (
+                        <ChevronDown className="h-4 w-4 text-brand-goldenrod" />
+                      ) : (
+                        <ArrowUpDown className="h-4 w-4 text-brand-slate/50" />
+                      )
                     )}
                   </span>
                 </th>
@@ -79,7 +86,7 @@ export function DataTable<T>({
                 className={cn(
                   "border-t border-brand-mist transition-colors duration-micro",
                   "hover:bg-brand-cream/50",
-                  onRowClick && "cursor-pointer",
+                  onRowClick && "cursor-pointer focus-visible:ring-2 focus-visible:ring-brand-goldenrod",
                   isSelected && "bg-brand-goldenrod/10",
                 )}
                 onClick={() => onRowClick?.(row.original)}

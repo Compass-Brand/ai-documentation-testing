@@ -92,9 +92,14 @@ const config: Config = {
           "0%": { opacity: "0", transform: "translateY(20px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        shimmer: {
+          "0%": { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
       },
       animation: {
         "fade-in-up": "fade-in-up 350ms ease-out",
+        shimmer: "shimmer 2s infinite linear",
       },
     },
   },

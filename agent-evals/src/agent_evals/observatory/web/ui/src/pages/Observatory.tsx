@@ -18,6 +18,8 @@ import { FadeIn } from "../components/FadeIn";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { CHART_COLORS } from "../lib/chart-theme";
 import { formatRunLabel } from "../lib/utils";
+import { Select } from "../components/Select";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 Chart.register(
   CategoryScale,
@@ -39,6 +41,7 @@ const MODEL_COLORS = [
 ];
 
 export function Observatory() {
+  useDocumentTitle("Observatory");
   const { data: runs, isLoading: runsLoading } = useRuns();
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
@@ -117,23 +120,20 @@ export function Observatory() {
             <Eye className="h-8 w-8 text-brand-goldenrod" />
             Observatory
           </h1>
-          <label className="flex items-center gap-sp-3 text-body-sm text-brand-slate">
-            <span className="sr-only">Select run</span>
-            <select
+          <div className="w-64">
+            <Select
               aria-label="Select run"
-              role="combobox"
               value={activeRunId ?? ""}
-              onChange={(e) => setSelectedRunId(e.target.value || null)}
-              className="h-11 rounded-card border border-brand-mist bg-brand-bone px-sp-4 py-sp-2 text-body-sm text-brand-charcoal"
-            >
-              <option value="">Select a run...</option>
-              {runs?.map((r) => (
-                <option key={r.run_id} value={r.run_id}>
-                  {formatRunLabel(r)}
-                </option>
-              ))}
-            </select>
-          </label>
+              onValueChange={(v) => setSelectedRunId(v || null)}
+              placeholder="Select a run..."
+              options={
+                runs?.map((r) => ({
+                  value: r.run_id,
+                  label: formatRunLabel(r),
+                })) ?? []
+              }
+            />
+          </div>
         </div>
       </FadeIn>
 

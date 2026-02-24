@@ -5,6 +5,8 @@ import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
 import { FadeIn } from "../components/FadeIn";
 import { StatusBadge } from "../components/StatusBadge";
 import { cn, shortId } from "../lib/utils";
+import { Select } from "../components/Select";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import type { Run } from "../api/client";
 
 const PHASE_ORDER = ["screening", "confirmation", "refinement"] as const;
@@ -36,6 +38,7 @@ function capitalize(str: string): string {
 }
 
 export function PipelineView() {
+  useDocumentTitle("Pipeline");
   const { pipelineId } = useParams<{ pipelineId: string }>();
   const navigate = useNavigate();
   const { data: pipelines } = usePipelines();
@@ -52,24 +55,20 @@ export function PipelineView() {
             Pipeline View
           </h1>
           {!noPipelines && (
-            <label className="flex items-center gap-sp-3 text-body-sm text-brand-slate">
-              <span className="sr-only">Select pipeline</span>
-              <select
+            <div className="w-64">
+              <Select
                 aria-label="Select pipeline"
-                role="combobox"
                 value={pipelineId ?? ""}
-                onChange={(e) => navigate(`/pipeline/${e.target.value}`)}
-                className="h-11 rounded-card border border-brand-mist bg-brand-bone px-sp-4 py-sp-2 text-body-sm text-brand-charcoal"
-              >
-                <option value="">Select a pipeline...</option>
-                {pipelines?.map((p) => (
-                  <option key={p.pipeline_id} value={p.pipeline_id}>
-                    {shortId(p.pipeline_id)} ({p.run_count}{" "}
-                    {p.run_count === 1 ? "run" : "runs"})
-                  </option>
-                ))}
-              </select>
-            </label>
+                onValueChange={(v) => navigate(`/pipeline/${v}`)}
+                placeholder="Select a pipeline..."
+                options={
+                  pipelines?.map((p) => ({
+                    value: p.pipeline_id,
+                    label: `${shortId(p.pipeline_id)} (${p.run_count} ${p.run_count === 1 ? "run" : "runs"})`,
+                  })) ?? []
+                }
+              />
+            </div>
           )}
         </div>
         <p className="mb-sp-8 text-body-sm text-brand-slate">
@@ -109,7 +108,7 @@ export function PipelineView() {
           </FadeIn>
 
           <FadeIn delay={2}>
-            <div className="flex items-stretch gap-sp-4">
+            <div className="flex flex-wrap items-stretch gap-sp-4">
               {pipeline.runs.map((run, index) => {
                 const phase = inferPhase(run, index);
                 const badgeStatus =
@@ -152,12 +151,27 @@ export function PipelineView() {
                       </Card>
                     </Link>
                     {index < pipeline.runs.length - 1 && (
-                      <span
-                        className="flex items-center px-sp-3 text-h3 text-brand-slate"
+                      <svg
+                        className="flex-shrink-0 self-center mx-sp-2"
+                        width="40"
+                        height="24"
+                        viewBox="0 0 40 24"
                         aria-hidden="true"
                       >
-                        &rarr;
-                      </span>
+                        <line
+                          x1="0"
+                          y1="12"
+                          x2="30"
+                          y2="12"
+                          stroke={run.status === "completed" || run.status === "active" ? "#C2A676" : "#5C6B7F"}
+                          strokeWidth="2"
+                          strokeDasharray={run.status === "completed" || run.status === "active" ? "none" : "4 3"}
+                        />
+                        <polygon
+                          points="30,6 40,12 30,18"
+                          fill={run.status === "completed" || run.status === "active" ? "#C2A676" : "#5C6B7F"}
+                        />
+                      </svg>
                     )}
                   </div>
                 );
