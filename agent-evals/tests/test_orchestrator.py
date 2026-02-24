@@ -505,49 +505,101 @@ class TestTaguchiValidation:
 
 
 class TestDashboard:
-    """Dashboard starts in background thread when configured."""
+    """Dashboard delegates to launch_dashboard() when enabled."""
 
     def test_dashboard_disabled_returns_none(self, tmp_path: Path) -> None:
         orch = _make_orchestrator(tmp_path, dashboard=False)
         result = orch.start_dashboard()
         assert result is None
 
-    def test_dashboard_enabled_starts_thread(self, tmp_path: Path) -> None:
+    def test_dashboard_enabled_calls_launch_dashboard(
+        self, tmp_path: Path
+    ) -> None:
         orch = _make_orchestrator(tmp_path, dashboard=True)
+        mock_handle = MagicMock()
+        mock_handle.thread = MagicMock(spec=threading.Thread)
 
-        with (
-            patch(
-                "agent_evals.observatory.web.server.create_app"
-            ) as mock_create_app,
-            patch("uvicorn.Config") as mock_config_cls,
-            patch("uvicorn.Server") as mock_server_cls,
-        ):
-            mock_app = MagicMock()
-            mock_create_app.return_value = mock_app
-            mock_server = MagicMock()
-            mock_server_cls.return_value = mock_server
+        with patch(
+            "agent_evals.observatory.web.server.launch_dashboard",
+            return_value=mock_handle,
+            create=True,
+        ) as mock_launch, patch(
+            "agent_evals.observatory.web.server.DashboardConfig",
+            create=True,
+        ) as mock_config_cls:
+            mock_config_cls.return_value = MagicMock()
+            orch.start_dashboard()
 
-            thread = orch.start_dashboard()
+        mock_launch.assert_called_once()
+        call_kwargs = mock_launch.call_args
+        assert call_kwargs.kwargs.get("store") is orch.store
+        assert call_kwargs.kwargs.get("tracker") is orch.tracker
+        assert call_kwargs.kwargs.get("background") is True
 
-            if thread is not None:
-                thread.join(timeout=2.0)
+    def test_dashboard_config_uses_correct_paths(
+        self, tmp_path: Path
+    ) -> None:
+        orch = _make_orchestrator(tmp_path, dashboard=True)
+        mock_handle = MagicMock()
+        mock_handle.thread = MagicMock(spec=threading.Thread)
 
-        assert thread is not None
-        assert thread.name == "observatory-dashboard"
-        assert thread.daemon is True
+        with patch(
+            "agent_evals.observatory.web.server.launch_dashboard",
+            return_value=mock_handle,
+            create=True,
+        ), patch(
+            "agent_evals.observatory.web.server.DashboardConfig",
+            create=True,
+        ) as mock_config_cls:
+            mock_config_cls.return_value = MagicMock()
+            orch.start_dashboard()
 
-    def test_stop_dashboard_signals_shutdown(self, tmp_path: Path) -> None:
+        mock_config_cls.assert_called_once()
+        call_kwargs = mock_config_cls.call_args
+        assert call_kwargs.kwargs.get("observatory_db") == orch.store._db_path
+        expected_models_db = orch.store._db_path.parent / "models.db"
+        assert call_kwargs.kwargs.get("models_db") == expected_models_db
+        assert call_kwargs.kwargs.get("port") == orch.config.dashboard_port
+        assert call_kwargs.kwargs.get("auto_sync") is True
+
+    def test_dashboard_enabled_returns_thread_from_handle(
+        self, tmp_path: Path
+    ) -> None:
         orch = _make_orchestrator(tmp_path, dashboard=True)
         mock_thread = MagicMock(spec=threading.Thread)
-        mock_server = MagicMock()
-        orch._dashboard_thread = mock_thread
-        orch._uvicorn_server = mock_server
+        mock_handle = MagicMock()
+        mock_handle.thread = mock_thread
+
+        with patch(
+            "agent_evals.observatory.web.server.launch_dashboard",
+            return_value=mock_handle,
+            create=True,
+        ), patch(
+            "agent_evals.observatory.web.server.DashboardConfig",
+            create=True,
+        ):
+            result = orch.start_dashboard()
+
+        assert result is mock_thread
+        assert orch._dashboard_thread is mock_thread
+        assert orch._dashboard_handle is mock_handle
+
+    def test_stop_dashboard_calls_handle_stop(self, tmp_path: Path) -> None:
+        orch = _make_orchestrator(tmp_path, dashboard=True)
+        mock_handle = MagicMock()
+        orch._dashboard_handle = mock_handle
+        orch._dashboard_thread = MagicMock(spec=threading.Thread)
 
         orch.stop_dashboard()
 
-        assert orch._dashboard_shutdown.is_set()
-        assert mock_server.should_exit is True
-        mock_thread.join.assert_called_once_with(timeout=5.0)
+        mock_handle.stop.assert_called_once()
+        assert orch._dashboard_thread is None
+
+    def test_stop_dashboard_no_handle_is_noop(self, tmp_path: Path) -> None:
+        orch = _make_orchestrator(tmp_path, dashboard=False)
+        # No handle set -- should not raise
+        orch.stop_dashboard()
+        assert orch._dashboard_thread is None
 
     def test_dashboard_default_false(self, tmp_path: Path) -> None:
         config = OrchestratorConfig(

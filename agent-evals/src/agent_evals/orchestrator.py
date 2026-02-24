@@ -123,7 +123,7 @@ class EvalOrchestrator:
         )
 
         self._dashboard_thread: threading.Thread | None = None
-        self._dashboard_shutdown: threading.Event = threading.Event()
+        self._dashboard_handle: Any = None
 
     @property
     def runner_type(self) -> str:
@@ -284,76 +284,44 @@ class EvalOrchestrator:
         Only starts if ``config.dashboard`` is ``True``. Returns the
         background thread, or ``None`` if the dashboard is disabled.
 
-        The dashboard is served via ``uvicorn`` on the configured port
-        and can be stopped by calling :meth:`stop_dashboard`.
+        Delegates to :func:`launch_dashboard` which handles app creation,
+        model catalog setup, and uvicorn server management.
         """
         if not self.config.dashboard:
             return None
 
-        from agent_evals.observatory.model_catalog import ModelCatalog
-        from agent_evals.observatory.model_groups import ModelGroupManager
-        from agent_evals.observatory.model_sync import ModelSync
-        from agent_evals.observatory.web.server import create_app
+        from agent_evals.observatory.web.server import (
+            DashboardConfig,
+            launch_dashboard,
+        )
 
-        catalog = ModelCatalog(self.store._db_path.parent / "models.db")
-        group_manager = ModelGroupManager(catalog)
-        model_sync = ModelSync(catalog)
-
-        # Trigger initial sync if catalog is empty.
-        if not catalog.get_active_models():
-            sync_thread = threading.Thread(
-                target=model_sync.run_sync,
-                daemon=True,
-                name="initial-model-sync",
-            )
-            sync_thread.start()
-            logger.info("Initial model sync started in background")
-
-        app = create_app(
+        db_dir = self.store._db_path.parent
+        config = DashboardConfig(
+            observatory_db=self.store._db_path,
+            models_db=db_dir / "models.db",
+            host="0.0.0.0",  # noqa: S104
+            port=self.config.dashboard_port,
+            log_level="warning",
+            auto_sync=True,
+        )
+        self._dashboard_handle = launch_dashboard(
+            config,
             store=self.store,
             tracker=self.tracker,
-            catalog=catalog,
-            group_manager=group_manager,
-            model_sync=model_sync,
+            background=True,
         )
-        self._dashboard_shutdown.clear()
-
-        def _serve() -> None:
-            try:
-                import uvicorn
-
-                config = uvicorn.Config(
-                    app,
-                    host="0.0.0.0",  # noqa: S104
-                    port=self.config.dashboard_port,
-                    log_level="warning",
-                )
-                server = uvicorn.Server(config)
-                # Allow shutdown via event.
-                self._uvicorn_server = server
-                server.run()
-            except Exception:
-                logger.exception("Dashboard server failed")
-
-        thread = threading.Thread(
-            target=_serve, daemon=True, name="observatory-dashboard"
-        )
-        thread.start()
-        self._dashboard_thread = thread
+        self._dashboard_thread = self._dashboard_handle.thread
         logger.info(
             "Dashboard started on port %d", self.config.dashboard_port
         )
-        return thread
+        return self._dashboard_thread
 
     def stop_dashboard(self) -> None:
         """Signal the dashboard to shut down."""
-        self._dashboard_shutdown.set()
-        server = getattr(self, "_uvicorn_server", None)
-        if server is not None:
-            server.should_exit = True
-        if self._dashboard_thread is not None:
-            self._dashboard_thread.join(timeout=5.0)
-            self._dashboard_thread = None
+        handle = getattr(self, "_dashboard_handle", None)
+        if handle is not None:
+            handle.stop()
+        self._dashboard_thread = None
 
     # ------------------------------------------------------------------
     # Internal
