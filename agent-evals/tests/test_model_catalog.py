@@ -100,9 +100,44 @@ class TestModelStorage:
             "id", "name", "context_length", "prompt_price",
             "completion_price", "modality", "tokenizer",
             "supported_params", "first_seen", "last_seen", "removed_at",
+            "created",
         ]
         for field_name in required_fields:
             assert field_name in model, f"Missing field: {field_name}"
+
+    def test_upsert_stores_created_timestamp(self, tmp_path: Path) -> None:
+        catalog = ModelCatalog(tmp_path / "models.db")
+        catalog.upsert_model(
+            id="m1", name="M1", context_length=4096,
+            prompt_price=0.001, completion_price=0.002,
+            created=1700000000,
+        )
+        model = catalog.get_model("m1")
+        assert model["created"] == 1700000000
+
+    def test_created_defaults_to_none(self, tmp_path: Path) -> None:
+        catalog = ModelCatalog(tmp_path / "models.db")
+        catalog.upsert_model(
+            id="m1", name="M1", context_length=4096,
+            prompt_price=0.001, completion_price=0.002,
+        )
+        model = catalog.get_model("m1")
+        assert model["created"] is None
+
+    def test_upsert_preserves_created_on_update(self, tmp_path: Path) -> None:
+        catalog = ModelCatalog(tmp_path / "models.db")
+        catalog.upsert_model(
+            id="m1", name="M1", context_length=4096,
+            prompt_price=0.001, completion_price=0.002,
+            created=1700000000,
+        )
+        catalog.upsert_model(
+            id="m1", name="M1 Updated", context_length=8192,
+            prompt_price=0.002, completion_price=0.004,
+            created=1700000000,
+        )
+        model = catalog.get_model("m1")
+        assert model["created"] == 1700000000
 
 
 class TestModelFiltering:

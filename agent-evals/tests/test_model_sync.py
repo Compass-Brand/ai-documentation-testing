@@ -46,6 +46,31 @@ class TestSyncDiff:
         assert len(diff.price_changes) == 0
 
 
+class TestNormalizeModel:
+    """Normalize OpenRouter model response to internal schema."""
+
+    def test_normalize_extracts_created(self) -> None:
+        raw = {
+            "id": "test/model",
+            "name": "Test Model",
+            "context_length": 4096,
+            "pricing": {"prompt": "0.001", "completion": "0.002"},
+            "created": 1700000000,
+        }
+        result = ModelSync._normalize_model(raw)
+        assert result["created"] == 1700000000
+
+    def test_normalize_defaults_created_to_none(self) -> None:
+        raw = {
+            "id": "test/model",
+            "name": "Test Model",
+            "context_length": 4096,
+            "pricing": {"prompt": "0.001", "completion": "0.002"},
+        }
+        result = ModelSync._normalize_model(raw)
+        assert result["created"] is None
+
+
 class TestModelSyncExecution:
     """Execute sync against catalog store."""
 
@@ -90,6 +115,18 @@ class TestModelSyncExecution:
         ):
             result = sync.run_sync()
         assert result.error is not None
+
+    def test_sync_stores_created_timestamp(self, tmp_path: Path) -> None:
+        catalog = ModelCatalog(tmp_path / "models.db")
+        sync = ModelSync(catalog=catalog)
+        with patch.object(sync, "fetch_remote_models", return_value=[
+            {"id": "new", "name": "New", "context_length": 4096,
+             "pricing": {"prompt": "0.001", "completion": "0.002"},
+             "created": 1700000000},
+        ]):
+            sync.run_sync()
+        model = catalog.get_model("new")
+        assert model["created"] == 1700000000
 
     def test_sync_updates_existing_model_pricing(self, tmp_path: Path) -> None:
         catalog = ModelCatalog(tmp_path / "models.db")

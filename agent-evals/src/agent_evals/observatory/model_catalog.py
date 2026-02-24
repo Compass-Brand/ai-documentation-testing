@@ -58,6 +58,7 @@ class ModelCatalog:
                 modality TEXT DEFAULT 'text',
                 tokenizer TEXT DEFAULT '',
                 supported_params TEXT DEFAULT '[]',
+                created INTEGER DEFAULT NULL,
                 first_seen TEXT NOT NULL,
                 last_seen TEXT NOT NULL,
                 removed_at TEXT DEFAULT NULL
@@ -86,6 +87,7 @@ class ModelCatalog:
         modality: str = "text",
         tokenizer: str = "",
         supported_params: list[str] | None = None,
+        created: int | None = None,
     ) -> None:
         """Insert or update a model, preserving ``first_seen``."""
         now = _now_iso()
@@ -99,19 +101,20 @@ class ModelCatalog:
                     """UPDATE models SET
                            name=?, context_length=?, prompt_price=?,
                            completion_price=?, modality=?, tokenizer=?,
-                           supported_params=?, last_seen=?
+                           supported_params=?, created=?, last_seen=?
                        WHERE id=?""",
                     (name, context_length, prompt_price, completion_price,
-                     modality, tokenizer, params_json, now, id),
+                     modality, tokenizer, params_json, created, now, id),
                 )
             else:
                 self._conn.execute(
                     """INSERT INTO models
                        (id, name, context_length, prompt_price, completion_price,
-                        modality, tokenizer, supported_params, first_seen, last_seen)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        modality, tokenizer, supported_params, created,
+                        first_seen, last_seen)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (id, name, context_length, prompt_price, completion_price,
-                     modality, tokenizer, params_json, now, now),
+                     modality, tokenizer, params_json, created, now, now),
                 )
             self._conn.commit()
 

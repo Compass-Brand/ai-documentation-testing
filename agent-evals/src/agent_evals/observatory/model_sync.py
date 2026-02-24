@@ -142,6 +142,7 @@ class ModelSync:
                 modality=data.get("modality", "text"),
                 tokenizer=data.get("tokenizer", ""),
                 supported_params=data.get("supported_params"),
+                created=data.get("created"),
             )
             if model_id in diff.added:
                 added_count += 1
@@ -216,4 +217,5 @@ class ModelSync:
             "modality": raw.get("modality", "text"),
             "tokenizer": raw.get("tokenizer", ""),
             "supported_params": raw.get("supported_parameters"),
+            "created": raw.get("created"),
         }

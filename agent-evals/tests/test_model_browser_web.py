@@ -73,6 +73,12 @@ class TestModelAPIEndpoints:
         assert "test-model" in ids
         assert "cheap-model" in ids
 
+    def test_get_models_includes_created_field(self, client: TestClient) -> None:
+        response = client.get("/api/models")
+        data = response.json()
+        for model in data["models"]:
+            assert "created" in model, f"Model {model['id']} missing 'created' field"
+
     def test_get_model_by_id(self, client: TestClient) -> None:
         response = client.get("/api/models/test-model")
         assert response.status_code == 200
