@@ -45,7 +45,10 @@ function latencyColor(ms: number): string {
 }
 
 function formatPrice(price: number): string {
-  return `$${price.toFixed(4)}`;
+  if (price === 0) return "Free";
+  const perMillion = price * 1_000_000;
+  if (perMillion < 0.01) return "<$0.01/M";
+  return `$${perMillion.toFixed(2)}/M`;
 }
 
 function formatDeployed(timestamp: number): string {
@@ -225,12 +228,12 @@ export function Models() {
     },
     {
       accessorKey: "prompt_price",
-      header: "Prompt Price",
+      header: "Prompt $/M",
       cell: ({ getValue }) => formatPrice(getValue<number>()),
     },
     {
       accessorKey: "completion_price",
-      header: "Completion Price",
+      header: "Completion $/M",
       cell: ({ getValue }) => formatPrice(getValue<number>()),
     },
     {

@@ -43,8 +43,8 @@ const mockModels = [
     id: "openai/gpt-4o",
     name: "GPT-4o",
     context_length: 128000,
-    prompt_price: 0.005,
-    completion_price: 0.015,
+    prompt_price: 0.000005,
+    completion_price: 0.000015,
     modality: "text+image->text",
     tokenizer: "o200k_base",
     created: 1700000000,
@@ -56,8 +56,8 @@ const mockModels = [
     id: "anthropic/claude-sonnet-4",
     name: "Claude Sonnet 4",
     context_length: 200000,
-    prompt_price: 0.003,
-    completion_price: 0.015,
+    prompt_price: 0.000003,
+    completion_price: 0.000015,
     modality: "text+image->text",
     tokenizer: "claude",
     created: 1695000000,
@@ -244,7 +244,7 @@ describe("Models page — Name click opens panel (Change 2)", () => {
   it("should not open panel on general row click", () => {
     render(<Models />, { wrapper: createWrapper() });
     // Click on price cell, not on name
-    const priceCell = screen.getAllByText("$0.0050")[0];
+    const priceCell = screen.getAllByText("$5.00/M")[0];
     fireEvent.click(priceCell.closest("tr")!);
     // Panel should not open
     expect(screen.queryByText("API ID")).not.toBeInTheDocument();
@@ -291,28 +291,28 @@ describe("Models page — Multi-select (Change 4)", () => {
 
   it("should select a row on click and show checkbox", () => {
     render(<Models />, { wrapper: createWrapper() });
-    const row = screen.getByText("$0.0050").closest("tr")!;
+    const row = screen.getByText("$5.00/M").closest("tr")!;
     fireEvent.click(row);
     expect(screen.getByTestId("compass-checkbox")).toBeInTheDocument();
   });
 
   it("should highlight selected row with goldenrod background", () => {
     render(<Models />, { wrapper: createWrapper() });
-    const row = screen.getByText("$0.0050").closest("tr")!;
+    const row = screen.getByText("$5.00/M").closest("tr")!;
     fireEvent.click(row);
     expect(row.className).toContain("bg-brand-goldenrod/10");
   });
 
   it("should show selection count in toolbar when rows selected", () => {
     render(<Models />, { wrapper: createWrapper() });
-    const row = screen.getByText("$0.0050").closest("tr")!;
+    const row = screen.getByText("$5.00/M").closest("tr")!;
     fireEvent.click(row);
     expect(screen.getByText("1 selected")).toBeInTheDocument();
   });
 
   it("should deselect row on second click", () => {
     render(<Models />, { wrapper: createWrapper() });
-    const row = screen.getByText("$0.0050").closest("tr")!;
+    const row = screen.getByText("$5.00/M").closest("tr")!;
     fireEvent.click(row);
     expect(screen.getByText("1 selected")).toBeInTheDocument();
     fireEvent.click(row);
@@ -329,14 +329,14 @@ describe("Models page — Multi-select (Change 4)", () => {
 
   it("should show Clear button when rows are selected", () => {
     render(<Models />, { wrapper: createWrapper() });
-    const row = screen.getByText("$0.0050").closest("tr")!;
+    const row = screen.getByText("$5.00/M").closest("tr")!;
     fireEvent.click(row);
     expect(screen.getByText("Clear")).toBeInTheDocument();
   });
 
   it("should clear selection when Clear button clicked", () => {
     render(<Models />, { wrapper: createWrapper() });
-    const row = screen.getByText("$0.0050").closest("tr")!;
+    const row = screen.getByText("$5.00/M").closest("tr")!;
     fireEvent.click(row);
     fireEvent.click(screen.getByText("Clear"));
     expect(screen.queryByTestId("compass-checkbox")).not.toBeInTheDocument();
@@ -345,7 +345,7 @@ describe("Models page — Multi-select (Change 4)", () => {
 
   it("should clear selection on Escape key", () => {
     render(<Models />, { wrapper: createWrapper() });
-    const row = screen.getByText("$0.0050").closest("tr")!;
+    const row = screen.getByText("$5.00/M").closest("tr")!;
     fireEvent.click(row);
     expect(screen.getByText("1 selected")).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
