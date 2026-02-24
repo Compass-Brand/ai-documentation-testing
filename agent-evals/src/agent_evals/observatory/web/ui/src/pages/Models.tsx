@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Cpu,
   LayoutGrid,
@@ -6,6 +6,8 @@ import {
   Play,
   Save,
   Copy,
+  Check,
+  X,
 } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -46,26 +48,64 @@ function formatPrice(price: number): string {
   return `$${price.toFixed(4)}`;
 }
 
-const columns: ColumnDef<Model>[] = [
-  { accessorKey: "name", header: "Name" },
-  {
-    accessorKey: "prompt_price",
-    header: "Prompt Price",
-    cell: ({ getValue }) => formatPrice(getValue<number>()),
-  },
-  {
-    accessorKey: "completion_price",
-    header: "Completion Price",
-    cell: ({ getValue }) => formatPrice(getValue<number>()),
-  },
-  {
-    accessorKey: "context_length",
-    header: "Context",
-    cell: ({ getValue }) => `${(getValue<number>() / 1000).toFixed(0)}k`,
-  },
-  { accessorKey: "modality", header: "Modality" },
-  { accessorKey: "tokenizer", header: "Tokenizer" },
-];
+function formatDeployed(timestamp: number): string {
+  if (!timestamp) return "\u2014";
+  return new Date(timestamp * 1000).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function CopyModelIdButton({ modelId }: { modelId: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(modelId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <button
+      className="text-brand-slate hover:text-brand-charcoal transition-colors duration-micro ml-sp-2"
+      onClick={handleCopy}
+      aria-label="Copy model ID"
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5 text-brand-sage" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
+function ModelNameCell({
+  model,
+  onNameClick,
+}: {
+  model: Model;
+  onNameClick: (model: Model) => void;
+}) {
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onNameClick(model);
+  };
+
+  return (
+    <span className="inline-flex items-center">
+      <button
+        className="text-brand-goldenrod cursor-pointer hover:underline font-medium"
+        onClick={handleClick}
+      >
+        {model.name}
+      </button>
+      <CopyModelIdButton modelId={model.id} />
+    </span>
+  );
+}
 
 function ProviderCard({ endpoint }: { endpoint: ProviderEndpoint }) {
   return (
@@ -126,7 +166,7 @@ function ModelCard({
 export function Models() {
   const [filters, setFilters] = useFilterParams();
   const { data: modelsData, isLoading } = useModels(filters);
-  const [selectedModels, setSelectedModels] = useState<Model[]>([]);
+  const [selectedModelIds, setSelectedModelIds] = useState<Set<string>>(new Set());
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("table");
   const [panelTab, setPanelTab] = useState<PanelTab>("overview");
@@ -140,6 +180,72 @@ export function Models() {
   const models = modelsData?.models ?? [];
   const total = modelsData?.total ?? 0;
   const endpoints = endpointsData?.endpoints ?? [];
+
+  const selectedModels = models.filter((m) => selectedModelIds.has(m.id));
+
+  const clearSelection = useCallback(() => {
+    setSelectedModelIds(new Set());
+  }, []);
+
+  // Escape key clears selection
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        clearSelection();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [clearSelection]);
+
+  const handleRowClick = (model: Model) => {
+    setSelectedModelIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(model.id)) {
+        next.delete(model.id);
+      } else {
+        next.add(model.id);
+      }
+      return next;
+    });
+  };
+
+  const handleNameClick = (model: Model) => {
+    setSelectedModelId(model.id);
+    setPanelTab("overview");
+  };
+
+  const columns: ColumnDef<Model>[] = [
+    {
+      accessorKey: "name",
+      header: "Name",
+      cell: ({ row }) => (
+        <ModelNameCell model={row.original} onNameClick={handleNameClick} />
+      ),
+    },
+    {
+      accessorKey: "prompt_price",
+      header: "Prompt Price",
+      cell: ({ getValue }) => formatPrice(getValue<number>()),
+    },
+    {
+      accessorKey: "completion_price",
+      header: "Completion Price",
+      cell: ({ getValue }) => formatPrice(getValue<number>()),
+    },
+    {
+      accessorKey: "context_length",
+      header: "Context",
+      cell: ({ getValue }) => `${(getValue<number>() / 1000).toFixed(0)}k`,
+    },
+    { accessorKey: "modality", header: "Modality" },
+    { accessorKey: "tokenizer", header: "Tokenizer" },
+    {
+      accessorKey: "created",
+      header: "Deployed",
+      cell: ({ getValue }) => formatDeployed(getValue<number>()),
+    },
+  ];
 
   if (isLoading) {
     return (
@@ -159,7 +265,7 @@ export function Models() {
       </FadeIn>
 
       <div className="flex gap-sp-6">
-        {/* Left sidebar — 264px */}
+        {/* Left sidebar -- 264px */}
         <aside className="w-[264px] shrink-0">
           <FadeIn delay={1}>
             <Input
@@ -227,9 +333,19 @@ export function Models() {
             <div className="flex items-center justify-between mb-sp-6">
               <div className="flex items-center gap-sp-3">
                 {selectedModels.length > 0 && (
-                  <span className="text-body-sm text-brand-slate">
-                    {selectedModels.length} selected
-                  </span>
+                  <>
+                    <span className="text-body-sm text-brand-slate">
+                      {selectedModels.length} selected
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={clearSelection}
+                    >
+                      <X className="h-4 w-4 mr-sp-1" />
+                      Clear
+                    </Button>
+                  </>
                 )}
                 <Button
                   variant="primary"
@@ -289,12 +405,9 @@ export function Models() {
               <DataTable
                 columns={columns}
                 data={models}
-                selectable
-                onSelectionChange={setSelectedModels}
-                onRowClick={(model) => {
-                  setSelectedModelId(model.id);
-                  setPanelTab("overview");
-                }}
+                selectedRowIds={selectedModelIds}
+                getRowId={(model) => model.id}
+                onRowClick={handleRowClick}
               />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-sp-4">
@@ -314,7 +427,7 @@ export function Models() {
         </div>
       </div>
 
-      {/* SlideOutPanel — model detail */}
+      {/* SlideOutPanel -- model detail */}
       <SlideOutPanel
         open={selectedModelId !== null}
         onClose={() => setSelectedModelId(null)}

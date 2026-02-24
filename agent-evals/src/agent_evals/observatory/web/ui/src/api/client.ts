@@ -80,6 +80,7 @@ export interface Model {
   completion_price: number;
   modality: string;
   tokenizer: string;
+  created: number;
   first_seen: number;
   last_seen: number;
   removed_at: number | null;

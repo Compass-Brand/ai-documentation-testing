@@ -71,12 +71,24 @@ const columns: ColumnDef<Run>[] = [
 export function History() {
   const { data: runs, isLoading: runsLoading } = useRuns();
   const { data: costTrend } = useCostTrend();
-  const [selectedRuns, setSelectedRuns] = useState<Run[]>([]);
+  const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set());
 
   const selectedIds = useMemo(
-    () => selectedRuns.map((r) => r.run_id),
-    [selectedRuns],
+    () => [...selectedRunIds],
+    [selectedRunIds],
   );
+
+  const handleRowClick = (run: Run) => {
+    setSelectedRunIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(run.run_id)) {
+        next.delete(run.run_id);
+      } else {
+        next.add(run.run_id);
+      }
+      return next;
+    });
+  };
   const { data: comparison } = useCompareRuns(selectedIds);
 
   // Cost trend chart data
@@ -157,8 +169,9 @@ export function History() {
             <DataTable
               columns={columns}
               data={runs ?? []}
-              selectable
-              onSelectionChange={setSelectedRuns}
+              selectedRowIds={selectedRunIds}
+              getRowId={(run) => run.run_id}
+              onRowClick={handleRowClick}
             />
           </CardContent>
         </Card>

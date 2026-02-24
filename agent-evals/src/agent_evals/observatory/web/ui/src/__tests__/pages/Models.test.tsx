@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -18,6 +18,13 @@ vi.mock("../../api/hooks", () => ({
 
 vi.mock("../../hooks/useFilterParams", () => ({
   useFilterParams: vi.fn(),
+}));
+
+// Mock CompassCheckbox
+vi.mock("../../components/CompassCheckbox", () => ({
+  CompassCheckbox: ({ checked }: { checked: boolean }) => (
+    <div data-testid="compass-checkbox" data-checked={checked} />
+  ),
 }));
 
 import {
@@ -40,6 +47,7 @@ const mockModels = [
     completion_price: 0.015,
     modality: "text+image->text",
     tokenizer: "o200k_base",
+    created: 1700000000,
     first_seen: 1700000000,
     last_seen: 1700100000,
     removed_at: null,
@@ -52,6 +60,7 @@ const mockModels = [
     completion_price: 0.015,
     modality: "text+image->text",
     tokenizer: "claude",
+    created: 1695000000,
     first_seen: 1700000000,
     last_seen: 1700100000,
     removed_at: null,
@@ -117,6 +126,10 @@ beforeEach(() => {
   } as unknown as ReturnType<typeof useTriggerSync>);
 });
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("Models page", () => {
   it("should render page heading", () => {
     render(<Models />, { wrapper: createWrapper() });
@@ -153,7 +166,6 @@ describe("Models page", () => {
   it("should switch to card view when card toggle clicked", () => {
     render(<Models />, { wrapper: createWrapper() });
     fireEvent.click(screen.getByLabelText(/card view/i));
-    // In card view we should see model cards, not a table
     expect(screen.getByText("GPT-4o")).toBeInTheDocument();
   });
 
@@ -176,5 +188,167 @@ describe("Models page", () => {
     render(<Models />, { wrapper: createWrapper() });
     expect(screen.getByText("Run Selected")).toBeInTheDocument();
     expect(screen.getByText("Save as Group")).toBeInTheDocument();
+  });
+});
+
+describe("Models page — Copy button (Change 1)", () => {
+  it("should render a copy button for each model row", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const copyButtons = screen.getAllByLabelText(/copy model id/i);
+    expect(copyButtons).toHaveLength(2);
+  });
+
+  it("should copy the OpenRouter ID to clipboard on click", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, {
+      clipboard: { writeText },
+    });
+    render(<Models />, { wrapper: createWrapper() });
+    const copyButtons = screen.getAllByLabelText(/copy model id/i);
+    fireEvent.click(copyButtons[0]);
+    expect(writeText).toHaveBeenCalledWith("openai/gpt-4o");
+  });
+
+  it("should not open panel when copy button is clicked", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const copyButtons = screen.getAllByLabelText(/copy model id/i);
+    fireEvent.click(copyButtons[0]);
+    // Panel should not open — no detail view elements
+    expect(screen.queryByText("API ID")).not.toBeInTheDocument();
+  });
+});
+
+describe("Models page — Name click opens panel (Change 2)", () => {
+  it("should render model names as clickable links", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const nameLink = screen.getByText("GPT-4o");
+    expect(nameLink.tagName).toBe("BUTTON");
+    expect(nameLink.className).toContain("text-brand-goldenrod");
+  });
+
+  it("should open detail panel when name is clicked", () => {
+    vi.mocked(useModelDetail).mockReturnValue({
+      data: {
+        ...mockModels[0],
+        supported_params: [],
+      },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useModelDetail>);
+
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByText("GPT-4o"));
+    expect(screen.getByText("API ID")).toBeInTheDocument();
+  });
+
+  it("should not open panel on general row click", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    // Click on price cell, not on name
+    const priceCell = screen.getAllByText("$0.0050")[0];
+    fireEvent.click(priceCell.closest("tr")!);
+    // Panel should not open
+    expect(screen.queryByText("API ID")).not.toBeInTheDocument();
+  });
+});
+
+describe("Models page — Deployed column (Change 3)", () => {
+  it("should render the Deployed column header", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByText("Deployed")).toBeInTheDocument();
+  });
+
+  it("should format the created timestamp as a locale date", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    // 1700000000 * 1000 = Nov 14, 2023
+    const formatted = new Date(1700000000 * 1000).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+    expect(screen.getByText(formatted)).toBeInTheDocument();
+  });
+
+  it("should show dash for models without created date", () => {
+    vi.mocked(useModels).mockReturnValue({
+      data: {
+        models: [{ ...mockModels[0], created: 0 }],
+        total: 1,
+      },
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useModels>);
+
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+  });
+});
+
+describe("Models page — Multi-select (Change 4)", () => {
+  it("should not show checkboxes by default", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.queryByTestId("compass-checkbox")).not.toBeInTheDocument();
+  });
+
+  it("should select a row on click and show checkbox", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const row = screen.getByText("$0.0050").closest("tr")!;
+    fireEvent.click(row);
+    expect(screen.getByTestId("compass-checkbox")).toBeInTheDocument();
+  });
+
+  it("should highlight selected row with goldenrod background", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const row = screen.getByText("$0.0050").closest("tr")!;
+    fireEvent.click(row);
+    expect(row.className).toContain("bg-brand-goldenrod/10");
+  });
+
+  it("should show selection count in toolbar when rows selected", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const row = screen.getByText("$0.0050").closest("tr")!;
+    fireEvent.click(row);
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+  });
+
+  it("should deselect row on second click", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const row = screen.getByText("$0.0050").closest("tr")!;
+    fireEvent.click(row);
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    fireEvent.click(row);
+    expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+  });
+
+  it("should support selecting multiple rows", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const rows = screen.getAllByRole("row").slice(1); // skip header
+    fireEvent.click(rows[0]);
+    fireEvent.click(rows[1]);
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+  });
+
+  it("should show Clear button when rows are selected", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const row = screen.getByText("$0.0050").closest("tr")!;
+    fireEvent.click(row);
+    expect(screen.getByText("Clear")).toBeInTheDocument();
+  });
+
+  it("should clear selection when Clear button clicked", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const row = screen.getByText("$0.0050").closest("tr")!;
+    fireEvent.click(row);
+    fireEvent.click(screen.getByText("Clear"));
+    expect(screen.queryByTestId("compass-checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+  });
+
+  it("should clear selection on Escape key", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const row = screen.getByText("$0.0050").closest("tr")!;
+    fireEvent.click(row);
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
   });
 });

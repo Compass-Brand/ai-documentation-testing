@@ -9,24 +9,24 @@ import {
 import { ArrowUpDown } from "lucide-react";
 import { useState } from "react";
 import { cn } from "../lib/utils";
+import { CompassCheckbox } from "./CompassCheckbox";
 
 interface DataTableProps<T> {
   columns: ColumnDef<T>[];
   data: T[];
   onRowClick?: (row: T) => void;
-  selectable?: boolean;
-  onSelectionChange?: (selected: T[]) => void;
+  selectedRowIds?: Set<string>;
+  getRowId?: (row: T) => string;
 }
 
 export function DataTable<T>({
   columns,
   data,
   onRowClick,
-  selectable,
-  onSelectionChange,
+  selectedRowIds,
+  getRowId,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [rowSelection, setRowSelection] = useState({});
 
   const table = useReactTable({
     data,
@@ -34,19 +34,7 @@ export function DataTable<T>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
-    onRowSelectionChange: (updater) => {
-      setRowSelection(updater);
-      if (onSelectionChange) {
-        const next =
-          typeof updater === "function" ? updater(rowSelection) : updater;
-        const selected = Object.keys(next)
-          .filter((k) => next[k as keyof typeof next])
-          .map((k) => data[parseInt(k)]);
-        onSelectionChange(selected);
-      }
-    },
-    enableRowSelection: selectable,
-    state: { sorting, rowSelection },
+    state: { sorting },
   });
 
   return (
@@ -55,6 +43,7 @@ export function DataTable<T>({
         <thead className="bg-brand-cream">
           {table.getHeaderGroups().map((hg) => (
             <tr key={hg.id}>
+              {selectedRowIds && <th className="w-10" />}
               {hg.headers.map((header) => (
                 <th
                   key={header.id}
@@ -80,30 +69,45 @@ export function DataTable<T>({
           ))}
         </thead>
         <tbody>
-          {table.getRowModel().rows.map((row) => (
-            <tr
-              key={row.id}
-              className={cn(
-                "border-t border-brand-mist transition-colors duration-micro",
-                "hover:bg-brand-cream/50",
-                onRowClick && "cursor-pointer",
-                row.getIsSelected() && "bg-brand-goldenrod/10",
-              )}
-              onClick={() => onRowClick?.(row.original)}
-            >
-              {row.getVisibleCells().map((cell) => (
-                <td
-                  key={cell.id}
-                  className="px-sp-4 py-sp-3 text-brand-charcoal"
-                >
-                  {flexRender(
-                    cell.column.columnDef.cell,
-                    cell.getContext(),
-                  )}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {table.getRowModel().rows.map((row) => {
+            const rowId = getRowId?.(row.original) ?? row.id;
+            const isSelected = selectedRowIds?.has(rowId) ?? false;
+
+            return (
+              <tr
+                key={row.id}
+                className={cn(
+                  "border-t border-brand-mist transition-colors duration-micro",
+                  "hover:bg-brand-cream/50",
+                  onRowClick && "cursor-pointer",
+                  isSelected && "bg-brand-goldenrod/10",
+                )}
+                onClick={() => onRowClick?.(row.original)}
+              >
+                {selectedRowIds && (
+                  <td className="px-sp-2 py-sp-3 w-10">
+                    {isSelected && (
+                      <CompassCheckbox
+                        checked
+                        aria-label={`Selected`}
+                      />
+                    )}
+                  </td>
+                )}
+                {row.getVisibleCells().map((cell) => (
+                  <td
+                    key={cell.id}
+                    className="px-sp-4 py-sp-3 text-brand-charcoal"
+                  >
+                    {flexRender(
+                      cell.column.columnDef.cell,
+                      cell.getContext(),
+                    )}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
