@@ -20,13 +20,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Create the argument parser with all CLI flags."""
-    parser = argparse.ArgumentParser(
-        prog="agent-evals",
-        description="Run evaluation axes to test documentation index formats.",
-    )
-
+def _add_run_args(parser: argparse.ArgumentParser) -> None:
+    """Add all evaluation run arguments to *parser*."""
     # Evaluation scope
     parser.add_argument(
         "--axis",
@@ -309,6 +304,92 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Suppress info-level output (warnings and errors only)",
     )
+
+
+def _add_dashboard_args(parser: argparse.ArgumentParser) -> None:
+    """Add dashboard-specific arguments to *parser*."""
+    parser.add_argument(
+        "--db-dir",
+        type=str,
+        default=None,
+        help="Base directory for database files (default: ~/.observatory/)",
+    )
+    parser.add_argument(
+        "--observatory-db",
+        type=str,
+        default=None,
+        help="Path to observatory database file",
+    )
+    parser.add_argument(
+        "--models-db",
+        type=str,
+        default=None,
+        help="Path to models database file",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="Host to bind to (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to listen on (default: 8080)",
+    )
+    parser.add_argument(
+        "--no-sync",
+        action="store_true",
+        default=False,
+        help="Disable automatic model catalog sync",
+    )
+
+    # Verbosity (mutually exclusive)
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        default=False,
+        help="Enable debug-level logging output",
+    )
+    verbosity.add_argument(
+        "--quiet", "-q",
+        action="store_true",
+        default=False,
+        help="Suppress info-level output (warnings and errors only)",
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Create the argument parser with subcommands.
+
+    Supports:
+      agent-evals [run] [--model ...] -- evaluation run (backward compat)
+      agent-evals dashboard [--port ...] -- standalone dashboard
+    """
+    parser = argparse.ArgumentParser(
+        prog="agent-evals",
+        description="Run evaluation axes to test documentation index formats.",
+    )
+    parser.set_defaults(command=None)
+
+    # Add all run args to the top-level parser for backward compat
+    _add_run_args(parser)
+
+    subparsers = parser.add_subparsers(dest="command")
+
+    # 'run' subcommand (explicit)
+    run_parser = subparsers.add_parser(
+        "run", help="Run evaluation axes (default behavior)",
+    )
+    _add_run_args(run_parser)
+
+    # 'dashboard' subcommand
+    dash_parser = subparsers.add_parser(
+        "dashboard", help="Start the observatory web dashboard",
+    )
+    _add_dashboard_args(dash_parser)
 
     return parser
 
@@ -897,6 +978,37 @@ def _run_pipeline(
     return 0
 
 
+def _run_dashboard(args: argparse.Namespace) -> int:
+    """Launch the observatory dashboard from CLI args.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.observatory.web.server import DashboardConfig, launch_dashboard
+
+    # Resolve database paths
+    db_dir = Path(args.db_dir) if args.db_dir else Path.home() / ".observatory"
+    observatory_db = Path(args.observatory_db) if args.observatory_db else db_dir / "observatory.db"
+    models_db = Path(args.models_db) if args.models_db else db_dir / "models.db"
+
+    log_level = "debug" if args.verbose else ("warning" if args.quiet else "info")
+
+    config = DashboardConfig(
+        observatory_db=observatory_db,
+        models_db=models_db,
+        host=args.host,
+        port=args.port,
+        log_level=log_level,
+        auto_sync=not args.no_sync,
+    )
+
+    try:
+        launch_dashboard(config, background=False)
+    except KeyboardInterrupt:
+        logger.info("Dashboard stopped.")
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``agent-evals`` CLI.
 
@@ -906,6 +1018,12 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # Route dashboard subcommand
+    if args.command == "dashboard":
+        verbosity = 1 if args.verbose else (-1 if args.quiet else 0)
+        configure_logging(verbosity)
+        return _run_dashboard(args)
 
     # Initialize logging before anything else
     verbosity = 1 if args.verbose else (-1 if args.quiet else 0)
@@ -924,6 +1042,16 @@ def main(argv: list[str] | None = None) -> int:
     resolved = resolve_config(args, config)
 
     return _run_evaluation(resolved)
+
+
+def dashboard_main(argv: list[str] | None = None) -> int:
+    """Entry point for the ``observatory`` CLI command.
+
+    Prepends 'dashboard' to argv and delegates to main().
+    """
+    if argv is None:
+        argv = []
+    return main(["dashboard", *argv])
 
 
 if __name__ == "__main__":

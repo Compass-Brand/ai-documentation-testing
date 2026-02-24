@@ -1640,3 +1640,217 @@ class TestPipelineResolveConfig:
         args = parser.parse_args(["--alpha", "0.01"])
         resolved = resolve_config(args, {})
         assert resolved["alpha"] == pytest.approx(0.01)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard subcommand -- parser tests
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardSubcommandParsing:
+    """The 'dashboard' subcommand is parsed correctly."""
+
+    def test_dashboard_subcommand_recognized(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.command == "dashboard"
+
+    def test_dashboard_default_host(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.host == "0.0.0.0"
+
+    def test_dashboard_default_port(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.port == 8080
+
+    def test_dashboard_custom_port(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--port", "9090"])
+        assert args.port == 9090
+
+    def test_dashboard_custom_host(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--host", "127.0.0.1"])
+        assert args.host == "127.0.0.1"
+
+    def test_dashboard_default_db_dir_is_none(self) -> None:
+        """Default db-dir is None (resolved to ~/.observatory/ at runtime)."""
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.db_dir is None
+
+    def test_dashboard_custom_db_dir(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--db-dir", "/tmp/obs"])
+        assert args.db_dir == "/tmp/obs"
+
+    def test_dashboard_observatory_db_override(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--observatory-db", "/tmp/obs.db"])
+        assert args.observatory_db == "/tmp/obs.db"
+
+    def test_dashboard_models_db_override(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--models-db", "/tmp/models.db"])
+        assert args.models_db == "/tmp/models.db"
+
+    def test_dashboard_no_sync_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--no-sync"])
+        assert args.no_sync is True
+
+    def test_dashboard_no_sync_default_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.no_sync is False
+
+    def test_dashboard_verbose_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--verbose"])
+        assert args.verbose is True
+
+    def test_dashboard_quiet_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--quiet"])
+        assert args.quiet is True
+
+
+# ---------------------------------------------------------------------------
+# Dashboard subcommand -- backward compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardBackwardCompat:
+    """No subcommand still works as before (run behavior)."""
+
+    def test_no_subcommand_returns_none_command(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.command is None
+
+    def test_no_subcommand_model_still_works(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model", "test/model", "--dry-run"])
+        assert args.command is None
+        assert args.model == "test/model"
+        assert args.dry_run is True
+
+    def test_run_subcommand_explicit(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["run", "--model", "test/model", "--dry-run"])
+        assert args.command == "run"
+        assert args.model == "test/model"
+
+    def test_no_subcommand_returns_one_without_model(self) -> None:
+        result = main([])
+        assert result == 1
+
+    def test_no_subcommand_dry_run_with_model(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+        result = main(["--model", "test/model", "--dry-run"])
+        assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Dashboard subcommand -- _run_dashboard behavior
+# ---------------------------------------------------------------------------
+
+
+class TestRunDashboard:
+    """_run_dashboard creates DashboardConfig and calls launch_dashboard."""
+
+    _LAUNCH_TARGET = "agent_evals.observatory.web.server.launch_dashboard"
+
+    def test_dashboard_does_not_require_model(self) -> None:
+        """Dashboard subcommand should not require --model."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            result = main(["dashboard"])
+        assert result == 0
+
+    def test_dashboard_does_not_require_api_key(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Dashboard should work without OPENROUTER_API_KEY."""
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            result = main(["dashboard"])
+        assert result == 0
+
+    def test_dashboard_calls_launch_with_config(self) -> None:
+        """Dashboard should create DashboardConfig and pass to launch_dashboard."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard", "--port", "9090"])
+        mock_launch.assert_called_once()
+        config = mock_launch.call_args[0][0]
+        assert config.port == 9090
+
+    def test_dashboard_default_db_dir_resolved(self) -> None:
+        """Default observatory_db should be under ~/.observatory/."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard"])
+        config = mock_launch.call_args[0][0]
+        expected = Path.home() / ".observatory" / "observatory.db"
+        assert config.observatory_db == expected
+
+    def test_dashboard_custom_db_dir(self, tmp_path: Path) -> None:
+        """Custom --db-dir should set observatory_db and models_db under it."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard", "--db-dir", str(tmp_path)])
+        config = mock_launch.call_args[0][0]
+        assert config.observatory_db == tmp_path / "observatory.db"
+        assert config.models_db == tmp_path / "models.db"
+
+    def test_dashboard_background_false(self) -> None:
+        """Standalone dashboard runs in foreground (background=False)."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard"])
+        _, kwargs = mock_launch.call_args
+        assert kwargs.get("background") is False
+
+    def test_dashboard_no_sync_disables_auto_sync(self) -> None:
+        """--no-sync should set auto_sync=False in config."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard", "--no-sync"])
+        config = mock_launch.call_args[0][0]
+        assert config.auto_sync is False
+
+
+# ---------------------------------------------------------------------------
+# dashboard_main() entry point
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardMain:
+    """dashboard_main() prepends 'dashboard' and calls main()."""
+
+    def test_dashboard_main_prepends_dashboard(self) -> None:
+        from agent_evals.cli import dashboard_main
+
+        with patch("agent_evals.cli.main", return_value=0) as mock_main:
+            dashboard_main(["--port", "9090"])
+        mock_main.assert_called_once_with(["dashboard", "--port", "9090"])
+
+    def test_dashboard_main_no_args(self) -> None:
+        from agent_evals.cli import dashboard_main
+
+        with patch("agent_evals.cli.main", return_value=0) as mock_main:
+            dashboard_main([])
+        mock_main.assert_called_once_with(["dashboard"])
+
+    def test_dashboard_main_none_args(self) -> None:
+        from agent_evals.cli import dashboard_main
+
+        with patch("agent_evals.cli.main", return_value=0) as mock_main:
+            dashboard_main(None)
+        mock_main.assert_called_once_with(["dashboard"])

@@ -24,6 +24,7 @@ dependencies = [
 
 [project.scripts]
 agent-evals = "agent_evals.cli:main"
+observatory = "agent_evals.cli:dashboard_main"
 
 [dependency-groups]
 dev = [
