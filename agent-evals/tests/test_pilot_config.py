@@ -14,7 +14,7 @@ CONFIG_PATH = PILOT_DIR / "config.yaml"
 class TestPilotConfig:
     """Tests for pilot/config.yaml."""
 
-    @pytest.fixture()
+    @pytest.fixture
     def config(self) -> dict:
         assert CONFIG_PATH.exists(), f"Config not found: {CONFIG_PATH}"
         with open(CONFIG_PATH, encoding="utf-8") as f:

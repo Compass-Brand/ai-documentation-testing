@@ -99,7 +99,7 @@ def _make_doc_tree() -> MagicMock:
     return tree
 
 
-@pytest.fixture()
+@pytest.fixture
 def doc_tree() -> MagicMock:
     """Provide a mock DocTree."""
     return _make_doc_tree()

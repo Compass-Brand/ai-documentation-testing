@@ -64,7 +64,7 @@ def _clear_registry() -> None:
     clear_registry()
 
 
-@pytest.fixture()
+@pytest.fixture
 def doc_tree() -> MagicMock:
     """Provide a mock DocTree."""
     return _make_doc_tree()

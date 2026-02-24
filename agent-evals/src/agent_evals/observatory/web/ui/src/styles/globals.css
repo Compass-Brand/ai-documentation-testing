@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Semantic aliases */
+    --color-bg-primary: theme("colors.brand.cream");
+    --color-bg-dark: theme("colors.brand.charcoal");
+    --color-bg-card: theme("colors.brand.bone");
+    --color-text-primary: theme("colors.brand.charcoal");
+    --color-text-inverse: theme("colors.brand.bone");
+    --color-text-muted: theme("colors.brand.slate");
+    --color-action: theme("colors.brand.goldenrod");
+    --color-border: theme("colors.brand.mist");
+
+    /* Status colors */
+    --color-success: theme("colors.brand.sage");
+    --color-warning: theme("colors.brand.amber");
+    --color-error: theme("colors.brand.clay");
+    --color-neutral: theme("colors.brand.slate");
+    --color-active: theme("colors.brand.goldenrod");
+
+    /* Focus ring */
+    --focus-ring: 2px solid theme("colors.brand.goldenrod");
+    --focus-offset: 2px;
+  }
+
+  /* Focus ring on all interactive elements */
+  *:focus-visible {
+    outline: 2px solid theme("colors.brand.goldenrod");
+    outline-offset: 2px;
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Minimum touch target */
+  button, a, input, select, textarea, [role="button"], [role="tab"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

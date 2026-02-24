@@ -20,13 +20,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Create the argument parser with all CLI flags."""
-    parser = argparse.ArgumentParser(
-        prog="agent-evals",
-        description="Run evaluation axes to test documentation index formats.",
-    )
-
+def _add_run_args(parser: argparse.ArgumentParser) -> None:
+    """Add all evaluation run arguments to *parser*."""
     # Evaluation scope
     parser.add_argument(
         "--axis",
@@ -197,6 +192,104 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show available datasets with contamination risk",
     )
 
+    # Taguchi / multi-model configuration
+    parser.add_argument(
+        "--mode",
+        choices=["full", "taguchi", "factorial"],
+        default=None,
+        help="Evaluation mode (default: full)",
+    )
+    parser.add_argument(
+        "--models",
+        type=str,
+        default=None,
+        help="Comma-separated list of models for multi-model evaluation",
+    )
+    parser.add_argument(
+        "--oa-type",
+        type=str,
+        default=None,
+        help="Force specific Taguchi OA (e.g. L54). Default: auto-select",
+    )
+    parser.add_argument(
+        "--confirmation-runs",
+        type=int,
+        default=None,
+        help="Number of confirmation runs for optimal config (Taguchi mode)",
+    )
+    parser.add_argument(
+        "--pipeline",
+        choices=["auto", "semi"],
+        default=None,
+        help="Run full three-phase DOE pipeline (auto or semi-automatic)",
+    )
+    parser.add_argument(
+        "--phase",
+        choices=["screening", "confirmation", "refinement"],
+        default=None,
+        help="Run a single phase manually",
+    )
+    parser.add_argument(
+        "--parent-run",
+        type=str,
+        default=None,
+        help="Link to prior screening run ID for phase continuation",
+    )
+    parser.add_argument(
+        "--quality-type",
+        choices=["larger_is_better", "smaller_is_better", "nominal_is_best"],
+        default="larger_is_better",
+        help="S/N ratio quality type",
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=3,
+        help="Number of top factors for Phase 3 factorial refinement",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.05,
+        help="Significance threshold for ANOVA",
+    )
+    parser.add_argument(
+        "--report",
+        choices=["html", "markdown", "both", "none"],
+        default=None,
+        help="Research report format (in addition to JSON/CSV)",
+    )
+    parser.add_argument(
+        "--budget",
+        type=float,
+        default=None,
+        help="Budget cap in dollars",
+    )
+    parser.add_argument(
+        "--model-budgets",
+        type=str,
+        default=None,
+        help='Per-model budget caps, e.g. "claude=20.00,gpt-4o=30.00"',
+    )
+    parser.add_argument(
+        "--dashboard",
+        action="store_true",
+        default=False,
+        help="Start web dashboard on localhost:8080",
+    )
+    parser.add_argument(
+        "--model-group",
+        type=str,
+        default=None,
+        help="Model group name to use (combinable with --models, union)",
+    )
+    parser.add_argument(
+        "--sync-interval",
+        type=float,
+        default=None,
+        help="Model sync interval in hours (default: 6)",
+    )
+
     # Verbosity (mutually exclusive)
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument(
@@ -211,6 +304,92 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Suppress info-level output (warnings and errors only)",
     )
+
+
+def _add_dashboard_args(parser: argparse.ArgumentParser) -> None:
+    """Add dashboard-specific arguments to *parser*."""
+    parser.add_argument(
+        "--db-dir",
+        type=str,
+        default=None,
+        help="Base directory for database files (default: ~/.observatory/)",
+    )
+    parser.add_argument(
+        "--observatory-db",
+        type=str,
+        default=None,
+        help="Path to observatory database file",
+    )
+    parser.add_argument(
+        "--models-db",
+        type=str,
+        default=None,
+        help="Path to models database file",
+    )
+    parser.add_argument(
+        "--host",
+        type=str,
+        default="0.0.0.0",
+        help="Host to bind to (default: 0.0.0.0)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Port to listen on (default: 8080)",
+    )
+    parser.add_argument(
+        "--no-sync",
+        action="store_true",
+        default=False,
+        help="Disable automatic model catalog sync",
+    )
+
+    # Verbosity (mutually exclusive)
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        default=False,
+        help="Enable debug-level logging output",
+    )
+    verbosity.add_argument(
+        "--quiet", "-q",
+        action="store_true",
+        default=False,
+        help="Suppress info-level output (warnings and errors only)",
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Create the argument parser with subcommands.
+
+    Supports:
+      agent-evals [run] [--model ...] -- evaluation run (backward compat)
+      agent-evals dashboard [--port ...] -- standalone dashboard
+    """
+    parser = argparse.ArgumentParser(
+        prog="agent-evals",
+        description="Run evaluation axes to test documentation index formats.",
+    )
+    parser.set_defaults(command=None)
+
+    # Add all run args to the top-level parser for backward compat
+    _add_run_args(parser)
+
+    subparsers = parser.add_subparsers(dest="command")
+
+    # 'run' subcommand (explicit)
+    run_parser = subparsers.add_parser(
+        "run", help="Run evaluation axes (default behavior)",
+    )
+    _add_run_args(run_parser)
+
+    # 'dashboard' subcommand
+    dash_parser = subparsers.add_parser(
+        "dashboard", help="Start the observatory web dashboard",
+    )
+    _add_dashboard_args(dash_parser)
 
     return parser
 
@@ -270,6 +449,22 @@ _CONFIG_KEYS: dict[str, type] = {
     "dataset_cache_dir": str,
     "prepare_datasets": str,
     "list_datasets": bool,
+    "mode": str,
+    "models": str,
+    "oa_type": str,
+    "confirmation_runs": int,
+    "pipeline": str,
+    "phase": str,
+    "parent_run": str,
+    "quality_type": str,
+    "top_k": int,
+    "alpha": float,
+    "report": str,
+    "budget": float,
+    "model_budgets": str,
+    "dashboard": bool,
+    "model_group": str,
+    "sync_interval": float,
 }
 
 
@@ -439,6 +634,60 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         logger.info("Dry-run mode: resolved configuration:")
         for key, value in sorted(resolved.items()):
             logger.info("  %s: %r", key, value)
+
+        # For taguchi mode, also show the OA design
+        mode = resolved.get("mode", "full")
+        if mode == "taguchi":
+            from agent_evals.variants.registry import (
+                get_all_variants,
+                get_variants_for_axis,
+                load_all,
+            )
+
+            load_all()
+            axis = resolved.get("axis")
+            if axis is not None:
+                all_variants = get_variants_for_axis(axis)
+            else:
+                all_variants = get_all_variants()
+
+            axes: dict[int, list[str]] = {}
+            for v in all_variants:
+                m = v.metadata()
+                if m.axis == 0:
+                    continue  # Baselines are not Taguchi factors
+                if m.axis not in axes:
+                    axes[m.axis] = []
+                if m.name not in axes[m.axis]:
+                    axes[m.axis].append(m.name)
+
+            models_str = resolved.get("models")
+            models_list: list[str] | None = None
+            if models_str:
+                models_list = [m.strip() for m in str(models_str).split(",")]
+
+            from agent_evals.taguchi.factors import build_design
+
+            oa_override = resolved.get("oa_type")
+            design = build_design(
+                axes,
+                models=models_list,
+                oa_override=str(oa_override) if oa_override else None,
+            )
+            logger.info(
+                "Taguchi design: OA=%s, %d runs, %d factors",
+                design.oa_name, design.n_runs, len(design.factors),
+            )
+            for factor in design.factors:
+                logger.info(
+                    "  Factor %s: %d levels %s",
+                    factor.name, factor.n_levels, factor.level_names,
+                )
+            reps = resolved.get("repetitions", 10)
+            logger.info(
+                "  Estimated trials per task: %d (OA runs) x %d (reps) = %d",
+                design.n_runs, reps, design.n_runs * int(reps),
+            )
         return 0
 
     # Validate API key upfront (only needed for actual runs)
@@ -514,7 +763,20 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
 
     doc_tree = load_sample_doc_tree()
 
-    # Run evaluation
+    # Route to the correct runner based on --mode
+    mode = resolved.get("mode", "full")
+
+    if mode == "taguchi":
+        pipeline_mode = resolved.get("pipeline")
+        if pipeline_mode:
+            return _run_pipeline(
+                resolved, tasks, variants, doc_tree, api_key, run_config,
+            )
+        return _run_taguchi(
+            resolved, tasks, variants, doc_tree, api_key, run_config,
+        )
+
+    # Default: full mode via EvalRunner
     from agent_evals.progress import make_progress_callback
 
     display = run_config.display_mode or "rich"
@@ -535,6 +797,218 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     return 0
 
 
+def _run_taguchi(
+    resolved: dict[str, Any],
+    tasks: list,
+    variants: list,
+    doc_tree: Any,
+    api_key: str,
+    run_config: EvalRunConfig,
+) -> int:
+    """Execute a Taguchi DOE evaluation via EvalOrchestrator.
+
+    Builds a TaguchiDesign from variant axes, creates the orchestrator,
+    and runs the evaluation.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+    from agent_evals.taguchi.factors import build_design
+
+    # Build axes dict from loaded variants (exclude axis 0 baselines -
+    # they are control conditions, not experimental factors).
+    axes: dict[int, list[str]] = {}
+    for v in variants:
+        m = v.metadata()
+        if m.axis == 0:
+            continue  # Baselines are not Taguchi factors
+        if m.axis not in axes:
+            axes[m.axis] = []
+        if m.name not in axes[m.axis]:
+            axes[m.axis].append(m.name)
+
+    # Parse models list
+    models_str = resolved.get("models")
+    model = str(resolved["model"])
+    if models_str:
+        models_list = [m.strip() for m in str(models_str).split(",")]
+    else:
+        models_list = [model]
+
+    # Build Taguchi design
+    oa_override = resolved.get("oa_type")
+    design = build_design(
+        axes,
+        models=models_list if len(models_list) > 1 else None,
+        oa_override=str(oa_override) if oa_override else None,
+    )
+    logger.info(
+        "Taguchi design: OA=%s, %d runs, %d factors",
+        design.oa_name, design.n_runs, len(design.factors),
+    )
+
+    # Build variant lookup
+    variant_lookup = {v.metadata().name: v for v in variants}
+
+    # Parse model budgets
+    model_budgets: dict[str, float] | None = None
+    raw_budgets = resolved.get("model_budgets")
+    if raw_budgets and isinstance(raw_budgets, str):
+        model_budgets = {}
+        for pair in raw_budgets.split(","):
+            key, _, val = pair.partition("=")
+            model_budgets[key.strip()] = float(val.strip())
+
+    # Create orchestrator
+    orch_config = OrchestratorConfig(
+        mode="taguchi",
+        models=models_list,
+        api_key=api_key,
+        report_format=resolved.get("report"),
+        global_budget=resolved.get("budget"),
+        model_budgets=model_budgets,
+        temperature=run_config.temperature,
+        eval_config=run_config,
+        dashboard=resolved.get("dashboard", False),
+        dashboard_port=int(resolved.get("dashboard_port", 8501)),
+    )
+    orchestrator = EvalOrchestrator(orch_config)
+
+    orchestrator.start_dashboard()
+    try:
+        result = orchestrator.run(
+            tasks=tasks,
+            variants=variants,
+            doc_tree=doc_tree,
+            design=design,
+            variant_lookup=variant_lookup,
+        )
+    finally:
+        orchestrator.stop_dashboard()
+
+    logger.info(
+        "Taguchi evaluation complete: %d trials, $%.4f cost, %.1fs elapsed",
+        len(result.trials),
+        result.total_cost,
+        result.elapsed_seconds,
+    )
+    return 0
+
+
+def _run_pipeline(
+    resolved: dict[str, Any],
+    tasks: list,
+    variants: list,
+    doc_tree: Any,
+    api_key: str,
+    run_config: EvalRunConfig,
+) -> int:
+    """Execute a multi-phase DOE pipeline via DOEPipeline.
+
+    Builds a PipelineConfig from resolved params and runs the full
+    screening -> confirmation -> refinement flow.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+    from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+    # Parse models list
+    models_str = resolved.get("models")
+    model = str(resolved["model"])
+    if models_str:
+        models_list = [m.strip() for m in str(models_str).split(",")]
+    else:
+        models_list = [model]
+
+    # Parse model budgets
+    model_budgets: dict[str, float] | None = None
+    raw_budgets = resolved.get("model_budgets")
+    if raw_budgets and isinstance(raw_budgets, str):
+        model_budgets = {}
+        for pair in raw_budgets.split(","):
+            key, _, val = pair.partition("=")
+            model_budgets[key.strip()] = float(val.strip())
+
+    # Build orchestrator
+    orch_config = OrchestratorConfig(
+        mode="taguchi",
+        models=models_list,
+        api_key=api_key,
+        report_format=resolved.get("report"),
+        global_budget=resolved.get("budget"),
+        model_budgets=model_budgets,
+        temperature=run_config.temperature,
+        eval_config=run_config,
+        dashboard=resolved.get("dashboard", False),
+        dashboard_port=int(resolved.get("dashboard_port", 8501)),
+    )
+    orchestrator = EvalOrchestrator(orch_config)
+
+    # Build pipeline config
+    pipeline_config = PipelineConfig(
+        models=models_list,
+        mode=str(resolved.get("pipeline", "auto")),
+        quality_type=str(resolved.get("quality_type", "larger_is_better")),
+        alpha=float(resolved.get("alpha", 0.05)),
+        top_k=int(resolved.get("top_k", 3)),
+        oa_override=resolved.get("oa_type"),
+        report_format=resolved.get("report"),
+        api_key=api_key,
+        dashboard=resolved.get("dashboard", False),
+        temperature=run_config.temperature,
+        global_budget=resolved.get("budget"),
+        model_budgets=model_budgets,
+    )
+
+    pipeline = DOEPipeline(config=pipeline_config, orchestrator=orchestrator)
+
+    orchestrator.start_dashboard()
+    try:
+        result = pipeline.run(tasks=tasks, variants=variants, doc_tree=doc_tree)
+    finally:
+        orchestrator.stop_dashboard()
+
+    logger.info(
+        "DOE pipeline complete: %d trials, $%.4f cost, %.1fs elapsed",
+        result.total_trials,
+        result.total_cost,
+        result.elapsed_seconds,
+    )
+    return 0
+
+
+def _run_dashboard(args: argparse.Namespace) -> int:
+    """Launch the observatory dashboard from CLI args.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.observatory.web.server import DashboardConfig, launch_dashboard
+
+    # Resolve database paths
+    db_dir = Path(args.db_dir) if args.db_dir else Path.home() / ".observatory"
+    observatory_db = Path(args.observatory_db) if args.observatory_db else db_dir / "observatory.db"
+    models_db = Path(args.models_db) if args.models_db else db_dir / "models.db"
+
+    log_level = "debug" if args.verbose else ("warning" if args.quiet else "info")
+
+    config = DashboardConfig(
+        observatory_db=observatory_db,
+        models_db=models_db,
+        host=args.host,
+        port=args.port,
+        log_level=log_level,
+        auto_sync=not args.no_sync,
+    )
+
+    try:
+        launch_dashboard(config, background=False)
+    except KeyboardInterrupt:
+        logger.info("Dashboard stopped.")
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``agent-evals`` CLI.
 
@@ -544,6 +1018,12 @@ def main(argv: list[str] | None = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # Route dashboard subcommand
+    if args.command == "dashboard":
+        verbosity = 1 if args.verbose else (-1 if args.quiet else 0)
+        configure_logging(verbosity)
+        return _run_dashboard(args)
 
     # Initialize logging before anything else
     verbosity = 1 if args.verbose else (-1 if args.quiet else 0)
@@ -562,6 +1042,16 @@ def main(argv: list[str] | None = None) -> int:
     resolved = resolve_config(args, config)
 
     return _run_evaluation(resolved)
+
+
+def dashboard_main(argv: list[str] | None = None) -> int:
+    """Entry point for the ``observatory`` CLI command.
+
+    Prepends 'dashboard' to argv and delegates to main().
+    """
+    if argv is None:
+        argv = []
+    return main(["dashboard", *argv])
 
 
 if __name__ == "__main__":

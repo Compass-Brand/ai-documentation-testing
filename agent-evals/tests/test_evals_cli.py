@@ -452,12 +452,16 @@ class TestResolveConfigFileDefaults:
         assert resolved["repetitions"] == 10
         assert resolved["temperature"] == pytest.approx(0.3)
 
-    def test_empty_config_yields_no_extras(self) -> None:
+    def test_empty_config_yields_only_defaults(self) -> None:
         parser = build_parser()
         args = parser.parse_args([])
         resolved = resolve_config(args, {})
-        # No CLI, no env, no config => empty resolved
-        assert resolved == {}
+        # No CLI, no env, no config => only flags with non-None defaults
+        assert resolved == {
+            "quality_type": "larger_is_better",
+            "top_k": 3,
+            "alpha": 0.05,
+        }
 
     def test_unknown_config_keys_ignored(self) -> None:
         parser = build_parser()
@@ -954,3 +958,899 @@ class TestSourceFlag:
             "--source", "gold_standard,repliqa",
         ])
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Taguchi / multi-model CLI flags -- defaults
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiModeDefaults:
+    """Default values for Taguchi and multi-model flags."""
+
+    def test_default_mode_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.mode is None
+
+    def test_default_models_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.models is None
+
+    def test_default_oa_type_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.oa_type is None
+
+    def test_default_confirmation_runs_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.confirmation_runs is None
+
+    def test_default_report_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.report is None
+
+    def test_default_budget_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.budget is None
+
+    def test_default_model_budgets_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.model_budgets is None
+
+    def test_default_dashboard_is_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.dashboard is False
+
+    def test_default_model_group_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.model_group is None
+
+    def test_default_sync_interval_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.sync_interval is None
+
+
+# ---------------------------------------------------------------------------
+# Taguchi / multi-model CLI flags -- parsing
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiModeParsing:
+    """Each Taguchi/multi-model flag can be set and parsed correctly."""
+
+    def test_mode_taguchi_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--mode", "taguchi"])
+        assert args.mode == "taguchi"
+
+    def test_mode_factorial_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--mode", "factorial"])
+        assert args.mode == "factorial"
+
+    def test_mode_full_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--mode", "full"])
+        assert args.mode == "full"
+
+    def test_mode_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--mode", "invalid"])
+
+    def test_models_accepts_comma_separated(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--models", "claude,gpt-4o,gemini"])
+        assert args.models == "claude,gpt-4o,gemini"
+
+    def test_oa_type_accepts_string(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--oa-type", "L54"])
+        assert args.oa_type == "L54"
+
+    def test_confirmation_runs_accepts_int(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--confirmation-runs", "3"])
+        assert args.confirmation_runs == 3
+
+    def test_report_html_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "html"])
+        assert args.report == "html"
+
+    def test_report_markdown_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "markdown"])
+        assert args.report == "markdown"
+
+    def test_report_both_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "both"])
+        assert args.report == "both"
+
+    def test_report_none_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "none"])
+        assert args.report == "none"
+
+    def test_report_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--report", "pdf"])
+
+    def test_budget_accepts_float(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--budget", "50.00"])
+        assert args.budget == pytest.approx(50.0)
+
+    def test_model_budgets_accepts_string(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model-budgets", "claude=20.00,gpt-4o=30.00"])
+        assert args.model_budgets == "claude=20.00,gpt-4o=30.00"
+
+    def test_dashboard_is_boolean_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--dashboard"])
+        assert args.dashboard is True
+
+    def test_model_group_accepts_string(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model-group", "fast-cheap"])
+        assert args.model_group == "fast-cheap"
+
+    def test_sync_interval_accepts_float(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--sync-interval", "12.0"])
+        assert args.sync_interval == pytest.approx(12.0)
+
+
+# ---------------------------------------------------------------------------
+# Taguchi / multi-model CLI flags -- resolve_config
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiResolveConfig:
+    """Taguchi flags participate in the config resolution pipeline."""
+
+    def test_mode_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--mode", "taguchi"])
+        resolved = resolve_config(args, {})
+        assert resolved["mode"] == "taguchi"
+
+    def test_mode_resolved_from_config_file(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        config = {"mode": "taguchi"}
+        resolved = resolve_config(args, config)
+        assert resolved["mode"] == "taguchi"
+
+    def test_models_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--models", "claude,gpt-4o"])
+        resolved = resolve_config(args, {})
+        assert resolved["models"] == "claude,gpt-4o"
+
+    def test_oa_type_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--oa-type", "L54"])
+        resolved = resolve_config(args, {})
+        assert resolved["oa_type"] == "L54"
+
+    def test_confirmation_runs_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--confirmation-runs", "5"])
+        resolved = resolve_config(args, {})
+        assert resolved["confirmation_runs"] == 5
+
+    def test_report_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--report", "both"])
+        resolved = resolve_config(args, {})
+        assert resolved["report"] == "both"
+
+    def test_budget_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--budget", "50.0"])
+        resolved = resolve_config(args, {})
+        assert resolved["budget"] == pytest.approx(50.0)
+
+    def test_dashboard_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--dashboard"])
+        resolved = resolve_config(args, {})
+        assert resolved["dashboard"] is True
+
+    def test_model_group_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model-group", "fast-cheap"])
+        resolved = resolve_config(args, {})
+        assert resolved["model_group"] == "fast-cheap"
+
+    def test_sync_interval_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--sync-interval", "12.0"])
+        resolved = resolve_config(args, {})
+        assert resolved["sync_interval"] == pytest.approx(12.0)
+
+
+# ---------------------------------------------------------------------------
+# Taguchi / multi-model CLI flags -- coexistence with dataset flags
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiDatasetCoexistence:
+    """New Taguchi flags coexist with existing dataset flags."""
+
+    def test_taguchi_and_dataset_flags_together(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([
+            "--mode", "taguchi",
+            "--models", "claude,gpt-4o",
+            "--source", "repliqa",
+            "--dataset-limit", "10",
+        ])
+        assert args.mode == "taguchi"
+        assert args.models == "claude,gpt-4o"
+        assert args.source == "repliqa"
+        assert args.dataset_limit == 10
+
+    def test_dry_run_with_taguchi_flags(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+        result = main([
+            "--model", "test/model",
+            "--dry-run",
+            "--mode", "taguchi",
+            "--models", "claude,gpt-4o",
+        ])
+        assert result == 0
+
+    def test_backward_compat_old_flags_work(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model", "claude", "--axis", "3"])
+        assert args.model == "claude"
+        assert args.axis == 3
+        # mode is None when not explicitly set (defaults applied at resolve)
+        assert args.mode is None
+
+
+# ---------------------------------------------------------------------------
+# Taguchi mode -- _run_evaluation routing
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiModeRouting:
+    """When --mode taguchi is set, _run_evaluation routes to EvalOrchestrator."""
+
+    @pytest.fixture(autouse=True)
+    def _ensure_variants_loaded(self) -> None:
+        """Ensure the variant registry is populated.
+
+        Other test files use ``clear_registry()`` with ``autouse=True``, which
+        empties the singleton registry.  The improved ``load_all()`` handles
+        re-registration of already-imported subclasses.
+        """
+        from agent_evals.variants.registry import load_all
+
+        load_all()
+
+    def test_taguchi_mode_creates_design(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Taguchi mode should build a TaguchiDesign from variant axes."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        captured: dict = {}
+
+        def fake_orchestrator_run(self, **kwargs):
+            captured["design"] = kwargs.get("design")
+            captured["variant_lookup"] = kwargs.get("variant_lookup")
+            # Return a minimal OrchestratorResult
+            from agent_evals.orchestrator import OrchestratorResult
+            return OrchestratorResult(
+                run_id="test",
+                mode="taguchi",
+                trials=[],
+                total_cost=0.0,
+                total_tokens=0,
+                elapsed_seconds=0.0,
+                report=None,
+                raw_result=None,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.run",
+            fake_orchestrator_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+        }
+        result = _run_evaluation(resolved)
+        assert result == 0
+        assert captured.get("design") is not None
+        assert captured["design"].n_runs > 0
+        assert captured.get("variant_lookup") is not None
+        assert len(captured["variant_lookup"]) > 0
+
+    def test_taguchi_mode_uses_orchestrator_not_eval_runner(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Taguchi mode should use EvalOrchestrator, not EvalRunner directly."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        orchestrator_called = False
+        eval_runner_called = False
+
+        def fake_orchestrator_run(self, **kwargs):
+            nonlocal orchestrator_called
+            orchestrator_called = True
+            from agent_evals.orchestrator import OrchestratorResult
+            return OrchestratorResult(
+                run_id="test", mode="taguchi", trials=[],
+                total_cost=0.0, total_tokens=0, elapsed_seconds=0.0,
+                report=None, raw_result=None,
+            )
+
+        def fake_eval_runner_run(self, **kwargs):
+            nonlocal eval_runner_called
+            eval_runner_called = True
+
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.run",
+            fake_orchestrator_run,
+        )
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner.run",
+            fake_eval_runner_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+        }
+        _run_evaluation(resolved)
+        assert orchestrator_called is True
+        assert eval_runner_called is False
+
+    def test_taguchi_mode_with_models_flag(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--models should be split and passed to the orchestrator."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        captured: dict = {}
+
+        def fake_orchestrator_init(self, config):
+            captured["models"] = config.models
+            self.config = config
+            # Minimal stub attributes
+            from unittest.mock import MagicMock
+            self.store = MagicMock()
+            self.tracker = MagicMock()
+            self.client_pool = MagicMock()
+            self._dashboard_thread = None
+            self._dashboard_shutdown = MagicMock()
+
+        def fake_orchestrator_run(self, **kwargs):
+            from agent_evals.orchestrator import OrchestratorResult
+            return OrchestratorResult(
+                run_id="test", mode="taguchi", trials=[],
+                total_cost=0.0, total_tokens=0, elapsed_seconds=0.0,
+                report=None, raw_result=None,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.__init__",
+            fake_orchestrator_init,
+        )
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.run",
+            fake_orchestrator_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+            "models": "openrouter/model-a,openrouter/model-b",
+        }
+        _run_evaluation(resolved)
+        assert captured["models"] == [
+            "openrouter/model-a",
+            "openrouter/model-b",
+        ]
+
+    def test_taguchi_dry_run_shows_design_info(
+        self, monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """--mode taguchi --dry-run should log the OA design info."""
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+            "dry_run": True,
+        }
+        with caplog.at_level(logging.INFO, logger="agent_evals"):
+            result = _run_evaluation(resolved)
+        assert result == 0
+        assert "L50" in caplog.text or "OA" in caplog.text.upper()
+
+    def test_taguchi_pipeline_auto_routing(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--pipeline auto should route to DOEPipeline."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        pipeline_called = False
+
+        def fake_pipeline_run(self, tasks, variants, doc_tree, **kwargs):
+            nonlocal pipeline_called
+            pipeline_called = True
+            from agent_evals.pipeline import PhaseResult, PipelineResult
+            screening = PhaseResult(
+                run_id="test-screen", phase="screening", trials=[],
+            )
+            return PipelineResult(
+                pipeline_id="test",
+                screening=screening,
+                total_cost=0.0,
+                elapsed_seconds=0.0,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.pipeline.DOEPipeline.run",
+            fake_pipeline_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+            "pipeline": "auto",
+        }
+        result = _run_evaluation(resolved)
+        assert result == 0
+        assert pipeline_called is True
+
+    def test_taguchi_oa_override(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--oa-type should force a specific orthogonal array."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        captured: dict = {}
+
+        def fake_orchestrator_run(self, **kwargs):
+            captured["design"] = kwargs.get("design")
+            from agent_evals.orchestrator import OrchestratorResult
+            return OrchestratorResult(
+                run_id="test", mode="taguchi", trials=[],
+                total_cost=0.0, total_tokens=0, elapsed_seconds=0.0,
+                report=None, raw_result=None,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.orchestrator.EvalOrchestrator.run",
+            fake_orchestrator_run,
+        )
+
+        # L50 supports the 10-axis mixed-level problem (has 5-level columns)
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "taguchi",
+            "oa_type": "L50",
+        }
+        _run_evaluation(resolved)
+        assert captured["design"].oa_name == "L50"
+
+    def test_full_mode_still_uses_eval_runner(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--mode full (or default) should NOT route to orchestrator."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        eval_runner_called = False
+
+        def fake_eval_runner_run(self, **kwargs):
+            nonlocal eval_runner_called
+            eval_runner_called = True
+            from agent_evals.runner import EvalRunResult
+            return EvalRunResult(
+                config=self._config,
+                trials=[],
+                total_cost=0.0,
+                total_tokens=0,
+                elapsed_seconds=0.0,
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner.run",
+            fake_eval_runner_run,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "mode": "full",
+        }
+        _run_evaluation(resolved)
+        assert eval_runner_called is True
+
+
+# ---------------------------------------------------------------------------
+# DOE Pipeline CLI flags -- parser
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineFlagParsing:
+    """New DOE pipeline flags are parsed correctly."""
+
+    def test_pipeline_auto_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--pipeline", "auto"])
+        assert args.pipeline == "auto"
+
+    def test_pipeline_semi_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--pipeline", "semi"])
+        assert args.pipeline == "semi"
+
+    def test_pipeline_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--pipeline", "manual"])
+
+    def test_pipeline_default_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.pipeline is None
+
+    def test_phase_screening_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--phase", "screening"])
+        assert args.phase == "screening"
+
+    def test_phase_confirmation_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--phase", "confirmation"])
+        assert args.phase == "confirmation"
+
+    def test_phase_refinement_accepted(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--phase", "refinement"])
+        assert args.phase == "refinement"
+
+    def test_phase_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--phase", "exploration"])
+
+    def test_phase_default_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.phase is None
+
+    def test_parent_run_accepts_string(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--parent-run", "abc123"])
+        assert args.parent_run == "abc123"
+
+    def test_parent_run_default_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.parent_run is None
+
+    def test_quality_type_larger_is_better(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quality-type", "larger_is_better"])
+        assert args.quality_type == "larger_is_better"
+
+    def test_quality_type_smaller_is_better(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quality-type", "smaller_is_better"])
+        assert args.quality_type == "smaller_is_better"
+
+    def test_quality_type_nominal_is_best(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quality-type", "nominal_is_best"])
+        assert args.quality_type == "nominal_is_best"
+
+    def test_quality_type_invalid_rejected(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--quality-type", "bad_value"])
+
+    def test_quality_type_default_is_larger(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.quality_type == "larger_is_better"
+
+    def test_top_k_accepts_int(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--top-k", "4"])
+        assert args.top_k == 4
+
+    def test_top_k_default_is_three(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.top_k == 3
+
+    def test_alpha_accepts_float(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--alpha", "0.01"])
+        assert args.alpha == pytest.approx(0.01)
+
+    def test_alpha_default_is_005(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.alpha == pytest.approx(0.05)
+
+
+# ---------------------------------------------------------------------------
+# DOE Pipeline CLI flags -- resolve_config
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineResolveConfig:
+    """Pipeline flags participate in the config resolution pipeline."""
+
+    def test_pipeline_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--pipeline", "auto"])
+        resolved = resolve_config(args, {})
+        assert resolved["pipeline"] == "auto"
+
+    def test_phase_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--phase", "confirmation"])
+        resolved = resolve_config(args, {})
+        assert resolved["phase"] == "confirmation"
+
+    def test_parent_run_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--parent-run", "abc123"])
+        resolved = resolve_config(args, {})
+        assert resolved["parent_run"] == "abc123"
+
+    def test_quality_type_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--quality-type", "smaller_is_better"])
+        resolved = resolve_config(args, {})
+        assert resolved["quality_type"] == "smaller_is_better"
+
+    def test_top_k_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--top-k", "5"])
+        resolved = resolve_config(args, {})
+        assert resolved["top_k"] == 5
+
+    def test_alpha_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--alpha", "0.01"])
+        resolved = resolve_config(args, {})
+        assert resolved["alpha"] == pytest.approx(0.01)
+
+
+# ---------------------------------------------------------------------------
+# Dashboard subcommand -- parser tests
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardSubcommandParsing:
+    """The 'dashboard' subcommand is parsed correctly."""
+
+    def test_dashboard_subcommand_recognized(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.command == "dashboard"
+
+    def test_dashboard_default_host(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.host == "0.0.0.0"
+
+    def test_dashboard_default_port(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.port == 8080
+
+    def test_dashboard_custom_port(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--port", "9090"])
+        assert args.port == 9090
+
+    def test_dashboard_custom_host(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--host", "127.0.0.1"])
+        assert args.host == "127.0.0.1"
+
+    def test_dashboard_default_db_dir_is_none(self) -> None:
+        """Default db-dir is None (resolved to ~/.observatory/ at runtime)."""
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.db_dir is None
+
+    def test_dashboard_custom_db_dir(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--db-dir", "/tmp/obs"])
+        assert args.db_dir == "/tmp/obs"
+
+    def test_dashboard_observatory_db_override(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--observatory-db", "/tmp/obs.db"])
+        assert args.observatory_db == "/tmp/obs.db"
+
+    def test_dashboard_models_db_override(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--models-db", "/tmp/models.db"])
+        assert args.models_db == "/tmp/models.db"
+
+    def test_dashboard_no_sync_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--no-sync"])
+        assert args.no_sync is True
+
+    def test_dashboard_no_sync_default_false(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard"])
+        assert args.no_sync is False
+
+    def test_dashboard_verbose_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--verbose"])
+        assert args.verbose is True
+
+    def test_dashboard_quiet_flag(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["dashboard", "--quiet"])
+        assert args.quiet is True
+
+
+# ---------------------------------------------------------------------------
+# Dashboard subcommand -- backward compatibility
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardBackwardCompat:
+    """No subcommand still works as before (run behavior)."""
+
+    def test_no_subcommand_returns_none_command(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.command is None
+
+    def test_no_subcommand_model_still_works(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--model", "test/model", "--dry-run"])
+        assert args.command is None
+        assert args.model == "test/model"
+        assert args.dry_run is True
+
+    def test_run_subcommand_explicit(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["run", "--model", "test/model", "--dry-run"])
+        assert args.command == "run"
+        assert args.model == "test/model"
+
+    def test_no_subcommand_returns_one_without_model(self) -> None:
+        result = main([])
+        assert result == 1
+
+    def test_no_subcommand_dry_run_with_model(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+        result = main(["--model", "test/model", "--dry-run"])
+        assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# Dashboard subcommand -- _run_dashboard behavior
+# ---------------------------------------------------------------------------
+
+
+class TestRunDashboard:
+    """_run_dashboard creates DashboardConfig and calls launch_dashboard."""
+
+    _LAUNCH_TARGET = "agent_evals.observatory.web.server.launch_dashboard"
+
+    def test_dashboard_does_not_require_model(self) -> None:
+        """Dashboard subcommand should not require --model."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            result = main(["dashboard"])
+        assert result == 0
+
+    def test_dashboard_does_not_require_api_key(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Dashboard should work without OPENROUTER_API_KEY."""
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            result = main(["dashboard"])
+        assert result == 0
+
+    def test_dashboard_calls_launch_with_config(self) -> None:
+        """Dashboard should create DashboardConfig and pass to launch_dashboard."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard", "--port", "9090"])
+        mock_launch.assert_called_once()
+        config = mock_launch.call_args[0][0]
+        assert config.port == 9090
+
+    def test_dashboard_default_db_dir_resolved(self) -> None:
+        """Default observatory_db should be under ~/.observatory/."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard"])
+        config = mock_launch.call_args[0][0]
+        expected = Path.home() / ".observatory" / "observatory.db"
+        assert config.observatory_db == expected
+
+    def test_dashboard_custom_db_dir(self, tmp_path: Path) -> None:
+        """Custom --db-dir should set observatory_db and models_db under it."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard", "--db-dir", str(tmp_path)])
+        config = mock_launch.call_args[0][0]
+        assert config.observatory_db == tmp_path / "observatory.db"
+        assert config.models_db == tmp_path / "models.db"
+
+    def test_dashboard_background_false(self) -> None:
+        """Standalone dashboard runs in foreground (background=False)."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard"])
+        _, kwargs = mock_launch.call_args
+        assert kwargs.get("background") is False
+
+    def test_dashboard_no_sync_disables_auto_sync(self) -> None:
+        """--no-sync should set auto_sync=False in config."""
+        with patch(self._LAUNCH_TARGET) as mock_launch:
+            mock_launch.return_value = None
+            main(["dashboard", "--no-sync"])
+        config = mock_launch.call_args[0][0]
+        assert config.auto_sync is False
+
+
+# ---------------------------------------------------------------------------
+# dashboard_main() entry point
+# ---------------------------------------------------------------------------
+
+
+class TestDashboardMain:
+    """dashboard_main() prepends 'dashboard' and calls main()."""
+
+    def test_dashboard_main_prepends_dashboard(self) -> None:
+        from agent_evals.cli import dashboard_main
+
+        with patch("agent_evals.cli.main", return_value=0) as mock_main:
+            dashboard_main(["--port", "9090"])
+        mock_main.assert_called_once_with(["dashboard", "--port", "9090"])
+
+    def test_dashboard_main_no_args(self) -> None:
+        from agent_evals.cli import dashboard_main
+
+        with patch("agent_evals.cli.main", return_value=0) as mock_main:
+            dashboard_main([])
+        mock_main.assert_called_once_with(["dashboard"])
+
+    def test_dashboard_main_none_args(self) -> None:
+        from agent_evals.cli import dashboard_main
+
+        with patch("agent_evals.cli.main", return_value=0) as mock_main:
+            dashboard_main(None)
+        mock_main.assert_called_once_with(["dashboard"])
