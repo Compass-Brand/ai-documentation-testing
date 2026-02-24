@@ -139,7 +139,7 @@ describe("FadeIn", () => {
   it("should apply stagger delay via style", () => {
     render(<FadeIn delay={2}><span>Delayed</span></FadeIn>);
     const el = screen.getByText("Delayed").parentElement!;
-    expect(el.style.animationDelay).toBe("100ms");
+    expect(el.style.animationDelay).toBe("160ms");
   });
 });
 

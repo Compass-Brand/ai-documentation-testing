@@ -10,6 +10,7 @@ const buttonVariants = cva(
     "focus-visible:outline-none focus-visible:ring-2",
     "focus-visible:ring-brand-goldenrod focus-visible:ring-offset-2",
     "disabled:opacity-50 disabled:pointer-events-none",
+    "active:scale-[0.98]",
   ].join(" "),
   {
     variants: {

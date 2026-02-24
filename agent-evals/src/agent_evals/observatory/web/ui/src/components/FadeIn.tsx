@@ -11,7 +11,7 @@ export function FadeIn({ children, delay = 0, className }: FadeInProps) {
     <div
       className={cn("animate-fade-in-up opacity-0", className)}
       style={{
-        animationDelay: `${delay * 50}ms`,
+        animationDelay: `${delay * 80}ms`,
         animationFillMode: "forwards",
       }}
     >

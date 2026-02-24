@@ -28,8 +28,8 @@ describe("Input", () => {
   it("should have goldenrod focus ring", () => {
     render(<Input aria-label="test" />);
     const input = screen.getByRole("textbox");
-    expect(input.className).toContain("focus:border-brand-goldenrod");
-    expect(input.className).toContain("focus:ring-brand-goldenrod/20");
+    expect(input.className).toContain("focus-visible:border-brand-goldenrod");
+    expect(input.className).toContain("focus-visible:ring-brand-goldenrod/20");
   });
 
   it("should have placeholder slate/60 style", () => {

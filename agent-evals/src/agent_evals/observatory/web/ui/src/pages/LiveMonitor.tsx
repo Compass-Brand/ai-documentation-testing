@@ -24,6 +24,7 @@ import { Card, CardContent, CardTitle } from "../components/Card";
 import { FadeIn } from "../components/FadeIn";
 import { cn } from "../lib/utils";
 import { CHART_COLORS } from "../lib/chart-theme";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import type { Trial } from "../api/client";
 
 ChartJS.register(
@@ -36,6 +37,7 @@ ChartJS.register(
 );
 
 export default function LiveMonitor() {
+  useDocumentTitle("Live Monitor");
   const { runId: paramRunId } = useParams<{ runId: string }>();
   const { data: runs, isLoading: runsLoading } = useRuns();
 

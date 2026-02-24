@@ -20,6 +20,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { FadeIn } from "../components/FadeIn";
 import { shortId, formatRunDate } from "../lib/utils";
 import { CHART_COLORS } from "../lib/chart-theme";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
 Chart.register(
   CategoryScale,
@@ -69,6 +70,7 @@ const columns: ColumnDef<Run>[] = [
 ];
 
 export function History() {
+  useDocumentTitle("History");
   const { data: runs, isLoading: runsLoading } = useRuns();
   const { data: costTrend } = useCostTrend();
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set());
@@ -128,7 +130,7 @@ export function History() {
   }
 
   return (
-    <div className="px-sp-6 py-sp-8 max-w-full mx-auto">
+    <div className="px-sp-6 py-sp-8 max-w-full 2xl:max-w-[1400px] mx-auto">
       <FadeIn>
         <h1 className="text-h2 text-brand-charcoal inline-flex items-center gap-sp-3 mb-sp-8">
           <HistoryIcon className="h-8 w-8 text-brand-goldenrod" />

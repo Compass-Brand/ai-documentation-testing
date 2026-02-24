@@ -56,26 +56,6 @@ export function CompassCheckbox({
         />
       </svg>
 
-      <style>{`
-        .compass-checkmark-draw {
-          stroke-dasharray: 16;
-          stroke-dashoffset: 0;
-          animation: compass-draw-check 300ms ease-out forwards;
-        }
-        .compass-checkmark-hidden {
-          stroke-dasharray: 16;
-          stroke-dashoffset: 16;
-          opacity: 0;
-        }
-        @keyframes compass-draw-check {
-          from {
-            stroke-dashoffset: 16;
-          }
-          to {
-            stroke-dashoffset: 0;
-          }
-        }
-      `}</style>
     </div>
   );
 }

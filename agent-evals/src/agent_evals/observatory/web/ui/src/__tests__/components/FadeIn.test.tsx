@@ -20,10 +20,10 @@ describe("FadeIn", () => {
     expect(wrapper.className).toContain("opacity-0");
   });
 
-  it("should apply 50ms stagger delay based on index", () => {
+  it("should apply 80ms stagger delay based on index", () => {
     render(<FadeIn delay={3}><span>Content</span></FadeIn>);
     const wrapper = screen.getByText("Content").parentElement!;
-    expect(wrapper.style.animationDelay).toBe("150ms");
+    expect(wrapper.style.animationDelay).toBe("240ms");
   });
 
   it("should default to 0 delay", () => {

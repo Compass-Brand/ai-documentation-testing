@@ -16,6 +16,7 @@ import { AccessibleChart } from "../components/AccessibleChart";
 import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { CHART_COLORS } from "../lib/chart-theme";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import type { ColumnDef } from "@tanstack/react-table";
 
 Chart.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
@@ -80,6 +81,7 @@ const LEVEL_COLORS = [
 ];
 
 export function FactorAnalysis() {
+  useDocumentTitle("Factor Analysis");
   const { runId } = useParams<{ runId: string }>();
   const { data: analysis, isLoading } = useRunAnalysis(runId ?? null);
 
