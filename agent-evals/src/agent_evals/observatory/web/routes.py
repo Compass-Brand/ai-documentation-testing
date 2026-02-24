@@ -15,6 +15,7 @@ from sse_starlette.sse import EventSourceResponse
 from agent_evals.observatory.model_catalog import ModelCatalog
 from agent_evals.observatory.model_groups import ModelGroupManager
 from agent_evals.observatory.model_sync import ModelSync
+from agent_evals.observatory.run_manager import RunConflictError, RunManager, StartRunRequest
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
 
@@ -85,6 +86,7 @@ def create_router(
     catalog: ModelCatalog | None = None,
     group_manager: ModelGroupManager | None = None,
     model_sync: ModelSync | None = None,
+    run_manager: RunManager | None = None,
 ) -> APIRouter:
     """Create API router with all observatory and model browser endpoints."""
     router = APIRouter()
@@ -105,6 +107,37 @@ def create_router(
     async def list_runs() -> list[dict[str, Any]]:
         runs = store.list_runs()
         return [asdict(r) for r in runs]
+
+    # Run submission endpoints (must be before /api/runs/{run_id})
+    @router.post("/api/runs", status_code=202)
+    async def start_run(body: StartRunRequest) -> dict[str, Any]:
+        if run_manager is None:
+            raise HTTPException(
+                status_code=503, detail="Run manager not configured"
+            )
+        try:
+            run_id = run_manager.start_run(body)
+        except RunConflictError:
+            raise HTTPException(
+                status_code=409, detail="A run is already in progress"
+            )
+        return {"run_id": run_id, "status": "started"}
+
+    @router.get("/api/runs/active")
+    async def get_active_run() -> dict[str, Any]:
+        if run_manager is None:
+            return {"active": False}
+        active = run_manager.active_run
+        if active is None:
+            return {"active": False}
+        return {"active": True, **active}
+
+    @router.post("/api/runs/active/cancel")
+    async def cancel_active_run() -> dict[str, Any]:
+        if run_manager is None:
+            return {"cancelled": False}
+        cancelled = run_manager.cancel_run()
+        return {"cancelled": cancelled}
 
     def _enrich_run(run_id: str) -> dict[str, Any]:
         """Build enriched run summary with variant/model aggregations."""

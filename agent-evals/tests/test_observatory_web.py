@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agent_evals.observatory.model_catalog import ModelCatalog
+from agent_evals.observatory.run_manager import RunManager
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
 from agent_evals.observatory.web.server import create_app
@@ -34,16 +35,33 @@ def _catalog(tmp_path: Path) -> ModelCatalog:
 
 
 @pytest.fixture
-def client(_store: ObservatoryStore, _tracker: EventTracker) -> TestClient:
-    app = create_app(store=_store, tracker=_tracker)
+def _run_manager(
+    _store: ObservatoryStore, _tracker: EventTracker
+) -> RunManager:
+    return RunManager(store=_store, tracker=_tracker)
+
+
+@pytest.fixture
+def client(
+    _store: ObservatoryStore, _tracker: EventTracker, _run_manager: RunManager
+) -> TestClient:
+    app = create_app(store=_store, tracker=_tracker, run_manager=_run_manager)
     return TestClient(app)
 
 
 @pytest.fixture
 def client_with_catalog(
-    _store: ObservatoryStore, _tracker: EventTracker, _catalog: ModelCatalog
+    _store: ObservatoryStore,
+    _tracker: EventTracker,
+    _catalog: ModelCatalog,
+    _run_manager: RunManager,
 ) -> TestClient:
-    app = create_app(store=_store, tracker=_tracker, catalog=_catalog)
+    app = create_app(
+        store=_store,
+        tracker=_tracker,
+        catalog=_catalog,
+        run_manager=_run_manager,
+    )
     return TestClient(app)
 
 
@@ -310,3 +328,127 @@ class TestModelsAPI:
         assert response.status_code == 200
         data = response.json()
         assert data == {"models": [], "total": 0}
+
+
+class TestRunSubmissionAPI:
+    """POST /api/runs, GET /api/runs/active, POST /api/runs/active/cancel."""
+
+    def test_start_run_returns_202(
+        self, client: TestClient, _run_manager: RunManager
+    ) -> None:
+        """POST /api/runs with valid payload returns 202."""
+        from unittest.mock import patch
+
+        with patch.object(_run_manager, "_execute_run"):
+            response = client.post(
+                "/api/runs",
+                json={"model": "test-model"},
+            )
+        assert response.status_code == 202
+        data = response.json()
+        assert "run_id" in data
+        assert data["status"] == "started"
+
+    def test_start_run_missing_model_returns_422(
+        self, client: TestClient
+    ) -> None:
+        """POST /api/runs without model returns 422."""
+        response = client.post("/api/runs", json={})
+        assert response.status_code == 422
+
+    def test_start_run_invalid_mode_returns_422(
+        self, client: TestClient
+    ) -> None:
+        """POST /api/runs with invalid mode returns 422."""
+        response = client.post(
+            "/api/runs", json={"model": "m", "mode": "bad"}
+        )
+        assert response.status_code == 422
+
+    def test_start_run_conflict_returns_409(
+        self, client: TestClient, _run_manager: RunManager
+    ) -> None:
+        """POST /api/runs when run is active returns 409."""
+        import threading
+        from unittest.mock import patch
+
+        hold = threading.Event()
+
+        def slow(*args, **kwargs):
+            hold.wait(timeout=5)
+
+        with patch.object(_run_manager, "_execute_run", side_effect=slow):
+            first = client.post("/api/runs", json={"model": "m"})
+            assert first.status_code == 202
+
+            second = client.post("/api/runs", json={"model": "m"})
+            assert second.status_code == 409
+
+            hold.set()
+
+    def test_get_active_run_none(self, client: TestClient) -> None:
+        """GET /api/runs/active when no run returns active: false."""
+        response = client.get("/api/runs/active")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["active"] is False
+
+    def test_get_active_run_during_run(
+        self, client: TestClient, _run_manager: RunManager
+    ) -> None:
+        """GET /api/runs/active during a run returns active: true."""
+        import threading
+        from unittest.mock import patch
+
+        started = threading.Event()
+        hold = threading.Event()
+
+        def slow(*args, **kwargs):
+            started.set()
+            hold.wait(timeout=5)
+
+        with patch.object(_run_manager, "_execute_run", side_effect=slow):
+            client.post("/api/runs", json={"model": "test-model"})
+            started.wait(timeout=2)
+
+            response = client.get("/api/runs/active")
+            data = response.json()
+            assert data["active"] is True
+            assert "run_id" in data
+            assert data["mode"] == "taguchi"
+
+            hold.set()
+
+    def test_cancel_run(
+        self, client: TestClient, _run_manager: RunManager
+    ) -> None:
+        """POST /api/runs/active/cancel cancels running run."""
+        import threading
+        from unittest.mock import patch
+
+        started = threading.Event()
+        hold = threading.Event()
+
+        def slow(*args, **kwargs):
+            started.set()
+            hold.wait(timeout=5)
+
+        with patch.object(_run_manager, "_execute_run", side_effect=slow):
+            client.post("/api/runs", json={"model": "m"})
+            started.wait(timeout=2)
+
+            response = client.post("/api/runs/active/cancel")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["cancelled"] is True
+
+            hold.set()
+
+    def test_cancel_no_run_returns_false(
+        self, client: TestClient
+    ) -> None:
+        """POST /api/runs/active/cancel with no active run."""
+        response = client.post("/api/runs/active/cancel")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cancelled"] is False

@@ -21,6 +21,7 @@ from starlette.responses import FileResponse, Response
 from agent_evals.observatory.model_catalog import ModelCatalog
 from agent_evals.observatory.model_groups import ModelGroupManager
 from agent_evals.observatory.model_sync import ModelSync
+from agent_evals.observatory.run_manager import RunManager
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
 from agent_evals.observatory.web.routes import create_router
@@ -103,12 +104,16 @@ def launch_dashboard(
         logger.info("Model catalog empty — running initial sync")
         model_sync.run_sync()
 
+    # Create run manager for dashboard-initiated runs
+    run_manager = RunManager(store=store, tracker=tracker)
+
     app = create_app(
         store=store,
         tracker=tracker,
         catalog=catalog,
         group_manager=group_manager,
         model_sync=model_sync,
+        run_manager=run_manager,
     )
 
     uvicorn_config = uvicorn.Config(
@@ -141,6 +146,7 @@ def create_app(
     catalog: ModelCatalog | None = None,
     group_manager: ModelGroupManager | None = None,
     model_sync: ModelSync | None = None,
+    run_manager: RunManager | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -150,6 +156,7 @@ def create_app(
         catalog: Optional ModelCatalog for model browsing.
         group_manager: Optional ModelGroupManager for group CRUD.
         model_sync: Optional ModelSync for triggering syncs.
+        run_manager: Optional RunManager for dashboard-started runs.
     """
     app = FastAPI(title="Observatory Dashboard")
     app.state.store = store
@@ -161,6 +168,7 @@ def create_app(
         catalog=catalog,
         group_manager=group_manager,
         model_sync=model_sync,
+        run_manager=run_manager,
     )
     app.include_router(router)
 
