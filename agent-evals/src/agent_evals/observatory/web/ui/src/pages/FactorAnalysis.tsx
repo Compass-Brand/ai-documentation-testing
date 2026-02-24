@@ -5,12 +5,14 @@ import {
   CategoryScale,
   LinearScale,
   BarElement,
-  Tooltip,
+  Tooltip as ChartTooltip,
   Legend,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
 import { useRunAnalysis } from "../api/hooks";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
+import { Skeleton } from "../components/Skeleton";
+import { Tooltip } from "../components/Tooltip";
 import { FadeIn } from "../components/FadeIn";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { DataTable } from "../components/DataTable";
@@ -19,7 +21,7 @@ import { CHART_COLORS } from "../lib/chart-theme";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import type { ColumnDef } from "@tanstack/react-table";
 
-Chart.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+Chart.register(CategoryScale, LinearScale, BarElement, ChartTooltip, Legend);
 
 interface AnovaRow {
   factor: string;
@@ -32,32 +34,50 @@ interface AnovaRow {
   significant: boolean;
 }
 
+function AnovaHeader({ label, tooltip }: { label: string; tooltip: string }) {
+  return (
+    <Tooltip content={tooltip}>
+      <span className="cursor-help border-b border-dotted border-brand-slate/50">
+        {label}
+      </span>
+    </Tooltip>
+  );
+}
+
 const anovaColumns: ColumnDef<AnovaRow>[] = [
   { accessorKey: "factor", header: "Factor" },
   {
     accessorKey: "ss",
-    header: "SS",
+    header: () => <AnovaHeader label="SS" tooltip="Sum of Squares — variance explained by this factor" />,
     cell: ({ getValue }) => (getValue() as number).toFixed(3),
   },
-  { accessorKey: "df", header: "df" },
+  {
+    accessorKey: "df",
+    header: () => <AnovaHeader label="df" tooltip="Degrees of freedom — number of independent comparisons" />,
+  },
   {
     accessorKey: "ms",
-    header: "MS",
+    header: () => <AnovaHeader label="MS" tooltip="Mean Square — sum of squares divided by degrees of freedom" />,
     cell: ({ getValue }) => (getValue() as number).toFixed(3),
   },
   {
     accessorKey: "f_ratio",
-    header: "F-ratio",
+    header: () => <AnovaHeader label="F-ratio" tooltip="Ratio of factor variance to error variance" />,
     cell: ({ getValue }) => (getValue() as number).toFixed(2),
   },
   {
     accessorKey: "p_value",
-    header: "p-value",
+    header: () => <AnovaHeader label="p-value" tooltip="Probability the observed effect is due to chance" />,
+    cell: ({ getValue }) => (getValue() as number).toFixed(4),
+  },
+  {
+    accessorKey: "eta_squared",
+    header: () => <AnovaHeader label={"\u03B7\u00B2"} tooltip="Eta squared — proportion of total variance explained" />,
     cell: ({ getValue }) => (getValue() as number).toFixed(4),
   },
   {
     accessorKey: "omega_squared",
-    header: "\u03C9\u00B2",
+    header: () => <AnovaHeader label={"\u03C9\u00B2"} tooltip="Omega squared — adjusted effect size, less biased than eta squared" />,
     cell: ({ getValue }) => (getValue() as number).toFixed(4),
   },
   {
@@ -88,7 +108,8 @@ export function FactorAnalysis() {
   if (isLoading) {
     return (
       <div className="mx-auto max-w-wide px-sp-6 py-sp-8">
-        <p className="text-body text-brand-slate">Loading...</p>
+        <Skeleton variant="chart" className="mb-sp-8" />
+        <Skeleton variant="card" />
       </div>
     );
   }
@@ -96,6 +117,12 @@ export function FactorAnalysis() {
   if (!analysis) {
     return (
       <div className="mx-auto max-w-wide px-sp-6 py-sp-8">
+        <FadeIn>
+          <h1 className="flex items-center gap-sp-3 text-h2 text-brand-charcoal mb-sp-8">
+            <FlaskConical className="h-8 w-8 text-brand-goldenrod" />
+            Factor Analysis
+          </h1>
+        </FadeIn>
         <p className="text-body text-brand-slate">
           No analysis data available.
         </p>

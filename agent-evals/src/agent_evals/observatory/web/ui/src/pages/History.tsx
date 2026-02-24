@@ -14,6 +14,8 @@ import { Line } from "react-chartjs-2";
 import { useRuns, useCostTrend, useCompareRuns } from "../api/hooks";
 import type { Run } from "../api/client";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
+import { Skeleton } from "../components/Skeleton";
+import { EmptyState } from "../components/EmptyState";
 import { DataTable } from "../components/DataTable";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { StatusBadge } from "../components/StatusBadge";
@@ -124,7 +126,29 @@ export function History() {
   if (runsLoading) {
     return (
       <div className="px-sp-6 py-sp-8">
-        <p className="text-body text-brand-slate">Loading history...</p>
+        <Skeleton variant="chart" className="mb-sp-8" />
+        <Skeleton variant="card" className="mb-sp-8" />
+        <Skeleton variant="card" />
+      </div>
+    );
+  }
+
+  if (!runs || runs.length === 0) {
+    return (
+      <div className="px-sp-6 py-sp-8">
+        <FadeIn>
+          <h1 className="text-h2 text-brand-charcoal inline-flex items-center gap-sp-3 mb-sp-8">
+            <HistoryIcon className="h-8 w-8 text-brand-goldenrod" />
+            History
+          </h1>
+        </FadeIn>
+        <EmptyState
+          icon={HistoryIcon}
+          title="No Runs Yet"
+          description="Start an evaluation to build your run history."
+          ctaLabel="Start Evaluation"
+          ctaTo="/"
+        />
       </div>
     );
   }

@@ -16,6 +16,9 @@ import {
 import { Bar, Radar } from "react-chartjs-2";
 import { useRuns, useRun, useRunAnalysis } from "../api/hooks";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
+import { Skeleton } from "../components/Skeleton";
+import { EmptyState } from "../components/EmptyState";
+import { AnimatedNumber } from "../components/AnimatedNumber";
 import { FadeIn } from "../components/FadeIn";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { DataTable } from "../components/DataTable";
@@ -167,13 +170,25 @@ export function ResultsExplorer() {
       </FadeIn>
 
       {!runId && !isLoading && (
-        <p className="text-body text-brand-slate">
-          Select a run to view results.
-        </p>
+        <EmptyState
+          icon={BarChart3}
+          title="No Run Selected"
+          description="Select a run to view results, or check the history page."
+          ctaLabel="View History"
+          ctaTo="/history"
+        />
       )}
 
       {isLoading && (
-        <p className="text-body text-brand-slate">Loading...</p>
+        <div>
+          <div className="mb-sp-8 grid grid-cols-1 gap-sp-6 md:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} variant="card" />
+            ))}
+          </div>
+          <Skeleton variant="chart" className="mb-sp-8" />
+          <Skeleton variant="card" />
+        </div>
       )}
 
       {summary && (
@@ -197,33 +212,33 @@ export function ResultsExplorer() {
             <>
               <FadeIn delay={1}>
                 <div className="mb-sp-8 grid grid-cols-1 gap-sp-6 md:grid-cols-3">
-                  <Card>
+                  <Card variant="stat">
                     <CardHeader>
                       <CardTitle>Total Trials</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <span className="text-h2 text-brand-charcoal">
-                        {summary.total_trials}
+                        <AnimatedNumber value={summary.total_trials} format={(n) => String(Math.round(n))} />
                       </span>
                     </CardContent>
                   </Card>
-                  <Card>
+                  <Card variant="stat">
                     <CardHeader>
                       <CardTitle>Mean Score</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <span className="text-h2 text-brand-charcoal">
-                        {(summary.mean_score ?? 0).toFixed(2)}
+                        <AnimatedNumber value={summary.mean_score ?? 0} format={(n) => n.toFixed(2)} />
                       </span>
                     </CardContent>
                   </Card>
-                  <Card>
+                  <Card variant="stat">
                     <CardHeader>
                       <CardTitle>Total Cost</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <span className="text-h2 text-brand-charcoal">
-                        ${summary.total_cost.toFixed(2)}
+                        <AnimatedNumber value={summary.total_cost} format={(n) => `$${n.toFixed(2)}`} />
                       </span>
                     </CardContent>
                   </Card>

@@ -14,6 +14,8 @@ import {
 import { Line, Doughnut } from "react-chartjs-2";
 import { useRuns, useRun, useCostTrend } from "../api/hooks";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
+import { Skeleton } from "../components/Skeleton";
+import { AnimatedNumber } from "../components/AnimatedNumber";
 import { FadeIn } from "../components/FadeIn";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { CHART_COLORS } from "../lib/chart-theme";
@@ -138,40 +140,47 @@ export function Observatory() {
       </FadeIn>
 
       {isLoading && (
-        <p className="text-body text-brand-slate">Loading...</p>
+        <div>
+          <div className="mb-sp-8 grid grid-cols-1 gap-sp-6 md:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} variant="card" />
+            ))}
+          </div>
+          <Skeleton variant="chart" />
+        </div>
       )}
 
       {summary && (
         <>
           <FadeIn delay={1}>
             <div className="mb-sp-8 grid grid-cols-1 gap-sp-6 md:grid-cols-3">
-              <Card>
+              <Card variant="stat">
                 <CardHeader>
                   <CardTitle>Total Spend</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <span className="text-h2 text-brand-charcoal">
-                    {formatCurrency(summary.total_cost ?? 0)}
+                    <AnimatedNumber value={summary.total_cost ?? 0} format={formatCurrency} />
                   </span>
                 </CardContent>
               </Card>
-              <Card>
+              <Card variant="stat">
                 <CardHeader>
                   <CardTitle>Total Tokens</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <span className="text-h2 text-brand-charcoal">
-                    {formatTokens(summary.total_tokens ?? 0)}
+                    <AnimatedNumber value={summary.total_tokens ?? 0} format={formatTokens} />
                   </span>
                 </CardContent>
               </Card>
-              <Card>
+              <Card variant="stat">
                 <CardHeader>
                   <CardTitle>Cost / Trial</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <span className="text-h2 text-brand-charcoal">
-                    {formatCurrency(costPerTrial)}
+                    <AnimatedNumber value={costPerTrial} format={formatCurrency} />
                   </span>
                 </CardContent>
               </Card>

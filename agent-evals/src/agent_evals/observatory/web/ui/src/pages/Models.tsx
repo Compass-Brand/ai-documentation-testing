@@ -33,6 +33,8 @@ import { Button } from "../components/Button";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatusDot } from "../components/StatusDot";
 import { FadeIn } from "../components/FadeIn";
+import { Skeleton } from "../components/Skeleton";
+import { Tooltip } from "../components/Tooltip";
 import { TabBar } from "../components/TabBar";
 import { cn } from "../lib/utils";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
@@ -74,17 +76,19 @@ function CopyModelIdButton({ modelId }: { modelId: string }) {
   };
 
   return (
-    <button
-      className="text-brand-slate hover:text-brand-charcoal transition-colors duration-micro ml-sp-2"
-      onClick={handleCopy}
-      aria-label="Copy model ID"
-    >
-      {copied ? (
-        <Check className="h-3.5 w-3.5 text-brand-sage" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
-    </button>
+    <Tooltip content="Copy OpenRouter model ID">
+      <button
+        className="text-brand-slate hover:text-brand-charcoal transition-colors duration-micro ml-sp-2"
+        onClick={handleCopy}
+        aria-label="Copy model ID"
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-brand-sage" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
+      </button>
+    </Tooltip>
   );
 }
 
@@ -232,12 +236,20 @@ export function Models() {
     },
     {
       accessorKey: "prompt_price",
-      header: "Prompt $/M",
+      header: () => (
+        <Tooltip content="Cost per million prompt (input) tokens">
+          <span className="cursor-help">Prompt $/M</span>
+        </Tooltip>
+      ),
       cell: ({ getValue }) => formatPrice(getValue<number>()),
     },
     {
       accessorKey: "completion_price",
-      header: "Completion $/M",
+      header: () => (
+        <Tooltip content="Cost per million completion (output) tokens">
+          <span className="cursor-help">Completion $/M</span>
+        </Tooltip>
+      ),
       cell: ({ getValue }) => formatPrice(getValue<number>()),
     },
     {
@@ -257,7 +269,11 @@ export function Models() {
   if (isLoading) {
     return (
       <div className="px-sp-6 py-sp-8">
-        <p className="text-body text-brand-slate">Loading models...</p>
+        <div className="space-y-sp-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} variant="text" className="h-10" />
+          ))}
+        </div>
       </div>
     );
   }

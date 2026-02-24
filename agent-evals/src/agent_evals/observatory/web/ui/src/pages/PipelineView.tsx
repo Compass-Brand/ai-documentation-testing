@@ -2,6 +2,8 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { GitBranch } from "lucide-react";
 import { usePipeline, usePipelines } from "../api/hooks";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
+import { Skeleton } from "../components/Skeleton";
+import { EmptyState } from "../components/EmptyState";
 import { FadeIn } from "../components/FadeIn";
 import { StatusBadge } from "../components/StatusBadge";
 import { cn, shortId } from "../lib/utils";
@@ -79,11 +81,13 @@ export function PipelineView() {
       </FadeIn>
 
       {noPipelines && (
-        <p className="text-body text-brand-slate">
-          No pipelines yet. Run an evaluation with{" "}
-          <code className="text-data text-brand-charcoal">--pipeline auto</code>{" "}
-          to create one.
-        </p>
+        <EmptyState
+          icon={GitBranch}
+          title="No Pipelines"
+          description="Run an evaluation with --pipeline auto to create one."
+          ctaLabel="Start Evaluation"
+          ctaTo="/"
+        />
       )}
 
       {!pipelineId && !isLoading && !noPipelines && (
@@ -93,7 +97,11 @@ export function PipelineView() {
       )}
 
       {isLoading && (
-        <p className="text-body text-brand-slate">Loading...</p>
+        <div className="flex gap-sp-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} variant="card" className="min-w-[200px]" />
+          ))}
+        </div>
       )}
 
       {pipeline && (
