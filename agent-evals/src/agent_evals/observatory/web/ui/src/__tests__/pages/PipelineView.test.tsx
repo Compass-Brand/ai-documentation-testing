@@ -109,8 +109,8 @@ describe("PipelineView", () => {
   it("should show loading state", async () => {
     mockUsePipeline.mockReturnValue({ data: undefined, isLoading: true });
     const { PipelineView } = await import("../../pages/PipelineView");
-    render(createElement(PipelineView), { wrapper: createWrapper() });
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    const { container } = render(createElement(PipelineView), { wrapper: createWrapper() });
+    expect(container.querySelector("[aria-hidden='true'].shimmer")).toBeInTheDocument();
   });
 
   it("should show prompt when no pipeline is selected", async () => {
@@ -127,7 +127,7 @@ describe("PipelineView", () => {
     mockUsePipeline.mockReturnValue({ data: undefined, isLoading: false });
     const { PipelineView } = await import("../../pages/PipelineView");
     render(createElement(PipelineView), { wrapper: createWrapper(["/pipeline"]) });
-    expect(screen.getByText(/no pipelines yet/i)).toBeInTheDocument();
+    expect(screen.getByText("No Pipelines")).toBeInTheDocument();
     expect(screen.getByText(/--pipeline auto/i)).toBeInTheDocument();
   });
 });

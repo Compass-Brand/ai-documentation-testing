@@ -30,6 +30,7 @@ interface AnovaRow {
   ms: number;
   f_ratio: number;
   p_value: number;
+  eta_squared: number;
   omega_squared: number;
   significant: boolean;
 }
@@ -165,6 +166,7 @@ export function FactorAnalysis() {
       ms: stats.ms,
       f_ratio: stats.f_ratio,
       p_value: stats.p_value,
+      eta_squared: stats.eta_squared ?? 0,
       omega_squared: stats.omega_squared,
       significant: analysis.significant_factors.includes(factor),
     }),

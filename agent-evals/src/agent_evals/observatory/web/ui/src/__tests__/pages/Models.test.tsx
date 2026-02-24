@@ -175,8 +175,8 @@ describe("Models page", () => {
       isLoading: true,
       error: null,
     } as ReturnType<typeof useModels>);
-    render(<Models />, { wrapper: createWrapper() });
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    const { container } = render(<Models />, { wrapper: createWrapper() });
+    expect(container.querySelector("[aria-hidden='true'].shimmer")).toBeInTheDocument();
   });
 
   it("should have free models checkbox", () => {

@@ -124,7 +124,7 @@ describe("FactorAnalysis", () => {
   it("should show loading state", async () => {
     mockUseRunAnalysis.mockReturnValue({ data: undefined, isLoading: true });
     const { FactorAnalysis } = await import("../../pages/FactorAnalysis");
-    render(createElement(FactorAnalysis), { wrapper: createWrapper() });
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    const { container } = render(createElement(FactorAnalysis), { wrapper: createWrapper() });
+    expect(container.querySelector("[aria-hidden='true'].shimmer")).toBeInTheDocument();
   });
 });

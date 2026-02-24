@@ -118,8 +118,8 @@ describe("History page", () => {
       isLoading: true,
       error: null,
     } as ReturnType<typeof useRuns>);
-    render(<History />, { wrapper: createWrapper() });
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    const { container } = render(<History />, { wrapper: createWrapper() });
+    expect(container.querySelector("[aria-hidden='true'].shimmer")).toBeInTheDocument();
   });
 
   it("should show compare section heading", () => {

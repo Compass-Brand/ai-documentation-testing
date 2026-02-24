@@ -158,9 +158,9 @@ describe("Observatory", () => {
     const { Observatory } = await import("../../pages/Observatory");
     const wrapper = createWrapper();
 
-    render(createElement(Observatory), { wrapper });
+    const { container } = render(createElement(Observatory), { wrapper });
 
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(container.querySelector("[aria-hidden='true'].shimmer")).toBeInTheDocument();
   });
 
   it("should display run selector", async () => {

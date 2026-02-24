@@ -196,9 +196,9 @@ describe("ResultsExplorer", () => {
     const { ResultsExplorer } = await import("../../pages/ResultsExplorer");
     const wrapper = createWrapper();
 
-    render(createElement(ResultsExplorer), { wrapper });
+    const { container } = render(createElement(ResultsExplorer), { wrapper });
 
-    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(container.querySelector("[aria-hidden='true'].shimmer")).toBeInTheDocument();
   });
 
   it("should show prompt when no run is selected", async () => {
