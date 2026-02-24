@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from agent_evals.observatory.model_catalog import ModelCatalog
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
 from agent_evals.observatory.web.server import create_app
@@ -28,8 +29,21 @@ def _tracker(_store: ObservatoryStore) -> EventTracker:
 
 
 @pytest.fixture
+def _catalog(tmp_path: Path) -> ModelCatalog:
+    return ModelCatalog(tmp_path / "models.db")
+
+
+@pytest.fixture
 def client(_store: ObservatoryStore, _tracker: EventTracker) -> TestClient:
     app = create_app(store=_store, tracker=_tracker)
+    return TestClient(app)
+
+
+@pytest.fixture
+def client_with_catalog(
+    _store: ObservatoryStore, _tracker: EventTracker, _catalog: ModelCatalog
+) -> TestClient:
+    app = create_app(store=_store, tracker=_tracker, catalog=_catalog)
     return TestClient(app)
 
 
@@ -258,3 +272,41 @@ class TestPipelineAPI:
         data = response.json()
         assert data["pipeline_id"] == "pipe-1"
         assert data["approved"] is True
+
+
+class TestModelsAPI:
+    """Model browser endpoints return wrapped response format."""
+
+    def test_list_models_returns_wrapped_format(
+        self, client_with_catalog: TestClient, _catalog: ModelCatalog
+    ) -> None:
+        """GET /api/models returns {models: [...], total: N}."""
+        _catalog.upsert_model(
+            id="openai/gpt-4", name="GPT-4",
+            context_length=128000, prompt_price=0.03,
+            completion_price=0.06,
+        )
+        response = client_with_catalog.get("/api/models")
+        assert response.status_code == 200
+        data = response.json()
+        assert "models" in data
+        assert "total" in data
+        assert data["total"] == 1
+        assert len(data["models"]) == 1
+        assert data["models"][0]["id"] == "openai/gpt-4"
+
+    def test_list_models_empty_catalog(
+        self, client_with_catalog: TestClient
+    ) -> None:
+        """Empty catalog returns {models: [], total: 0}."""
+        response = client_with_catalog.get("/api/models")
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"models": [], "total": 0}
+
+    def test_list_models_no_catalog(self, client: TestClient) -> None:
+        """No catalog configured returns {models: [], total: 0}."""
+        response = client.get("/api/models")
+        assert response.status_code == 200
+        data = response.json()
+        assert data == {"models": [], "total": 0}

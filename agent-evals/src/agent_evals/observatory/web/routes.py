@@ -267,9 +267,9 @@ def create_router(
         capabilities: str | None = None,
         tokenizer: str | None = None,
         search: str | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         if catalog is None:
-            return []
+            return {"models": [], "total": 0}
         caps_list = (
             [c.strip() for c in capabilities.split(",")]
             if capabilities
@@ -290,7 +290,7 @@ def create_router(
                 if term in m.get("name", "").lower()
                 or term in m.get("id", "").lower()
             ]
-        return results
+        return {"models": results, "total": len(results)}
 
     @router.get("/api/models/groups")
     async def get_groups() -> list[dict[str, Any]]:

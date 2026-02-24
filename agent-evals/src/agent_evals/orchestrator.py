@@ -298,6 +298,17 @@ class EvalOrchestrator:
         catalog = ModelCatalog(self.store._db_path.parent / "models.db")
         group_manager = ModelGroupManager(catalog)
         model_sync = ModelSync(catalog)
+
+        # Trigger initial sync if catalog is empty.
+        if not catalog.get_active_models():
+            sync_thread = threading.Thread(
+                target=model_sync.run_sync,
+                daemon=True,
+                name="initial-model-sync",
+            )
+            sync_thread.start()
+            logger.info("Initial model sync started in background")
+
         app = create_app(
             store=self.store,
             tracker=self.tracker,
