@@ -60,6 +60,8 @@ class OrchestratorConfig:
     model_budgets: dict[str, float] | None = None
     temperature: float = 0.3
     eval_config: EvalRunConfig | None = None
+    store: ObservatoryStore | None = None
+    tracker: EventTracker | None = None
 
 
 @dataclass
@@ -105,13 +107,20 @@ class EvalOrchestrator:
     def __init__(self, config: OrchestratorConfig) -> None:
         self.config = config
 
-        # Initialize observatory.
-        db_path = config.db_path or Path("observatory.db")
-        self.store = ObservatoryStore(db_path)
-        self.tracker = EventTracker(
-            store=self.store,
-            model_budgets=config.model_budgets,
-        )
+        # Initialize observatory -- use injected instances if provided.
+        if config.store is not None:
+            self.store = config.store
+        else:
+            db_path = config.db_path or Path("observatory.db")
+            self.store = ObservatoryStore(db_path)
+
+        if config.tracker is not None:
+            self.tracker = config.tracker
+        else:
+            self.tracker = EventTracker(
+                store=self.store,
+                model_budgets=config.model_budgets,
+            )
 
         # Initialize client pool.
         self.client_pool = LLMClientPool(

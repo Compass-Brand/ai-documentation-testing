@@ -12,7 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent_evals.observatory.tracker import TrackerEvent
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker, TrackerEvent
 from agent_evals.orchestrator import (
     EvalOrchestrator,
     OrchestratorConfig,
@@ -464,6 +465,77 @@ class TestObservatoryStoreIntegration:
     def test_tracker_created(self, tmp_path: Path) -> None:
         orch = _make_orchestrator(tmp_path)
         assert orch.tracker is not None
+
+
+# ---------------------------------------------------------------------------
+# TestStoreTrackerInjection
+# ---------------------------------------------------------------------------
+
+
+class TestStoreTrackerInjection:
+    """OrchestratorConfig accepts injected store/tracker instances."""
+
+    def test_injected_store_is_used(self, tmp_path: Path) -> None:
+        """When store is provided in config, orchestrator uses it directly."""
+        external_store = ObservatoryStore(tmp_path / "external.db")
+        config = OrchestratorConfig(
+            models=["m"],
+            api_key="key",
+            db_path=tmp_path / "ignored.db",
+            store=external_store,
+        )
+        orch = EvalOrchestrator(config)
+        assert orch.store is external_store
+
+    def test_injected_tracker_is_used(self, tmp_path: Path) -> None:
+        """When tracker is provided in config, orchestrator uses it directly."""
+        external_store = ObservatoryStore(tmp_path / "external.db")
+        external_tracker = EventTracker(store=external_store)
+        config = OrchestratorConfig(
+            models=["m"],
+            api_key="key",
+            db_path=tmp_path / "ignored.db",
+            store=external_store,
+            tracker=external_tracker,
+        )
+        orch = EvalOrchestrator(config)
+        assert orch.tracker is external_tracker
+
+    def test_store_defaults_to_none(self) -> None:
+        """OrchestratorConfig.store defaults to None."""
+        config = OrchestratorConfig(models=["m"], api_key="key")
+        assert config.store is None
+
+    def test_tracker_defaults_to_none(self) -> None:
+        """OrchestratorConfig.tracker defaults to None."""
+        config = OrchestratorConfig(models=["m"], api_key="key")
+        assert config.tracker is None
+
+    def test_no_injection_creates_fresh_store(self, tmp_path: Path) -> None:
+        """Without injection, orchestrator creates its own store."""
+        config = OrchestratorConfig(
+            models=["m"],
+            api_key="key",
+            db_path=tmp_path / "new.db",
+        )
+        orch = EvalOrchestrator(config)
+        assert orch.store is not None
+        assert orch.store._db_path == tmp_path / "new.db"
+
+    def test_injected_store_with_no_tracker_creates_tracker(
+        self, tmp_path: Path
+    ) -> None:
+        """When only store is injected, a new tracker is created using it."""
+        external_store = ObservatoryStore(tmp_path / "external.db")
+        config = OrchestratorConfig(
+            models=["m"],
+            api_key="key",
+            store=external_store,
+        )
+        orch = EvalOrchestrator(config)
+        assert orch.store is external_store
+        assert orch.tracker is not None
+        assert orch.tracker._store is external_store
 
 
 # ---------------------------------------------------------------------------
