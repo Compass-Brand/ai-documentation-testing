@@ -193,6 +193,10 @@ def create_router(
             "mean_score": mean_score,
             "by_variant": by_variant_out,
             "by_model": by_model_out,
+            "unique_tasks": len(set(t.task_id for t in trials)),
+            "avg_latency": (
+                sum(t.latency_seconds for t in trials) / len(trials)
+            ) if trials else 0.0,
         }
 
     @router.get("/api/runs/{run_id}")

@@ -59,6 +59,8 @@ export interface RunSummary {
     string,
     { mean_score: number; trial_count: number; cost: number }
   >;
+  unique_tasks?: number;
+  avg_latency?: number;
 }
 
 export interface ModelFilters {

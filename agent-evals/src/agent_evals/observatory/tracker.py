@@ -168,10 +168,15 @@ class EventTracker:
         trial_event = TrackerEvent(
             event_type="trial_completed",
             data={
+                "run_id": run_id,
                 "model": model,
                 "cost": trial_cost,
                 "score": score,
                 "task_id": task_id,
+                "task_type": task_type,
+                "variant_name": variant_name,
+                "latency_seconds": latency_seconds,
+                "total_tokens": total_tokens,
             },
         )
         self._notify(listeners, trial_event)
@@ -185,6 +190,7 @@ class EventTracker:
             anomaly_event = TrackerEvent(
                 event_type="anomaly_alert",
                 data={
+                    "run_id": run_id,
                     "model": model,
                     "cost": trial_cost,
                     "average_cost": avg_before,
@@ -199,6 +205,7 @@ class EventTracker:
             budget_event = TrackerEvent(
                 event_type="model_budget_exceeded",
                 data={
+                    "run_id": run_id,
                     "model": model,
                     "budget": budget,
                     "spent": total_cost_after,
@@ -215,6 +222,7 @@ class EventTracker:
             burn_event = TrackerEvent(
                 event_type="burn_rate_alert",
                 data={
+                    "run_id": run_id,
                     "model": model,
                     "burn_rate_per_minute": burn_rate,
                     "threshold_per_minute": self._burn_rate_threshold,

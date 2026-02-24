@@ -92,6 +92,29 @@ class TestListeners:
         assert isinstance(event, TrackerEvent)
         assert event.event_type == "trial_completed"
 
+    def test_trial_completed_event_contains_run_id(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store)
+        listener = MagicMock()
+        tracker.add_listener(listener)
+        tracker.record_trial(**_trial_kwargs())
+        event = listener.call_args[0][0]
+        assert event.data["run_id"] == "run-1"
+
+    def test_trial_completed_event_contains_enriched_fields(
+        self, tmp_path: Path
+    ) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store)
+        listener = MagicMock()
+        tracker.add_listener(listener)
+        tracker.record_trial(**_trial_kwargs())
+        event = listener.call_args[0][0]
+        assert event.data["task_type"] == "retrieval"
+        assert event.data["variant_name"] == "flat"
+        assert event.data["latency_seconds"] == 1.5
+        assert event.data["total_tokens"] == 600
+
     def test_multiple_listeners_all_notified(self, tmp_path: Path) -> None:
         store = _make_store(tmp_path)
         tracker = EventTracker(store=store)
@@ -168,6 +191,19 @@ class TestAnomalyDetection:
         assert len(anomaly_events) == 1
         assert anomaly_events[0].data["model"] == "claude"
 
+    def test_anomaly_alert_contains_run_id(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store)
+        listener = MagicMock()
+        tracker.add_listener(listener)
+        for _ in range(5):
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.02))
+        listener.reset_mock()
+        tracker.record_trial(**_trial_kwargs(model="claude", cost=0.08))
+        events = [call[0][0] for call in listener.call_args_list]
+        anomaly_events = [e for e in events if e.event_type == "anomaly_alert"]
+        assert anomaly_events[0].data["run_id"] == "run-1"
+
     def test_no_anomaly_when_cost_is_normal(self, tmp_path: Path) -> None:
         store = _make_store(tmp_path)
         tracker = EventTracker(store=store)
@@ -203,6 +239,24 @@ class TestBudgetEnforcement:
         ]
         assert len(budget_events) == 1
         assert budget_events[0].data["model"] == "claude"
+
+    def test_model_budget_exceeded_event_contains_run_id(
+        self, tmp_path: Path
+    ) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(
+            store=store,
+            model_budgets={"claude": 0.05},
+        )
+        listener = MagicMock()
+        tracker.add_listener(listener)
+        tracker.record_trial(**_trial_kwargs(model="claude", cost=0.04))
+        tracker.record_trial(**_trial_kwargs(model="claude", cost=0.02))
+        events = [call[0][0] for call in listener.call_args_list]
+        budget_events = [
+            e for e in events if e.event_type == "model_budget_exceeded"
+        ]
+        assert budget_events[0].data["run_id"] == "run-1"
 
     def test_is_model_over_budget(self, tmp_path: Path) -> None:
         store = _make_store(tmp_path)
@@ -285,6 +339,26 @@ class TestBurnRateAlert:
         assert burn_events[0].data["model"] == "claude"
         assert burn_events[0].data["burn_rate_per_minute"] > 0.50
         assert burn_events[0].data["threshold_per_minute"] == 0.50
+
+    def test_burn_rate_alert_contains_run_id(
+        self, tmp_path: Path
+    ) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(
+            store=store,
+            burn_rate_threshold=0.50,
+        )
+        listener = MagicMock()
+        tracker.add_listener(listener)
+        fake_time = 1000.0
+        with patch("agent_evals.observatory.tracker.time") as mock_time:
+            mock_time.monotonic.return_value = fake_time
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.30))
+            mock_time.monotonic.return_value = fake_time + 1.0
+            tracker.record_trial(**_trial_kwargs(model="claude", cost=0.30))
+        events = [call[0][0] for call in listener.call_args_list]
+        burn_events = [e for e in events if e.event_type == "burn_rate_alert"]
+        assert burn_events[0].data["run_id"] == "run-1"
 
     def test_burn_rate_alert_not_emitted_when_below_threshold(
         self, tmp_path: Path
