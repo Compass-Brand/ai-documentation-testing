@@ -65,7 +65,8 @@ function CopyModelIdButton({ modelId }: { modelId: string }) {
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(modelId);
+    const orId = modelId.startsWith("openrouter/") ? modelId : `openrouter/${modelId}`;
+    navigator.clipboard.writeText(orId);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -537,7 +538,9 @@ export function Models() {
                 </code>
                 <button
                   className="text-brand-slate hover:text-brand-charcoal transition-colors duration-micro"
-                  onClick={() => navigator.clipboard.writeText(modelDetail.id)}
+                  onClick={() => navigator.clipboard.writeText(
+                    modelDetail.id.startsWith("openrouter/") ? modelDetail.id : `openrouter/${modelDetail.id}`
+                  )}
                   aria-label="Copy API ID"
                 >
                   <Copy className="h-4 w-4" />

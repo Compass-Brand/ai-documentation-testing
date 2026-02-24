@@ -206,7 +206,7 @@ describe("Models page — Copy button (Change 1)", () => {
     render(<Models />, { wrapper: createWrapper() });
     const copyButtons = screen.getAllByLabelText(/copy model id/i);
     fireEvent.click(copyButtons[0]);
-    expect(writeText).toHaveBeenCalledWith("openai/gpt-4o");
+    expect(writeText).toHaveBeenCalledWith("openrouter/openai/gpt-4o");
   });
 
   it("should not open panel when copy button is clicked", () => {
