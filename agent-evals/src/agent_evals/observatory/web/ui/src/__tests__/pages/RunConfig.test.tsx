@@ -14,7 +14,7 @@ vi.mock("react-router-dom", async () => {
 });
 
 const mockStartRun = vi.fn();
-const mockGetActiveRun = vi.fn();
+const mockGetActiveRuns = vi.fn();
 
 vi.mock("../../api/client", async () => {
   const actual = await vi.importActual("../../api/client");
@@ -23,7 +23,7 @@ vi.mock("../../api/client", async () => {
     api: {
       ...(actual as Record<string, unknown>).api,
       startRun: (...args: unknown[]) => mockStartRun(...args),
-      getActiveRun: () => mockGetActiveRun(),
+      getActiveRuns: () => mockGetActiveRuns(),
     },
   };
 });
@@ -42,7 +42,7 @@ function wrapper({ children }: { children: ReactNode }) {
 describe("RunConfig", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetActiveRun.mockResolvedValue({ active: false });
+    mockGetActiveRuns.mockResolvedValue({ runs: [], count: 0 });
   });
 
   it("should render the page heading", () => {
@@ -181,7 +181,7 @@ describe("RunConfig", () => {
   });
 
   it("should show error message on API failure", async () => {
-    mockStartRun.mockRejectedValue(new Error("API 409: A run is already in progress"));
+    mockStartRun.mockRejectedValue(new Error("API 500: Internal server error"));
     render(<RunConfig />, { wrapper });
 
     const modelInput = screen.getByLabelText(/model/i);
@@ -191,20 +191,19 @@ describe("RunConfig", () => {
     await userEvent.click(button);
 
     await waitFor(() => {
-      expect(screen.getByText(/A run is already in progress/)).toBeInTheDocument();
+      expect(screen.getByText(/Internal server error/)).toBeInTheDocument();
     });
   });
 
-  it("should show active run warning when a run is in progress", async () => {
-    mockGetActiveRun.mockResolvedValue({
-      active: true,
-      run_id: "existing",
-      mode: "taguchi",
+  it("should show active run count when runs are in progress", async () => {
+    mockGetActiveRuns.mockResolvedValue({
+      runs: [{ run_id: "existing", mode: "taguchi", models: ["m"], started_at: "2026-01-01T00:00:00Z" }],
+      count: 1,
     });
     render(<RunConfig />, { wrapper });
 
     await waitFor(() => {
-      expect(screen.getByText(/run is already in progress/i)).toBeInTheDocument();
+      expect(screen.getByText(/1 run currently in progress/i)).toBeInTheDocument();
     });
   });
 });

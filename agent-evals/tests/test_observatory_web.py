@@ -365,10 +365,10 @@ class TestRunSubmissionAPI:
         )
         assert response.status_code == 422
 
-    def test_start_run_conflict_returns_409(
+    def test_start_multiple_runs_concurrently(
         self, client: TestClient, _run_manager: RunManager
     ) -> None:
-        """POST /api/runs when run is active returns 409."""
+        """POST /api/runs allows multiple concurrent runs."""
         import threading
         from unittest.mock import patch
 
@@ -378,25 +378,27 @@ class TestRunSubmissionAPI:
             hold.wait(timeout=5)
 
         with patch.object(_run_manager, "_execute_run", side_effect=slow):
-            first = client.post("/api/runs", json={"model": "m"})
+            first = client.post("/api/runs", json={"model": "model-a"})
             assert first.status_code == 202
 
-            second = client.post("/api/runs", json={"model": "m"})
-            assert second.status_code == 409
+            second = client.post("/api/runs", json={"model": "model-b"})
+            assert second.status_code == 202
+            assert first.json()["run_id"] != second.json()["run_id"]
 
             hold.set()
 
-    def test_get_active_run_none(self, client: TestClient) -> None:
-        """GET /api/runs/active when no run returns active: false."""
+    def test_get_active_runs_none(self, client: TestClient) -> None:
+        """GET /api/runs/active when no run returns empty list."""
         response = client.get("/api/runs/active")
         assert response.status_code == 200
         data = response.json()
-        assert data["active"] is False
+        assert data["runs"] == []
+        assert data["count"] == 0
 
-    def test_get_active_run_during_run(
+    def test_get_active_runs_during_run(
         self, client: TestClient, _run_manager: RunManager
     ) -> None:
-        """GET /api/runs/active during a run returns active: true."""
+        """GET /api/runs/active during a run returns run list."""
         import threading
         from unittest.mock import patch
 
@@ -413,9 +415,9 @@ class TestRunSubmissionAPI:
 
             response = client.get("/api/runs/active")
             data = response.json()
-            assert data["active"] is True
-            assert "run_id" in data
-            assert data["mode"] == "taguchi"
+            assert data["count"] == 1
+            assert len(data["runs"]) == 1
+            assert data["runs"][0]["mode"] == "taguchi"
 
             hold.set()
 

@@ -145,10 +145,10 @@ export function useStartRun() {
   });
 }
 
-export function useActiveRun() {
+export function useActiveRuns() {
   return useQuery({
-    queryKey: ["active-run"],
-    queryFn: api.getActiveRun,
+    queryKey: ["active-runs"],
+    queryFn: api.getActiveRuns,
     refetchInterval: 5000,
   });
 }
@@ -158,7 +158,7 @@ export function useCancelRun() {
   return useMutation({
     mutationFn: api.cancelRun,
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["active-run"] });
+      qc.invalidateQueries({ queryKey: ["active-runs"] });
       qc.invalidateQueries({ queryKey: ["runs"] });
     },
   });

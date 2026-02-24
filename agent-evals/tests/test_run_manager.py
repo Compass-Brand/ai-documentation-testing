@@ -173,11 +173,10 @@ class TestRunManager:
 
             hold.set()
 
-    def test_double_start_raises_conflict(
+    def test_multiple_concurrent_runs(
         self, store: ObservatoryStore, tracker: EventTracker
     ) -> None:
         rm = RunManager(store=store, tracker=tracker)
-        request = StartRunRequest(model="test-model")
 
         hold = threading.Event()
 
@@ -185,10 +184,15 @@ class TestRunManager:
             hold.wait(timeout=5)
 
         with patch.object(rm, "_execute_run", side_effect=slow_execute):
-            rm.start_run(request)
+            id1 = rm.start_run(StartRunRequest(model="model-a"))
+            id2 = rm.start_run(StartRunRequest(model="model-b"))
 
-            with pytest.raises(RunConflictError):
-                rm.start_run(request)
+            assert id1 != id2
+            runs = rm.active_runs
+            assert len(runs) == 2
+            run_ids = {r["run_id"] for r in runs}
+            assert id1 in run_ids
+            assert id2 in run_ids
 
             hold.set()
 
@@ -237,6 +241,7 @@ class TestRunManager:
             # Give the cleanup thread a moment
             time.sleep(0.1)
 
+        assert rm.active_runs == []
         assert rm.active_run is None
 
     def test_models_parsed_from_comma_separated(

@@ -3,6 +3,8 @@
 Encapsulates starting, monitoring, and cancelling evaluation runs
 initiated from the web UI. Uses the dashboard's shared store and
 tracker so trials appear in the Live Monitor in real time.
+
+Supports multiple concurrent runs.
 """
 
 from __future__ import annotations
@@ -45,6 +47,8 @@ class StartRunRequest(BaseModel):
 class RunManager:
     """Manages background evaluation runs started from the dashboard.
 
+    Supports multiple concurrent runs, each tracked independently.
+
     Args:
         store: The dashboard's shared ObservatoryStore.
         tracker: The dashboard's shared EventTracker.
@@ -55,58 +59,83 @@ class RunManager:
     ) -> None:
         self._store = store
         self._tracker = tracker
-        self._active: dict[str, Any] | None = None
+        self._runs: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
-        self._cancel_event = threading.Event()
-        self._thread: threading.Thread | None = None
+
+    _PUBLIC_KEYS = ("run_id", "mode", "models", "started_at")
+
+    def _public_info(self, info: dict[str, Any]) -> dict[str, Any]:
+        """Return only serializable fields from a run info dict."""
+        return {k: v for k, v in info.items() if k in self._PUBLIC_KEYS}
 
     @property
     def active_run(self) -> dict[str, Any] | None:
-        """Return info about the active run, or None."""
+        """Return info about the first active run, or None.
+
+        Kept for backward compatibility. Prefer active_runs for multi-run.
+        """
         with self._lock:
-            if self._active is None:
+            if not self._runs:
                 return None
-            return dict(self._active)
+            return self._public_info(next(iter(self._runs.values())))
+
+    @property
+    def active_runs(self) -> list[dict[str, Any]]:
+        """Return info about all active runs."""
+        with self._lock:
+            return [self._public_info(r) for r in self._runs.values()]
 
     def start_run(self, request: StartRunRequest) -> str:
         """Start a background evaluation run.
 
-        Returns the run_id. Raises RunConflictError if a run is active.
+        Returns the run_id. Multiple runs can execute concurrently.
         """
+        run_id = uuid.uuid4().hex[:12]
+        models = [m.strip() for m in request.model.split(",")]
+        cancel_event = threading.Event()
+
+        run_info = {
+            "run_id": run_id,
+            "mode": request.mode,
+            "models": models,
+            "started_at": datetime.now(tz=timezone.utc).isoformat(),
+            "cancel_event": cancel_event,
+        }
+
         with self._lock:
-            if self._active is not None:
-                raise RunConflictError("A run is already in progress")
-
-            run_id = uuid.uuid4().hex[:12]
-            models = [m.strip() for m in request.model.split(",")]
-
-            self._active = {
-                "run_id": run_id,
-                "mode": request.mode,
-                "models": models,
-                "started_at": datetime.now(tz=timezone.utc).isoformat(),
-            }
-            self._cancel_event.clear()
+            self._runs[run_id] = run_info
 
         thread = threading.Thread(
             target=self._run_wrapper,
             args=(run_id, request),
             daemon=True,
         )
-        self._thread = thread
         thread.start()
 
         return run_id
 
-    def cancel_run(self) -> bool:
-        """Request cancellation of the active run.
+    def cancel_run(self, run_id: str | None = None) -> bool:
+        """Request cancellation of a specific run, or all runs.
 
-        Returns True if a run was cancelled, False if none active.
+        Args:
+            run_id: Specific run to cancel. If None, cancels all.
+
+        Returns True if at least one run was cancelled.
         """
         with self._lock:
-            if self._active is None:
+            if not self._runs:
                 return False
-            self._cancel_event.set()
+
+            if run_id is not None:
+                run_info = self._runs.get(run_id)
+                if run_info is None:
+                    return False
+                run_info["cancel_event"].set()
+                return True
+
+            # Cancel all
+            for info in self._runs.values():
+                info["cancel_event"].set()
             return True
 
     # ------------------------------------------------------------------
@@ -123,8 +152,7 @@ class RunManager:
             logger.exception("Run %s failed", run_id)
         finally:
             with self._lock:
-                self._active = None
-                self._thread = None
+                self._runs.pop(run_id, None)
 
     def _execute_run(
         self, run_id: str, request: StartRunRequest

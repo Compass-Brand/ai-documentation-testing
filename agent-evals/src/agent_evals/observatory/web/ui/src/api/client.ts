@@ -140,12 +140,16 @@ export interface StartRunResponse {
   status: string;
 }
 
-export interface ActiveRun {
-  active: boolean;
-  run_id?: string;
-  mode?: string;
-  models?: string[];
-  started_at?: string;
+export interface ActiveRunInfo {
+  run_id: string;
+  mode: string;
+  models: string[];
+  started_at: string;
+}
+
+export interface ActiveRunsResponse {
+  runs: ActiveRunInfo[];
+  count: number;
 }
 
 // --- Pipeline Types ---
@@ -268,7 +272,7 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  getActiveRun: () => fetchApi<ActiveRun>("/api/runs/active"),
+  getActiveRuns: () => fetchApi<ActiveRunsResponse>("/api/runs/active"),
   cancelRun: () =>
     fetchApi<{ cancelled: boolean }>("/api/runs/active/cancel", {
       method: "POST",

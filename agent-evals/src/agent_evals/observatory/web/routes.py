@@ -115,22 +115,15 @@ def create_router(
             raise HTTPException(
                 status_code=503, detail="Run manager not configured"
             )
-        try:
-            run_id = run_manager.start_run(body)
-        except RunConflictError:
-            raise HTTPException(
-                status_code=409, detail="A run is already in progress"
-            )
+        run_id = run_manager.start_run(body)
         return {"run_id": run_id, "status": "started"}
 
     @router.get("/api/runs/active")
     async def get_active_run() -> dict[str, Any]:
         if run_manager is None:
-            return {"active": False}
-        active = run_manager.active_run
-        if active is None:
-            return {"active": False}
-        return {"active": True, **active}
+            return {"runs": [], "count": 0}
+        runs = run_manager.active_runs
+        return {"runs": runs, "count": len(runs)}
 
     @router.post("/api/runs/active/cancel")
     async def cancel_active_run() -> dict[str, Any]:

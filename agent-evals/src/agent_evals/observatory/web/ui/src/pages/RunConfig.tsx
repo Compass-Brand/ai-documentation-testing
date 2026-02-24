@@ -6,7 +6,7 @@ import { Card, CardContent } from "../components/Card";
 import { Input } from "../components/Input";
 import { FadeIn } from "../components/FadeIn";
 import { cn } from "../lib/utils";
-import { useStartRun, useActiveRun } from "../api/hooks";
+import { useStartRun, useActiveRuns } from "../api/hooks";
 import type { StartRunPayload } from "../api/client";
 
 type RunMode = "taguchi" | "full";
@@ -14,7 +14,7 @@ type RunMode = "taguchi" | "full";
 export default function RunConfig() {
   const navigate = useNavigate();
   const startRun = useStartRun();
-  const activeRun = useActiveRun();
+  const activeRuns = useActiveRuns();
   const [mode, setMode] = useState<RunMode>("taguchi");
   const [model, setModel] = useState("");
   const [repetitions, setRepetitions] = useState(3);
@@ -26,9 +26,8 @@ export default function RunConfig() {
   const [alpha, setAlpha] = useState(0.05);
   const [error, setError] = useState<string | null>(null);
 
-  const isRunActive = activeRun.data?.active === true;
+  const activeCount = activeRuns.data?.count ?? 0;
   const isSubmitting = startRun.isPending;
-  const isDisabled = isSubmitting || isRunActive;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -341,14 +340,14 @@ export default function RunConfig() {
             </div>
           )}
 
-          {isRunActive && (
+          {activeCount > 0 && (
             <div className="mt-sp-4 rounded-card border border-brand-goldenrod/30 bg-brand-goldenrod/5 px-sp-4 py-sp-3 text-body-sm text-brand-charcoal">
-              A run is already in progress. Wait for it to complete or cancel it from the Live Monitor.
+              {activeCount} {activeCount === 1 ? "run" : "runs"} currently in progress.
             </div>
           )}
 
           <div className="mt-sp-8 flex justify-end">
-            <Button type="submit" size="lg" disabled={isDisabled}>
+            <Button type="submit" size="lg" disabled={isSubmitting}>
               {isSubmitting ? (
                 <Loader2 className="mr-sp-2 h-5 w-5 animate-spin" />
               ) : (
