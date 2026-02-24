@@ -147,6 +147,7 @@ class EvalOrchestrator:
         source: str = "gold_standard",
         phase: str | None = None,
         pipeline_id: str | None = None,
+        mode: str | None = None,
     ) -> OrchestratorResult:
         """Execute a full evaluation run with telemetry and reporting.
 
@@ -187,12 +188,13 @@ class EvalOrchestrator:
         """
         run_id = uuid.uuid4().hex[:12]
         eval_config = self.config.eval_config or EvalRunConfig()
+        effective_mode = mode or self.config.mode
 
         # Create run record in the observatory store.
         self.store.create_run(
             run_id=run_id,
-            run_type=self.config.mode,
-            config={"mode": self.config.mode, "models": self.config.models},
+            run_type=effective_mode,
+            config={"mode": effective_mode, "models": self.config.models},
             phase=phase,
             pipeline_id=pipeline_id,
         )
@@ -225,7 +227,7 @@ class EvalOrchestrator:
             )
 
         # Route to the correct runner.
-        if self.config.mode == "taguchi":
+        if effective_mode == "taguchi":
             raw_result = self._run_taguchi(
                 tasks=tasks,
                 doc_tree=doc_tree,
@@ -267,7 +269,7 @@ class EvalOrchestrator:
 
         return OrchestratorResult(
             run_id=run_id,
-            mode=self.config.mode,
+            mode=effective_mode,
             trials=raw_result.trials,
             total_cost=raw_result.total_cost,
             total_tokens=raw_result.total_tokens,

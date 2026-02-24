@@ -270,6 +270,67 @@ def test_pipeline_confirmation_returns_phase_result():
     assert result.confirmation["within_interval"] is True
 
 
+def test_pipeline_confirmation_passes_mode_full():
+    """Phase 2 passes mode='full' to orchestrator to avoid Taguchi design requirement."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator(score=0.7)
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a"},
+        significant_factors=["axis_1"],
+    )
+
+    with patch("agent_evals.pipeline.validate_confirmation") as mock_val:
+        mock_val.return_value = MagicMock(
+            within_interval=True,
+            sigma_deviation=0.3,
+            observed_sn=11.5,
+            predicted_sn=12.0,
+            prediction_interval=(10.0, 14.0),
+        )
+        pipeline.run_confirmation(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+    # Verify orchestrator.run() was called with mode="full"
+    orch.run.assert_called_once()
+    call_kwargs = orch.run.call_args
+    assert call_kwargs.kwargs.get("mode") == "full"
+
+
+def test_pipeline_refinement_passes_mode_full():
+    """Phase 3 passes mode='full' to orchestrator."""
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a"},
+        significant_factors=["axis_1"],
+        main_effects={"axis_1": {"a": 12.0, "b": 10.0}},
+    )
+    pipeline.run_refinement(
+        screening_result=screening,
+        tasks=[],
+        variants=_make_variants(),
+        doc_tree=MagicMock(),
+    )
+
+    orch.run.assert_called_once()
+    call_kwargs = orch.run.call_args
+    assert call_kwargs.kwargs.get("mode") == "full"
+
+
 def test_pipeline_confirmation_calls_validate():
     """Phase 2 calls validate_confirmation with optimal scores."""
     config = PipelineConfig(models=["model-a"])

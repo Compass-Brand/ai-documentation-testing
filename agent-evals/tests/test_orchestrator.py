@@ -789,6 +789,77 @@ class TestPhaseRouting:
             assert run_kwargs.kwargs.get("phase") == "screening"
 
 
+class TestModeOverride:
+    """run() accepts a mode override to bypass config mode."""
+
+    def test_mode_override_full_on_taguchi_orchestrator(
+        self, tmp_path: Path
+    ) -> None:
+        """mode='full' override routes taguchi-configured orchestrator to _run_full."""
+        orch = _make_orchestrator(tmp_path, mode="taguchi")
+        eval_result = _make_eval_run_result()
+
+        with (
+            patch.object(orch, "_run_full", return_value=eval_result) as mock_full,
+            patch.object(orch, "_run_taguchi") as mock_taguchi,
+        ):
+            result = orch.run(
+                tasks=[_make_mock_task()],
+                variants=[_make_mock_variant()],
+                doc_tree=MagicMock(),
+                mode="full",
+            )
+
+        mock_full.assert_called_once()
+        mock_taguchi.assert_not_called()
+        assert result.mode == "full"
+
+    def test_no_mode_override_uses_config_mode(
+        self, tmp_path: Path
+    ) -> None:
+        """Without mode override, run() uses self.config.mode."""
+        orch = _make_orchestrator(tmp_path, mode="full")
+        eval_result = _make_eval_run_result()
+
+        with (
+            patch.object(orch, "_run_full", return_value=eval_result) as mock_full,
+            patch.object(orch, "_run_taguchi") as mock_taguchi,
+        ):
+            result = orch.run(
+                tasks=[_make_mock_task()],
+                variants=[_make_mock_variant()],
+                doc_tree=MagicMock(),
+            )
+
+        mock_full.assert_called_once()
+        mock_taguchi.assert_not_called()
+        assert result.mode == "full"
+
+    def test_mode_override_taguchi_on_full_orchestrator(
+        self, tmp_path: Path
+    ) -> None:
+        """mode='taguchi' override routes full-configured orchestrator to _run_taguchi."""
+        orch = _make_orchestrator(tmp_path, mode="full")
+        taguchi_result = _make_taguchi_run_result()
+
+        with (
+            patch.object(orch, "_run_taguchi", return_value=taguchi_result) as mock_tag,
+            patch.object(orch, "_run_full") as mock_full,
+        ):
+            result = orch.run(
+                tasks=[_make_mock_task()],
+                variants=[_make_mock_variant()],
+                doc_tree=MagicMock(),
+                design=MagicMock(),
+                variant_lookup={"flat": _make_mock_variant()},
+                mode="taguchi",
+            )
+
+        mock_tag.assert_called_once()
+        mock_full.assert_not_called()
+        assert result.mode == "taguchi"
+
+
 class TestMultiModel:
     """Orchestrator manages multiple models."""
 

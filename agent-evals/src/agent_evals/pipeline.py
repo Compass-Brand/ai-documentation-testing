@@ -186,6 +186,7 @@ class DOEPipeline:
             variant_lookup=variant_lookup,
             phase="confirmation",
             pipeline_id=self._pipeline_id,
+            mode="full",
         )
 
         # Gather observed scores
@@ -254,7 +255,7 @@ class DOEPipeline:
             level_lists = [axes[k] for k in factor_names]
             combos = list(iter_product(*level_lists))
 
-            # Run trials via orchestrator
+            # Run trials via orchestrator (full mode, not Taguchi)
             result = self._orchestrator.run(
                 tasks,
                 variants,
@@ -262,6 +263,7 @@ class DOEPipeline:
                 variant_lookup=variant_lookup,
                 phase="refinement",
                 pipeline_id=self._pipeline_id,
+                mode="full",
             )
         else:
             result = self._orchestrator.run(
@@ -271,6 +273,7 @@ class DOEPipeline:
                 variant_lookup=variant_lookup,
                 phase="refinement",
                 pipeline_id=self._pipeline_id,
+                mode="full",
             )
 
         return PhaseResult(
