@@ -1,16 +1,20 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Play } from "lucide-react";
+import { Play, Loader2 } from "lucide-react";
 import { Button } from "../components/Button";
 import { Card, CardContent } from "../components/Card";
 import { Input } from "../components/Input";
 import { FadeIn } from "../components/FadeIn";
 import { cn } from "../lib/utils";
+import { useStartRun, useActiveRun } from "../api/hooks";
+import type { StartRunPayload } from "../api/client";
 
 type RunMode = "taguchi" | "full";
 
 export default function RunConfig() {
   const navigate = useNavigate();
+  const startRun = useStartRun();
+  const activeRun = useActiveRun();
   const [mode, setMode] = useState<RunMode>("taguchi");
   const [model, setModel] = useState("");
   const [repetitions, setRepetitions] = useState(3);
@@ -20,24 +24,44 @@ export default function RunConfig() {
   const [qualityType, setQualityType] = useState("larger_is_better");
   const [topK, setTopK] = useState(3);
   const [alpha, setAlpha] = useState(0.05);
+  const [error, setError] = useState<string | null>(null);
+
+  const isRunActive = activeRun.data?.active === true;
+  const isSubmitting = startRun.isPending;
+  const isDisabled = isSubmitting || isRunActive;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Navigate to live monitor (run creation is CLI-driven per spec)
-    const params = new URLSearchParams({
-      mode,
-      model,
-      repetitions: String(repetitions),
-    });
-    if (taskLimit > 0) params.set("task_limit", String(taskLimit));
-    if (oaOverride) params.set("oa_override", oaOverride);
-    if (mode === "taguchi") {
-      params.set("pipeline", pipelineMode);
-      params.set("quality_type", qualityType);
-      params.set("top_k", String(topK));
-      params.set("alpha", String(alpha));
+    setError(null);
+
+    if (!model.trim()) {
+      setError("Model is required");
+      return;
     }
-    navigate(`/live?${params.toString()}`);
+
+    const payload: StartRunPayload = {
+      mode,
+      model: model.trim(),
+      repetitions,
+      task_limit: taskLimit,
+    };
+
+    if (oaOverride) payload.oa_override = oaOverride;
+    if (mode === "taguchi") {
+      payload.pipeline_mode = pipelineMode;
+      payload.quality_type = qualityType;
+      payload.top_k = topK;
+      payload.alpha = alpha;
+    }
+
+    startRun.mutate(payload, {
+      onSuccess: (data) => {
+        navigate(`/live?run_id=${data.run_id}`);
+      },
+      onError: (err) => {
+        setError(err.message || "Failed to start evaluation");
+      },
+    });
   }
 
   return (
@@ -311,10 +335,26 @@ export default function RunConfig() {
         </div>
 
         <FadeIn delay={3}>
+          {error && (
+            <div className="mt-sp-4 rounded-card border border-red-300 bg-red-50 px-sp-4 py-sp-3 text-body-sm text-red-700">
+              {error}
+            </div>
+          )}
+
+          {isRunActive && (
+            <div className="mt-sp-4 rounded-card border border-brand-goldenrod/30 bg-brand-goldenrod/5 px-sp-4 py-sp-3 text-body-sm text-brand-charcoal">
+              A run is already in progress. Wait for it to complete or cancel it from the Live Monitor.
+            </div>
+          )}
+
           <div className="mt-sp-8 flex justify-end">
-            <Button type="submit" size="lg">
-              <Play className="mr-sp-2 h-5 w-5" />
-              Start Evaluation
+            <Button type="submit" size="lg" disabled={isDisabled}>
+              {isSubmitting ? (
+                <Loader2 className="mr-sp-2 h-5 w-5 animate-spin" />
+              ) : (
+                <Play className="mr-sp-2 h-5 w-5" />
+              )}
+              {isSubmitting ? "Starting..." : "Start Evaluation"}
             </Button>
           </div>
         </FadeIn>

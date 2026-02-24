@@ -121,6 +121,33 @@ export interface SyncResult {
   updated: number;
 }
 
+// --- Run Submission Types ---
+
+export interface StartRunPayload {
+  mode: "taguchi" | "full";
+  model: string;
+  repetitions: number;
+  task_limit: number;
+  oa_override?: string;
+  pipeline_mode?: "auto" | "semi";
+  quality_type?: string;
+  top_k?: number;
+  alpha?: number;
+}
+
+export interface StartRunResponse {
+  run_id: string;
+  status: string;
+}
+
+export interface ActiveRun {
+  active: boolean;
+  run_id?: string;
+  mode?: string;
+  models?: string[];
+  started_at?: string;
+}
+
 // --- Pipeline Types ---
 
 export interface PipelineListItem {
@@ -234,6 +261,18 @@ export const api = {
   syncStatus: () => fetchApi<SyncStatus>("/api/models/sync"),
   triggerSync: () =>
     fetchApi<SyncResult>("/api/models/sync", { method: "POST" }),
+
+  // Run Submission
+  startRun: (payload: StartRunPayload) =>
+    fetchApi<StartRunResponse>("/api/runs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getActiveRun: () => fetchApi<ActiveRun>("/api/runs/active"),
+  cancelRun: () =>
+    fetchApi<{ cancelled: boolean }>("/api/runs/active/cancel", {
+      method: "POST",
+    }),
 
   // Pipelines
   listPipelines: () => fetchApi<PipelineListItem[]>("/api/pipelines"),

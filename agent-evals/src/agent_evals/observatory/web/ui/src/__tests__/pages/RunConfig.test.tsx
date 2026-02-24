@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -13,8 +13,25 @@ vi.mock("react-router-dom", async () => {
   return { ...actual, useNavigate: () => mockNavigate };
 });
 
+const mockStartRun = vi.fn();
+const mockGetActiveRun = vi.fn();
+
+vi.mock("../../api/client", async () => {
+  const actual = await vi.importActual("../../api/client");
+  return {
+    ...actual,
+    api: {
+      ...(actual as Record<string, unknown>).api,
+      startRun: (...args: unknown[]) => mockStartRun(...args),
+      getActiveRun: () => mockGetActiveRun(),
+    },
+  };
+});
+
 function wrapper({ children }: { children: ReactNode }) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   return (
     <QueryClientProvider client={qc}>
       <MemoryRouter>{children}</MemoryRouter>
@@ -23,6 +40,11 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe("RunConfig", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetActiveRun.mockResolvedValue({ active: false });
+  });
+
   it("should render the page heading", () => {
     render(<RunConfig />, { wrapper });
     expect(screen.getByText("Run Configuration")).toBeInTheDocument();
@@ -111,5 +133,78 @@ describe("RunConfig", () => {
     expect(screen.getByText(/signal-to-noise ratio/i)).toBeInTheDocument();
     expect(screen.getByText(/refinement phase/i)).toBeInTheDocument();
     expect(screen.getByText(/95% confidence/i)).toBeInTheDocument();
+  });
+
+  it("should show error when submitting without model", async () => {
+    render(<RunConfig />, { wrapper });
+    const button = screen.getByRole("button", { name: /start/i });
+    await userEvent.click(button);
+    expect(screen.getByText("Model is required")).toBeInTheDocument();
+    expect(mockStartRun).not.toHaveBeenCalled();
+  });
+
+  it("should call startRun API on submit with model", async () => {
+    mockStartRun.mockResolvedValue({ run_id: "abc123", status: "started" });
+    render(<RunConfig />, { wrapper });
+
+    const modelInput = screen.getByLabelText(/model/i);
+    await userEvent.type(modelInput, "openrouter/anthropic/claude-sonnet-4");
+
+    const button = screen.getByRole("button", { name: /start/i });
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(mockStartRun).toHaveBeenCalledWith(
+        expect.objectContaining({
+          mode: "taguchi",
+          model: "openrouter/anthropic/claude-sonnet-4",
+          repetitions: 3,
+          task_limit: 0,
+        }),
+      );
+    });
+  });
+
+  it("should navigate to live monitor on successful start", async () => {
+    mockStartRun.mockResolvedValue({ run_id: "abc123", status: "started" });
+    render(<RunConfig />, { wrapper });
+
+    const modelInput = screen.getByLabelText(/model/i);
+    await userEvent.type(modelInput, "test-model");
+
+    const button = screen.getByRole("button", { name: /start/i });
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith("/live?run_id=abc123");
+    });
+  });
+
+  it("should show error message on API failure", async () => {
+    mockStartRun.mockRejectedValue(new Error("API 409: A run is already in progress"));
+    render(<RunConfig />, { wrapper });
+
+    const modelInput = screen.getByLabelText(/model/i);
+    await userEvent.type(modelInput, "test-model");
+
+    const button = screen.getByRole("button", { name: /start/i });
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(screen.getByText(/A run is already in progress/)).toBeInTheDocument();
+    });
+  });
+
+  it("should show active run warning when a run is in progress", async () => {
+    mockGetActiveRun.mockResolvedValue({
+      active: true,
+      run_id: "existing",
+      mode: "taguchi",
+    });
+    render(<RunConfig />, { wrapper });
+
+    await waitFor(() => {
+      expect(screen.getByText(/run is already in progress/i)).toBeInTheDocument();
+    });
   });
 });

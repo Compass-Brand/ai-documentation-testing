@@ -3,7 +3,7 @@ import {
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
-import { api, type ModelFilters } from "./client";
+import { api, type ModelFilters, type StartRunPayload } from "./client";
 
 // --- Runs ---
 export function useRuns() {
@@ -130,6 +130,36 @@ export function useTriggerSync() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["models"] });
       qc.invalidateQueries({ queryKey: ["sync-status"] });
+    },
+  });
+}
+
+// --- Run Submission ---
+export function useStartRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: StartRunPayload) => api.startRun(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["runs"] });
+    },
+  });
+}
+
+export function useActiveRun() {
+  return useQuery({
+    queryKey: ["active-run"],
+    queryFn: api.getActiveRun,
+    refetchInterval: 5000,
+  });
+}
+
+export function useCancelRun() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.cancelRun,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["active-run"] });
+      qc.invalidateQueries({ queryKey: ["runs"] });
     },
   });
 }
