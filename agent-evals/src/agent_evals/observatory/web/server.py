@@ -101,7 +101,7 @@ def launch_dashboard(
     # Auto-sync if catalog is empty
     if config.auto_sync and not catalog.get_active_models():
         logger.info("Model catalog empty — running initial sync")
-        model_sync.sync_once()
+        model_sync.run_sync()
 
     app = create_app(
         store=store,

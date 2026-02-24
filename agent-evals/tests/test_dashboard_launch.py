@@ -246,7 +246,7 @@ class TestLaunchDashboardAutoSync:
 
             handle = launch_dashboard(tmp_config, background=True)
 
-        mock_sync.sync_once.assert_called_once()
+        mock_sync.run_sync.assert_called_once()
         handle.stop()
 
     @patch("agent_evals.observatory.web.server.uvicorn.Server")
@@ -278,7 +278,7 @@ class TestLaunchDashboardAutoSync:
 
             handle = launch_dashboard(cfg, background=True)
 
-        mock_sync.sync_once.assert_not_called()
+        mock_sync.run_sync.assert_not_called()
         handle.stop()
 
     @patch("agent_evals.observatory.web.server.uvicorn.Server")
@@ -305,7 +305,7 @@ class TestLaunchDashboardAutoSync:
 
             handle = launch_dashboard(tmp_config, background=True)
 
-        mock_sync.sync_once.assert_not_called()
+        mock_sync.run_sync.assert_not_called()
         handle.stop()
 
 
