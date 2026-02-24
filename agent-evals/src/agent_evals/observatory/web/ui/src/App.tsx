@@ -68,6 +68,19 @@ export default function App() {
           <Route path="/models" element={<Models />} />
           <Route path="/analysis/:runId" element={<FactorAnalysis />} />
           <Route path="/pipeline/:pipelineId?" element={<PipelineView />} />
+          <Route
+            path="*"
+            element={
+              <div className="flex flex-col items-center justify-center py-sp-16 text-center">
+                <h1 className="text-h2 text-brand-charcoal mb-sp-4">
+                  Page Not Found
+                </h1>
+                <p className="text-body text-brand-slate">
+                  The page you're looking for doesn't exist.
+                </p>
+              </div>
+            }
+          />
         </Routes>
       </main>
     </div>

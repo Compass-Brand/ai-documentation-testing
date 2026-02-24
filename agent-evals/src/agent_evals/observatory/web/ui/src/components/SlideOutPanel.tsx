@@ -28,6 +28,7 @@ export function SlideOutPanel({
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 bg-brand-charcoal/30 transition-opacity duration-modal" />
         <Dialog.Content
+          aria-describedby={undefined}
           className={cn(
             "fixed right-0 top-0 h-full bg-brand-bone shadow-panel",
             "overflow-y-auto",

@@ -12,7 +12,7 @@ import {
 } from "chart.js";
 import { Line } from "react-chartjs-2";
 import { useRuns, useCostTrend, useCompareRuns } from "../api/hooks";
-import type { Run, RunSummary } from "../api/client";
+import type { Run } from "../api/client";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
 import { DataTable } from "../components/DataTable";
 import { AccessibleChart } from "../components/AccessibleChart";

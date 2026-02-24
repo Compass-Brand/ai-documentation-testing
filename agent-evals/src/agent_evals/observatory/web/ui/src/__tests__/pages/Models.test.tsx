@@ -98,7 +98,7 @@ beforeEach(() => {
     data: [],
     isLoading: false,
     error: null,
-  } as ReturnType<typeof useGroups>);
+  } as unknown as ReturnType<typeof useGroups>);
 
   vi.mocked(useCreateGroup).mockReturnValue({
     mutate: vi.fn(),

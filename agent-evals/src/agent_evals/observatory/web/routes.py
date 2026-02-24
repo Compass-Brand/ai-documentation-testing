@@ -308,6 +308,21 @@ def create_router(
             group_manager.add_to_group(group.id, body.models)
         return asdict(group)
 
+    @router.get("/api/models/sync")
+    async def sync_status() -> dict[str, Any]:
+        if catalog is None:
+            return {"total_models": 0, "last_sync": None, "models_added": 0, "models_removed": 0, "models_updated": 0}
+        history = catalog.get_sync_history()
+        latest = history[0] if history else {}
+        active = catalog.get_active_models()
+        return {
+            "total_models": len(active),
+            "last_sync": latest.get("timestamp"),
+            "models_added": latest.get("models_added", 0),
+            "models_removed": latest.get("models_removed", 0),
+            "models_updated": 0,
+        }
+
     @router.post("/api/models/sync")
     async def trigger_sync() -> dict[str, Any]:
         if model_sync is None:

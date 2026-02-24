@@ -9,7 +9,7 @@ export function applyBrandTheme() {
   defaults.plugins.legend.labels.padding = 16;
 
   defaults.scale.grid.color = "rgba(229, 229, 229, 0.5)"; // Mist Grey 50%
-  defaults.scale.border.color = "#E5E5E5";
+  (defaults.scale as Record<string, unknown>)["border"] = { color: "#E5E5E5" };
   defaults.scale.ticks.padding = 8;
 }
 

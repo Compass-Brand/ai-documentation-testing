@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { History } from "../../pages/History";
@@ -69,7 +69,7 @@ beforeEach(() => {
     data: mockCostTrend,
     isLoading: false,
     error: null,
-  } as ReturnType<typeof useCostTrend>);
+  } as unknown as ReturnType<typeof useCostTrend>);
 
   vi.mocked(useCompareRuns).mockReturnValue({
     data: undefined,

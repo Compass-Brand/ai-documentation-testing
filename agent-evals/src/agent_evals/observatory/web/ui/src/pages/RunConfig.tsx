@@ -290,7 +290,7 @@ export default function RunConfig() {
                           type="number"
                           min={0.001}
                           max={0.1}
-                          step={0.01}
+                          step={0.001}
                           value={alpha}
                           onChange={(e) =>
                             setAlpha(parseFloat(e.target.value) || 0.05)
