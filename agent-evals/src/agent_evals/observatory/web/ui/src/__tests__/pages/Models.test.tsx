@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
+import { TooltipProvider } from "../../components/Tooltip";
 import { Models } from "../../pages/Models";
 
 // Mock hooks
@@ -76,7 +77,11 @@ function createWrapper() {
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <QueryClientProvider client={qc}>
-        <MemoryRouter>{children}</MemoryRouter>
+        <MemoryRouter>
+          <TooltipProvider delayDuration={300}>
+            {children}
+          </TooltipProvider>
+        </MemoryRouter>
       </QueryClientProvider>
     );
   };

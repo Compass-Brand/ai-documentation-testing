@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TooltipProvider } from "../../components/Tooltip";
 import LiveMonitor from "../../pages/LiveMonitor";
 
 // Mock useSSE
@@ -52,9 +53,11 @@ function renderMonitor() {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={["/live"]}>
-        <Routes>
-          <Route path="/live" element={<LiveMonitor />} />
-        </Routes>
+        <TooltipProvider delayDuration={300}>
+          <Routes>
+            <Route path="/live" element={<LiveMonitor />} />
+          </Routes>
+        </TooltipProvider>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -140,13 +143,13 @@ describe("LiveMonitor", () => {
       expect(screen.getByText("No Active Runs")).toBeInTheDocument();
     });
 
-    it("should show loading when isLoading", () => {
+    it("should show skeleton loading when isLoading", () => {
       mockUseLiveMonitorState.mockReturnValue({
         ...defaultState,
         isLoading: true,
       });
-      renderMonitor();
-      expect(screen.getByText("Loading...")).toBeInTheDocument();
+      const { container } = renderMonitor();
+      expect(container.querySelector("[aria-hidden='true'].shimmer")).toBeInTheDocument();
     });
   });
 });

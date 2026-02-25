@@ -11,6 +11,8 @@ export function applyBrandTheme() {
   defaults.scale.grid.color = "rgba(229, 229, 229, 0.5)"; // Mist Grey 50%
   (defaults.scale as Record<string, unknown>)["border"] = { color: "#E5E5E5" };
   defaults.scale.ticks.padding = 8;
+
+  defaults.animation = CHART_ANIMATION;
 }
 
 export const CHART_COLORS = {

@@ -30,7 +30,7 @@ export function Select({
           "inline-flex h-11 w-full items-center justify-between gap-sp-2",
           "rounded-card border border-brand-mist bg-brand-bone px-sp-4 py-sp-2",
           "text-body-sm text-brand-charcoal",
-          "focus:outline-none focus:ring-2 focus:ring-brand-goldenrod focus:ring-offset-2",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-goldenrod focus-visible:ring-offset-2",
           "transition-colors duration-micro",
         )}
       >

@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { TooltipProvider } from "../../components/Tooltip";
 import type { ReactNode } from "react";
 
 // Mock chart.js
@@ -68,12 +69,16 @@ function createWrapper(initialEntries: string[] = ["/analysis/run-1"]) {
         MemoryRouter,
         { initialEntries },
         createElement(
-          Routes,
-          null,
-          createElement(Route, {
-            path: "/analysis/:runId",
-            element: children,
-          }),
+          TooltipProvider,
+          { delayDuration: 300 },
+          createElement(
+            Routes,
+            null,
+            createElement(Route, {
+              path: "/analysis/:runId",
+              element: children,
+            }),
+          ),
         ),
       ),
     );

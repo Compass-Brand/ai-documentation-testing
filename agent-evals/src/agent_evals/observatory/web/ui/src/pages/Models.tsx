@@ -151,7 +151,7 @@ function ModelCard({
 }) {
   return (
     <Card
-      className="cursor-pointer"
+      variant="interactive"
       onClick={onClick}
     >
       <CardHeader>
