@@ -16,7 +16,7 @@ import {
   PointElement,
   LineElement,
   Filler,
-  Tooltip,
+  Tooltip as ChartTooltip,
 } from "chart.js";
 import { useLiveMonitorState } from "../hooks/useLiveMonitorState";
 import { RunSelector } from "../components/RunSelector";
@@ -26,6 +26,10 @@ import { AlertsFeed } from "../components/AlertsFeed";
 import { EmptyState } from "../components/EmptyState";
 import { Card, CardContent, CardTitle } from "../components/Card";
 import { FadeIn } from "../components/FadeIn";
+import { Skeleton } from "../components/Skeleton";
+import { AnimatedNumber } from "../components/AnimatedNumber";
+import { Tooltip } from "../components/Tooltip";
+import { LastUpdated } from "../components/LastUpdated";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { cn } from "../lib/utils";
 import { CHART_COLORS } from "../lib/chart-theme";
@@ -36,7 +40,7 @@ ChartJS.register(
   PointElement,
   LineElement,
   Filler,
-  Tooltip,
+  ChartTooltip,
 );
 
 export default function LiveMonitor() {
@@ -72,18 +76,15 @@ export default function LiveMonitor() {
     plugins: { legend: { display: false } },
   } as const;
 
-  const lastUpdatedLabel = useMemo(() => {
-    if (!state.lastUpdated) return null;
-    const seconds = Math.round(
-      (Date.now() - state.lastUpdated.getTime()) / 1000,
-    );
-    return `Updated ${seconds}s ago`;
-  }, [state.lastUpdated]);
-
   if (state.isLoading) {
     return (
-      <div className="mx-auto max-w-wide px-sp-6 py-sp-8">
-        <p className="text-body text-brand-slate">Loading...</p>
+      <div className="space-y-sp-6 p-sp-6">
+        <div className="grid grid-cols-2 gap-sp-4 md:grid-cols-3 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} variant="card" />
+          ))}
+        </div>
+        <Skeleton variant="chart" />
       </div>
     );
   }
@@ -119,11 +120,7 @@ export default function LiveMonitor() {
               selectedRunId={state.selectedRunId}
               onSelectRun={state.setSelectedRunId}
             />
-            {lastUpdatedLabel && (
-              <span className="text-caption text-brand-slate">
-                {lastUpdatedLabel}
-              </span>
-            )}
+            <LastUpdated timestamp={state.lastUpdated} />
             {state.isConnected && (
               <span className="inline-flex items-center gap-sp-1 text-body-sm text-brand-amber">
                 <span className="h-2 w-2 rounded-full bg-brand-amber animate-pulse" />
@@ -169,32 +166,44 @@ export default function LiveMonitor() {
           <StatCard
             icon={<BarChart3 className="h-5 w-5" />}
             label="Score"
-            value={state.meanScore.toFixed(2)}
+            tooltip="Average score across all completed trials"
+            value={state.meanScore}
+            format={(n) => n.toFixed(2)}
           />
           <StatCard
             icon={<DollarSign className="h-5 w-5" />}
             label="Cost"
-            value={`$${state.totalCost.toFixed(2)}`}
+            tooltip="Total API cost for this evaluation run"
+            value={state.totalCost}
+            format={(n) => "$" + n.toFixed(2)}
           />
           <StatCard
             icon={<Zap className="h-5 w-5" />}
             label="T/min"
-            value={state.trialsPerMin.toFixed(1)}
+            tooltip="Current throughput in trials per minute"
+            value={state.trialsPerMin}
+            format={(n) => n.toFixed(1)}
           />
           <StatCard
             icon={<Hash className="h-5 w-5" />}
             label="Tokens"
-            value={formatTokens(state.totalTokens)}
+            tooltip="Total tokens consumed (prompt + completion)"
+            value={state.totalTokens}
+            format={formatTokens}
           />
           <StatCard
             icon={<Clock className="h-5 w-5" />}
             label="Latency"
-            value={`${state.avgLatency.toFixed(1)}s`}
+            tooltip="Average response time per trial"
+            value={state.avgLatency}
+            format={(n) => n.toFixed(1) + "s"}
           />
           <StatCard
             icon={<AlertCircle className="h-5 w-5" />}
             label="Errors"
-            value={String(state.errorCount)}
+            tooltip="Number of trials that returned errors"
+            value={state.errorCount}
+            format={(n) => String(n)}
             variant={state.errorCount > 0 ? "error" : "default"}
           />
         </div>
@@ -256,38 +265,48 @@ export default function LiveMonitor() {
 function StatCard({
   icon,
   label,
+  tooltip,
   value,
+  format,
   variant = "default",
 }: {
   icon: React.ReactNode;
   label: string;
-  value: string;
+  tooltip: string;
+  value: number;
+  format?: (n: number) => string;
   variant?: "default" | "error";
 }) {
   return (
-    <Card>
-      <CardContent>
-        <div className="flex items-center gap-sp-3">
-          <span
-            className={cn(
-              "text-brand-goldenrod",
-              variant === "error" && "text-brand-clay",
-            )}
-          >
-            {icon}
-          </span>
-          <div>
-            <p className="text-caption text-brand-slate">{label}</p>
-            <p className="text-h4 font-medium text-brand-charcoal">{value}</p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <Tooltip content={tooltip}>
+      <div>
+        <Card variant="stat">
+          <CardContent>
+            <div className="flex items-center gap-sp-3">
+              <span
+                className={cn(
+                  "text-brand-goldenrod",
+                  variant === "error" && "text-brand-clay",
+                )}
+              >
+                {icon}
+              </span>
+              <div>
+                <p className="text-caption text-brand-slate">{label}</p>
+                <p className="text-h4 font-medium text-brand-charcoal">
+                  <AnimatedNumber value={value} format={format} />
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </Tooltip>
   );
 }
 
-function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(0)}K`;
-  return String(tokens);
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";
+  if (n >= 1_000) return (n / 1_000).toFixed(0) + "K";
+  return String(n);
 }

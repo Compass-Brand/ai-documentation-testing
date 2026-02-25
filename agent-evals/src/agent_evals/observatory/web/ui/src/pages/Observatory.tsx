@@ -16,6 +16,7 @@ import { useRuns, useRun, useCostTrend } from "../api/hooks";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
 import { AnimatedNumber } from "../components/AnimatedNumber";
+import { LastUpdated } from "../components/LastUpdated";
 import { FadeIn } from "../components/FadeIn";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { CHART_COLORS } from "../lib/chart-theme";
@@ -48,7 +49,7 @@ export function Observatory() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   const activeRunId = selectedRunId ?? runs?.[0]?.run_id ?? null;
-  const { data: summary, isLoading: summaryLoading } = useRun(activeRunId);
+  const { data: summary, isLoading: summaryLoading, dataUpdatedAt } = useRun(activeRunId);
   const { data: costTrend, isLoading: trendLoading } = useCostTrend();
 
   const isLoading = runsLoading || summaryLoading || trendLoading;
@@ -122,19 +123,22 @@ export function Observatory() {
             <Eye className="h-8 w-8 text-brand-goldenrod" />
             Observatory
           </h1>
-          <div className="w-64">
-            <Select
-              aria-label="Select run"
-              value={activeRunId ?? ""}
-              onValueChange={(v) => setSelectedRunId(v || null)}
-              placeholder="Select a run..."
-              options={
-                runs?.map((r) => ({
-                  value: r.run_id,
-                  label: formatRunLabel(r),
-                })) ?? []
-              }
-            />
+          <div className="flex items-center gap-sp-4">
+            <LastUpdated timestamp={dataUpdatedAt} />
+            <div className="w-64">
+              <Select
+                aria-label="Select run"
+                value={activeRunId ?? ""}
+                onValueChange={(v) => setSelectedRunId(v || null)}
+                placeholder="Select a run..."
+                options={
+                  runs?.map((r) => ({
+                    value: r.run_id,
+                    label: formatRunLabel(r),
+                  })) ?? []
+                }
+              />
+            </div>
           </div>
         </div>
       </FadeIn>

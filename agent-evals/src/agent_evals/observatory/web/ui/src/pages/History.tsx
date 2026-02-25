@@ -16,6 +16,7 @@ import type { Run } from "../api/client";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
 import { EmptyState } from "../components/EmptyState";
+import { LastUpdated } from "../components/LastUpdated";
 import { DataTable } from "../components/DataTable";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { StatusBadge } from "../components/StatusBadge";
@@ -73,7 +74,7 @@ const columns: ColumnDef<Run>[] = [
 
 export function History() {
   useDocumentTitle("History");
-  const { data: runs, isLoading: runsLoading } = useRuns();
+  const { data: runs, isLoading: runsLoading, dataUpdatedAt } = useRuns();
   const { data: costTrend } = useCostTrend();
   const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(new Set());
 
@@ -156,10 +157,13 @@ export function History() {
   return (
     <div className="px-sp-6 py-sp-8 max-w-full 2xl:max-w-[1400px] mx-auto">
       <FadeIn>
-        <h1 className="text-h2 text-brand-charcoal inline-flex items-center gap-sp-3 mb-sp-8">
-          <HistoryIcon className="h-8 w-8 text-brand-goldenrod" />
-          History
-        </h1>
+        <div className="mb-sp-8 flex items-center justify-between">
+          <h1 className="text-h2 text-brand-charcoal inline-flex items-center gap-sp-3">
+            <HistoryIcon className="h-8 w-8 text-brand-goldenrod" />
+            History
+          </h1>
+          <LastUpdated timestamp={dataUpdatedAt} />
+        </div>
       </FadeIn>
 
       <FadeIn delay={1}>

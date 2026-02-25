@@ -1,5 +1,5 @@
 import { useParams } from "react-router-dom";
-import { FlaskConical } from "lucide-react";
+import { FlaskConical, BarChart3 } from "lucide-react";
 import {
   Chart,
   CategoryScale,
@@ -17,6 +17,7 @@ import { FadeIn } from "../components/FadeIn";
 import { AccessibleChart } from "../components/AccessibleChart";
 import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
+import { EmptyState } from "../components/EmptyState";
 import { CHART_COLORS } from "../lib/chart-theme";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import type { ColumnDef } from "@tanstack/react-table";
@@ -124,9 +125,11 @@ export function FactorAnalysis() {
             Factor Analysis
           </h1>
         </FadeIn>
-        <p className="text-body text-brand-slate">
-          No analysis data available.
-        </p>
+        <EmptyState
+          icon={BarChart3}
+          title="No Analysis Data"
+          description="Run a Taguchi evaluation to see factor analysis results."
+        />
       </div>
     );
   }
