@@ -1,13 +1,16 @@
 task_id: robustness_013
 type: robustness
-question: "Which of the debugging steps should you NOT skip when troubleshooting?"
+question: Which of the debugging steps should you NOT skip when troubleshooting?
 domain: skills_workflows
 difficulty: medium
 tags:
-  - debugging
-  - workflow
+- debugging
+- workflow
 metadata:
-  perturbation_type: "negation_flip"
-  original_question: "What are the debugging steps in the workflow?"
-  expected_answer: "None of the 5 debugging steps should be skipped. The steps are: reproduce, isolate, check common causes, instrument, and fix."
-  perturbation_details: "Added 'NOT skip' negation to a question about the 5 debugging steps"
+  perturbation_type: negation_flip
+  original_question: What are the debugging steps in the workflow?
+  expected_answer: 'None of the 5 debugging steps should be skipped. The steps are:
+    reproduce, isolate, check common causes, instrument, and fix.'
+  perturbation_details: Added 'NOT skip' negation to a question about the 5 debugging
+    steps
+  base_task_id: ''

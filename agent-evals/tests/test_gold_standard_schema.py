@@ -706,3 +706,13 @@ class TestGoldStandardDirectoryStructure:
     def test_schema_yaml_exists(self) -> None:
         """schema.yaml exists in gold_standard/."""
         assert (GOLD_STANDARD_DIR / "schema.yaml").is_file()
+
+
+# Task 29 robustness base_task_id test
+def test_all_robustness_tasks_have_base_task_id():
+    from pathlib import Path
+    from agent_evals.tasks.loader import load_tasks
+    robustness_dir = Path("agent-evals/gold_standard/robustness/")
+    tasks = load_tasks(robustness_dir)
+    missing = [t.definition.task_id for t in tasks if "base_task_id" not in (t.definition.metadata or {})]
+    assert not missing, f"Missing base_task_id in {len(missing)} tasks: {missing[:5]}"

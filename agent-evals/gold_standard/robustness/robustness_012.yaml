@@ -1,13 +1,17 @@
 task_id: robustness_012
 type: robustness
-question: "Which environment variable is NOT optional in the app configuration?"
+question: Which environment variable is NOT optional in the app configuration?
 domain: framework_api
 difficulty: medium
 tags:
-  - config
-  - environment
+- config
+- environment
 metadata:
-  perturbation_type: "negation_flip"
-  original_question: "Which environment variables are required vs optional in the app configuration?"
-  expected_answer: "DATABASE_URL is NOT optional -- it is required. SECRET_KEY is also required. REDIS_URL is optional, and APP_ENV is a configuration variable."
-  perturbation_details: "Negated 'optional' to test if the model correctly identifies DATABASE_URL as the required (non-optional) variable"
+  perturbation_type: negation_flip
+  original_question: Which environment variables are required vs optional in the app
+    configuration?
+  expected_answer: DATABASE_URL is NOT optional -- it is required. SECRET_KEY is also
+    required. REDIS_URL is optional, and APP_ENV is a configuration variable.
+  perturbation_details: Negated 'optional' to test if the model correctly identifies
+    DATABASE_URL as the required (non-optional) variable
+  base_task_id: ''

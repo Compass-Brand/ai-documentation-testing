@@ -1,14 +1,19 @@
 task_id: robustness_011
 type: robustness
-question: "What is NOT the default signing algorithm used by the JWT authentication system?"
+question: What is NOT the default signing algorithm used by the JWT authentication
+  system?
 domain: framework_api
 difficulty: medium
 tags:
-  - auth
-  - jwt
-  - negation
+- auth
+- jwt
+- negation
 metadata:
-  perturbation_type: "negation_flip"
-  original_question: "What is the default signing algorithm used by the JWT authentication system?"
-  expected_answer: "The default signing algorithm IS HS256. Any other algorithm (RS256, ES256, etc.) is NOT the default."
-  perturbation_details: "Added 'NOT' to invert the question; the model should still identify HS256 as the default and clarify what is not"
+  perturbation_type: negation_flip
+  original_question: What is the default signing algorithm used by the JWT authentication
+    system?
+  expected_answer: The default signing algorithm IS HS256. Any other algorithm (RS256,
+    ES256, etc.) is NOT the default.
+  perturbation_details: Added 'NOT' to invert the question; the model should still
+    identify HS256 as the default and clarify what is not
+  base_task_id: ''

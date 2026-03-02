@@ -1,13 +1,16 @@
 task_id: robustness_014
 type: robustness
-question: "Is it true that the CI pipeline does NOT include a testing stage?"
+question: Is it true that the CI pipeline does NOT include a testing stage?
 domain: skills_workflows
 difficulty: medium
 tags:
-  - ci
-  - testing
+- ci
+- testing
 metadata:
-  perturbation_type: "negation_flip"
-  original_question: "Does the CI pipeline include a testing stage?"
-  expected_answer: "No, that is false. The CI pipeline DOES include a testing stage. The GitHub Actions CI setup includes lint, test, and build stages."
-  perturbation_details: "Added false negation suggesting the CI pipeline lacks a testing stage"
+  perturbation_type: negation_flip
+  original_question: Does the CI pipeline include a testing stage?
+  expected_answer: No, that is false. The CI pipeline DOES include a testing stage.
+    The GitHub Actions CI setup includes lint, test, and build stages.
+  perturbation_details: Added false negation suggesting the CI pipeline lacks a testing
+    stage
+  base_task_id: ''
