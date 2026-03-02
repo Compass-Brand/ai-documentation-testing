@@ -119,4 +119,10 @@ describe("CompassCheckbox", () => {
     await user.keyboard(" ");
     expect(onChange).toHaveBeenCalledWith(true);
   });
+
+  it("should have no inline style attributes on any element", () => {
+    const { container } = render(<CompassCheckbox checked={false} onChange={vi.fn()} />);
+    const inlineStyled = container.querySelectorAll("[style]");
+    expect(inlineStyled.length).toBe(0);
+  });
 });
