@@ -196,7 +196,15 @@ class EvalOrchestrator:
             If mode is ``"taguchi"`` but *design* or *variant_lookup*
             is not provided.
         """
-        run_id = self.config.run_id or uuid.uuid4().hex[:12]
+        # Pipeline phases must each get their own run_id so that every phase
+        # creates an independent row in the store (linked by pipeline_id).
+        # Reusing self.config.run_id would cause create_run() to raise
+        # ValueError on the second phase call.
+        run_id = (
+            uuid.uuid4().hex[:12]
+            if pipeline_id
+            else (self.config.run_id or uuid.uuid4().hex[:12])
+        )
         eval_config = self.config.eval_config or EvalRunConfig()
         effective_mode = mode or self.config.mode
 

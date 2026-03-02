@@ -191,6 +191,65 @@ class TestPipelineIntegration:
             assert pipeline_result.refinement is None
 
 
+    def test_pipeline_phases_get_unique_run_ids(self, tmp_path: Path) -> None:
+        """Each pipeline phase must store a distinct run_id in the observatory.
+
+        When an orchestrator is configured with a fixed run_id (as RunManager
+        does) and reused across multiple pipeline phases, each call to
+        orchestrator.run() must generate its own unique run_id to avoid a
+        duplicate-key ValueError from store.create_run().
+        """
+        from unittest.mock import MagicMock, patch
+
+        from agent_evals.observatory.tracker import EventTracker
+        from agent_evals.orchestrator import (
+            EvalOrchestrator,
+            OrchestratorConfig,
+        )
+
+        store = ObservatoryStore(tmp_path / "test.db")
+        tracker = EventTracker(store=store)
+        config = OrchestratorConfig(
+            mode="full",
+            models=["test/model"],
+            api_key="sk-test",
+            store=store,
+            tracker=tracker,
+            run_id="fixed-run-id",  # same run_id for all calls, like RunManager
+        )
+        orchestrator = EvalOrchestrator(config)
+
+        # Fake runner result — skips actual LLM calls
+        fake_result = MagicMock()
+        fake_result.trials = []
+        fake_result.total_cost = 0.0
+        fake_result.total_tokens = 0
+        fake_result.elapsed_seconds = 0.0
+
+        with patch.object(orchestrator, "_run_full", return_value=fake_result):
+            # First phase call — must succeed
+            r1 = orchestrator.run(
+                tasks=[], variants=[], doc_tree=MagicMock(),
+                phase="screening", pipeline_id="pipe-001",
+            )
+            # Second phase call — must NOT raise ValueError (this was the bug)
+            r2 = orchestrator.run(
+                tasks=[], variants=[], doc_tree=MagicMock(),
+                phase="confirmation", pipeline_id="pipe-001",
+            )
+
+        # Both phases should be stored under the same pipeline_id
+        runs = store.get_pipeline_runs("pipe-001")
+        assert len(runs) == 2, "Both phases should create separate run records"
+
+        # Each phase must have a distinct run_id
+        run_ids = {r.run_id for r in runs}
+        assert len(run_ids) == 2, "Each phase must generate a unique run_id"
+
+        # Returned OrchestratorResult run_ids must also differ
+        assert r1.run_id != r2.run_id
+
+
 class TestCLIPipelineFlags:
     """Verify CLI parses pipeline-related flags correctly."""
 
