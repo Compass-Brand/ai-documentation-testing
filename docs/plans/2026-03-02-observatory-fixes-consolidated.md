@@ -1663,37 +1663,27 @@ git commit -m "fix(frontend): wrap JSON.parse in try/catch in useSSE event handl
 
 **Step 1: Write failing test**
 
-```typescript
-// useLiveMonitorState takes: useLiveMonitorState(totalTasksOverride?: number)
-// It does NOT take { runId } — it selects the run ID internally via useActiveRuns().
-// To test this hook in isolation, the test must mock useActiveRuns() to return a run ID.
-// Read useLiveMonitorState.ts fully before writing this test to understand its internal queries.
+Add this test INSIDE the existing `describe("useLiveMonitorState", ...)` block in
+`agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/hooks/useLiveMonitorState.test.ts`.
 
+The file already declares `mockUseActiveRuns`, `mockUseRun`, `mockUseTrials` at module level
+(lines 36-38) and its `beforeEach` already stubs `EventSource`, `fetch`, fake timers, and
+mocks all three hooks — do NOT re-declare or re-stub any of those.
+
+The `beforeEach` sets `mockUseActiveRuns` to return `run-1`, which causes the hook to
+auto-connect an `EventSource` to `/api/runs/run-1/stream`. `MockEventSource.instances[0]`
+is therefore populated as soon as `renderHook` renders.
+
+```typescript
 it("scores array stays bounded after many trials", async () => {
-  // Step A: Look at existing useLiveMonitorState.test.ts for the correct mock setup.
-  //   The file already mocks useActiveRuns, useRun, and useTrials in its beforeEach block.
-  //   Re-use that pattern: mockUseActiveRuns.mockReturnValue({ data: { runs: [...], count: 1 } })
-  // Step B: useActiveRuns returns TanStack Query shape — NOT a bare array.
-  //   Hook reads: const { data: activeRunsData } = useActiveRuns(); activeRunsData?.runs ?? []
-  // Step C: Set up MockEventSource so trial_completed events fire via source.emit()
-  // The pattern below uses the existing test file's mock variables (mockUseActiveRuns etc.):
   const { useLiveMonitorState } = await import("../../hooks/useLiveMonitorState");
   const wrapper = createWrapper();
-  // Hook signature: useLiveMonitorState(totalTasksOverride?: number)
-  // Run ID comes from internal useActiveRuns() — use existing mockUseActiveRuns from beforeEach
-  // Override to return a specific run ID for this test:
-  mockUseActiveRuns.mockReturnValue({
-    data: {
-      runs: [{ run_id: "run1", mode: "taguchi", models: [], started_at: "" }],
-      count: 1,
-    },
-  });
+  // beforeEach already: stubs EventSource, sets mockUseActiveRuns → run-1, fake timers
   const { result } = renderHook(() => useLiveMonitorState(), { wrapper });
   act(() => {
     for (let i = 0; i < 1500; i++) {
-      MockEventSource.instances[0]?.emit("trial_completed", {
-        score: 0.5, task_id: `t${i}`,
-      });
+      // emit() calls the registered trial_completed handler with a MessageEvent
+      MockEventSource.instances[0]?.emit("trial_completed", { score: 0.5, task_id: `t${i}` });
     }
   });
   expect(result.current.scores.length).toBeLessThanOrEqual(1000);
@@ -2263,30 +2253,40 @@ uv run pytest agent-evals/tests/test_runner.py::test_judge_score_sampled_into_me
 
 **Step 3: Implement Phase 1 sampling**
 
-Add `_call_judge` as a **private method on `EvalRunner`** (NOT a module-level function — it needs access to `self._client`):
+Four concrete changes to `agent-evals/src/agent_evals/runner.py`:
+
+**3a. Add two module-level constants** after the existing imports (around line 50, before the
+`EvalRunConfig` class):
 
 ```python
-from agent_evals.judge.calibrator import build_judge_prompt, parse_judge_response, JudgeScore
+JUDGE_SAMPLE_RATE = 50  # Call judge for 1 in every 50 trials (2%)
+JUDGE_MODEL = "openrouter/openai/gpt-4o-mini"  # Cheap grading model
+```
 
-JUDGE_SAMPLE_RATE = 50  # 1 in every 50 trials (2%)
-JUDGE_MODEL = "openrouter/openai/gpt-5-mini"  # cheap routine model
+**3b. Add `_call_judge` as a private instance method on `EvalRunner`** — place it immediately
+before `_run_trial` (currently around line 516). It MUST be on the class (not module-level)
+because it needs `self._client`. Add this entire method:
 
-# Add to EvalRunner class as a method (NOT module-level — needs self._client):
-def _call_judge(self, task_type: str, question: str, response: str) -> JudgeScore:
-    """Call LLM judge for one trial.
+```python
+def _call_judge(self, task_type: str, question: str, response: str) -> "JudgeScore":
+    """Call LLM judge to score one trial response.
 
-    - build_judge_prompt() returns list[dict] messages (NOT a str)
-    - parse_judge_response() takes str, returns tuple[float, str]
-    - LLMClient.complete() takes list[dict], returns GenerationResult with .content
+    Imports are local to avoid circular import issues.
+    - build_judge_prompt() returns list[dict[str,str]] (NOT a str prompt)
+    - parse_judge_response() takes a str, returns tuple[float, str]
+    - self._client.complete() takes list[dict], returns GenerationResult with .content
     """
+    from agent_evals.judge.calibrator import (
+        JudgeScore, build_judge_prompt, parse_judge_response,
+    )
     messages = build_judge_prompt(
-        task_type=task_type,   # REQUIRED first arg
+        task_type=task_type,
         question=question,
         response=response,
         rubric=None,
     )
-    raw = self._client.complete(messages).content  # complete() takes list[dict]
-    score, rationale = parse_judge_response(raw)   # unpack tuple[float, str]
+    raw = self._client.complete(messages).content
+    score, rationale = parse_judge_response(raw)
     return JudgeScore(
         example_id="",
         judge_model=JUDGE_MODEL,
@@ -2296,48 +2296,83 @@ def _call_judge(self, task_type: str, question: str, response: str) -> JudgeScor
     )
 ```
 
-Then add sampling to `_run_trial()` — the method already returns `metrics={}` (line 631). Change it to:
-```python
-# Add a trial_index parameter to _run_trial() so sampling is deterministic.
-# In the ThreadPoolExecutor submission loop (runner.py ~lines 230-241), enumerate the submissions
-# and pass the index as trial_index. Then inside _run_trial():
-metrics: dict[str, object] = {}
-if trial_index % JUDGE_SAMPLE_RATE == 0:
-    try:
-        judge_result = self._call_judge(
-            task.definition.type,
-            task.definition.question,
-            generation.content,
-        )
-        metrics["judge_score"] = judge_result.score
-        metrics["judge_heuristic_delta"] = abs(judge_result.score - score)
-    except Exception:
-        pass  # Judge failure must not affect trial outcome
+**3c. Update `_run_trial` signature** (currently at line 516) — add `trial_index: int = 0`
+as the last parameter (default 0 preserves backward compatibility with any existing callers):
 
-return TrialResult(
-    ...
-    metrics=metrics,   # replace the hardcoded metrics={}
-    ...
-)
+```python
+def _run_trial(
+    self,
+    task: EvalTask,
+    variant: IndexVariant,
+    doc_tree: DocTree,
+    repetition: int,
+    source: str = "gold_standard",
+    trial_index: int = 0,           # ADD THIS LINE
+) -> TrialResult:
 ```
 
-> **Implementation checklist:**
-> 1. Add `trial_index: int` parameter to `_run_trial()` signature
-> 2. Convert the ThreadPoolExecutor dict comprehension (runner.py ~lines 236-241) to an explicit
->    for-loop with `enumerate` so the index is available to pass as `trial_index`. Dict comprehensions
->    don't natively support `enumerate`. Replace with:
->    ```python
->    future_to_item = {}
->    for idx, (task, variant, rep) in enumerate(work_items, 1):
->        future = executor.submit(
->            self._run_trial, task, variant, doc_tree, rep, source, trial_index=idx
->        )
->        future_to_item[future] = (task, variant, rep)
->    ```
-> 3. Add `_call_judge` as an instance method on `EvalRunner`
-> 4. Change `metrics={}` (line 631) to the populated dict above
-> 5. Monkeypatch target in test: `"agent_evals.runner.EvalRunner._call_judge"` (not `"agent_evals.runner._call_judge"`)
-> 6. Test call must pass `trial_index=i` once `_run_trial` signature is updated (already included above)
+Then find `metrics={}` at line 631 (inside `_run_trial`, in the `return TrialResult(...)` call)
+and replace the two lines `metrics={},` with the sampling block:
+
+```python
+        metrics: dict[str, object] = {}
+        if trial_index > 0 and trial_index % JUDGE_SAMPLE_RATE == 0:
+            try:
+                judge_result = self._call_judge(
+                    task.definition.type,
+                    task.definition.question,
+                    generation.content,
+                )
+                metrics["judge_score"] = judge_result.score
+                metrics["judge_heuristic_delta"] = abs(judge_result.score - score)
+            except Exception:
+                pass  # Judge failure must never affect trial outcome
+
+        return TrialResult(
+            task_id=task.definition.task_id,
+            task_type=task.definition.type,
+            variant_name=variant_name,
+            repetition=repetition,
+            score=score,
+            metrics=metrics,          # was metrics={}
+            prompt_tokens=generation.prompt_tokens,
+            completion_tokens=generation.completion_tokens,
+            total_tokens=generation.total_tokens,
+            cost=generation.cost,
+            latency_seconds=latency,
+            response=generation.content,
+            cached=cached,
+            source=source,
+        )
+```
+
+**3d. Replace the ThreadPoolExecutor dict comprehension** (lines 236-241 in `run()`) with an
+explicit for-loop that tracks `trial_index`. The current code is:
+
+```python
+# CURRENT (lines 236-241) — replace this entire block:
+future_to_item = {
+    executor.submit(
+        self._run_trial, task, variant, doc_tree, rep, source
+    ): (task, variant, rep)
+    for task, variant, rep in work_items
+}
+```
+
+Replace with:
+
+```python
+# REPLACEMENT — enumerates work_items so trial_index is available:
+future_to_item = {}
+for idx, (task, variant, rep) in enumerate(work_items, 1):
+    future = executor.submit(
+        self._run_trial, task, variant, doc_tree, rep, source, trial_index=idx
+    )
+    future_to_item[future] = (task, variant, rep)
+```
+
+`enumerate(work_items, 1)` starts at 1, so `idx=50` is the first multiple of
+`JUDGE_SAMPLE_RATE=50` that triggers judging.
 
 **Step 4: Run tests**
 
@@ -2452,86 +2487,106 @@ git commit -m "feat(infra): add rotating JSON file logging to Observatory (I7)"
 ### Task 31: Auto-sync model catalog on server startup (I8 — LOW)
 
 **Files:**
-- Modify: `agent-evals/src/agent_evals/observatory/web/routes.py` (lifespan)
-- Test: `agent-evals/tests/test_observatory_web.py`
+- Modify: `agent-evals/src/agent_evals/observatory/web/server.py` (NOT routes.py)
+- Test: `agent-evals/tests/test_model_browser_web.py` (add to existing file)
 
-**⚠️ Pre-implementation investigation required — read this FIRST:**
+**Architecture note:** The startup sync lives in `server.py`'s `create_app()` — NOT in `routes.py`.
+`create_app()` already accepts `model_sync: ModelSync | None` and passes it to `create_router()`.
+The sync call belongs in a FastAPI `lifespan` on the app, not the router.
 
-Verification found that `routes.py` and `server.py` currently have **NO lifespan context manager** and `ModelCatalog` has **NO `sync()` method**. Before writing the test, the implementer MUST:
+The sync method is `model_sync.run_sync()` (on the `ModelSync` class, NOT on `ModelCatalog`).
+`ModelCatalog` has no sync method — `ModelSync` is the sync coordinator.
 
-1. **Check if Task 15b (HeartbeatThread) adds a lifespan.** If Task 15b adds a `@asynccontextmanager` lifespan to the FastAPI app, Task 31 can add the catalog sync to it. If Task 15b was NOT implemented yet, implement it first.
-
-2. **Check ModelCatalog for the actual sync method name.** Read `agent-evals/src/agent_evals/observatory/model_catalog.py`. There is also a separate `ModelSync` class (`model_sync.py`) and `model_sync: ModelSync | None = None` parameter in `create_router()`. The "sync" may go through `ModelSync.sync_models()` or a different method name — verify before writing the test.
-
-3. **Adjust the test to match the real method name.**
-
-**Step 0: Investigate**
-```bash
-# Check ModelCatalog for sync-like methods
-grep -n "def " agent-evals/src/agent_evals/observatory/model_catalog.py
-# Check ModelSync
-grep -n "def " agent-evals/src/agent_evals/observatory/model_sync.py
-# Check if lifespan exists (added by Task 15b)
-grep -n "lifespan\|asynccontextmanager" agent-evals/src/agent_evals/observatory/web/routes.py
-```
+`launch_dashboard()` (lines 102-105 of `server.py`) already calls `model_sync.run_sync()` but
+only when the catalog is empty. This task moves that call into a lifespan so it runs on
+every startup, then removes the old conditional from `launch_dashboard()`.
 
 **Step 1: Write failing test**
 
-Once the actual method name and lifespan existence are confirmed, the test pattern is:
-```python
-@pytest.fixture
-def mock_catalog():
-    """Return a MagicMock for ModelCatalog."""
-    from unittest.mock import MagicMock
-    from agent_evals.observatory.model_catalog import ModelCatalog
-    return MagicMock()  # use MagicMock() not spec=ModelCatalog if sync() doesn't exist yet
+Add this class to `agent-evals/tests/test_model_browser_web.py` (after the existing imports):
 
-def test_model_catalog_sync_called_on_startup(mock_catalog, tmp_path):
-    """Model catalog sync must be called during server lifespan startup."""
-    from agent_evals.observatory.store import ObservatoryStore
-    from agent_evals.observatory.tracker import EventTracker
-    from agent_evals.observatory.web.routes import create_router
-    from fastapi import FastAPI
-    store = ObservatoryStore(db_path=tmp_path / "test.db")
-    tracker = EventTracker(store=store)
-    # Inject mock catalog into the router at creation time (create_router accepts catalog kwarg)
-    router = create_router(store=store, tracker=tracker, catalog=mock_catalog)
-    test_app = FastAPI()
-    test_app.include_router(router)
-    with TestClient(test_app) as _client:
-        # Replace .sync with the actual method name confirmed in Step 0
-        mock_catalog.sync.assert_called_once()
+```python
+from unittest.mock import MagicMock
+
+class TestStartupSync:
+    """ModelSync.run_sync() is called during server startup lifespan."""
+
+    def test_model_sync_run_sync_called_on_startup(self, tmp_path: Path) -> None:
+        store = ObservatoryStore(tmp_path / "obs.db")
+        tracker = EventTracker(store=store)
+        catalog = ModelCatalog(tmp_path / "models.db")
+        mock_sync = MagicMock(spec=ModelSync)   # run_sync() is a method on ModelSync
+
+        app = create_app(
+            store=store, tracker=tracker, catalog=catalog, model_sync=mock_sync
+        )
+        with TestClient(app):           # TestClient triggers the lifespan startup
+            mock_sync.run_sync.assert_called_once()
 ```
 
 **Step 2: Run to confirm fail**
 
 ```bash
-uv run pytest agent-evals/tests/test_observatory_web.py::test_model_catalog_sync_called_on_startup -v
+uv run pytest agent-evals/tests/test_model_browser_web.py::TestStartupSync -v
 ```
 
-**Step 3: Add sync call to lifespan**
+Expected: FAIL — `run_sync` never called (no lifespan yet).
 
-In `routes.py`, ensure the lifespan (from Task 15b) includes:
+**Step 3: Add lifespan to `create_app()` in `server.py`**
+
+Add two imports at the top of `server.py` (after the existing `import threading`):
+
 ```python
-try:
-    if catalog is not None:
-        await asyncio.to_thread(catalog.sync)  # replace .sync() with actual method name
-        logger.info("Model catalog synced on startup")
-except Exception as e:
-    logger.warning("Model catalog sync failed on startup: %s", e)
+import asyncio
+from contextlib import asynccontextmanager
+```
+
+Then replace the `def create_app(...)` function body's first line (`app = FastAPI(...)`) with:
+
+```python
+def create_app(
+    store: ObservatoryStore,
+    tracker: EventTracker,
+    catalog: ModelCatalog | None = None,
+    group_manager: ModelGroupManager | None = None,
+    model_sync: ModelSync | None = None,
+    run_manager: RunManager | None = None,
+) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if model_sync is not None:
+            try:
+                await asyncio.to_thread(model_sync.run_sync)
+                logger.info("Model catalog synced on startup")
+            except Exception as exc:
+                logger.warning("Model catalog sync failed on startup: %s", exc)
+        yield   # Application serves requests here
+
+    app = FastAPI(title="Observatory Dashboard", lifespan=lifespan)
+    # ... rest of create_app() is UNCHANGED
+```
+
+Also remove the now-redundant conditional from `launch_dashboard()` (lines 102-105):
+
+```python
+# DELETE these 4 lines from launch_dashboard():
+if config.auto_sync and not catalog.get_active_models():
+    logger.info("Model catalog empty — running initial sync")
+    model_sync.run_sync()
 ```
 
 **Step 4: Run tests**
 
 ```bash
-uv run pytest agent-evals/tests/test_observatory_web.py -v
+uv run pytest agent-evals/tests/test_model_browser_web.py -v
 ```
 
 **Step 5: Commit**
 
 ```bash
-git add agent-evals/src/agent_evals/observatory/web/routes.py
-git commit -m "feat(infra): auto-sync model catalog on server startup (I8)"
+git add agent-evals/src/agent_evals/observatory/web/server.py \
+        agent-evals/tests/test_model_browser_web.py
+git commit -m "feat(infra): auto-sync model catalog on server startup via FastAPI lifespan (I8)"
 ```
 
 ---
