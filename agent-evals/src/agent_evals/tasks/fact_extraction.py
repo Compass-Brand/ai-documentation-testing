@@ -29,6 +29,7 @@ class FactExtractionTask(EvalTask):
         self.answer_aliases: list[str] = meta.get("answer_aliases", [])
         self.source_location: str = meta.get("source_location", "")
         self.fact_type: str = meta.get("fact_type", "")
+        self._expected_lower: str = self.expected_answer.lower()
 
     def build_prompt(self, index_content: str) -> list[dict[str, str]]:
         """Build messages for fact extraction evaluation.
@@ -78,7 +79,7 @@ class FactExtractionTask(EvalTask):
         response_lower = response.lower()
 
         # Layer 1: Exact match of expected answer
-        if self.expected_answer.lower() in response_lower:
+        if self._expected_lower in response_lower:
             return 1.0
 
         # Layer 2: Alias matches
@@ -88,7 +89,7 @@ class FactExtractionTask(EvalTask):
 
         # Layer 3: Fuzzy matching — catches paraphrases and abbreviations
         fuzzy_score = fuzz.token_set_ratio(
-            self.expected_answer.lower(),
+            self._expected_lower,
             response_lower,
             processor=fuzz_utils.default_process,
         )
