@@ -5140,7 +5140,22 @@ git commit -m "feat(ui): add Data Source selector to RunConfig with useDatasets 
 
 ### Task 45: Prepare all real datasets (E12 — HIGH)
 
-**Goal:** Download and cache all dataset adapters so real benchmarks are available for evaluation and testing. Create an idempotent setup script so this can be re-run safely.
+**Goal:** Download and cache all dataset adapters at their full published sizes. Create an idempotent setup script so this can be re-run safely.
+
+**Do NOT use `--dataset-limit` for preparation.** Research into the actual dataset sizes confirmed that a limit of 200 would compromise test integrity for most benchmarks:
+
+| Dataset | Full size | 200-limit impact |
+|---|---|---|
+| wikicontradict | 253 records | Loses 21% of a curated benchmark |
+| SWE-bench Verified | 500 records | Cuts to 40% of the test set |
+| DS-1000 | 1,000 problems | 7 libraries; 200 tasks skews coverage |
+| BigCodeBench | 1,140 tasks | 18% of the benchmark |
+| IBM TechQA | ~1,400 labeled | Two filter stages; 200 final ≠ 200 source records |
+| MultiHop-RAG | 2,556 queries | 7.8% of benchmark |
+| RepliQA | ~3,600 unanswerable (of 17,955) | Limit applied after 20% filter |
+| AmbigQA | 14,042 records | Fine either way, but no reason to limit |
+
+The `--dataset-limit` flag exists solely for development cost control (e.g. `--limit 5` to verify a new adapter works). **Never use it for real evaluation preparation.**
 
 **Key files:**
 - Create: `scripts/prepare-datasets.sh`
@@ -5156,11 +5171,10 @@ git commit -m "feat(ui): add Data Source selector to RunConfig with useDatasets 
 # Marker file:    ~/.agent-evals/datasets/{name}/.prepared
 # Task YAMLs:     ~/.agent-evals/datasets/{name}/tasks/*.yaml
 # Doc tree:       ~/.agent-evals/datasets/{name}/doc_tree.json
-
-# Available adapters (from agent_evals/datasets/):
-# repliqa, ambigqa, ibm-techqa, multihop-rag, ds1000,
-# bigcodebench, swe-bench, wikicontradict, perturbation,
-# synthetic-efficiency, code-rag-bench
+#
+# Adapters that do NOT use HF (skip from this script):
+#   perturbation       — generates from an existing source dataset
+#   synthetic-efficiency — generates from an existing source dataset
 ```
 
 ---
@@ -5172,9 +5186,9 @@ uv run python -c "
 from agent_evals.datasets import load_all, list_available
 load_all()
 for a in list_available():
-    print(a['name'], '|', a['license'], '|', a['task_type'])
+    print(a['name'], '|', a['task_type'], '|', a['license'])
 "
-# Note the exact names — these are the values to pass to --prepare-datasets
+# Note the exact adapter names — must match what --prepare-datasets expects
 ```
 
 **Step 2: Check which datasets are already prepared**
@@ -5195,40 +5209,49 @@ for a in list_available():
 
 ```bash
 #!/usr/bin/env bash
-# prepare-datasets.sh — idempotent dataset preparation script
+# prepare-datasets.sh — idempotent full-dataset preparation script
 # Run from the workspace root (ai-documentation-testing/)
-# Usage: bash scripts/prepare-datasets.sh [--limit N]
+# Usage: bash scripts/prepare-datasets.sh
 #
-# Downloads and caches all registered dataset adapters.
+# Downloads and caches all HuggingFace dataset adapters at their full sizes.
 # Already-prepared datasets are skipped automatically (idempotent).
-# Default limit: 200 tasks per dataset. Override with --limit N.
+#
+# DO NOT pass --dataset-limit here. These are published benchmarks designed
+# to be used in full. Using a limit compromises statistical validity.
+#
+# Dataset sizes (for reference):
+#   wikicontradict:  253 records   (full; curated benchmark)
+#   swe-bench:       500 records   (full; human-verified test set)
+#   ibm-techqa:    ~1400 records   (full labeled set)
+#   ds1000:         1000 problems  (full)
+#   bigcodebench:   1140 tasks     (full)
+#   multihop-rag:   2556 queries   (full)
+#   repliqa:       ~3600 tasks     (unanswerable subset of 17,955)
+#   ambigqa:       14042 records   (full)
+#
+# Adapters skipped (generators, not HF downloads):
+#   perturbation, synthetic-efficiency
 
 set -euo pipefail
 
-LIMIT="${1:-200}"
-if [[ "${1:-}" == "--limit" ]]; then
-    LIMIT="$2"
-fi
+echo "=== Preparing datasets (full sizes — no limit) ==="
 
-echo "=== Preparing datasets (limit: ${LIMIT} tasks each) ==="
-
-# Prepare each dataset individually so one failure does not block others
 DATASETS=(
-  repliqa
-  ambigqa
+  wikicontradict
+  swe-bench
   ibm-techqa
-  multihop-rag
   ds1000
   bigcodebench
-  swe-bench
-  wikicontradict
+  multihop-rag
+  repliqa
+  ambigqa
 )
 
 FAILED=()
 for DATASET in "${DATASETS[@]}"; do
     echo ""
     echo "--- Preparing: ${DATASET} ---"
-    if uv run agent-evals --prepare-datasets "${DATASET}" --dataset-limit "${LIMIT}"; then
+    if uv run agent-evals --prepare-datasets "${DATASET}"; then
         echo "OK: ${DATASET}"
     else
         echo "FAILED: ${DATASET} (continuing with others)"
@@ -5239,44 +5262,7 @@ done
 echo ""
 echo "=== Dataset preparation complete ==="
 
-# Final status report
-uv run python -c "
-from agent_evals.datasets import load_all, list_available
-from agent_evals.datasets.cache import DatasetCache
-load_all()
-cache = DatasetCache()
-ready = []
-missing = []
-for a in list_available():
-    if cache.is_prepared(a['name']):
-        ready.append(a['name'])
-    else:
-        missing.append(a['name'])
-print(f'Ready ({len(ready)}): {ready}')
-print(f'Missing ({len(missing)}): {missing}')
-"
-
-if [[ ${#FAILED[@]} -gt 0 ]]; then
-    echo ""
-    echo "WARNING: Failed to prepare: ${FAILED[*]}"
-    echo "These datasets may require network access, HuggingFace authentication,"
-    echo "or special download permissions. Check error messages above."
-    exit 1
-fi
-```
-
-**Step 4: Make the script executable and run it**
-
-```bash
-chmod +x scripts/prepare-datasets.sh
-bash scripts/prepare-datasets.sh --limit 200
-# This will download from HuggingFace. May take 5-30 minutes depending on network.
-# Each dataset is idempotent — already-prepared datasets are skipped.
-```
-
-**Step 5: Verify task counts after preparation**
-
-```bash
+# Final status report with task counts
 uv run python -c "
 from agent_evals.datasets import load_all, list_available
 from agent_evals.datasets.cache import DatasetCache
@@ -5286,37 +5272,90 @@ cache = DatasetCache()
 for a in list_available():
     name = a['name']
     if cache.is_prepared(name):
-        tasks = load_tasks(cache.task_dir(name))
-        print(f'{name}: {len(tasks)} tasks')
+        tasks = list(load_tasks(cache.task_dir(name)))
+        print(f'READY  {name}: {len(tasks)} tasks')
     else:
-        print(f'{name}: NOT PREPARED')
+        print(f'MISSING {name}')
 "
-# Expected: each prepared dataset shows > 0 tasks (up to 200)
+
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    echo ""
+    echo "WARNING: Failed to prepare: ${FAILED[*]}"
+    echo "These datasets may require network access or HuggingFace authentication."
+    echo "Run: huggingface-cli login"
+    echo "Then re-run this script — already-prepared datasets are skipped."
+    exit 1
+fi
 ```
 
-**Step 6: Verify a quick dry-run evaluation loads correctly**
+**Step 4: Make the script executable and run it**
 
 ```bash
-# Test gold_standard still works (must not regress)
+chmod +x scripts/prepare-datasets.sh
+bash scripts/prepare-datasets.sh
+# Downloads from HuggingFace at full dataset sizes.
+# May take 10-60 minutes depending on network speed.
+# Already-prepared datasets are skipped on subsequent runs.
+```
+
+**Step 5: Verify task counts match expected full sizes**
+
+```bash
+uv run python -c "
+from agent_evals.datasets import load_all, list_available
+from agent_evals.datasets.cache import DatasetCache
+from agent_evals.tasks.loader import load_tasks
+load_all()
+cache = DatasetCache()
+EXPECTED = {
+    'wikicontradict': (200, 300),   # ~253
+    'swe-bench':      (400, 550),   # ~500 (test split)
+    'ibm-techqa':     (1000, 1500), # ~1400 answerable
+    'ds1000':         (950, 1050),  # 1000
+    'bigcodebench':   (1100, 1200), # 1140
+    'multihop-rag':   (2400, 2700), # 2556
+    'repliqa':        (2000, 5000), # ~20% of 17955 = ~3591
+    'ambigqa':        (10000, 15000), # 14042
+}
+ok = True
+for name, (lo, hi) in EXPECTED.items():
+    if not cache.is_prepared(name):
+        print(f'MISSING: {name}')
+        ok = False
+        continue
+    count = len(list(load_tasks(cache.task_dir(name))))
+    status = 'PASS' if lo <= count <= hi else 'WARN'
+    print(f'{status}: {name} = {count} tasks (expected {lo}-{hi})')
+    if status == 'WARN':
+        ok = False
+print()
+print('All checks passed' if ok else 'WARNING: some counts outside expected range')
+"
+```
+
+**Step 6: Smoke-test each adapter with a dry-run evaluation**
+
+```bash
+# gold_standard must still work (backward compat check)
 uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --dry-run 2>&1 | grep -E "tasks loaded|error"
 
-# Test repliqa source (or whichever was prepared first)
+# Verify at least one real dataset loads cleanly
 uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 \
   --source repliqa \
   --task-limit 5 \
   --dry-run \
   2>&1 | grep -E "tasks loaded|error|repliqa"
-# Expected: loads repliqa tasks, no errors
+# Expected: loads tasks from repliqa, no errors
 ```
 
 **Step 7: Commit**
 
 ```bash
 git add scripts/prepare-datasets.sh
-git commit -m "chore(datasets): add idempotent prepare-datasets.sh setup script (E12)"
+git commit -m "chore(datasets): add prepare-datasets.sh — full-size benchmark download (E12)"
 ```
 
-**Note on HuggingFace access:** Some datasets (SWE-Bench, BigCodeBench) require `huggingface-hub` authentication. If download fails:
+**Note on HuggingFace access:** Some datasets (SWE-Bench, BigCodeBench) require authentication:
 1. Run `huggingface-cli login` with a read token from huggingface.co/settings/tokens
 2. Re-run `bash scripts/prepare-datasets.sh` — already-prepared datasets are skipped
 
@@ -5798,10 +5837,9 @@ uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --dry-
 uv run agent-evals --model-config foo.yaml --dry-run 2>&1 | grep -E "unrecognized|error"
 # Expected: "unrecognized arguments: --model-config"
 
-# Confirm dataset source works
-uv run agent-evals --prepare-datasets repliqa --dataset-limit 10
-uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --source repliqa --dry-run 2>&1 | grep -E "tasks|error"
-# Expected: loads 10 repliqa tasks, no errors
+# Confirm dataset source works (use --task-limit to cap eval, NOT --dataset-limit which caps preparation)
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --source repliqa --task-limit 5 --dry-run 2>&1 | grep -E "tasks|error"
+# Expected: loads repliqa tasks (full prepared set), evaluates only 5, no errors
 ```
 
 **Dashboard source integration check (Tasks 44-46):**
