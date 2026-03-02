@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { createElement } from "react";
+import React, { createElement } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "../../components/Tooltip";
@@ -70,7 +70,7 @@ function createWrapper(initialEntries: string[] = ["/analysis/run-1"]) {
         { initialEntries },
         createElement(
           TooltipProvider,
-          { delayDuration: 300 },
+          { delayDuration: 300 } as React.ComponentProps<typeof TooltipProvider>,
           createElement(
             Routes,
             null,

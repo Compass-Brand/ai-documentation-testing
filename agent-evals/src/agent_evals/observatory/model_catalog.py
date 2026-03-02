@@ -181,11 +181,9 @@ class ModelCatalog:
             clauses.append("tokenizer = ?")
             params.append(tokenizer)
 
-        where = " AND ".join(clauses)
+        query = "SELECT * FROM models WHERE " + " AND ".join(clauses)
         with self._lock:
-            rows = self._conn.execute(
-                f"SELECT * FROM models WHERE {where}", params  # noqa: S608
-            ).fetchall()
+            rows = self._conn.execute(query, tuple(params)).fetchall()
 
         results = [self._row_to_dict(r) for r in rows]
 

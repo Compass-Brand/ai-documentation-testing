@@ -43,7 +43,7 @@ export default function App() {
       <ScrollThread />
       <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} />
       <nav className="sticky top-0 z-40 border-b border-brand-mist backdrop-blur-md bg-brand-bone/90">
-        <div className="mx-auto flex max-w-full items-center gap-sp-1 px-sp-6 py-sp-3">
+        <div className="mx-auto flex max-w-full items-center gap-sp-1 px-sp-6 py-sp-3 overflow-x-auto [-webkit-overflow-scrolling:touch]">
           <Compass className="mr-sp-2 h-5 w-5 text-brand-goldenrod" />
           <span className="mr-sp-6 font-display text-h5 text-brand-charcoal tracking-headline">
             Observatory
@@ -55,7 +55,7 @@ export default function App() {
               end={to === "/"}
               className={({ isActive }) =>
                 cn(
-                  "inline-flex items-center gap-sp-2 px-sp-4 py-sp-2",
+                  "inline-flex items-center gap-sp-2 px-sp-4 py-sp-2 whitespace-nowrap",
                   "text-body-sm font-medium transition-all duration-micro",
                   "border-b-2",
                   isActive

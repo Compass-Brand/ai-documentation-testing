@@ -62,6 +62,7 @@ class OrchestratorConfig:
     eval_config: EvalRunConfig | None = None
     store: ObservatoryStore | None = None
     tracker: EventTracker | None = None
+    run_id: str | None = None
 
 
 @dataclass
@@ -195,7 +196,7 @@ class EvalOrchestrator:
             If mode is ``"taguchi"`` but *design* or *variant_lookup*
             is not provided.
         """
-        run_id = uuid.uuid4().hex[:12]
+        run_id = self.config.run_id or uuid.uuid4().hex[:12]
         eval_config = self.config.eval_config or EvalRunConfig()
         effective_mode = mode or self.config.mode
 

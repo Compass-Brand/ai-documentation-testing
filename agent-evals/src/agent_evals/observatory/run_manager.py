@@ -223,6 +223,7 @@ class RunManager:
             eval_config=eval_config,
             store=self._store,
             tracker=self._tracker,
+            run_id=run_id,
         )
         orchestrator = EvalOrchestrator(orch_config)
 

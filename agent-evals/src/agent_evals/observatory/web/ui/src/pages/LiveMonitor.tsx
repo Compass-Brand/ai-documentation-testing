@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Component, useMemo, type ErrorInfo, type ReactNode } from "react";
 import {
   Activity,
   DollarSign,
@@ -43,7 +43,42 @@ ChartJS.register(
   ChartTooltip,
 );
 
+class LiveMonitorErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  state = { hasError: false, error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("LiveMonitor error:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="mx-auto max-w-wide px-sp-6 py-sp-8 text-center">
+          <AlertCircle className="mx-auto mb-sp-3 h-8 w-8 text-brand-clay" />
+          <h2 className="text-h4 text-brand-charcoal">Something went wrong</h2>
+          <p className="text-body-sm text-brand-slate mt-sp-2">
+            {this.state.error?.message}
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function LiveMonitor() {
+  return (
+    <LiveMonitorErrorBoundary>
+      <LiveMonitorContent />
+    </LiveMonitorErrorBoundary>
+  );
+}
+
+function LiveMonitorContent() {
   useDocumentTitle("Live Monitor");
   const state = useLiveMonitorState();
 

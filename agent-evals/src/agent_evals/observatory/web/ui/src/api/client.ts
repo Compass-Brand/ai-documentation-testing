@@ -1,17 +1,29 @@
 const BASE_URL = import.meta.env.VITE_API_URL ?? "";
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 export async function fetchApi<T>(
   path: string,
   opts?: RequestInit,
 ): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...opts,
-    headers: { "Content-Type": "application/json", ...opts?.headers },
-  });
-  if (!res.ok) {
-    throw new Error(`API ${res.status}: ${await res.text()}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      ...opts,
+      headers: { "Content-Type": "application/json", ...opts?.headers },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(`API ${res.status}: ${await res.text()}`);
+    }
+    try {
+      return (await res.json()) as T;
+    } catch {
+      throw new Error(`API: malformed JSON response from ${path}`);
+    }
+  } finally {
+    clearTimeout(timeout);
   }
-  return res.json();
 }
 
 // --- Type Definitions ---

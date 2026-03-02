@@ -71,20 +71,24 @@ export function FilterRange({
   format,
 }: FilterRangeProps) {
   const fmt = format ?? String;
+  const inputId = `filter-range-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <div className="mb-sp-4">
+      <label htmlFor={inputId} className="mb-sp-1 block text-caption font-medium text-brand-charcoal">
+        {label}
+      </label>
       <div className="flex justify-between text-caption text-brand-slate mb-sp-2">
         <span>{fmt(value[0])}</span>
         <span>{fmt(value[1])}</span>
       </div>
       <input
+        id={inputId}
         type="range"
         min={min}
         max={max}
         value={value[1]}
         onChange={(e) => onChange([value[0], parseInt(e.target.value)])}
         className="w-full accent-brand-goldenrod"
-        aria-label={label}
       />
     </div>
   );

@@ -28,6 +28,7 @@ export default function RunConfig() {
   const [topK, setTopK] = useState(3);
   const [alpha, setAlpha] = useState(0.05);
   const [error, setError] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(false);
 
   const activeCount = activeRuns.data?.count ?? 0;
   const isSubmitting = startRun.isPending;
@@ -62,6 +63,8 @@ export default function RunConfig() {
       },
       onError: (err) => {
         setError(err.message || "Failed to start evaluation");
+        setCooldown(true);
+        setTimeout(() => setCooldown(false), 1500);
       },
     });
   }
@@ -106,7 +109,7 @@ export default function RunConfig() {
                           value={m}
                           checked={mode === m}
                           onChange={() => setMode(m)}
-                          className="sr-only"
+                          className="absolute inset-0 opacity-0 cursor-pointer"
                           aria-label={m === "taguchi" ? "Taguchi" : "Full"}
                         />
                         <span className="text-h5 font-medium capitalize text-brand-charcoal">
@@ -339,7 +342,7 @@ export default function RunConfig() {
           )}
 
           <div className="mt-sp-8 flex justify-end">
-            <Button type="submit" size="lg" disabled={isSubmitting}>
+            <Button type="submit" size="lg" disabled={isSubmitting || cooldown}>
               {isSubmitting ? (
                 <Loader2 className="mr-sp-2 h-5 w-5 animate-spin" />
               ) : (

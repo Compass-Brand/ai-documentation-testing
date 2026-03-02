@@ -5,9 +5,19 @@ import {
 } from "@tanstack/react-query";
 import { api, type ModelFilters, type StartRunPayload } from "./client";
 
+const STALE_LONG = 30_000;
+const STALE_MED = 10_000;
+const STALE_SHORT = 5_000;
+const GC_TIME = 300_000;
+
 // --- Runs ---
 export function useRuns() {
-  return useQuery({ queryKey: ["runs"], queryFn: api.listRuns });
+  return useQuery({
+    queryKey: ["runs"],
+    queryFn: api.listRuns,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
+  });
 }
 
 export function useRun(runId: string | null) {
@@ -15,6 +25,8 @@ export function useRun(runId: string | null) {
     queryKey: ["run", runId],
     queryFn: () => api.getRun(runId!),
     enabled: !!runId,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
   });
 }
 
@@ -23,6 +35,8 @@ export function useTrials(runId: string | null, model?: string) {
     queryKey: ["trials", runId, model],
     queryFn: () => api.getTrials(runId!, model),
     enabled: !!runId,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
   });
 }
 
@@ -31,6 +45,8 @@ export function useReport(runId: string | null) {
     queryKey: ["report", runId],
     queryFn: () => api.getReport(runId!),
     enabled: !!runId,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
   });
 }
 
@@ -39,6 +55,8 @@ export function useCostTrend() {
   return useQuery({
     queryKey: ["cost-trend"],
     queryFn: api.costTrend,
+    staleTime: STALE_SHORT,
+    gcTime: GC_TIME,
   });
 }
 
@@ -47,6 +65,8 @@ export function useModelDrift(model: string | null) {
     queryKey: ["model-drift", model],
     queryFn: () => api.modelDrift(model!),
     enabled: !!model,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
   });
 }
 
@@ -55,6 +75,8 @@ export function useCompareRuns(ids: string[]) {
     queryKey: ["compare", ids],
     queryFn: () => api.compareRuns(ids),
     enabled: ids.length >= 2,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
   });
 }
 
@@ -64,6 +86,8 @@ export function useModels(filters: ModelFilters) {
     queryKey: ["models", filters],
     queryFn: () => api.listModels(filters),
     placeholderData: (prev) => prev,
+    staleTime: STALE_LONG,
+    gcTime: GC_TIME,
   });
 }
 
@@ -72,6 +96,8 @@ export function useModelDetail(modelId: string | null) {
     queryKey: ["model", modelId],
     queryFn: () => api.getModel(modelId!),
     enabled: !!modelId,
+    staleTime: STALE_LONG,
+    gcTime: GC_TIME,
   });
 }
 
@@ -81,12 +107,19 @@ export function useModelEndpoints(modelId: string | null) {
     queryFn: () => api.getModelEndpoints(modelId!),
     enabled: !!modelId,
     refetchInterval: 60_000,
+    staleTime: STALE_LONG,
+    gcTime: GC_TIME,
   });
 }
 
 // --- Groups ---
 export function useGroups() {
-  return useQuery({ queryKey: ["groups"], queryFn: api.listGroups });
+  return useQuery({
+    queryKey: ["groups"],
+    queryFn: api.listGroups,
+    staleTime: STALE_LONG,
+    gcTime: GC_TIME,
+  });
 }
 
 export function useCreateGroup() {
@@ -120,6 +153,8 @@ export function useSyncStatus() {
   return useQuery({
     queryKey: ["sync-status"],
     queryFn: api.syncStatus,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
   });
 }
 
@@ -150,6 +185,8 @@ export function useActiveRuns() {
     queryKey: ["active-runs"],
     queryFn: api.getActiveRuns,
     refetchInterval: 5000,
+    staleTime: STALE_SHORT,
+    gcTime: GC_TIME,
   });
 }
 
@@ -169,6 +206,8 @@ export function usePipelines() {
   return useQuery({
     queryKey: ["pipelines"],
     queryFn: api.listPipelines,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
   });
 }
 
@@ -177,6 +216,8 @@ export function usePipeline(id: string | null) {
     queryKey: ["pipeline", id],
     queryFn: () => api.getPipeline(id!),
     enabled: !!id,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
   });
 }
 
@@ -185,6 +226,8 @@ export function useRunAnalysis(runId: string | null) {
     queryKey: ["analysis", runId],
     queryFn: () => api.getRunAnalysis(runId!),
     enabled: !!runId,
+    staleTime: STALE_MED,
+    gcTime: GC_TIME,
   });
 }
 

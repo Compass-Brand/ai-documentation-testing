@@ -57,7 +57,7 @@ CREATE TABLE IF NOT EXISTS runs (
     config        TEXT NOT NULL DEFAULT '{}',
     created_at    TEXT NOT NULL,
     finished_at   TEXT,
-    parent_run_id TEXT,
+    parent_run_id TEXT REFERENCES runs(run_id),
     phase         TEXT,
     pipeline_id   TEXT
 );
@@ -127,8 +127,11 @@ class ObservatoryStore:
             for stmt in migrations:
                 try:
                     conn.execute(stmt)
-                except sqlite3.OperationalError:
-                    pass  # Column already exists
+                except sqlite3.OperationalError as exc:
+                    msg = str(exc).lower()
+                    if "duplicate column" in msg or "already exists" in msg:
+                        continue
+                    raise
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path))

@@ -104,9 +104,12 @@ def create_router(
     # ------------------------------------------------------------------
 
     @router.get("/api/runs")
-    async def list_runs() -> list[dict[str, Any]]:
+    async def list_runs(
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+    ) -> list[dict[str, Any]]:
         runs = store.list_runs()
-        return [asdict(r) for r in runs]
+        return [asdict(r) for r in runs[offset : offset + limit]]
 
     # Run submission endpoints (must be before /api/runs/{run_id})
     @router.post("/api/runs", status_code=202)
@@ -146,7 +149,7 @@ def create_router(
             entry["trial_count"] += 1
         by_variant_out = {
             k: {
-                "mean_score": v["total_score"] / v["trial_count"],
+                "mean_score": v["total_score"] / v["trial_count"] if v["trial_count"] else 0.0,
                 "trial_count": v["trial_count"],
             }
             for k, v in by_variant.items()
@@ -164,7 +167,7 @@ def create_router(
             entry["cost"] += t.cost or 0.0
         by_model_out = {
             k: {
-                "mean_score": v["total_score"] / v["trial_count"],
+                "mean_score": v["total_score"] / v["trial_count"] if v["trial_count"] else 0.0,
                 "trial_count": v["trial_count"],
                 "cost": v["cost"],
             }
@@ -209,9 +212,11 @@ def create_router(
     @router.post("/api/runs/{run_id}/finish")
     async def finish_run(run_id: str) -> dict[str, Any]:
         try:
-            store.get_run_summary(run_id)
+            summary = store.get_run_summary(run_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if summary.status in ("completed", "failed"):
+            return {"run_id": run_id, "status": summary.status}
         store.finish_run(run_id)
         return {"run_id": run_id, "status": "completed"}
 
@@ -297,6 +302,8 @@ def create_router(
         capabilities: str | None = None,
         tokenizer: str | None = None,
         search: str | None = None,
+        limit: int = Query(100, ge=1, le=1000),
+        offset: int = Query(0, ge=0),
     ) -> dict[str, Any]:
         if catalog is None:
             return {"models": [], "total": 0}
@@ -320,7 +327,8 @@ def create_router(
                 if term in m.get("name", "").lower()
                 or term in m.get("id", "").lower()
             ]
-        return {"models": results, "total": len(results)}
+        total = len(results)
+        return {"models": results[offset : offset + limit], "total": total}
 
     @router.get("/api/models/groups")
     async def get_groups() -> list[dict[str, Any]]:

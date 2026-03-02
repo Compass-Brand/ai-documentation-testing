@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Trial } from "../api/client";
 
+const MAX_RECONNECTS = 10;
+
 export interface SSEAlert {
   type: string;
   data: Record<string, unknown>;
@@ -23,6 +25,7 @@ export function useSSE({
   onAlert,
 }: UseSSEOptions) {
   const sourceRef = useRef<EventSource | null>(null);
+  const reconnectCountRef = useRef(0);
   const qc = useQueryClient();
 
   const disconnect = useCallback(() => {
@@ -34,6 +37,7 @@ export function useSSE({
 
   useEffect(() => {
     if (!runId) return;
+    reconnectCountRef.current = 0;
 
     const baseUrl = import.meta.env.VITE_API_URL ?? "";
     const source = new EventSource(
@@ -42,6 +46,7 @@ export function useSSE({
     sourceRef.current = source;
 
     source.addEventListener("trial_completed", (e: MessageEvent) => {
+      reconnectCountRef.current = 0;
       const trial: Trial = JSON.parse(e.data);
       onTrialComplete?.(trial);
       qc.invalidateQueries({ queryKey: ["run", runId] });
@@ -69,8 +74,8 @@ export function useSSE({
         if (res.ok) {
           const summary = await res.json();
           if (
-            summary.status === "completed" ||
-            summary.status === "failed"
+            summary?.status === "completed" ||
+            summary?.status === "failed"
           ) {
             onRunComplete?.();
             qc.invalidateQueries({ queryKey: ["run", runId] });
@@ -85,7 +90,13 @@ export function useSSE({
     }, 5000);
 
     source.addEventListener("error", () => {
-      onError?.("SSE connection lost. Reconnecting...");
+      reconnectCountRef.current += 1;
+      if (reconnectCountRef.current >= MAX_RECONNECTS) {
+        disconnect();
+        onError?.("SSE connection failed after maximum reconnection attempts.");
+      } else {
+        onError?.("SSE connection lost. Reconnecting...");
+      }
     });
 
     return () => {

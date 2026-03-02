@@ -74,7 +74,10 @@ class EventTracker:
     def remove_listener(self, callback: ListenerCallback) -> None:
         """Unregister a previously registered listener."""
         with self._lock:
-            self._listeners.remove(callback)
+            try:
+                self._listeners.remove(callback)
+            except ValueError:
+                pass
 
     def record_trial(
         self,

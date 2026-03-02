@@ -21,7 +21,7 @@ vi.mock("../../api/client", async () => {
   return {
     ...actual,
     api: {
-      ...(actual as Record<string, unknown>).api,
+      ...((actual as Record<string, unknown>).api as Record<string, unknown>),
       startRun: (...args: unknown[]) => mockStartRun(...args),
       getActiveRuns: () => mockGetActiveRuns(),
     },
