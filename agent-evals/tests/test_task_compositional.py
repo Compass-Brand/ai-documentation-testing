@@ -9,6 +9,7 @@ Tests cover:
 - score_response: no sub-task answers found (0.0)
 - score_response: partial sub-task answers (between 0 and 1)
 - Edge cases and score bounding
+- Fuzzy matching via rapidfuzz
 """
 
 from __future__ import annotations
@@ -213,6 +214,43 @@ class TestCompositionalTaskScoring:
                 {"question": "Q1?"},
             ],
         )
-        # Sub-task with no expected_answer is skipped; no matchable sub-tasks → 0.0
+        # Sub-task with no expected_answer is skipped; no scorable sub-tasks -> 1.0 (vacuous truth)
         score = task.score_response("Any response")
-        assert score == 0.0
+        assert score == 1.0
+
+
+def test_empty_sub_task_excluded_from_denominator():
+    """Max achievable score must be 1.0 when a sub-task has empty expected_answer."""
+    defn = TaskDefinition(
+        task_id="compositional_001", type="compositional", question="Q",
+        domain="framework_api", difficulty="easy",
+        metadata={"sub_tasks": [
+            {"question": "A", "expected_answer": "Python 3.11"},
+            {"question": "B", "expected_answer": ""},
+        ]},
+    )
+    task = CompositionalTask(defn)
+    score = task.score_response("The version is Python 3.11 and nothing else.")
+    assert score == 1.0, f"Expected 1.0 (empty sub-task excluded), got {score}"
+
+
+def test_fuzzy_match_catches_paraphrase():
+    """'Python version 3.11' must score > 0 for expected 'Python 3.11'."""
+    defn = TaskDefinition(
+        task_id="compositional_002", type="compositional", question="Q",
+        domain="framework_api", difficulty="easy",
+        metadata={"sub_tasks": [{"question": "version?", "expected_answer": "Python 3.11"}]},
+    )
+    task = CompositionalTask(defn)
+    score = task.score_response("The runtime uses Python version 3.11 as its base.")
+    assert score > 0.0, f"Expected > 0.0 for paraphrase, got {score}"
+
+
+def test_exact_match_still_scores_one():
+    defn = TaskDefinition(
+        task_id="compositional_003", type="compositional", question="Q",
+        domain="framework_api", difficulty="easy",
+        metadata={"sub_tasks": [{"question": "version?", "expected_answer": "Python 3.11"}]},
+    )
+    task = CompositionalTask(defn)
+    assert task.score_response("Python 3.11 is used.") == 1.0

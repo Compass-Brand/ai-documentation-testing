@@ -9,7 +9,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from rapidfuzz import fuzz, utils as fuzz_utils
+
+from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
+
+_FUZZY_CUTOFF = 80.0  # Minimum partial_ratio to count a keyword as matched
 
 
 class CompositionalTask(EvalTask):
@@ -65,12 +70,31 @@ class CompositionalTask(EvalTask):
             },
         ]
 
+    def _score_sub_answer(self, expected_lower: str, response_lower: str) -> float:
+        """Score one sub-answer using exact containment, then fuzzy keyword coverage."""
+        if expected_lower in response_lower:
+            return 1.0
+        keywords = extract_keywords(expected_lower)
+        if not keywords:
+            return 0.0
+        matched = 0
+        for kw in keywords:
+            score = fuzz.partial_ratio(
+                kw, response_lower,
+                processor=fuzz_utils.default_process,
+                score_cutoff=_FUZZY_CUTOFF,
+            )
+            if score > 0:
+                matched += 1
+        return matched / len(keywords)
+
     def score_response(self, response: str, **kwargs: object) -> float:
         """Score response by checking sub-task answer coverage.
 
-        For each sub-task, checks whether the expected_answer appears
-        (case-insensitive) in the response.  Score = fraction of sub-tasks
-        matched.
+        For each sub-task with a non-empty expected_answer, checks whether
+        the answer appears (case-insensitive) in the response, falling back
+        to fuzzy keyword matching via rapidfuzz.
+        Score = total_score / scored_count (only non-empty sub-tasks count).
 
         Args:
             response: The raw text response from the LLM.
@@ -83,16 +107,19 @@ class CompositionalTask(EvalTask):
             return 1.0
 
         response_lower = response.lower()
-        matched = 0
+        total_score = 0.0
+        scored_count = 0
 
         for sub_task in self.sub_tasks:
             expected: str = sub_task.get("expected_answer", "")
             if not expected:
                 continue
-            if expected.lower() in response_lower:
-                matched += 1
+            scored_count += 1
+            total_score += self._score_sub_answer(expected.lower(), response_lower)
 
-        score = matched / len(self.sub_tasks)
+        if scored_count == 0:
+            return 1.0
+        score = total_score / scored_count
         return max(0.0, min(1.0, score))
 
 
