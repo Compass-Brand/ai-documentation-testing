@@ -213,6 +213,21 @@ class TestCompositionalTaskScoring:
                 {"question": "Q1?"},
             ],
         )
-        # Sub-task with no expected_answer is skipped; no matchable sub-tasks → 0.0
+        # Sub-task with no expected_answer is skipped; no scorable sub-tasks -> 1.0 (vacuous truth)
         score = task.score_response("Any response")
-        assert score == 0.0
+        assert score == 1.0
+
+
+def test_empty_sub_task_excluded_from_denominator():
+    """Max achievable score must be 1.0 when a sub-task has empty expected_answer."""
+    defn = TaskDefinition(
+        task_id="compositional_001", type="compositional", question="Q",
+        domain="framework_api", difficulty="easy",
+        metadata={"sub_tasks": [
+            {"question": "A", "expected_answer": "Python 3.11"},
+            {"question": "B", "expected_answer": ""},
+        ]},
+    )
+    task = CompositionalTask(defn)
+    score = task.score_response("The version is Python 3.11 and nothing else.")
+    assert score == 1.0, f"Expected 1.0 (empty sub-task excluded), got {score}"

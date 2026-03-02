@@ -68,9 +68,9 @@ class CompositionalTask(EvalTask):
     def score_response(self, response: str, **kwargs: object) -> float:
         """Score response by checking sub-task answer coverage.
 
-        For each sub-task, checks whether the expected_answer appears
-        (case-insensitive) in the response.  Score = fraction of sub-tasks
-        matched.
+        For each sub-task with a non-empty expected_answer, checks whether
+        the answer appears (case-insensitive) in the response.
+        Score = matched / scored_count (only non-empty sub-tasks count).
 
         Args:
             response: The raw text response from the LLM.
@@ -84,15 +84,19 @@ class CompositionalTask(EvalTask):
 
         response_lower = response.lower()
         matched = 0
+        scored_count = 0
 
         for sub_task in self.sub_tasks:
             expected: str = sub_task.get("expected_answer", "")
             if not expected:
                 continue
+            scored_count += 1
             if expected.lower() in response_lower:
                 matched += 1
 
-        score = matched / len(self.sub_tasks)
+        if scored_count == 0:
+            return 1.0
+        score = matched / scored_count
         return max(0.0, min(1.0, score))
 
 
