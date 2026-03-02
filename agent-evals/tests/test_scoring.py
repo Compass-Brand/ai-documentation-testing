@@ -519,3 +519,18 @@ class TestWeightSchemes:
             assert 0.0 <= score <= 100.0, (
                 f"Weight scheme '{name}' produced score {score} outside [0, 100]"
             )
+
+
+
+# ---------------------------------------------------------------------------
+# Task 28: NaN filtering in bootstrap_ci
+# ---------------------------------------------------------------------------
+
+
+def test_bootstrap_ci_handles_nan_without_producing_nan_output():
+    """bootstrap_ci must filter NaN values and produce valid CI bounds."""
+    import math
+    data = [0.5, 0.6, float("nan"), 0.7, 0.8]
+    result = bootstrap_ci(data)
+    assert not math.isnan(result.ci_lower), "CI lower must not be NaN"
+    assert not math.isnan(result.ci_upper), "CI upper must not be NaN"

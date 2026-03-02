@@ -1431,3 +1431,26 @@ class TestSourceProvenance:
         content = csv_files[0].read_text()
         assert "source" in content.splitlines()[0]
         assert "repliqa" in content
+
+
+
+# ---------------------------------------------------------------------------
+# Task 27: TrialResult.metrics timing data tests
+# ---------------------------------------------------------------------------
+
+
+class TestTrialResultMetricsTiming:
+    """TrialResult.metrics must be populated with timing data after a trial."""
+
+    def test_trial_result_metrics_contains_timing_keys(self) -> None:
+        """TrialResult.metrics must be populated after a successful trial."""
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+        client = _make_mock_client()
+        config = EvalRunConfig(max_tasks=1, repetitions=1, use_cache=False)
+        runner = EvalRunner(client, config=config)
+        result = runner._run_trial(task, variant, doc_tree, repetition=1)
+        assert result.metrics != {}, "metrics dict must not be empty"
+        assert "scoring_ms" in result.metrics, "scoring_ms must be present"
+        assert "prompt_build_ms" in result.metrics, "prompt_build_ms must be present"

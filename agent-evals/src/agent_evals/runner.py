@@ -550,8 +550,10 @@ class EvalRunner:
         self._setup_variant_for_task(variant, task, doc_tree)
 
         # Render and build prompt
+        prompt_build_start = time.monotonic()
         index_content = variant.render(doc_tree)
         messages = task.build_prompt(index_content)
+        prompt_build_ms = (time.monotonic() - prompt_build_start) * 1000
 
         variant_meta = variant.metadata()
         variant_name = variant_meta.name
@@ -618,9 +620,16 @@ class EvalRunner:
                 )
 
         # Score the response
+        score_start = time.monotonic()
         score = task.score_response(generation.content)
+        scoring_ms = (time.monotonic() - score_start) * 1000
 
         latency = time.monotonic() - trial_start
+
+        metrics: dict[str, float] = {
+            "scoring_ms": round(scoring_ms, 2),
+            "prompt_build_ms": round(prompt_build_ms, 2),
+        }
 
         return TrialResult(
             task_id=task.definition.task_id,
@@ -628,7 +637,7 @@ class EvalRunner:
             variant_name=variant_name,
             repetition=repetition,
             score=score,
-            metrics={},
+            metrics=metrics,
             prompt_tokens=generation.prompt_tokens,
             completion_tokens=generation.completion_tokens,
             total_tokens=generation.total_tokens,
