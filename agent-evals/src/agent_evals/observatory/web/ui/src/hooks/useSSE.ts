@@ -47,9 +47,13 @@ export function useSSE({
 
     source.addEventListener("trial_completed", (e: MessageEvent) => {
       reconnectCountRef.current = 0;
-      const trial: Trial = JSON.parse(e.data);
-      onTrialComplete?.(trial);
-      qc.invalidateQueries({ queryKey: ["run", runId] });
+      try {
+        const trial: Trial = JSON.parse(e.data);
+        onTrialComplete?.(trial);
+        qc.invalidateQueries({ queryKey: ["run", runId] });
+      } catch (err) {
+        console.error("[useSSE] malformed JSON in trial_completed event, skipping:", err);
+      }
     });
 
     const alertTypes = [
@@ -59,8 +63,12 @@ export function useSSE({
     ];
     for (const alertType of alertTypes) {
       source.addEventListener(alertType, (e: MessageEvent) => {
-        const data: Record<string, unknown> = JSON.parse(e.data);
-        onAlert?.({ type: alertType, data });
+        try {
+          const data: Record<string, unknown> = JSON.parse(e.data);
+          onAlert?.({ type: alertType, data });
+        } catch (err) {
+          console.error(`[useSSE] malformed JSON in ${alertType} event, skipping:`, err);
+        }
       });
     }
 

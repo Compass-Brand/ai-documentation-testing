@@ -217,6 +217,23 @@ describe("useSSE", () => {
     expect(source.listeners["burn_rate_alert"]).toBeDefined();
   });
 
+  it("does not crash when SSE delivers malformed JSON", async () => {
+    const { useSSE } = await import("../../hooks/useSSE");
+    const wrapper = createWrapper();
+    renderHook(() => useSSE({ runId: "run1" }), { wrapper });
+
+    const source = MockEventSource.instances[0];
+    // Call the trial_completed listener directly with a bad-JSON MessageEvent
+    expect(() => {
+      act(() => {
+        const handlers = source?.listeners["trial_completed"] ?? [];
+        for (const handler of handlers) {
+          handler(new MessageEvent("trial_completed", { data: "{not json!!" }));
+        }
+      });
+    }).not.toThrow();
+  });
+
   it("should call onAlert with parsed alert data", async () => {
     const { useSSE } = await import("../../hooks/useSSE");
     const wrapper = createWrapper();
