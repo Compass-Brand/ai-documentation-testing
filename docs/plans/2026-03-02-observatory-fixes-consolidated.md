@@ -2441,6 +2441,11 @@ cd agent-evals/src/agent_evals/observatory/web/ui
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useSSE.ts:50, 62`
 - Test: `agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/hooks/useSSE.test.ts`
 
+> **Context:** Test file already has module-level `MockEventSource` class (with `emit(event, data)` method)
+> and `createWrapper()` function. Tests use `async import` pattern. `useSSE` takes an options object:
+> `useSSE({ runId: "run-1", onTrialComplete?, onRunComplete?, onError?, onAlert? })` — NOT a bare string.
+> `MockEventSource.emit("event", data)` calls the registered listeners — use this, NOT `dispatchEvent()`.
+
 **Step 1 [RED]:** Write the failing test
 
 ```typescript
@@ -2528,6 +2533,12 @@ git commit -m "fix(frontend): wrap JSON.parse in try/catch in useSSE event handl
 **Files:**
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useLiveMonitorState.ts:78`
 - Test: existing test file for useLiveMonitorState
+
+> **Context:** Test file has module-level `mockUseActiveRuns`, `mockUseRun`, `mockUseTrials` (vi.fn()).
+> `beforeEach` stubs EventSource with MockEventSource, sets fake timers, and sets:
+> `mockUseActiveRuns.mockReturnValue({ data: { runs: [{ run_id: "run-1", mode: "taguchi", models: [], started_at: "" }], count: 1 } })`.
+> New tests drop into the existing `describe("useLiveMonitorState", ...)` block — no re-stubs needed.
+> Hook signature: `useLiveMonitorState(totalTasksOverride?: number)` — gets runId internally from `useActiveRuns()`.
 
 **Step 1 [RED]:** Write the failing test
 
@@ -2617,6 +2628,9 @@ git commit -m "fix(frontend): cap scores array at MAX_SCORES=1000 in useLiveMoni
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/api/client.ts:274`
 - Test: existing client test file
 
+> **Context:** TypeScript frontend test. Add to existing `client.test.ts`. `fetchApi` is the internal
+> wrapper in `api/client.ts` — mock `global.fetch` to test timeout and error handling behavior.
+
 **Step 1 [RED]:** Write the failing test
 
 ```typescript
@@ -2687,6 +2701,11 @@ git commit -m "fix(frontend): migrate deleteGroup to use fetchApi wrapper with t
 **Files:**
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useSSE.ts:69-100`
 - Test: `useSSE.test.ts`
+
+> **Context:** Test file already has module-level `MockEventSource` class (with `emit(event, data)` method)
+> and `createWrapper()` function. Tests use `async import` pattern. `useSSE` takes an options object:
+> `useSSE({ runId: "run-1", onTrialComplete?, onRunComplete?, onError?, onAlert? })` — NOT a bare string.
+> `MockEventSource.emit("event", data)` calls the registered listeners — use this, NOT `dispatchEvent()`.
 
 **Step 1 [RED]:** Write the failing test
 
@@ -2780,6 +2799,17 @@ git commit -m "fix(frontend): clear poll interval when max SSE reconnects reache
 **Files:**
 - Modify: `agent-evals/src/agent_evals/variants/format_yaml.py:60`
 - Test: `agent-evals/tests/test_format_yaml.py` (**create new file**)
+
+> **Context:**
+> ```python
+> from agent_evals.fixtures import load_sample_doc_tree   # returns DocTree
+> from agent_evals.variants.format_yaml import FormatYaml
+> doc_tree = load_sample_doc_tree()
+> # render() takes DocTree, not list[DocFile]:
+> rendered = FormatYaml().render(doc_tree)
+> # Get first DocFile for mutation:
+> doc = next(iter(doc_tree.files.values()))
+> ```
 
 **Step 0: Create the test file**
 
@@ -2887,6 +2917,17 @@ git commit -m "fix(variants): use yaml.safe_dump for summary to handle colon con
 - Modify: `agent-evals/src/agent_evals/variants/format_pipe_delimited.py:52-53`
 - Also modify: `agent-evals/src/agent_evals/variants/format_markdown_table.py` (same bug)
 - Test: `agent-evals/tests/test_format_pipe_delimited.py` (**create new file**)
+
+> **Context:**
+> ```python
+> from agent_evals.fixtures import load_sample_doc_tree   # returns DocTree
+> from agent_evals.variants.format_pipe_delimited import FormatPipeDelimited
+> doc_tree = load_sample_doc_tree()
+> # render() takes DocTree, not list[DocFile]:
+> rendered = FormatPipeDelimited().render(doc_tree)
+> # Get first DocFile for mutation:
+> doc = next(iter(doc_tree.files.values()))
+> ```
 
 **Step 0: Create the test file**
 
@@ -2997,6 +3038,18 @@ git commit -m "fix(variants): escape pipe characters in table cell content (E4)"
 - Modify: `agent-evals/src/agent_evals/runner.py:263, 631`
 - Test: `agent-evals/tests/test_runner.py`
 
+> **Context:**
+> ```python
+> from agent_evals.runner import EvalRunner, EvalRunConfig
+> # EvalRunner(client, config=config) — client is FIRST positional arg
+> # EvalRunConfig fields: repetitions, max_connections, max_tasks, temperature,
+> #   max_tokens, use_cache, cache_dir, output_dir, output_format, display_mode, continue_on_error
+> # Test helpers (already in test_runner.py): _make_mock_task(), _make_mock_variant(),
+> #   _make_mock_client(), _make_sample_doc_tree()
+> config = EvalRunConfig(use_cache=False)
+> runner = EvalRunner(_make_mock_client(), config=config)
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -3083,6 +3136,11 @@ git commit -m "fix(runner): populate TrialResult.metrics with timing data (E6)"
 - Modify: `agent-evals/src/agent_evals/scoring.py:257-318`
 - Test: `agent-evals/tests/test_scoring.py`
 
+> **Context:**
+> ```python
+> from agent_evals.scoring import bootstrap_ci, BootstrapResult
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -3157,6 +3215,11 @@ git commit -m "fix(scoring): filter NaN values before bootstrap_ci computation (
 **Files:**
 - Modify: `agent-evals/gold_standard/robustness/robustness_*.yaml` (30 files)
 - Test: `agent-evals/tests/test_gold_standard_schema.py` (add to existing)
+
+> **Context:** Robustness tasks are standalone hand-authored files — no source task in gold_standard/.
+> `base_task_id` must be `""` (empty string) for all 30. The `RobustnessTask` class reads it as
+> `meta.get("base_task_id", "")` so empty string is the correct sentinel.
+> Fix script: `scripts/add_robustness_base_task_ids.py` (run once, delete after).
 
 **Step 1 [RED]:** Check actual task ID format first, then write the failing test
 
@@ -3262,6 +3325,18 @@ git commit -m "fix(data): add base_task_id to all 30 robustness task metadata fi
 **Files:**
 - Modify: `agent-evals/src/agent_evals/runner.py`
 - Test: `agent-evals/tests/test_runner.py`
+
+> **Context:**
+> ```python
+> from agent_evals.runner import EvalRunner, EvalRunConfig
+> # EvalRunner(client, config=config) — client is FIRST positional arg
+> # EvalRunConfig fields: repetitions, max_connections, max_tasks, temperature,
+> #   max_tokens, use_cache, cache_dir, output_dir, output_format, display_mode, continue_on_error
+> # Test helpers (already in test_runner.py): _make_mock_task(), _make_mock_variant(),
+> #   _make_mock_client(), _make_sample_doc_tree()
+> config = EvalRunConfig(use_cache=False)
+> runner = EvalRunner(_make_mock_client(), config=config)
+> ```
 
 **Step 1 [RED]:** Write the failing test
 
@@ -3604,6 +3679,16 @@ git commit -m "feat(infra): add rotating JSON file logging to Observatory (I7)"
 - Modify: `agent-evals/src/agent_evals/observatory/web/server.py` (NOT routes.py)
 - Test: `agent-evals/tests/test_model_browser_web.py` (add to existing file)
 
+> **Context:**
+> ```python
+> from agent_evals.observatory.model_catalog import ModelCatalog
+> from agent_evals.observatory.model_sync import ModelSync
+> catalog = ModelCatalog(tmp_path / "models.db")
+> sync = ModelSync(catalog=catalog)
+> # Sync method: model_sync.run_sync() — returns a SyncResult dataclass
+> # ModelCatalog has NO sync() method — always go through ModelSync.run_sync()
+> ```
+
 **Architecture note:** The startup sync lives in `server.py`'s `create_app()` — NOT in `routes.py`.
 `create_app()` already accepts `model_sync: ModelSync | None` and passes it to `create_router()`.
 The sync call belongs in a FastAPI `lifespan` on the app, not the router.
@@ -3747,6 +3832,10 @@ git commit -m "feat(infra): auto-sync model catalog on server startup via FastAP
 - Modify: `Observatory.tsx`, `LiveMonitor.tsx`, `ResultsExplorer.tsx`, `History.tsx`, `FactorAnalysis.tsx`
 - Test: add to relevant chart component tests
 
+> **Context:** TypeScript/Vitest frontend tests in `agent-evals/src/agent_evals/observatory/web/ui/`.
+> Run tests: `npm test` from the `ui/` directory. Build: `npm run build`.
+> All chart/component tests import from `../../utils/chartDefaults` or `../../components/`.
+
 **Step 1 [RED]:** Write the failing test
 
 > **Note:** `vi.spyOn(Chart, "constructor")` will NOT work — Chart.js is mocked at module level in this project, making constructor spying incompatible. Instead, test the `CHART_ANIMATION` constant directly (simpler and more reliable). Check `vitest.setup.ts` or existing chart tests to see how Chart.js is mocked before writing component-level tests.
@@ -3822,6 +3911,10 @@ git commit -m "feat(ux): add 800ms easeOutQuart chart animation to all chart vie
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/components/CompassCheckbox.tsx`
 - Test: component tests
 
+> **Context:** TypeScript/Vitest frontend tests in `agent-evals/src/agent_evals/observatory/web/ui/`.
+> Run tests: `npm test` from the `ui/` directory. Build: `npm run build`.
+> All chart/component tests import from `../../utils/chartDefaults` or `../../components/`.
+
 **Step 1 [RED]:** Read the file first, then write the failing test
 
 ```bash
@@ -3880,6 +3973,10 @@ git commit -m "fix(ux): remove remaining inline styles from CompassCheckbox (U2)
 **Files:**
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/components/SlideOutPanel.tsx:45`
 - Test: component tests
+
+> **Context:** TypeScript/Vitest frontend tests in `agent-evals/src/agent_evals/observatory/web/ui/`.
+> Run tests: `npm test` from the `ui/` directory. Build: `npm run build`.
+> All chart/component tests import from `../../utils/chartDefaults` or `../../components/`.
 
 **Step 1 [RED]:** Write the failing test
 
@@ -3947,6 +4044,16 @@ git commit -m "fix(a11y): add focus-visible outline to SlideOutPanel close butto
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py` (SSE generator)
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useSSE.ts`
 - Test: both backend and frontend tests
+
+> **Context:**
+> ```python
+> from fastapi.testclient import TestClient
+> from agent_evals.observatory.web.server import create_app
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> # SSE endpoint: GET /api/runs/{run_id}/stream
+> # Sequence numbers are module-level state in routes.py — reset between tests
+> ```
 
 > **Note:** The sequence counter is module-level and resets on server restart. After a restart, clients that see ID 1 again will correctly treat it as fresh (their `lastEventId` ref is per-session). This is acceptable behavior.
 
@@ -4054,6 +4161,10 @@ git commit -m "fix(sse): add event sequence IDs to prevent duplicate counting on
 
 **Files:**
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/main.tsx` (or wherever the router is created)
+
+> **Context:** TypeScript/Vitest frontend tests in `agent-evals/src/agent_evals/observatory/web/ui/`.
+> Run tests: `npm test` from the `ui/` directory. Build: `npm run build`.
+> All chart/component tests import from `../../utils/chartDefaults` or `../../components/`.
 
 **Step 1 [RED]:** Locate the router creation and write a test asserting the future flags are set
 
