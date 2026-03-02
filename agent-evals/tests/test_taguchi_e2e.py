@@ -25,9 +25,14 @@ from agent_evals.observatory.tracker import EventTracker
 
 @pytest.fixture(autouse=True)
 def _ensure_variants_loaded() -> None:
-    """Ensure the variant registry is populated for all tests."""
-    from agent_evals.variants.registry import load_all
+    """Ensure the variant registry is clean and fully populated.
 
+    Other test files use ``clear_registry()`` with ``autouse=True``, which
+    can leave stale entries.  We clear first, then reload canonical variants.
+    """
+    from agent_evals.variants.registry import clear_registry, load_all
+
+    clear_registry()
     load_all()
 
 
