@@ -118,7 +118,7 @@ Expected: all three show `"status": "failed"` and a non-null `finished_at`.
 - Modify: `agent-evals/src/agent_evals/tasks/compositional.py:85-95`
 - Test: `agent-evals/tests/test_task_compositional.py` (add to existing)
 
-**Step 1: Write the failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_empty_sub_task_excluded_from_denominator():
@@ -136,7 +136,7 @@ def test_empty_sub_task_excluded_from_denominator():
     assert score == 1.0, f"Expected 1.0 (empty sub-task excluded), got {score}"
 ```
 
-**Step 2: Run to confirm it fails**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 cd /home/trevor-leigh/Projects/compass_brand/compass-tests/ai-documentation-testing
@@ -144,7 +144,7 @@ uv run pytest agent-evals/tests/test_task_compositional.py::test_empty_sub_task_
 ```
 Expected: `FAILED — AssertionError: 0.5 != 1.0`
 
-**Step 3: Implement fix**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `compositional.py`, find the scoring loop and change:
 
@@ -174,14 +174,44 @@ if scored_count == 0:
 score = matched / scored_count
 ```
 
-**Step 4: Run test**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_task_compositional.py -v
 ```
 Expected: all PASS
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `scored_count == 0` the right edge case, or should an all-empty task return 0.0 instead?
+- Check: Is the float accumulation for `matched` consistent between this fix and the fuzzy matching added in Task 3?
+- Check: Are score values clamped to [0.0, 1.0]? The `matched / scored_count` formula is safe but verify it stays bounded when Task 3 fuzzy partial scores are mixed in.
+- Check: Is the `return 1.0` for all-empty tasks backward-compatible — any other caller that depends on a zero score for empty sub-tasks?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real compositional task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'compositional'][:5]
+print(f'Loaded {len(tasks)} compositional tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/compositional.py agent-evals/tests/test_task_compositional.py
@@ -197,14 +227,14 @@ git commit -m "fix(scoring): exclude empty sub-tasks from compositional denomina
 **Files:**
 - Modify: `agent-evals/pyproject.toml`
 
-**Step 1: Add dependency**
+**Step 1 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `agent-evals/pyproject.toml` under `[project] dependencies`:
 ```toml
 "rapidfuzz>=3.0",
 ```
 
-**Step 2: Sync from workspace root**
+**Step 2 [GREEN]:** Run to confirm tests pass
 
 ```bash
 # Run from workspace root, not from agent-evals/
@@ -212,14 +242,35 @@ cd /home/trevor-leigh/Projects/compass_brand/compass-tests/ai-documentation-test
 uv sync
 ```
 
-**Step 3: Smoke test**
+**Step 3 [GREEN]:** Smoke test
 
 ```bash
 uv run python -c "from rapidfuzz import fuzz, utils; print('rapidfuzz OK')"
 ```
 Expected: `rapidfuzz OK`
 
-**Step 4: Commit**
+**Step 4 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `rapidfuzz>=3.0` the right version pin? Verify the API (`fuzz.partial_ratio`, `utils.default_process`) exists in 3.x vs 2.x.
+- Check: Is the dependency placed in the right section of `pyproject.toml` (runtime `[project] dependencies`, not dev-only)?
+- Check: Will `uv.lock` be committed? It should be, to ensure reproducible installs.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 5 [VERIFY]:** Confirm the import works in the actual eval context
+
+```bash
+uv run python -c "
+from rapidfuzz import fuzz, utils as fuzz_utils
+test_score = fuzz.partial_ratio('Python 3.11', 'The runtime uses Python version 3.11', processor=fuzz_utils.default_process, score_cutoff=80.0)
+print(f'rapidfuzz OK — sample score={test_score}')
+"
+```
+Expected: prints `rapidfuzz OK — sample score=` with a non-zero value.
+
+**Step 6: Commit**
 
 ```bash
 git add agent-evals/pyproject.toml uv.lock
@@ -234,7 +285,7 @@ git commit -m "feat(deps): add rapidfuzz>=3.0 for fuzzy answer matching (S1 prer
 - Modify: `agent-evals/src/agent_evals/tasks/compositional.py`
 - Test: `agent-evals/tests/test_task_compositional.py`
 
-**Step 1: Write failing tests**
+**Step 1 [RED]:** Write the failing tests
 
 ```python
 def test_fuzzy_match_catches_paraphrase():
@@ -258,14 +309,14 @@ def test_exact_match_still_scores_one():
     assert task.score_response("Python 3.11 is used.") == 1.0
 ```
 
-**Step 2: Run to confirm the paraphrase test fails**
+**Step 2 [RED]:** Run to confirm the paraphrase test fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_task_compositional.py::test_fuzzy_match_catches_paraphrase -v
 ```
 Expected: `FAILED — assert 0.0 > 0.0`
 
-**Step 3: Implement fix**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 Add these imports at the top of `compositional.py`:
 ```python
@@ -300,14 +351,44 @@ matched += self._score_sub_answer(expected, response_lower)
 ```
 (Note: `matched` is now a float accumulator.)
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_task_compositional.py -v
 ```
 Expected: all PASS
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is the `score_cutoff=80.0` threshold appropriate? Too low means false positives (unrelated words match); too high means the paraphrase improvement is negligible.
+- Check: Are score values from `_score_sub_answer` always in [0.0, 1.0]? The keyword coverage fraction is naturally bounded, but verify with mixed exact+fuzzy cases.
+- Check: Is the `extract_keywords` function filtering stop words correctly? Short expected answers (1-2 words) may extract zero keywords and return 0.0 unexpectedly.
+- Check: Is `matched` being used correctly as a float accumulator after this change — does the denominator `scored_count` (from Task 1) still work with float `matched` values?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real compositional task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'compositional'][:5]
+print(f'Loaded {len(tasks)} compositional tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/compositional.py agent-evals/tests/test_task_compositional.py
@@ -326,7 +407,7 @@ git commit -m "fix(scoring): replace substring with rapidfuzz fuzzy matching in 
 - Modify: `agent-evals/src/agent_evals/tasks/negative.py:64-65`
 - Test: `agent-evals/tests/test_task_negative.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_confident_answer_not_scored_as_abstention():
@@ -342,27 +423,56 @@ def test_confident_answer_not_scored_as_abstention():
     assert score < 1.0, f"False positive — confident answer scored {score}"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_task_negative.py::test_confident_answer_not_scored_as_abstention -v
 ```
 Expected: `FAILED — 1.0 is not < 1.0`
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `negative.py`, find `_ABSTENTION_PHRASES` (around lines 22-66) and remove exactly these two entries:
 - `"based on the available"` (line 64)
 - `"the provided documentation"` (line 65)
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_task_negative.py -v
 ```
 Expected: all PASS
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Are there other phrases in `_ABSTENTION_PHRASES` that also appear in confident answers (similar false-positive pattern to the two removed)?
+- Check: Is removing these phrases backward-compatible — are there existing tests that depend on either phrase triggering an abstention score?
+- Check: The count goes from 37 to 35 phrases — does any comment or docstring in the file say "37 phrases" that now needs updating?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real negative task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'negative'][:5]
+print(f'Loaded {len(tasks)} negative tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/negative.py agent-evals/tests/test_task_negative.py
@@ -377,7 +487,7 @@ git commit -m "fix(scoring): remove false-positive abstention phrases from negat
 - Modify: `agent-evals/src/agent_evals/tasks/negative.py:118-135`
 - Test: `agent-evals/tests/test_task_negative.py`
 
-**Step 1: Write failing tests**
+**Step 1 [RED]:** Write the failing tests
 
 ```python
 def test_hedge_with_caveat_scores_exactly_0_7():
@@ -407,14 +517,14 @@ def test_firm_refusal_scores_one():
     assert task.score_response("I cannot answer — no information available.") == 1.0
 ```
 
-**Step 2: Run to confirm hedge test fails**
+**Step 2 [RED]:** Run to confirm hedge test fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_task_negative.py::test_hedge_with_caveat_scores_exactly_0_7 -v
 ```
 Expected: `FAILED — 0.0 != 0.7`
 
-**Step 3: Implement graduated rubric**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 > **IMPORTANT — delete the pre-existing `test_score_is_binary` test first.** That test asserts scores are always 0.0 or 1.0, which directly contradicts the tiered rubric. It is at line ~198 of `test_task_negative.py`. Delete it before implementing the rubric, or your GREEN step will be blocked by a conflicting passing test turning into a failing test.
 
@@ -485,14 +595,44 @@ def score_response(self, response: str) -> float:
     return 0.0
 ```
 
-**Step 4: Run all negative tests**
+**Step 4 [GREEN]:** Run all negative tests
 
 ```bash
 uv run pytest agent-evals/tests/test_task_negative.py -v
 ```
 Expected: all PASS
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Are the three tier boundaries (1.0 / 0.7 / 0.3 / 0.0) semantically reasonable? A response with both `_FIRM_REFUSAL` and `_HEDGE_WITH_CAVEAT` phrases returns 1.0 (priority order) — is this correct?
+- Check: Are the phrase sets stored as module-level `frozenset` (not inside `score_response`)? Frozensets should be defined once at module scope for performance.
+- Check: Is there a risk of phrase overlap between the three tiers? Scan for any phrase that appears in more than one set.
+- Check: The 0.3 tier (`_ANSWER_WITH_DISCLAIMER`) is new — does it have sufficient test coverage (at least one test per phrase category)?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real negative task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'negative'][:5]
+print(f'Loaded {len(tasks)} negative tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/negative.py agent-evals/tests/test_task_negative.py
@@ -511,7 +651,7 @@ git commit -m "fix(scoring): graduate negative scorer to tiered rubric with part
 - Modify: `agent-evals/src/agent_evals/tasks/disambiguation.py:88-105`
 - Test: `agent-evals/tests/test_task_disambiguation.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_49_percent_keyword_coverage_not_binary():
@@ -529,13 +669,13 @@ def test_49_percent_keyword_coverage_not_binary():
     assert 0.0 < score < 1.0, f"Expected partial score for 25% coverage, got {score}"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_task_disambiguation.py::test_49_percent_keyword_coverage_not_binary -v
 ```
 
-**Step 3: Implement — replace cliff threshold, preserve label_score path**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass — replace cliff threshold, preserve label_score path
 
 Read the existing `score_response` implementation in `disambiguation.py` carefully. Keep the `label_score` path unchanged. Only replace the `answer_score` cliff:
 
@@ -559,7 +699,7 @@ if expected_answer:
 # The final return `max(answer_score, label_score)` must be preserved
 ```
 
-**Step 4: Run all disambiguation tests**
+**Step 4 [GREEN]:** Run all disambiguation tests
 
 ```bash
 uv run pytest agent-evals/tests/test_task_disambiguation.py -v
@@ -570,7 +710,37 @@ assert score == pytest.approx(1/3, abs=0.01)
 ```
 Then re-run and confirm all PASS.
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `min(1.0, coverage + ambiguity_bonus)` the right formula? The bonus is 0.1 — verify a full-coverage response (1.0) with an ambiguity phrase doesn't get clamped awkwardly.
+- Check: Is the `label_score` path completely unchanged? The `max(answer_score, label_score)` combinator must remain intact — verify by adding a test that exercises the label path.
+- Check: Are error messages in the assertion helpers clear enough to diagnose what failed if keyword extraction returns an unexpected set?
+- Check: Is `extract_keywords` imported at the top of `disambiguation.py` (not inside the method)?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real disambiguation task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'disambiguation'][:5]
+print(f'Loaded {len(tasks)} disambiguation tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/disambiguation.py agent-evals/tests/test_task_disambiguation.py
@@ -585,7 +755,7 @@ git commit -m "fix(scoring): replace cliff threshold with continuous coverage in
 - Modify: `agent-evals/src/agent_evals/tasks/multi_hop.py:105`
 - Test: `agent-evals/tests/test_task_multi_hop.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_single_keyword_hit_does_not_pass_step():
@@ -603,14 +773,14 @@ def test_single_keyword_hit_does_not_pass_step():
     assert score == 0.0, f"Expected 0.0 for 20% coverage, got {score}"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_task_multi_hop.py::test_single_keyword_hit_does_not_pass_step -v
 ```
 Expected: `FAILED — currently scores 1.0`
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 ```python
 STEP_COVERAGE_THRESHOLD = 0.30
@@ -621,13 +791,43 @@ coverage = matched / len(keywords)
 step_scores.append(coverage if coverage >= STEP_COVERAGE_THRESHOLD else 0.0)
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_task_multi_hop.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `STEP_COVERAGE_THRESHOLD = 0.30` a named constant at module level (not a magic number inside the method)?
+- Check: Does the step score cliff (0.0 below threshold, continuous above) produce sensible scores at the boundary? A step with exactly 30% coverage gets its raw coverage score (0.3), not 1.0 — is this the intended behavior?
+- Check: What happens when a step has 0 keywords (empty `expected` string)? Does the code handle `len(keywords) == 0` gracefully without a ZeroDivisionError?
+- Check: Are existing tests for the multi-hop scorer still valid, or do any need updating to match the 30% threshold behavior?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real multi_hop task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'multi_hop'][:5]
+print(f'Loaded {len(tasks)} multi_hop tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/multi_hop.py agent-evals/tests/test_task_multi_hop.py
@@ -642,7 +842,7 @@ git commit -m "fix(scoring): require 30% keyword coverage per step in multi-hop 
 - Modify: `agent-evals/src/agent_evals/tasks/fact_extraction.py:73-87`
 - Test: `agent-evals/tests/test_task_fact_extraction.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_paraphrase_scores_above_0_7():
@@ -657,13 +857,13 @@ def test_paraphrase_scores_above_0_7():
     assert score >= 0.7, f"Expected >= 0.7 for paraphrase, got {score}"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_task_fact_extraction.py::test_paraphrase_scores_above_0_7 -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 Add after alias matching, before keyword fallback in `fact_extraction.py`:
 ```python
@@ -681,13 +881,43 @@ if fuzzy_score >= 70.0:
     return 0.7
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_task_fact_extraction.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is the fuzzy layer inserted at the correct position in the scoring cascade (after exact, after alias, before keyword fallback)? The order determines which higher-quality match takes precedence.
+- Check: Are the 0.9 and 0.7 return values consistent with the overall scoring scale used across other task types? Having a cap at 0.9 (instead of 1.0) for fuzzy matches is intentional — verify the docstring or comment explains this.
+- Check: Does `fuzz.token_set_ratio` handle the case where `self.expected_answer` is a single word (like "yes" or "no") without producing unexpectedly high scores against any response?
+- Check: Is the `from rapidfuzz` import at the top of the file, not inside the method?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real fact_extraction task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'fact_extraction'][:5]
+print(f'Loaded {len(tasks)} fact_extraction tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/fact_extraction.py agent-evals/tests/test_task_fact_extraction.py
@@ -702,7 +932,7 @@ git commit -m "fix(scoring): add rapidfuzz fuzzy layer to fact extraction scorer
 - Modify: `agent-evals/src/agent_evals/tasks/code_generation.py:115-121`
 - Test: `agent-evals/tests/test_task_code_generation.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_no_test_patterns_does_not_cap_score_at_0_3():
@@ -717,13 +947,13 @@ def test_no_test_patterns_does_not_cap_score_at_0_3():
     assert score > 0.3, f"Expected > 0.3, got {score}"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_task_code_generation.py::test_no_test_patterns_does_not_cap_score_at_0_3 -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 ```python
 # In code_generation.py, change the else branch:
@@ -736,13 +966,43 @@ else:
 
 Also update the docstring formula comment from `0.8 + 0.2` to `0.7 + 0.2 + 0.1`.
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_task_code_generation.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `match_rate = 1.0` for empty patterns the right semantic? It means "vacuously satisfied" — is this documented with a comment so future developers understand the intent?
+- Check: Does the combined score formula (after `match_rate = 1.0`) produce a result in [0.0, 1.0]? Trace through the full formula to verify no sub-component can push total above 1.0.
+- Check: Is the docstring formula comment updated to match the new weight distribution (0.7 + 0.2 + 0.1)?
+- Check: Are there existing tests that set empty `test` patterns and expect a low score — those would now fail and should be updated.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real code_generation task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'code_generation'][:5]
+print(f'Loaded {len(tasks)} code_generation tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/code_generation.py agent-evals/tests/test_task_code_generation.py
@@ -757,7 +1017,7 @@ git commit -m "fix(scoring): default match_rate to 1.0 when no test patterns def
 - Modify: `agent-evals/src/agent_evals/tasks/agentic.py` (around line 47)
 - Test: `agent-evals/tests/test_task_agentic.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_space_separated_test_names_parsed_correctly():
@@ -767,14 +1027,14 @@ def test_space_separated_test_names_parsed_correctly():
     assert result == ["test_foo", "test_bar"], f"Got: {result}"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_task_agentic.py::test_space_separated_test_names_parsed_correctly -v
 ```
 Expected: `FAILED — [] != ['test_foo', 'test_bar']`
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `agentic.py`, in the `except json.JSONDecodeError` branch of `_parse_json_or_list`:
 ```python
@@ -782,13 +1042,43 @@ except json.JSONDecodeError:
     return [token for token in value.strip().split() if token]
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_task_agentic.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Does the whitespace split handle edge cases — empty string, all-whitespace string, newlines, tabs? `value.strip().split()` handles all of these correctly (Python `str.split()` without an arg splits on any whitespace).
+- Check: Is `_parse_json_or_list` a module-level function? The import in the test (`from agent_evals.tasks.agentic import _parse_json_or_list`) confirms it must be at module level, not a method.
+- Check: What happens if the input is a comma-separated string like `"test_foo, test_bar"`? The whitespace split would return `["test_foo,", "test_bar"]` with a trailing comma — is this an edge case that needs a test?
+- Check: Is there a newline-separated case that should also be handled? `split()` handles `\n` already.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real agentic task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'agentic'][:5]
+print(f'Loaded {len(tasks)} agentic tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/agentic.py agent-evals/tests/test_task_agentic.py
@@ -803,7 +1093,7 @@ git commit -m "fix(scoring): fall back to whitespace split in agentic _parse_jso
 - Modify: `agent-evals/src/agent_evals/tasks/agentic.py` (score_response method, around line 108)
 - Test: `agent-evals/tests/test_task_agentic.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_agentic_score_redistributes_weights_when_no_files():
@@ -819,13 +1109,13 @@ def test_agentic_score_redistributes_weights_when_no_files():
     assert score >= 0.8, f"Expected >= 0.8 with tool match and redistributed weights, got {score}"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_task_agentic.py::test_agentic_score_redistributes_weights_when_no_files -v
 ```
 
-**Step 3: Implement dynamic weight redistribution**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 Refactor `score_response` in `agentic.py`:
 ```python
@@ -844,13 +1134,43 @@ def score_response(self, response: str) -> float:
     return max(0.0, min(1.0, sum(s * (w / total_weight) for s, w in components)))
 ```
 
-**Step 4: Run all agentic tests**
+**Step 4 [GREEN]:** Run all agentic tests
 
 ```bash
 uv run pytest agent-evals/tests/test_task_agentic.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is the `return 0.5` for empty components (no metadata at all) the right fallback? Should it return 0.0 (no evidence of correct behavior) rather than 0.5 (neutral)?
+- Check: Are the base weights (0.4 + 0.4 + 0.2 + 0.2) used only for relative proportion via `w / total_weight`? The redistribution is correct as long as no individual component exceeds 1.0.
+- Check: Is `max(0.0, min(1.0, ...))` needed here, or are the individual component scores already in [0.0, 1.0]? Keep the clamp as a defensive guard.
+- Check: Does the `components` variable name and pattern make the logic readable? Add a brief comment explaining the redistribution.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works against real agentic task data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = [t for t in load_tasks_from_dir('agent-evals/gold_standard/') if t.definition.type == 'agentic'][:5]
+print(f'Loaded {len(tasks)} agentic tasks')
+from agent_evals.variants.flat import Flat
+v = Flat()
+doc_tree = load_sample_doc_tree()
+v.setup(doc_tree)
+rendered = v.render(doc_tree)
+for task in tasks:
+    score = task.score_response(rendered)
+    print(f'  {task.definition.task_id}: score={score:.3f}')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/tasks/agentic.py agent-evals/tests/test_task_agentic.py
@@ -869,7 +1189,7 @@ git commit -m "fix(scoring): dynamic weight redistribution in agentic scorer for
 - Modify: `agent-evals/src/agent_evals/observatory/store.py`
 - Test: `agent-evals/tests/test_observatory_store.py` (add to existing)
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_fail_run_sets_failed_status_and_finished_at(tmp_path):
@@ -881,14 +1201,14 @@ def test_fail_run_sets_failed_status_and_finished_at(tmp_path):
     assert summary.finished_at is not None
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_store.py::test_fail_run_sets_failed_status_and_finished_at -v
 ```
 Expected: `AttributeError: 'ObservatoryStore' has no attribute 'fail_run'`
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `store.py`, add after `finish_run()`:
 ```python
@@ -919,13 +1239,43 @@ def finish_run(self, run_id: str) -> None:
         )
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_store.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Are SQL column names (`status`, `finished_at`, `config`) consistent with the actual schema? Confirm against `_init_db()`.
+- Check: Is the `json_set(COALESCE(config, '{}'), ...)` pattern safe — does it work when `config` is already a JSON object vs NULL?
+- Check: Is the error string sanitized before storing in the JSON config field? Embedded quotes could break the JSON structure.
+- Check: Is `finished_at` stored as an ISO 8601 UTC string — consistent with how other timestamps are stored and read back?
+- Check: Does `get_run_summary()` return `finished_at` in the `RunSummary` dataclass — confirm the field is populated from the SELECT.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the store API
+
+```bash
+uv run python -c "
+import pathlib, tempfile
+from agent_evals.observatory.store import ObservatoryStore
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'verify.db')
+store.create_run('run1', 'full', {}, phase='screening')
+store.fail_run('run1', error='Runner crashed')
+summary = store.get_run_summary('run1')
+print(f'status={summary.status}, finished_at={summary.finished_at}')
+assert summary.status == 'failed'
+assert summary.finished_at is not None
+print('Store operation succeeded')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/store.py agent-evals/tests/test_observatory_store.py
@@ -940,7 +1290,7 @@ git commit -m "feat(store): add fail_run() method; ensure finish_run() sets fini
 - Modify: `agent-evals/src/agent_evals/observatory/run_manager.py:145-155`
 - Test: `agent-evals/tests/test_run_manager.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_run_wrapper_marks_run_failed_on_exception(tmp_path):
@@ -956,13 +1306,13 @@ def test_run_wrapper_marks_run_failed_on_exception(tmp_path):
     assert summary.status == "failed", f"Expected failed, got {summary.status}"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_run_manager.py::test_run_wrapper_marks_run_failed_on_exception -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `run_manager.py` `_run_wrapper`, wrap the `_execute_run()` call:
 ```python
@@ -978,13 +1328,47 @@ finally:
     self._runs.pop(run_id, None)
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_run_manager.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Does the `finally: self._runs.pop(run_id, None)` execute even when `fail_run()` itself raises? The nested try/except ensures it does — verify the exception path doesn't suppress this cleanup.
+- Check: Is `str(e)` safe for all exception types? Some exceptions have non-string `args[0]` values — `str(e)` is generally safe but verify it doesn't produce `None` for exceptions with no message.
+- Check: Is the error stored in the DB (via `fail_run(error=...)`) truncated if very long (e.g., a full traceback)? Consider a character limit.
+- Check: Is the exception re-raised or swallowed? The current implementation swallows it — is that correct for a background thread?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the store API
+
+```bash
+uv run python -c "
+import pathlib, tempfile
+from unittest.mock import patch, MagicMock
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
+from agent_evals.observatory.run_manager import RunManager
+from agent_evals.observatory.web.routes import StartRunRequest
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'obs.db')
+store.create_run('run1', 'full', {}, phase='screening')
+tracker = EventTracker(store=store)
+manager = RunManager(store=store, tracker=tracker)
+with patch.object(manager, '_execute_run', side_effect=RuntimeError('crash')):
+    manager._run_wrapper('run1', request=MagicMock(spec=StartRunRequest))
+summary = store.get_run_summary('run1')
+assert summary.status == 'failed', f'Expected failed, got {summary.status}'
+print('Run failure DB update verified')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/run_manager.py agent-evals/tests/test_run_manager.py
@@ -999,7 +1383,7 @@ git commit -m "fix(runner): mark run as failed in DB when _run_wrapper catches e
 - Modify: `agent-evals/src/agent_evals/observatory/run_manager.py:157-244`
 - Test: `agent-evals/tests/test_run_manager.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_missing_api_key_marks_run_failed(tmp_path, monkeypatch):
@@ -1016,13 +1400,13 @@ def test_missing_api_key_marks_run_failed(tmp_path, monkeypatch):
     assert summary.status == "failed", f"Expected failed, got {summary.status}"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_run_manager.py::test_missing_api_key_marks_run_failed -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 At top of `run_manager.py`, define:
 ```python
@@ -1036,13 +1420,47 @@ Replace all early `return` paths in `_execute_run` with `raise RunSetupError(rea
 - No tasks loaded → `raise RunSetupError("no tasks loaded from gold_standard")`
 - No variants loaded → `raise RunSetupError("no variants configured")`
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_run_manager.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `RunSetupError` exported from `run_manager.py` (i.e., importable by callers that want to catch setup failures specifically)?
+- Check: Are all four early-return paths converted to `raise RunSetupError`? Do a quick search for remaining bare `return` in `_execute_run`.
+- Check: Does `_run_wrapper`'s except clause (from Task 13) catch `RunSetupError` correctly? Since `RunSetupError` extends `RuntimeError` extends `Exception`, it will be caught — verify this.
+- Check: Are the error messages clear enough to diagnose the root cause from just the DB record (no log access)?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the store API
+
+```bash
+uv run python -c "
+import pathlib, tempfile, os
+from unittest.mock import MagicMock
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
+from agent_evals.observatory.run_manager import RunManager
+from agent_evals.observatory.web.routes import StartRunRequest
+os.environ.pop('OPENROUTER_API_KEY', None)
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'obs.db')
+store.create_run('run1', 'full', {}, phase='screening')
+tracker = EventTracker(store=store)
+manager = RunManager(store=store, tracker=tracker)
+manager._run_wrapper('run1', request=MagicMock(spec=StartRunRequest))
+summary = store.get_run_summary('run1')
+assert summary.status == 'failed', f'Expected failed, got {summary.status}'
+print('RunSetupError path verified — run marked failed')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/run_manager.py agent-evals/tests/test_run_manager.py
@@ -1057,7 +1475,7 @@ git commit -m "fix(runner): raise RunSetupError from early exits so wrapper mark
 - Modify: `agent-evals/src/agent_evals/observatory/store.py`
 - Test: `agent-evals/tests/test_observatory_store.py`
 
-**Step 1: Write failing tests**
+**Step 1 [RED]:** Write the failing tests
 
 ```python
 def test_update_heartbeat_sets_timestamp(tmp_path):
@@ -1080,14 +1498,14 @@ def test_reap_stale_runs_marks_stale_active_runs_failed(tmp_path):
     assert summary.status == "failed"
 ```
 
-**Step 2: Run to confirm fails**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_store.py::test_update_heartbeat_sets_timestamp -v
 ```
 Expected: `AttributeError` — no `update_heartbeat` method and no `heartbeat_at` on RunSummary
 
-**Step 3: Add schema migration**
+**Step 3 [GREEN]:** Add schema migration
 
 In `store.py` `_init_db()`, add a safe schema migration:
 ```python
@@ -1099,7 +1517,7 @@ except Exception:
 
 Add `heartbeat_at: str | None = None` to the `RunSummary` dataclass.
 
-**Step 4: Add store methods**
+**Step 4 [GREEN]:** Add store methods
 
 ```python
 def update_heartbeat(self, run_id: str) -> None:
@@ -1127,13 +1545,44 @@ def reap_stale_runs(self, max_age_seconds: int = 300) -> list[str]:
     return [r[0] for r in stale]
 ```
 
-**Step 5: Run tests**
+**Step 5 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_store.py -v
 ```
 
-**Step 6: Commit (store changes only)**
+**Step 6 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is the `ALTER TABLE` migration wrapped in a try/except that silently ignores "duplicate column" errors but still propagates other errors (like connection failures)?
+- Check: Are both `update_heartbeat` and `reap_stale_runs` protected by `self._lock`? Concurrent heartbeat writes + reaper reads could cause race conditions otherwise.
+- Check: Does `reap_stale_runs` correctly filter to only `status = 'active'` runs? Already-failed or completed runs should not be reaped.
+- Check: Is `heartbeat_at` populated in `get_run_summary()`'s SELECT query (not just `list_runs`)? The test uses `get_run_summary` — verify this path.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 7 [VERIFY]:** Confirm the fix works via the store API
+
+```bash
+uv run python -c "
+import pathlib, tempfile
+from agent_evals.observatory.store import ObservatoryStore
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'verify.db')
+store.create_run('run1', 'full', {}, phase='screening')
+store.update_heartbeat('run1')
+summary = store.get_run_summary('run1')
+assert summary.heartbeat_at is not None, 'heartbeat_at not set'
+reaped = store.reap_stale_runs(max_age_seconds=0)
+assert 'run1' in reaped, f'run1 not reaped: {reaped}'
+summary2 = store.get_run_summary('run1')
+assert summary2.status == 'failed', f'Expected failed, got {summary2.status}'
+print('Heartbeat and reaper verified')
+"
+```
+
+**Step 8: Commit (store changes only)**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/store.py agent-evals/tests/test_observatory_store.py
@@ -1149,7 +1598,7 @@ git commit -m "feat(store): add heartbeat column, update_heartbeat() and reap_st
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py` (add reaper to lifespan)
 - Test: `agent-evals/tests/test_run_manager.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_heartbeat_updates_during_run(tmp_path):
@@ -1165,13 +1614,13 @@ def test_heartbeat_updates_during_run(tmp_path):
     assert summary.heartbeat_at is not None
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_run_manager.py::test_heartbeat_updates_during_run -v
 ```
 
-**Step 3: Add HeartbeatThread to run_manager.py**
+**Step 3 [GREEN]:** Add HeartbeatThread to run_manager.py
 
 ```python
 import threading
@@ -1207,7 +1656,7 @@ finally:
     heartbeat.join(timeout=5.0)
 ```
 
-**Step 4: Add async reaper to routes.py lifespan**
+**Step 4 [GREEN]:** Add async reaper to routes.py lifespan
 
 ```python
 @asynccontextmanager
@@ -1225,13 +1674,32 @@ async def lifespan(app: FastAPI):
         await task
 ```
 
-**Step 5: Run tests**
+**Step 5 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_run_manager.py -v
 ```
 
-**Step 6: Commit (wiring changes only)**
+**Step 6 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `daemon=True` correct for the HeartbeatThread? A daemon thread will be killed abruptly on process exit — this is fine since the `finally` block calls `stop()` + `join()` before the process exits normally.
+- Check: Does the `_stop_event.wait(self._interval)` pattern correctly exit the loop when `stop()` is called? The `wait()` returns `True` if the event is set, breaking the `while not` loop immediately.
+- Check: Is the reaper task in `routes.py` properly cancelled on server shutdown? The `task.cancel()` + `suppress(CancelledError)` pattern is correct — verify no other lifespan already exists that would conflict.
+- Check: Is `HeartbeatThread` exported from `run_manager.py` so the test file can import it directly?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 7 [VERIFY]:** Confirm heartbeat wiring works end-to-end
+
+```bash
+uv run pytest agent-evals/tests/test_run_manager.py -v -k "heartbeat"
+# Also confirm import chain has no circular imports
+uv run python -c "from agent_evals.observatory.run_manager import HeartbeatThread; print('Import OK')"
+```
+
+**Step 8: Commit (wiring changes only)**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/run_manager.py \
@@ -1253,7 +1721,7 @@ git commit -m "feat(runner): wire HeartbeatThread and server-side reaper for sta
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py:188`
 - Test: `agent-evals/tests/test_observatory_web.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_run_detail_includes_config(client, created_run_id):
@@ -1262,13 +1730,13 @@ def test_run_detail_includes_config(client, created_run_id):
     assert data.get("config") != {}, "config must not be hardcoded empty dict"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_web.py::test_run_detail_includes_config -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `store.py` `RunSummary` dataclass, add `config: dict = field(default_factory=dict)`.
 
@@ -1276,13 +1744,47 @@ Populate it in `list_runs()` and `get_run_summary()` by parsing the stored JSON 
 
 In `routes.py` `_enrich_run()`, replace `"config": {}` with `"config": run.config`.
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_web.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is the JSON config string parsed with `json.loads(config_str or '{}')` with a safe fallback for NULL values? A NULL config in the DB should return `{}`, not raise a `JSONDecodeError`.
+- Check: Are both `list_runs()` and `get_run_summary()` updated, or just one? If only one is updated, the API response will be inconsistent between the list endpoint and the detail endpoint.
+- Check: Is the `config` field added to `RunSummary` with `field(default_factory=dict)` (not `= {}`) to avoid the mutable default argument anti-pattern?
+- Check: Is the `config` stored value trusted (internal data, not user input)? If it could contain user-supplied data, consider sanitizing before returning.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the HTTP API
+
+```bash
+uv run python -c "
+import pathlib, tempfile
+from fastapi.testclient import TestClient
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
+from agent_evals.observatory.web.server import create_app
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'obs.db')
+tracker = EventTracker(store=store)
+store.create_run('r1', 'full', {'model': 'test-model', 'task_limit': 10}, phase='screening')
+app = create_app(store=store, tracker=tracker)
+client = TestClient(app)
+resp = client.get('/api/runs/r1')
+data = resp.json()
+print('config =', data.get('config'))
+assert data.get('config') != {}, 'config must not be empty'
+print('API response verified')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/store.py \
@@ -1300,7 +1802,7 @@ git commit -m "fix(api): expose stored run config in API response instead of har
 - Modify: `agent-evals/src/agent_evals/observatory/run_manager.py`
 - Test: `agent-evals/tests/test_run_manager.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_model_name_without_slash_rejected(tmp_path):
@@ -1314,13 +1816,13 @@ def test_model_name_without_slash_rejected(tmp_path):
         manager.start_run(request=StartRunRequest(model="test", task_limit=1))
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_run_manager.py::test_model_name_without_slash_rejected -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 ```python
 import re
@@ -1338,13 +1840,45 @@ def _validate_model_name(model: str) -> None:
 
 Call `_validate_model_name(request.model)` at the start of `start_run()`.
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_run_manager.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `_MODEL_PATTERN` a module-level compiled regex (not recompiled inside `_validate_model_name` on each call)?
+- Check: Does the regex allow all valid LiteLLM model formats? Test edge cases: `openrouter/anthropic/claude-3-haiku-4-5-20251001`, `ollama/llama3.2`, `azure/gpt-4o`. Verify none of these are accidentally rejected.
+- Check: Is the comma-split handling correct for multi-model strings? What if the model string is empty after stripping?
+- Check: Is `_validate_model_name` called before `create_run()` in `start_run()` so an invalid model never creates a DB record?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the HTTP API
+
+```bash
+uv run python -c "
+import pathlib, tempfile
+from fastapi.testclient import TestClient
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
+from agent_evals.observatory.web.server import create_app
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'obs.db')
+tracker = EventTracker(store=store)
+app = create_app(store=store, tracker=tracker)
+client = TestClient(app)
+resp = client.post('/api/runs', json={'model': 'invalid-model-no-slash', 'task_limit': 1})
+print('Status:', resp.status_code)
+assert resp.status_code in (400, 422), f'Expected 4xx, got {resp.status_code}'
+print('Model validation endpoint verified')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/run_manager.py agent-evals/tests/test_run_manager.py
@@ -1360,7 +1894,7 @@ git commit -m "fix(api): validate model name follows LiteLLM provider/model form
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py:141` (and the full `_enrich_run` body)
 - Test: `agent-evals/tests/test_observatory_store.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_get_run_aggregates_returns_correct_statistics(tmp_path):
@@ -1389,13 +1923,13 @@ def test_get_run_aggregates_returns_correct_statistics(tmp_path):
     assert aggs["by_variant"][0]["variant"] == "v1"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_store.py::test_get_run_aggregates_returns_correct_statistics -v
 ```
 
-**Step 3: Add `get_run_aggregates()` to store**
+**Step 3 [GREEN]:** Add `get_run_aggregates()` to store
 
 ```python
 def get_run_aggregates(self, run_id: str) -> dict:
@@ -1425,17 +1959,51 @@ def get_run_aggregates(self, run_id: str) -> dict:
     }
 ```
 
-**Step 4: Update `_enrich_run` in routes.py**
+**Step 4 [GREEN]:** Update `_enrich_run` in routes.py
 
 Read the existing `_enrich_run` function fully first. Replace the `store.get_trials(run_id)` call and all downstream Python-level aggregation with a single call to `store.get_run_aggregates(run_id)`. Map the returned dict fields to the existing response shape.
 
-**Step 5: Run tests**
+**Step 5 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_store.py agent-evals/tests/test_observatory_web.py -v
 ```
 
-**Step 6: Commit**
+**Step 6 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Are SQL column names used in the aggregate query consistent with the actual schema? Confirm `latency_seconds` (not `latency_ms`) and `prompt_tokens + completion_tokens` are correct.
+- Check: Does `get_run_aggregates()` need `self._lock`? It's a read-only operation, but if other threads are writing concurrently, the lock ensures consistency.
+- Check: Is the `_enrich_run` replacement backward-compatible with the existing API response shape? Check that all fields consumed by the frontend are still present.
+- Check: Is there a test for `_enrich_run` with zero trials? The `AVG(score)` returns NULL in SQL for an empty table — verify the `or 0.0` fallback handles this.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 7 [VERIFY]:** Confirm the fix works via the HTTP API
+
+```bash
+uv run python -c "
+import pathlib, tempfile
+from fastapi.testclient import TestClient
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
+from agent_evals.observatory.web.server import create_app
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'obs.db')
+tracker = EventTracker(store=store)
+store.create_run('r1', 'full', {})
+app = create_app(store=store, tracker=tracker)
+client = TestClient(app)
+resp = client.get('/api/runs/r1')
+data = resp.json()
+print('trial_count =', data.get('trial_count', 'MISSING'))
+print('mean_score =', data.get('mean_score', 'MISSING'))
+print('API aggregation response verified')
+"
+```
+
+**Step 8: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/store.py \
@@ -1452,7 +2020,7 @@ git commit -m "perf(api): move trial aggregation to SQL in _enrich_run (I11/N4)"
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py:111-112, 384-401`
 - Test: `agent-evals/tests/test_observatory_web.py`
 
-**Step 1: Write failing tests (one per bug)**
+**Step 1 [RED]:** Write the failing tests (one per bug)
 
 ```python
 def test_list_runs_pagination_uses_sql_limit_offset(tmp_path):
@@ -1477,23 +2045,62 @@ def test_list_pipelines_does_not_make_per_run_queries(tmp_path):
     assert any(p.get("pipeline_id") == "pipe1" for p in pipelines)
 ```
 
-**Step 2: Run to confirm fails**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_web.py::test_list_runs_pagination_uses_sql_limit_offset -v
 ```
 
-**Step 3: Add `limit`/`offset` to `store.list_runs()` SQL**
+**Step 3 [GREEN]:** Add `limit`/`offset` to `store.list_runs()` SQL
 
 Add `pipeline_id` to the `RunSummary` dataclass and include it in the `list_runs()` SQL (join if needed) to eliminate per-run lookups in `list_pipelines`.
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_web.py agent-evals/tests/test_observatory_store.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Does `list_runs(limit=None, offset=0)` (the default no-limit case) still work correctly? Add `LIMIT -1` or omit the LIMIT clause when `limit` is None to avoid breaking the existing default behavior.
+- Check: Is `pipeline_id` now returned from a JOIN or a subquery? Confirm it doesn't introduce a new N+1 by joining against a separate pipelines table.
+- Check: Is the sort order deterministic for pagination? Without an `ORDER BY` clause, `LIMIT/OFFSET` results are undefined. Confirm the SQL has `ORDER BY created_at DESC` or similar.
+- Check: Are the new `limit` and `offset` parameters added to `list_runs()` with safe integer types (not user-controlled strings) to prevent SQL injection?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the HTTP API
+
+```bash
+uv run python -c "
+import pathlib, tempfile
+from fastapi.testclient import TestClient
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
+from agent_evals.observatory.web.server import create_app
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'obs.db')
+tracker = EventTracker(store=store)
+for i in range(10):
+    store.create_run(f'run{i}', 'full', {})
+app = create_app(store=store, tracker=tracker)
+client = TestClient(app)
+resp = client.get('/api/runs?limit=5&offset=0')
+data = resp.json()
+print('Page 1 count:', len(data.get('runs', [])))
+resp2 = client.get('/api/runs?limit=5&offset=5')
+data2 = resp2.json()
+print('Page 2 count:', len(data2.get('runs', [])))
+assert len(data.get('runs', [])) == 5
+assert len(data2.get('runs', [])) == 5
+print('Pagination endpoint verified')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/store.py \
@@ -1509,7 +2116,7 @@ git commit -m "fix(api): push pagination into SQL; add pipeline_id to RunSummary
 - Modify: `agent-evals/src/agent_evals/observatory/store.py:18-35`
 - Test: `agent-evals/tests/test_observatory_store.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_trial_record_includes_oa_row_id_and_phase(tmp_path):
@@ -1538,13 +2145,13 @@ def test_trial_record_includes_oa_row_id_and_phase(tmp_path):
     assert trials[0].phase == "screening"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_store.py::test_trial_record_includes_oa_row_id_and_phase -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 Add to `TrialRecord` dataclass (after the last existing field):
 ```python
@@ -1559,13 +2166,48 @@ phase=r["phase"],
 ```
 The database schema already has these columns (`oa_row_id INTEGER` and `phase TEXT`) — the SELECT uses `SELECT *` so the values are already in `r`, they're just not mapped. No SQL change needed.
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_store.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Are nullable fields (`oa_row_id: int | None`, `phase: str | None`) using the correct Python 3.10+ union syntax, or the `Optional[int]` form — be consistent with the rest of the dataclass.
+- Check: Does the `SELECT *` in `get_trials()` guarantee `oa_row_id` and `phase` are always returned even if older DB files don't have these columns? If the DB was created before the migration, SELECT * would fail or return None — verify the schema migration in `_init_db()` adds these columns safely.
+- Check: Is `r["oa_row_id"]` safe when the value is NULL in SQLite? SQLite maps NULL to Python `None` via `sqlite3.Row` — this should work correctly.
+- Check: Is there a test for the case where `oa_row_id` and `phase` are NOT passed to `record_trial()` (i.e., they're optional)? The default should be `None`.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the store API
+
+```bash
+uv run python -c "
+import pathlib, tempfile
+from agent_evals.observatory.store import ObservatoryStore
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'verify.db')
+store.create_run('r', 'taguchi', {}, phase='screening')
+store.record_trial(
+    run_id='r', task_id='negative_001', task_type='negative',
+    variant_name='baseline', repetition=1, score=0.5,
+    prompt_tokens=10, completion_tokens=5, total_tokens=15,
+    cost=0.001, latency_seconds=0.1,
+    model='openrouter/anthropic/claude-haiku-4-5-20251001',
+    source='gold_standard', oa_row_id=3, phase='screening',
+)
+trials = store.get_trials('r')
+assert trials[0].oa_row_id == 3, f'Expected 3, got {trials[0].oa_row_id}'
+assert trials[0].phase == 'screening', f'Expected screening, got {trials[0].phase}'
+print('TrialRecord fields verified')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/store.py agent-evals/tests/test_observatory_store.py
@@ -1593,7 +2235,7 @@ cd agent-evals/src/agent_evals/observatory/web/ui
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useSSE.ts:50, 62`
 - Test: `agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/hooks/useSSE.test.ts`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```typescript
 // The project defines MockEventSource inline in useSSE.test.ts (not an npm package).
@@ -1619,7 +2261,7 @@ it("does not crash when SSE delivers malformed JSON", async () => {
 });
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 cd agent-evals/src/agent_evals/observatory/web/ui
@@ -1627,7 +2269,7 @@ npm test -- --testPathPattern=useSSE
 ```
 Expected: test throws `SyntaxError: Unexpected token`
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `useSSE.ts`, wrap both `JSON.parse(e.data)` calls:
 ```typescript
@@ -1639,13 +2281,33 @@ try {
 }
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 npm test -- --testPathPattern=useSSE
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Are BOTH `JSON.parse(e.data)` calls wrapped (the plan says "both" — confirm there are two separate parse calls in the file)?
+- Check: Is the error logged with enough context (`[useSSE]` prefix, event type) to diagnose the source in production?
+- Check: Are TypeScript types correct — `parsed` should be typed as `unknown` (not `any`) after the JSON.parse, then narrowed before use?
+- Check: Does the catch block swallow ALL errors, or only `SyntaxError`? Swallowing all is fine here since malformed data is not a programming error.
+- Run the full frontend test suite:
+  ```bash
+  npm test
+  ```
+
+**Step 6 [VERIFY]:** Build check to confirm no TypeScript errors
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm run build 2>&1 | tail -5
+# Expected: build succeeds with 0 errors (warnings OK)
+# Manual: npm run dev, open localhost:5173, trigger the SSE stream to confirm no crashes
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useSSE.ts \
@@ -1661,7 +2323,7 @@ git commit -m "fix(frontend): wrap JSON.parse in try/catch in useSSE event handl
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useLiveMonitorState.ts:78`
 - Test: existing test file for useLiveMonitorState
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 Add this test INSIDE the existing `describe("useLiveMonitorState", ...)` block in
 `agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/hooks/useLiveMonitorState.test.ts`.
@@ -1690,13 +2352,13 @@ it("scores array stays bounded after many trials", async () => {
 });
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 npm test -- --testPathPattern=useLiveMonitorState
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 ```typescript
 const MAX_SCORES = 1000;
@@ -1708,13 +2370,33 @@ setScores((prev) => {
 });
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 npm test -- --testPathPattern=useLiveMonitorState
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `MAX_SCORES = 1000` a module-level named constant (not a magic number inline)?
+- Check: Does `next.slice(-MAX_SCORES)` correctly keep the MOST RECENT 1000 scores (tail), not the oldest 1000 (head)? Verify the slice direction is intentional.
+- Check: Is the scores array used elsewhere in the hook's state? If other consumers depend on the full unbounded array, this change affects them.
+- Check: Is there a matching cap on other unbounded arrays in the hook (e.g., trial records, task IDs)? If scores is bounded at 1000 but trials isn't, the memory problem still exists.
+- Run the full frontend test suite:
+  ```bash
+  npm test
+  ```
+
+**Step 6 [VERIFY]:** Build check to confirm no TypeScript errors
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm run build 2>&1 | tail -5
+# Expected: build succeeds with 0 errors
+# Manual: npm run dev, stream 1000+ trials, confirm UI does not slow down
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useLiveMonitorState.ts
@@ -1729,7 +2411,7 @@ git commit -m "fix(frontend): cap scores array at MAX_SCORES=1000 in useLiveMoni
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/api/client.ts:274`
 - Test: existing client test file
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```typescript
 it("deleteGroup uses fetchApi not raw fetch", async () => {
@@ -1745,13 +2427,13 @@ it("deleteGroup uses fetchApi not raw fetch", async () => {
 });
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 npm test -- --testPathPattern=client
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 ```typescript
 export async function deleteGroup(groupId: string): Promise<void> {
@@ -1759,13 +2441,33 @@ export async function deleteGroup(groupId: string): Promise<void> {
 }
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 npm test -- --testPathPattern=client
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `fetchApi<void>` the correct generic type — does `fetchApi` handle a void/empty 204 response without trying to parse JSON?
+- Check: Is the URL path `/api/groups/${groupId}` correct? Verify against the backend route in `routes.py`.
+- Check: Does this change break any callers of `deleteGroup` that previously expected the raw `fetch` behavior (no AbortSignal)?
+- Check: Are TypeScript types correct — `Promise<void>` return type matches `fetchApi<void>`.
+- Run the full frontend test suite:
+  ```bash
+  npm test
+  ```
+
+**Step 6 [VERIFY]:** Build check to confirm no TypeScript errors
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm run build 2>&1 | tail -5
+# Expected: build succeeds with 0 errors
+# Manual: npm run dev, open localhost:5173, delete a group, confirm no timeout errors
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/web/ui/src/api/client.ts
@@ -1780,7 +2482,7 @@ git commit -m "fix(frontend): migrate deleteGroup to use fetchApi wrapper with t
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useSSE.ts:69-100`
 - Test: `useSSE.test.ts`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```typescript
 // IMPORTANT: The test file already has beforeEach/afterEach managing fake timers and
@@ -1805,13 +2507,13 @@ it("clears the poll interval when MAX_RECONNECTS is reached", async () => {
 });
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 npm test -- --testPathPattern=useSSE
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 Store poll interval ID in a ref:
 ```typescript
@@ -1828,13 +2530,33 @@ if (reconnectCount >= MAX_RECONNECTS) {
 }
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 npm test -- --testPathPattern=useSSE
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `pollIntervalRef` cleaned up in the `useEffect` cleanup function (returned cleanup)? If the component unmounts before MAX_RECONNECTS, the interval must still be cleared.
+- Check: Is `MAX_RECONNECTS` a named constant at the top of `useSSE.ts` (not a magic number `10` inline)?
+- Check: After calling `clearInterval`, is `pollIntervalRef.current` set to `null` to prevent double-clearing?
+- Check: Does clearing the poll interval when max reconnects is reached prevent further SSE reconnect attempts? Verify the reconnect loop terminates completely.
+- Run the full frontend test suite:
+  ```bash
+  npm test
+  ```
+
+**Step 6 [VERIFY]:** Build check to confirm no TypeScript errors
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm run build 2>&1 | tail -5
+# Expected: build succeeds with 0 errors
+# Manual: npm run dev, open localhost:5173, disconnect network repeatedly to trigger reconnects
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useSSE.ts
@@ -1876,7 +2598,7 @@ def make_doc_tree(summary: str = "test summary") -> DocTree:
     return doc_tree   # Return the whole tree, not just the DocFile
 ```
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_yaml_summary_with_colon_is_parseable():
@@ -1888,14 +2610,14 @@ def test_yaml_summary_with_colon_is_parseable():
     assert parsed is not None
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_format_yaml.py::test_yaml_summary_with_colon_is_parseable -v
 ```
 Expected: `yaml.scanner.ScannerError`
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 ```python
 import yaml
@@ -1907,13 +2629,44 @@ summary_value = yaml.safe_dump(summary).strip()
 output_line = f"    summary: {summary_value}"
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_format_yaml.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Does `yaml.safe_dump(summary).strip()` produce a quoted string for summaries containing colons? Test `yaml.safe_dump("JWT auth: token-based login")` in a Python REPL to verify the output — it should produce `'JWT auth: token-based login'\n` which after strip becomes `'JWT auth: token-based login'`.
+- Check: Is `yaml.safe_dump` used exclusively (not `yaml.dump`)? The plan says "uses safe_dump exclusively — never yaml.dump".
+- Check: Does the output YAML remain valid for summaries without colons? A plain summary "Hello world" should not gain unnecessary quotes.
+- Check: Are other text fields in the YAML output (like `title`, `path`) also vulnerable to colon injection? If so, they need the same fix.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works with the actual variant and sample data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.variants.format_yaml import FormatYaml
+import yaml
+v = FormatYaml()
+doc_tree = load_sample_doc_tree()
+# Inject a colon into the first doc's summary
+doc = next(iter(doc_tree.files.values()))
+doc.summary = 'JWT auth: token-based login'
+rendered = v.render(doc_tree)
+print('Rendered length:', len(rendered))
+parsed = yaml.safe_load(rendered)
+assert parsed is not None, 'YAML parse failed'
+print('YAML valid — no ScannerError')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/variants/format_yaml.py agent-evals/tests/test_format_yaml.py
@@ -1957,7 +2710,7 @@ def make_doc_tree(summary: str = "test summary") -> DocTree:
 EXPECTED_PIPE_COUNT = 4  # placeholder — verify against actual header before running
 ```
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_pipe_in_summary_does_not_add_extra_columns():
@@ -1969,13 +2722,13 @@ def test_pipe_in_summary_does_not_add_extra_columns():
     assert data_rows[0].count("|") == EXPECTED_PIPE_COUNT
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_format_pipe_delimited.py::test_pipe_in_summary_does_not_add_extra_columns -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 Add helper in both variant files:
 ```python
@@ -1985,13 +2738,43 @@ def _escape_cell(text: str) -> str:
 
 Apply to all cell values in row-building code.
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_format_pipe_delimited.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Is `_escape_cell` applied to ALL cell values in the row builder (not just `summary`)? Other fields like `path` or `section` could also contain `|` characters.
+- Check: Is `_escape_cell` defined as a module-level helper function, or a method? Module-level is preferable for a pure string transformation.
+- Check: Does the markdown table variant (`format_markdown_table.py`) also apply `_escape_cell`? The plan says both files have the same bug — confirm both are fixed.
+- Check: Is `\\|` the correct escape for the pipe-delimited format? In a `|`-delimited file, `\|` prevents column splitting. In a markdown table, `\|` is the standard escape.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works with the actual variant and sample data
+
+```bash
+uv run python -c "
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.variants.format_pipe_delimited import FormatPipeDelimited
+v = FormatPipeDelimited()
+doc_tree = load_sample_doc_tree()
+doc = next(iter(doc_tree.files.values()))
+doc.summary = 'A|B comparison with C|D'
+rendered = v.render(doc_tree)
+print('Rendered length:', len(rendered))
+print('First 300 chars:', rendered[:300])
+rows = [r for r in rendered.splitlines() if 'comparison' in r]
+assert len(rows) == 1, f'Expected 1 row, got {len(rows)}'
+print('Pipe escape verified')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/variants/format_pipe_delimited.py \
@@ -2008,7 +2791,7 @@ git commit -m "fix(variants): escape pipe characters in table cell content (E4)"
 - Modify: `agent-evals/src/agent_evals/runner.py:263, 631`
 - Test: `agent-evals/tests/test_runner.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_trial_result_metrics_contains_timing_keys():
@@ -2029,13 +2812,13 @@ def test_trial_result_metrics_contains_timing_keys():
     assert "prompt_build_ms" in result.metrics, "prompt_build_ms must be present"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_runner.py::test_trial_result_metrics_contains_timing_keys -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `runner.py`, add timing around prompt construction and scoring:
 ```python
@@ -2054,13 +2837,32 @@ Replace `metrics={}` on lines 263 and 631 with:
 metrics={"scoring_ms": round(scoring_ms, 2), "prompt_build_ms": round(prompt_build_ms, 2)}
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_runner.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Are BOTH `metrics={}` locations (lines 263 and 631) updated? If only one is updated, some code paths will still return empty metrics.
+- Check: Is `time.monotonic()` used (not `time.time()`)? `monotonic()` is correct for measuring elapsed time; `time()` can go backward with NTP adjustments.
+- Check: Are the timing variables (`prompt_build_start`, `scoring_ms`) initialized in the right scope? They must be defined before the try/except blocks that wrap prompt building and scoring.
+- Check: Is `round(scoring_ms, 2)` sufficient precision? Sub-millisecond tasks will round to 0.0 — is this acceptable?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the runner module
+
+```bash
+uv run pytest agent-evals/tests/test_runner.py -v -k "not slow"
+# Also: confirm import chain has no circular imports
+uv run python -c "from agent_evals.runner import EvalRunner; print('Import OK')"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/runner.py agent-evals/tests/test_runner.py
@@ -2075,7 +2877,7 @@ git commit -m "fix(runner): populate TrialResult.metrics with timing data (E6)"
 - Modify: `agent-evals/src/agent_evals/scoring.py:257-318`
 - Test: `agent-evals/tests/test_scoring.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_bootstrap_ci_handles_nan_without_producing_nan_output():
@@ -2086,13 +2888,13 @@ def test_bootstrap_ci_handles_nan_without_producing_nan_output():
     assert not math.isnan(result.high), "CI high must not be NaN"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_scoring.py::test_bootstrap_ci_handles_nan_without_producing_nan_output -v
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 Before the `np.asarray` line in `bootstrap_ci`:
 ```python
@@ -2103,13 +2905,39 @@ if len(clean) < 2:
 arr = np.asarray(clean, dtype=np.float64)
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_scoring.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Does `BootstrapResult` have an `n_valid` field? If it doesn't, add it — or remove the `n_valid=` kwarg from the fallback return.
+- Check: Is the `len(clean) < 2` threshold correct? Bootstrap CI requires at least 2 samples; with exactly 1 sample the CI would have zero width — returning NaN for 0 or 1 valid samples is correct.
+- Check: Does `isinstance(x, float) and np.isnan(x)` handle numpy float64 NaN values correctly? `np.float64` is not a Python `float` — use `np.isnan(x)` alone to handle both Python and numpy NaN.
+- Check: Is the clean data filter placed before any other computation that might touch `data` directly?
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the scoring module
+
+```bash
+uv run python -c "
+import math
+from agent_evals.scoring import bootstrap_ci
+data = [0.5, 0.6, float('nan'), 0.7, 0.8]
+result = bootstrap_ci(data)
+print(f'low={result.low:.3f}, high={result.high:.3f}')
+assert not math.isnan(result.low), 'CI low is NaN'
+assert not math.isnan(result.high), 'CI high is NaN'
+print('NaN filtering verified')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/scoring.py agent-evals/tests/test_scoring.py
@@ -2124,15 +2952,13 @@ git commit -m "fix(scoring): filter NaN values before bootstrap_ci computation (
 - Modify: `agent-evals/gold_standard/robustness/robustness_*.yaml` (30 files)
 - Test: `agent-evals/tests/test_gold_standard_schema.py` (add to existing)
 
-**Step 1: Check actual task ID format first**
+**Step 1 [RED]:** Check actual task ID format first, then write the failing test
 
 ```bash
 ls agent-evals/gold_standard/robustness/ | head -5
 ```
 
-Note the exact filename pattern (e.g., `robustness_001.yaml`) before writing the script.
-
-**Step 2: Write failing test**
+Note the exact filename pattern (e.g., `robustness_001.yaml`) before writing the script. Then add this test to `test_gold_standard_schema.py`:
 
 ```python
 def test_all_robustness_tasks_have_base_task_id():
@@ -2142,13 +2968,13 @@ def test_all_robustness_tasks_have_base_task_id():
     assert not missing, f"Missing base_task_id in {len(missing)} tasks: {missing[:5]}"
 ```
 
-**Step 3: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_gold_standard_schema.py::test_all_robustness_tasks_have_base_task_id -v
 ```
 
-**Step 4: Write and run fix script**
+**Step 3 [GREEN]:** Write and run fix script
 
 After inspecting actual task IDs and existing metadata to understand the naming convention:
 
@@ -2176,13 +3002,37 @@ print("Done. Review git diff before committing.")
 git diff agent-evals/gold_standard/robustness/ | head -60
 ```
 
-**Step 5: Run test to verify**
+**Step 4 [GREEN]:** Run test to verify
 
 ```bash
 uv run pytest agent-evals/tests/test_gold_standard_schema.py -v
 ```
 
-**Step 6: Commit**
+**Step 5 [REFACTOR]:** Review the data changes while keeping tests green
+
+- Check: Is `base_id` inferred correctly for all 30 files? Inspect the first 3-5 files manually via `git diff` to confirm the inferred IDs make sense.
+- Check: Does `yaml.safe_dump(data, default_flow_style=False, allow_unicode=True)` preserve the original YAML structure (especially list formatting for `sub_tasks`, `reasoning_chain`, etc.)?
+- Check: Are any existing `base_task_id` values being overwritten by the script? The `if "base_task_id" not in` guard prevents this, but verify.
+- Check: Is the fix script deleted after running? It should not be committed.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Load the data through the CLI to confirm no validation errors
+
+```bash
+uv run python -c "
+from agent_evals.tasks.loader import load_tasks_from_dir
+tasks = load_tasks_from_dir('agent-evals/gold_standard/robustness/')
+missing = [t.definition.task_id for t in tasks if 'base_task_id' not in (t.definition.metadata or {})]
+print(f'{len(tasks)} robustness tasks loaded — {len(missing)} missing base_task_id')
+assert not missing, f'Still missing: {missing[:5]}'
+print('All robustness tasks have base_task_id')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/gold_standard/robustness/
@@ -2199,7 +3049,7 @@ git commit -m "fix(data): add base_task_id to all 30 robustness task metadata fi
 - Modify: `agent-evals/src/agent_evals/runner.py`
 - Test: `agent-evals/tests/test_runner.py`
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 > **⚠️ ARCHITECTURE WARNING — Read before writing any code:**
 >
@@ -2245,13 +3095,13 @@ def test_judge_score_sampled_into_metrics(monkeypatch):
     assert len(judged) >= 1, "At least one trial must be judge-sampled"
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_runner.py::test_judge_score_sampled_into_metrics -v
 ```
 
-**Step 3: Implement Phase 1 sampling**
+**Step 3 [GREEN]:** Implement Phase 1 sampling
 
 Four concrete changes to `agent-evals/src/agent_evals/runner.py`:
 
@@ -2374,13 +3224,32 @@ for idx, (task, variant, rep) in enumerate(work_items, 1):
 `enumerate(work_items, 1)` starts at 1, so `idx=50` is the first multiple of
 `JUDGE_SAMPLE_RATE=50` that triggers judging.
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_runner.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Are `JUDGE_SAMPLE_RATE = 50` and `JUDGE_MODEL = "openrouter/openai/gpt-4o-mini"` module-level constants (not hardcoded inline)?
+- Check: Is the judge call wrapped in a broad `except Exception: pass` to ensure judge failures never affect trial outcomes? Confirm the exception is swallowed, not re-raised.
+- Check: Is `_call_judge` an instance method on `EvalRunner` (not a module-level function)? The monkeypatch in the test targets `EvalRunner._call_judge` — confirm the location.
+- Check: Does the `trial_index=0` default in `_run_trial` mean the first trial (index 0) never calls the judge? Since `0 % 50 == 0`, a guard `trial_index > 0` is needed to prevent judging trial 0.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the framework works end-to-end
+
+```bash
+uv run pytest agent-evals/tests/test_runner.py -v -k "not slow"
+# Also: confirm import chain has no circular imports
+uv run python -c "from agent_evals.runner import EvalRunner; print('Import OK')"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/runner.py agent-evals/tests/test_runner.py
@@ -2410,7 +3279,7 @@ import pytest
 from pathlib import Path
 ```
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```python
 def test_setup_logging_creates_log_file_on_first_write(tmp_path):
@@ -2425,14 +3294,14 @@ def test_setup_logging_creates_log_file_on_first_write(tmp_path):
     assert (tmp_path / "observatory.log").exists()
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_logging_config.py::test_setup_logging_creates_log_file_on_first_write -v
 ```
 Expected: `ModuleNotFoundError: No module named 'agent_evals.observatory.logging_config'`
 
-**Step 3: Create logging_config.py**
+**Step 3 [GREEN]:** Create logging_config.py
 
 ```python
 import json
@@ -2467,13 +3336,44 @@ def setup_logging(log_dir: Path, level: str = "INFO") -> None:
         root.addHandler(handler)
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_logging_config.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+
+- Check: Does the `if not any(isinstance(h, RotatingFileHandler) ...)` guard prevent duplicate handlers if `setup_logging` is called multiple times? Test this scenario.
+- Check: Is the `_JSONFormatter` class private (underscore prefix) to prevent accidental direct use? Good — keep it internal.
+- Check: Is `maxBytes=10 * 1024 * 1024` (10MB) and `backupCount=5` appropriate for the production use case (50MB max total)?
+- Check: Is `setup_logging` called in `routes.py` lifespan at the correct point (before any logging calls, at startup)?
+- Check: Is the test cleaning up logging handlers after running (to prevent handler leakage between tests)? Consider adding a `yield` fixture that removes the handlers after the test.
+- Run the full test suite to confirm nothing regressed:
+  ```bash
+  uv run pytest agent-evals/tests/ -x -q
+  ```
+
+**Step 6 [VERIFY]:** Confirm the fix works via the logging module
+
+```bash
+uv run python -c "
+import pathlib, tempfile, logging
+from agent_evals.observatory.logging_config import setup_logging
+tmp = pathlib.Path(tempfile.mkdtemp())
+setup_logging(log_dir=tmp)
+logger = logging.getLogger('agent_evals')
+logger.info('test message from VERIFY step')
+for handler in logger.handlers:
+    handler.flush()
+log_file = tmp / 'observatory.log'
+assert log_file.exists(), 'Log file not created'
+print('Log file contents:', log_file.read_text()[:200])
+print('Logging setup verified')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/logging_config.py \
@@ -2501,7 +3401,7 @@ The sync method is `model_sync.run_sync()` (on the `ModelSync` class, NOT on `Mo
 only when the catalog is empty. This task moves that call into a lifespan so it runs on
 every startup, then removes the old conditional from `launch_dashboard()`.
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 Add this class to `agent-evals/tests/test_model_browser_web.py` (after the existing imports):
 
@@ -2524,7 +3424,7 @@ class TestStartupSync:
             mock_sync.run_sync.assert_called_once()
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
 uv run pytest agent-evals/tests/test_model_browser_web.py::TestStartupSync -v
@@ -2532,7 +3432,7 @@ uv run pytest agent-evals/tests/test_model_browser_web.py::TestStartupSync -v
 
 Expected: FAIL — `run_sync` never called (no lifespan yet).
 
-**Step 3: Add lifespan to `create_app()` in `server.py`**
+**Step 3 [GREEN]:** Add lifespan to `create_app()` in `server.py`
 
 Add two imports at the top of `server.py` (after the existing `import threading`):
 
@@ -2575,13 +3475,44 @@ if config.auto_sync and not catalog.get_active_models():
     model_sync.run_sync()
 ```
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_model_browser_web.py -v
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
+- `lifespan` is a closure over `model_sync` — no need to store it as an attribute
+- `asyncio.to_thread()` wraps the blocking `run_sync()` call correctly — no `await model_sync.run_sync()` needed since it's synchronous
+- The old conditional in `launch_dashboard()` is fully removed — no duplicate sync calls
+- Exception from `run_sync()` is caught and logged as a warning, not re-raised (startup continues even if sync fails)
+
+**Step 6 [VERIFY]:** Confirm the lifespan wiring works end-to-end
+
+```bash
+uv run python -c "
+from unittest.mock import MagicMock
+import pathlib, tempfile
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
+from agent_evals.observatory.model_catalog import ModelCatalog, ModelSync
+from agent_evals.observatory.web.server import create_app
+from fastapi.testclient import TestClient
+
+tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(tmp / 'obs.db')
+tracker = EventTracker(store=store)
+catalog = ModelCatalog(tmp / 'models.db')
+mock_sync = MagicMock(spec=ModelSync)
+
+app = create_app(store=store, tracker=tracker, catalog=catalog, model_sync=mock_sync)
+with TestClient(app):
+    mock_sync.run_sync.assert_called_once()
+print('model_sync.run_sync called once on startup — PASS')
+"
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/web/server.py \
@@ -2602,7 +3533,7 @@ git commit -m "feat(infra): auto-sync model catalog on server startup via FastAP
 - Modify: `Observatory.tsx`, `LiveMonitor.tsx`, `ResultsExplorer.tsx`, `History.tsx`, `FactorAnalysis.tsx`
 - Test: add to relevant chart component tests
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 > **Note:** `vi.spyOn(Chart, "constructor")` will NOT work — Chart.js is mocked at module level in this project, making constructor spying incompatible. Instead, test the `CHART_ANIMATION` constant directly (simpler and more reliable). Check `vitest.setup.ts` or existing chart tests to see how Chart.js is mocked before writing component-level tests.
 
@@ -2623,14 +3554,14 @@ it("CHART_ANIMATION has duration 800 and easeOutQuart easing", () => {
 // });
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (module not found, or constant undefined), not a syntax error
 
 ```bash
 cd agent-evals/src/agent_evals/observatory/web/ui
 npm test -- --testPathPattern=Observatory
 ```
 
-**Step 3: Create chartDefaults.ts**
+**Step 3 [GREEN]:** Create chartDefaults.ts
 
 ```typescript
 export const CHART_ANIMATION = {
@@ -2641,13 +3572,27 @@ export const CHART_ANIMATION = {
 
 Apply to all chart option objects in the 5 pages listed above.
 
-**Step 4: Run tests**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 npm test
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation
+- `chartDefaults.ts` is a single-purpose utility — all chart pages import from it (no duplication)
+- Confirm `as const` is used on both the inner object and the export so TypeScript infers the literal types
+- Verify none of the 5 pages still have inline `animation: { duration: ... }` objects
+
+**Step 6 [VERIFY]:** Build check to confirm no TypeScript errors introduced
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm run build 2>&1 | tail -5
+npm test -- --reporter=verbose 2>&1 | tail -20
+# Expected: build succeeds with 0 errors; all chart-related tests pass
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/web/ui/src/utils/chartDefaults.ts \
@@ -2663,15 +3608,13 @@ git commit -m "feat(ux): add 800ms easeOutQuart chart animation to all chart vie
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/components/CompassCheckbox.tsx`
 - Test: component tests
 
-**Step 1: Read the file first**
+**Step 1 [RED]:** Read the file first, then write the failing test
 
 ```bash
 cat agent-evals/src/agent_evals/observatory/web/ui/src/components/CompassCheckbox.tsx
 ```
 
 Identify any remaining `style={{...}}` attributes on SVG elements (the file is ~61 lines).
-
-**Step 2: Write failing test if inline styles exist**
 
 ```typescript
 it("CompassCheckbox has no inline style attributes on any element", () => {
@@ -2681,18 +3624,37 @@ it("CompassCheckbox has no inline style attributes on any element", () => {
 });
 ```
 
-**Step 3: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure shows `inlineStyled.length` > 0, not a render error
 
 ```bash
 npm test -- --testPathPattern=CompassCheckbox
 ```
 
-**Step 4: Move any remaining inline styles to Tailwind classes**
+**Step 3 [GREEN]:** Move any remaining inline styles to Tailwind classes
 
-**Step 5: Run tests + commit**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 npm test -- --testPathPattern=CompassCheckbox
+```
+
+**Step 5 [REFACTOR]:** Review the implementation
+- All `style={{...}}` attributes removed — confirmed by the test assertion
+- Tailwind classes used instead (e.g. `fill-current`, `w-4 h-4`, `opacity-0`)
+- No new class names that duplicate existing Tailwind utilities
+
+**Step 6 [VERIFY]:** Build check to confirm no TypeScript or CSS errors
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm run build 2>&1 | tail -5
+npm test -- --reporter=verbose 2>&1 | tail -20
+# Expected: build succeeds; CompassCheckbox test reports 0 inline-styled elements
+```
+
+**Step 7: Commit**
+
+```bash
 git add agent-evals/src/agent_evals/observatory/web/ui/src/components/CompassCheckbox.tsx
 git commit -m "fix(ux): remove remaining inline styles from CompassCheckbox (U2)"
 ```
@@ -2705,7 +3667,7 @@ git commit -m "fix(ux): remove remaining inline styles from CompassCheckbox (U2)
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/components/SlideOutPanel.tsx:45`
 - Test: component tests
 
-**Step 1: Write failing test**
+**Step 1 [RED]:** Write the failing test
 
 ```typescript
 // SlideOutPanel props: { open: boolean, onClose: () => void, title: string, children }
@@ -2721,13 +3683,13 @@ it("SlideOutPanel close button has focus-visible styling", () => {
 });
 ```
 
-**Step 2: Run to confirm fail**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure shows `className` does not match `/focus-visible/`, not a render error
 
 ```bash
 npm test -- --testPathPattern=SlideOutPanel
 ```
 
-**Step 3: Implement**
+**Step 3 [GREEN]:** Add focus-visible classes to the close button
 
 ```tsx
 <button
@@ -2736,10 +3698,29 @@ npm test -- --testPathPattern=SlideOutPanel
 >
 ```
 
-**Step 4: Run tests + commit**
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 npm test -- --testPathPattern=SlideOutPanel
+```
+
+**Step 5 [REFACTOR]:** Review the implementation
+- The `focus-visible:` prefix ensures the outline only appears on keyboard focus (not mouse click)
+- `outline-ring` uses the design token — not a hardcoded color
+- `outline-offset-2` ensures the outline doesn't overlap the button border
+
+**Step 6 [VERIFY]:** Build check and full test run
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm run build 2>&1 | tail -5
+npm test -- --reporter=verbose 2>&1 | tail -20
+# Expected: build succeeds; SlideOutPanel test reports className matches /focus-visible/
+```
+
+**Step 7: Commit**
+
+```bash
 git add agent-evals/src/agent_evals/observatory/web/ui/src/components/SlideOutPanel.tsx
 git commit -m "fix(a11y): add focus-visible outline to SlideOutPanel close button (U3)"
 ```
@@ -2755,7 +3736,7 @@ git commit -m "fix(a11y): add focus-visible outline to SlideOutPanel close butto
 
 > **Note:** The sequence counter is module-level and resets on server restart. After a restart, clients that see ID 1 again will correctly treat it as fresh (their `lastEventId` ref is per-session). This is acceptable behavior.
 
-**Step 1: Write failing test (backend)**
+**Step 1 [RED]:** Write the failing test (backend)
 
 ```python
 def test_sse_events_include_monotonic_id(client):
@@ -2767,7 +3748,13 @@ def test_sse_events_include_monotonic_id(client):
     assert ids == sorted(ids), "SSE event IDs must be monotonically increasing"
 ```
 
-**Step 2: Add sequence counter to SSE generator in routes.py**
+**Step 2 [RED]:** Run to confirm it fails — verify the failure shows `len(id_lines) == 0` (no `id:` lines emitted), not a connection error
+
+```bash
+uv run pytest agent-evals/tests/test_observatory_web.py::test_sse_events_include_monotonic_id -v
+```
+
+**Step 3 [GREEN]:** Add sequence counter to SSE generator in routes.py and deduplication in useSSE.ts
 
 ```python
 import itertools
@@ -2776,8 +3763,6 @@ _sse_seq = itertools.count(1)
 # In each SSE yield:
 {"event": event_type, "id": str(next(_sse_seq)), "data": json.dumps(data)}
 ```
-
-**Step 3: Add deduplication in useSSE.ts**
 
 > **IMPORTANT:** `useSSE.ts` already has existing `addEventListener` handlers for `trial_completed` and other events (see lines 48-65). Do NOT add a second, separate `addEventListener` call. Instead, add the deduplication guard at the TOP of the existing `trial_completed` handler body.
 
@@ -2796,14 +3781,45 @@ source.addEventListener("trial_completed", (e: MessageEvent) => {
 });
 ```
 
-**Step 4: Run both test suites**
+**Step 4 [GREEN]:** Run both test suites to confirm they pass
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_web.py -v
 cd agent-evals/src/agent_evals/observatory/web/ui && npm test -- --testPathPattern=useSSE
 ```
 
-**Step 5: Commit**
+**Step 5 [REFACTOR]:** Review the implementation
+- `_sse_seq = itertools.count(1)` is module-level — resets on server restart (acceptable, documented in task note above)
+- The deduplication guard uses `<=` (not `<`) so a repeated ID at the same value is also dropped
+- `lastEventIdRef` is inside the `useEffect` closure — it is NOT shared across hook instances, which is correct
+- Confirm the `id:` field is emitted on every SSE event type (not just `trial_completed`)
+
+**Step 6 [VERIFY]:** Smoke test both layers
+
+```bash
+# Backend: confirm id: lines present and monotonic
+uv run python -c "
+import itertools, httpx
+# Use TestClient for a quick sync check
+from fastapi.testclient import TestClient
+from agent_evals.observatory.web.server import create_app
+client = TestClient(create_app())
+with client.stream('GET', '/api/runs/run1/stream') as resp:
+    lines = list(itertools.islice(resp.iter_lines(), 20))
+id_lines = [l for l in lines if l.startswith('id:')]
+print(f'id: lines found: {len(id_lines)}')
+ids = [int(l.split(':')[1].strip()) for l in id_lines]
+print(f'monotonic: {ids == sorted(ids)}, values: {ids[:5]}')
+"
+
+# Frontend: confirm deduplication guard present in build
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm run build 2>&1 | tail -5
+npm test -- --reporter=verbose 2>&1 | tail -20
+# Expected: build succeeds; useSSE tests pass with deduplication working
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/web/routes.py \
@@ -2825,13 +3841,22 @@ git commit -m "fix(sse): add event sequence IDs to prevent duplicate counting on
 **Files:**
 - Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/main.tsx` (or wherever the router is created)
 
-**Step 1: Locate the router creation**
+**Step 1 [RED]:** Locate the router creation and write a test asserting the future flags are set
 
 ```bash
 grep -r "createBrowserRouter\|BrowserRouter" agent-evals/src/agent_evals/observatory/web/ui/src/ --include="*.tsx"
 ```
 
-**Step 2: Add future flags**
+Because `createBrowserRouter` is a configuration call (not a function with testable output), the "test" here is a build-time TypeScript check: adding flags that do not exist in the types will cause a compile error. Confirm that `npm run build` currently does NOT complain about missing flags (i.e. the property exists in the type) and that the flags are NOT yet set (the warning is currently visible in the dev console).
+
+**Step 2 [RED]:** Confirm the warning is currently present
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui && npm run build 2>&1 | grep -i "router\|warning" | head -5
+# Expected before fix: React Router future flag warnings printed to stderr
+```
+
+**Step 3 [GREEN]:** Add future flags to the router creation call
 
 ```typescript
 createBrowserRouter(routes, {
@@ -2842,14 +3867,27 @@ createBrowserRouter(routes, {
 })
 ```
 
-**Step 3: Start dev server and verify warnings are gone**
+**Step 4 [GREEN]:** Rebuild to confirm TypeScript accepts the flags and no new errors introduced
 
 ```bash
-cd agent-evals/src/agent_evals/observatory/web/ui && npm run dev
-# Check browser console — React Router warnings must be absent
+npm run build 2>&1 | tail -5
 ```
 
-**Step 4: Commit**
+**Step 5 [REFACTOR]:** Review the implementation
+- Both `v7_startTransition` and `v7_relativeSplatPath` are set — these are the two flags that silence the React Router v6→v7 migration warnings
+- No other router options changed
+- If a test file mocks `createBrowserRouter`, verify the mock still typechecks
+
+**Step 6 [VERIFY]:** Full test suite and build check
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm run build 2>&1 | tail -5
+npm test -- --reporter=verbose 2>&1 | tail -20
+# Expected: build succeeds with 0 errors; no React Router deprecation warnings in output
+```
+
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/web/ui/src/main.tsx
@@ -2868,13 +3906,21 @@ git commit -m "fix(frontend): opt into React Router v7 future flags (W1)"
 
 **This requires a live LLM call (not `--dry-run`).**
 
-**Step 1: Confirm API key is set**
+**Step 1 [RED]:** Establish the pre-fix baseline — confirm current scores are still broken
 
 ```bash
 echo $OPENROUTER_API_KEY | head -c 20
+# Confirm key is set before proceeding
 ```
 
-**Step 2: Run a real evaluation on 100 compositional trials**
+The "failing test" here is the known bad distribution: mean ~0.114 and ~70% zero-score rate from Sprint 1-3 bugs. If you have not yet run all scorer fixes (Tasks 1-11), stop and complete those first.
+
+**Step 2 [RED]:** Document expected failure criteria before running
+
+- Mean score < 0.30 = FAIL (still broken)
+- Zero rate > 30% = FAIL (still broken)
+
+**Step 3 [GREEN]:** Run a real evaluation on 100 compositional trials after all scorer fixes are applied
 
 ```bash
 uv run agent-evals \
@@ -2885,7 +3931,7 @@ uv run agent-evals \
   --output-path /tmp/compositional_validation.json
 ```
 
-**Step 3: Check mean score and zero rate**
+**Step 4 [GREEN]:** Check mean score and zero rate against expected outcomes
 
 ```bash
 uv run python -c "
@@ -2893,9 +3939,13 @@ import json
 data = json.load(open('/tmp/compositional_validation.json'))
 scores = [t['score'] for t in data['trials']]
 zeros = sum(1 for s in scores if s == 0.0)
-print(f'Mean: {sum(scores)/len(scores):.3f}')
-print(f'Zero rate: {zeros}/{len(scores)} = {zeros/len(scores):.1%}')
-print(f'Mean before fix was 0.114 with 70% zeros — verify both improved')
+mean = sum(scores)/len(scores)
+zero_rate = zeros/len(scores)
+print(f'Mean: {mean:.3f}  (must be > 0.30, was 0.114)')
+print(f'Zero rate: {zeros}/{len(scores)} = {zero_rate:.1%}  (must be < 30%, was 70%)')
+assert mean > 0.30, f'FAIL: mean {mean:.3f} still too low'
+assert zero_rate < 0.30, f'FAIL: zero rate {zero_rate:.1%} still too high'
+print('PASS: both thresholds met')
 "
 ```
 
@@ -2903,9 +3953,35 @@ print(f'Mean before fix was 0.114 with 70% zeros — verify both improved')
 - Mean score must be > 0.30 (was 0.114)
 - Zero rate must be < 30% (was 70%)
 
-**Step 4: Document results**
+**Step 5 [REFACTOR]:** Sanity-check the result distribution
 
-Update `docs/plans/2026-03-02-observatory-known-issues.md` section D1/D2 with the post-fix distribution.
+```bash
+uv run python -c "
+import json
+data = json.load(open('/tmp/compositional_validation.json'))
+scores = [t['score'] for t in data['trials']]
+buckets = {'0.0': 0, '0.0-0.25': 0, '0.25-0.5': 0, '0.5-0.75': 0, '0.75-1.0': 0, '1.0': 0}
+for s in scores:
+    if s == 0.0: buckets['0.0'] += 1
+    elif s < 0.25: buckets['0.0-0.25'] += 1
+    elif s < 0.5: buckets['0.25-0.5'] += 1
+    elif s < 0.75: buckets['0.5-0.75'] += 1
+    elif s < 1.0: buckets['0.75-1.0'] += 1
+    else: buckets['1.0'] += 1
+for k, v in buckets.items():
+    print(f'  {k}: {v}')
+# Expected: distribution should look roughly normal (not bimodal with spike at 0)
+"
+```
+
+**Step 6 [VERIFY]:** Document results and close the validation
+
+Update `docs/plans/2026-03-02-observatory-known-issues.md` section D1/D2 with the post-fix distribution output from Step 5. Then confirm the unit test suite still passes end-to-end:
+
+```bash
+uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -20
+# Expected: all tests pass with no regressions from scorer changes
+```
 
 ---
 
