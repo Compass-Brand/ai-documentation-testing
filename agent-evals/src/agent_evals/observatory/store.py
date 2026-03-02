@@ -10,7 +10,7 @@ import json
 import sqlite3
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -33,6 +33,8 @@ class TrialRecord:
     model: str
     source: str
     error: str | None
+    oa_row_id: int | None = None
+    phase: str | None = None
 
 
 @dataclass
@@ -47,6 +49,7 @@ class RunSummary:
     total_trials: int
     total_cost: float
     avg_latency: float
+    heartbeat_at: str | None = None
 
 
 _SCHEMA = """\
@@ -120,6 +123,7 @@ class ObservatoryStore:
             "ALTER TABLE runs ADD COLUMN parent_run_id TEXT",
             "ALTER TABLE runs ADD COLUMN phase TEXT",
             "ALTER TABLE runs ADD COLUMN pipeline_id TEXT",
+            "ALTER TABLE runs ADD COLUMN heartbeat_at TEXT",
             "ALTER TABLE trials ADD COLUMN oa_row_id INTEGER",
             "ALTER TABLE trials ADD COLUMN phase TEXT",
         ]
@@ -259,6 +263,58 @@ class ObservatoryStore:
                 (now, run_id),
             )
 
+    def fail_run(self, run_id: str, error: str | None = None) -> None:
+        """Mark a run as failed with optional error message and timestamp."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            if error:
+                conn.execute(
+                    "UPDATE runs SET status = 'failed', finished_at = ?, "
+                    "config = json_set(COALESCE(config, '{}'), '$.error', ?) "
+                    "WHERE run_id = ?",
+                    (now, error, run_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE runs SET status = 'failed', finished_at = ? "
+                    "WHERE run_id = ?",
+                    (now, run_id),
+                )
+
+    def update_heartbeat(self, run_id: str) -> None:
+        """Update the heartbeat timestamp for a run."""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "UPDATE runs SET heartbeat_at = ? WHERE run_id = ?",
+                (now, run_id),
+            )
+
+    def reap_stale_runs(self, max_age_seconds: int = 300) -> list[str]:
+        """Mark active runs with stale heartbeats as failed.
+
+        Returns list of reaped run_ids.
+        """
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+        ).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            stale = conn.execute(
+                "SELECT run_id FROM runs WHERE status = 'active' "
+                "AND heartbeat_at IS NOT NULL AND heartbeat_at < ?",
+                (cutoff,),
+            ).fetchall()
+            if stale:
+                ids = [row["run_id"] for row in stale]
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"UPDATE runs SET status = 'failed', finished_at = ? "
+                    f"WHERE run_id IN ({placeholders})",
+                    [now, *ids],
+                )
+        return [row["run_id"] for row in stale]
+
     def list_runs(self) -> list[RunSummary]:
         """Return summaries of all runs.
 
@@ -268,7 +324,7 @@ class ObservatoryStore:
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT r.run_id, r.run_type, r.status, r.created_at, "
-                "r.finished_at, "
+                "r.finished_at, r.heartbeat_at, "
                 "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
                 "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
                 "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
@@ -285,6 +341,7 @@ class ObservatoryStore:
                 total_trials=r["total_trials"],
                 total_cost=r["total_cost"],
                 avg_latency=r["avg_latency"],
+                heartbeat_at=r["heartbeat_at"],
             )
             for r in rows
         ]
@@ -304,7 +361,7 @@ class ObservatoryStore:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT r.run_id, r.run_type, r.status, r.created_at, "
-                "r.finished_at, "
+                "r.finished_at, r.heartbeat_at, "
                 "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
                 "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
                 "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
@@ -323,6 +380,7 @@ class ObservatoryStore:
             total_trials=row["total_trials"],
             total_cost=row["total_cost"],
             avg_latency=row["avg_latency"],
+            heartbeat_at=row["heartbeat_at"],
         )
 
     def get_trials(
@@ -371,6 +429,8 @@ class ObservatoryStore:
                 model=r["model"],
                 source=r["source"],
                 error=r["error"],
+                oa_row_id=r["oa_row_id"],
+                phase=r["phase"],
             )
             for r in rows
         ]
@@ -450,7 +510,7 @@ class ObservatoryStore:
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT r.run_id, r.run_type, r.status, r.created_at, "
-                "r.finished_at, "
+                "r.finished_at, r.heartbeat_at, "
                 "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
                 "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
                 "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
@@ -469,6 +529,7 @@ class ObservatoryStore:
                 total_trials=r["total_trials"],
                 total_cost=r["total_cost"],
                 avg_latency=r["avg_latency"],
+                heartbeat_at=r["heartbeat_at"],
             )
             for r in rows
         ]

@@ -37,6 +37,9 @@ if TYPE_CHECKING:
     from agent_evals.tasks.base import EvalTask
     from agent_evals.variants.base import IndexVariant
 
+JUDGE_SAMPLE_RATE = 50  # Call judge for 1 in every 50 trials (2%)
+JUDGE_MODEL = "openrouter/openai/gpt-4o-mini"  # Cheap grading model
+
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -233,12 +236,12 @@ class EvalRunner:
                 with ThreadPoolExecutor(
                     max_workers=self._config.max_connections,
                 ) as executor:
-                    future_to_item = {
-                        executor.submit(
-                            self._run_trial, task, variant, doc_tree, rep, source
-                        ): (task, variant, rep)
-                        for task, variant, rep in work_items
-                    }
+                    future_to_item = {}
+                    for idx, (task, variant, rep) in enumerate(work_items, 1):
+                        future = executor.submit(
+                            self._run_trial, task, variant, doc_tree, rep, source, trial_index=idx
+                        )
+                        future_to_item[future] = (task, variant, rep)
 
                     for future in as_completed(future_to_item):
                         try:
@@ -513,6 +516,30 @@ class EvalRunner:
             )
             variant.set_target_tokens(oracle_tokens)
 
+    def _call_judge(self, task_type: str, question: str, response: str) -> "JudgeScore":
+        """Call LLM judge to score one trial response."""
+        from agent_evals.judge.calibrator import (
+            JudgeScore,
+            build_judge_prompt,
+            parse_judge_response,
+        )
+
+        messages = build_judge_prompt(
+            task_type=task_type,
+            question=question,
+            response=response,
+            rubric=None,
+        )
+        raw = self._client.complete(messages).content
+        score, rationale = parse_judge_response(raw)
+        return JudgeScore(
+            example_id="",
+            judge_model=JUDGE_MODEL,
+            score=score,
+            rationale=rationale,
+            raw_response=raw,
+        )
+
     def _run_trial(
         self,
         task: EvalTask,
@@ -520,6 +547,7 @@ class EvalRunner:
         doc_tree: DocTree,
         repetition: int,
         source: str = "gold_standard",
+        trial_index: int = 0,
     ) -> TrialResult:
         """Execute a single (task, variant, repetition) trial.
 
@@ -550,8 +578,10 @@ class EvalRunner:
         self._setup_variant_for_task(variant, task, doc_tree)
 
         # Render and build prompt
+        prompt_build_start = time.monotonic()
         index_content = variant.render(doc_tree)
         messages = task.build_prompt(index_content)
+        prompt_build_ms = (time.monotonic() - prompt_build_start) * 1000
 
         variant_meta = variant.metadata()
         variant_name = variant_meta.name
@@ -618,9 +648,28 @@ class EvalRunner:
                 )
 
         # Score the response
+        score_start = time.monotonic()
         score = task.score_response(generation.content)
+        scoring_ms = (time.monotonic() - score_start) * 1000
 
         latency = time.monotonic() - trial_start
+
+        metrics: dict[str, float] = {
+            "scoring_ms": round(scoring_ms, 2),
+            "prompt_build_ms": round(prompt_build_ms, 2),
+        }
+        if trial_index > 0 and trial_index % JUDGE_SAMPLE_RATE == 0:
+            try:
+                question = getattr(task.definition, "question", None) or ""
+                judge_result = self._call_judge(
+                    task.definition.type,
+                    question,
+                    generation.content,
+                )
+                metrics["judge_score"] = judge_result.score
+                metrics["judge_heuristic_delta"] = abs(judge_result.score - score)
+            except Exception:
+                pass  # Judge failure must never affect trial outcome
 
         return TrialResult(
             task_id=task.definition.task_id,
@@ -628,7 +677,7 @@ class EvalRunner:
             variant_name=variant_name,
             repetition=repetition,
             score=score,
-            metrics={},
+            metrics=metrics,
             prompt_tokens=generation.prompt_tokens,
             completion_tokens=generation.completion_tokens,
             total_tokens=generation.total_tokens,

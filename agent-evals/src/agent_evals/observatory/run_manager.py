@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -28,6 +29,13 @@ class RunConflictError(Exception):
     """Raised when attempting to start a run while one is already active."""
 
 
+class RunSetupError(RuntimeError):
+    """Raised when run setup fails; causes _run_wrapper to mark run as failed."""
+
+
+_MODEL_PATTERN = re.compile(r"^[\w.-]+/[\w./-]+$")
+
+
 class StartRunRequest(BaseModel):
     """Validated request to start an evaluation run from the dashboard."""
 
@@ -42,6 +50,40 @@ class StartRunRequest(BaseModel):
     ] = "larger_is_better"
     top_k: int = Field(default=3, ge=1, le=10)
     alpha: float = Field(default=0.05, ge=0.001, le=0.1)
+
+
+def _validate_model_name(model: str) -> None:
+    """Validate that model string follows LiteLLM provider/model format."""
+    for m in (m.strip() for m in model.split(",")):
+        if not _MODEL_PATTERN.match(m):
+            raise ValueError(
+                f"Invalid model name '{m}'. "
+                "Expected LiteLLM format: 'provider/model' "
+                "(e.g., 'openrouter/anthropic/claude-sonnet-4.5')."
+            )
+
+
+class HeartbeatThread(threading.Thread):
+    """Periodically writes a heartbeat timestamp for a run."""
+
+    def __init__(
+        self, store: ObservatoryStore, run_id: str, interval: float = 30
+    ) -> None:
+        super().__init__(daemon=True, name=f"heartbeat-{run_id}")
+        self._store = store
+        self._run_id = run_id
+        self._interval = interval
+        self._stop_event = threading.Event()
+
+    def run(self) -> None:
+        while not self._stop_event.wait(self._interval):
+            try:
+                self._store.update_heartbeat(self._run_id)
+            except Exception:
+                pass
+
+    def stop(self) -> None:
+        self._stop_event.set()
 
 
 class RunManager:
@@ -70,10 +112,7 @@ class RunManager:
 
     @property
     def active_run(self) -> dict[str, Any] | None:
-        """Return info about the first active run, or None.
-
-        Kept for backward compatibility. Prefer active_runs for multi-run.
-        """
+        """Return info about the first active run, or None."""
         with self._lock:
             if not self._runs:
                 return None
@@ -89,7 +128,12 @@ class RunManager:
         """Start a background evaluation run.
 
         Returns the run_id. Multiple runs can execute concurrently.
+
+        Raises:
+            ValueError: If model name is invalid.
         """
+        _validate_model_name(request.model)
+
         run_id = uuid.uuid4().hex[:12]
         models = [m.strip() for m in request.model.split(",")]
         cancel_event = threading.Event()
@@ -115,25 +159,16 @@ class RunManager:
         return run_id
 
     def cancel_run(self, run_id: str | None = None) -> bool:
-        """Request cancellation of a specific run, or all runs.
-
-        Args:
-            run_id: Specific run to cancel. If None, cancels all.
-
-        Returns True if at least one run was cancelled.
-        """
+        """Request cancellation of a specific run, or all runs."""
         with self._lock:
             if not self._runs:
                 return False
-
             if run_id is not None:
                 run_info = self._runs.get(run_id)
                 if run_info is None:
                     return False
                 run_info["cancel_event"].set()
                 return True
-
-            # Cancel all
             for info in self._runs.values():
                 info["cancel_event"].set()
             return True
@@ -148,8 +183,14 @@ class RunManager:
         """Wrapper that calls _execute_run and cleans up afterwards."""
         try:
             self._execute_run(run_id, request)
-        except Exception:
-            logger.exception("Run %s failed", run_id)
+        except Exception as exc:
+            logger.error("Run %s failed: %s", run_id, exc, exc_info=True)
+            try:
+                self._store.fail_run(run_id, error=str(exc))
+            except Exception:
+                logger.exception(
+                    "Failed to update DB status for run %s", run_id
+                )
         finally:
             with self._lock:
                 self._runs.pop(run_id, None)
@@ -157,11 +198,7 @@ class RunManager:
     def _execute_run(
         self, run_id: str, request: StartRunRequest
     ) -> None:
-        """Execute the evaluation run using the orchestrator.
-
-        Loads tasks, variants, doc_tree from gold_standard fixtures,
-        builds the orchestrator with the shared store/tracker, and runs.
-        """
+        """Execute the evaluation run using the orchestrator."""
         from pathlib import Path
 
         from agent_evals.fixtures import load_sample_doc_tree
@@ -172,49 +209,36 @@ class RunManager:
 
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         if not api_key:
-            logger.error("OPENROUTER_API_KEY not set, cannot start run %s", run_id)
-            return
+            raise RunSetupError("OPENROUTER_API_KEY not set")
 
-        # Load tasks from gold_standard
         gold_standard_dir = (
             Path(__file__).resolve().parent.parent.parent.parent / "gold_standard"
         )
         if not gold_standard_dir.is_dir():
-            logger.error("Gold standard directory not found: %s", gold_standard_dir)
-            return
+            raise RunSetupError(
+                f"gold_standard directory not found: {gold_standard_dir}"
+            )
 
         tasks = load_tasks(gold_standard_dir)
-
-        # Apply task limit
         if request.task_limit > 0:
             tasks = tasks[: request.task_limit]
-
         if not tasks:
-            logger.warning("No tasks loaded for run %s", run_id)
-            return
+            raise RunSetupError("no tasks loaded from gold_standard")
 
-        # Load variants
         load_all()
         variants = get_all_variants()
-
         if not variants:
-            logger.warning("No variants loaded for run %s", run_id)
-            return
+            raise RunSetupError("no variants configured")
 
-        # Load doc_tree
         doc_tree = load_sample_doc_tree()
-
-        # Parse models
         models = [m.strip() for m in request.model.split(",")]
 
-        # Build eval config
         eval_config = EvalRunConfig(
             repetitions=request.repetitions,
             continue_on_error=True,
             temperature=0.3,
         )
 
-        # Build orchestrator with shared store/tracker
         orch_config = OrchestratorConfig(
             mode=request.mode,
             models=models,
@@ -227,35 +251,36 @@ class RunManager:
         )
         orchestrator = EvalOrchestrator(orch_config)
 
-        # Route to appropriate runner
-        if request.mode == "taguchi" and request.pipeline_mode:
-            self._run_pipeline(
-                orchestrator, request, tasks, variants, doc_tree, models, api_key
-            )
-        elif request.mode == "taguchi":
-            self._run_taguchi(orchestrator, request, tasks, variants, doc_tree)
-        else:
-            orchestrator.run(
-                tasks=tasks,
-                variants=variants,
-                doc_tree=doc_tree,
-                source="gold_standard",
-            )
+        heartbeat = HeartbeatThread(self._store, run_id)
+        heartbeat.start()
+        try:
+            if request.mode == "taguchi" and request.pipeline_mode:
+                self._run_pipeline(
+                    orchestrator, request, tasks, variants, doc_tree,
+                    models, api_key,
+                )
+            elif request.mode == "taguchi":
+                self._run_taguchi(
+                    orchestrator, request, tasks, variants, doc_tree,
+                )
+            else:
+                orchestrator.run(
+                    tasks=tasks, variants=variants, doc_tree=doc_tree,
+                    source="gold_standard",
+                )
+        finally:
+            heartbeat.stop()
+            heartbeat.join(timeout=5.0)
 
         logger.info("Run %s completed", run_id)
 
     def _run_taguchi(
-        self,
-        orchestrator: Any,
-        request: StartRunRequest,
-        tasks: list,
-        variants: list,
-        doc_tree: Any,
+        self, orchestrator: Any, request: StartRunRequest,
+        tasks: list, variants: list, doc_tree: Any,
     ) -> None:
         """Execute a Taguchi-mode run."""
         from agent_evals.taguchi.factors import build_design
 
-        # Build axes from variants (exclude axis 0 baselines)
         axes: dict[int, list[str]] = {}
         for v in variants:
             m = v.metadata()
@@ -274,25 +299,16 @@ class RunManager:
         )
 
         variant_lookup = {v.metadata().name: v for v in variants}
-
         orchestrator.run(
-            tasks=tasks,
-            variants=variants,
-            doc_tree=doc_tree,
-            design=design,
-            variant_lookup=variant_lookup,
+            tasks=tasks, variants=variants, doc_tree=doc_tree,
+            design=design, variant_lookup=variant_lookup,
             source="gold_standard",
         )
 
     def _run_pipeline(
-        self,
-        orchestrator: Any,
-        request: StartRunRequest,
-        tasks: list,
-        variants: list,
-        doc_tree: Any,
-        models: list[str],
-        api_key: str,
+        self, orchestrator: Any, request: StartRunRequest,
+        tasks: list, variants: list, doc_tree: Any,
+        models: list[str], api_key: str,
     ) -> None:
         """Execute a DOE pipeline run."""
         from agent_evals.pipeline import DOEPipeline, PipelineConfig

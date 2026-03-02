@@ -1431,3 +1431,50 @@ class TestSourceProvenance:
         content = csv_files[0].read_text()
         assert "source" in content.splitlines()[0]
         assert "repliqa" in content
+
+
+
+# ---------------------------------------------------------------------------
+# Task 27: TrialResult.metrics timing data tests
+# ---------------------------------------------------------------------------
+
+
+class TestTrialResultMetricsTiming:
+    """TrialResult.metrics must be populated with timing data after a trial."""
+
+    def test_trial_result_metrics_contains_timing_keys(self) -> None:
+        """TrialResult.metrics must be populated after a successful trial."""
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+        client = _make_mock_client()
+        config = EvalRunConfig(max_tasks=1, repetitions=1, use_cache=False)
+        runner = EvalRunner(client, config=config)
+        result = runner._run_trial(task, variant, doc_tree, repetition=1)
+        assert result.metrics != {}, "metrics dict must not be empty"
+        assert "scoring_ms" in result.metrics, "scoring_ms must be present"
+        assert "prompt_build_ms" in result.metrics, "prompt_build_ms must be present"
+
+
+# Task 40: LLM-as-judge sampling test
+class TestJudgeSampling:
+    def test_judge_score_sampled_into_metrics(self, monkeypatch) -> None:
+        """When JUDGE_SAMPLE_RATE is set, every Nth trial must have judge_score in metrics."""
+        from agent_evals.judge.calibrator import JudgeScore
+        mock_judge_score = JudgeScore(
+            example_id="test", judge_model="mock", score=0.8,
+            rationale="good", raw_response="Score: 0.8\nRationale: good",
+        )
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner._call_judge",
+            lambda self, task_type, question, response: mock_judge_score,
+        )
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+        client = _make_mock_client()
+        config = EvalRunConfig(use_cache=False)
+        runner = EvalRunner(client, config=config)
+        results = [runner._run_trial(task, variant, doc_tree, repetition=i, trial_index=i) for i in range(1, 55)]
+        judged = [r for r in results if "judge_score" in r.metrics]
+        assert len(judged) >= 1, "At least one trial must be judge-sampled"
