@@ -8,17 +8,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from agent_evals.variants._utils import escape_pipe as _escape_pipe
 from agent_evals.variants._utils import summarise as _summarise
 from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.registry import register_variant
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
-
-
-def _escape_pipe(text: str) -> str:
-    """Escape pipe characters so they don't act as column delimiters."""
-    return text.replace("|", "\\|")
 
 
 @register_variant

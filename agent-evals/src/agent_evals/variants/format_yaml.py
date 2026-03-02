@@ -19,8 +19,14 @@ if TYPE_CHECKING:
 
 
 def _yaml_safe_value(value: str) -> str:
-    """Serialize a string so it is safe to embed as a YAML scalar value."""
-    return yaml.safe_dump(value).splitlines()[0]
+    """Serialize a string so it is safe to embed as a YAML scalar value.
+
+    Collapses newlines to spaces first since index values are single-line,
+    then delegates to ``yaml.safe_dump`` for proper quoting of special
+    characters (colons, hashes, etc.).
+    """
+    clean = value.replace("\n", " ")
+    return yaml.safe_dump(clean).splitlines()[0]
 
 
 @register_variant
