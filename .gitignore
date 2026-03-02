@@ -73,3 +73,19 @@ agent-evals/src/agent_evals/observatory/web/static/
 .env
 .env.local
 credentials.json
+
+# Beads task tracker (runtime database)
+.beads/*.db
+.beads/*.db-shm
+.beads/*.db-wal
+.beads/*.sock
+.beads/*.pid
+.beads/*.log
+.beads/daemon.lock
+.beads/export-state
+.beads/interactions.jsonl
+
+# Test artifacts
+e2e-screenshots/
+e2e-test-report.md
+live-monitor-debug.png
