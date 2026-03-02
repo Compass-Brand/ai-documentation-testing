@@ -368,6 +368,18 @@ def create_router(
         return model
 
     # ------------------------------------------------------------------
+    # Datasets API
+    # ------------------------------------------------------------------
+
+    @router.get("/api/datasets")
+    async def list_datasets() -> list[dict[str, str]]:
+        """Return available dataset sources for the run config form."""
+        from agent_evals.datasets import list_available, load_all as _load_all
+
+        _load_all()
+        return list_available()
+
+    # ------------------------------------------------------------------
     # Pipeline API
     # ------------------------------------------------------------------
 

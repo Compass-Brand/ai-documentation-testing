@@ -88,6 +88,14 @@ class TestStartRunRequest:
         with pytest.raises(ValidationError):
             StartRunRequest(model="m", pipeline_mode="bad")
 
+    def test_default_source_is_gold_standard(self) -> None:
+        req = StartRunRequest(model="m")
+        assert req.source == "gold_standard"
+
+    def test_source_accepts_custom_dataset(self) -> None:
+        req = StartRunRequest(model="m", source="repliqa")
+        assert req.source == "repliqa"
+
     def test_full_request(self) -> None:
         req = StartRunRequest(
             mode="full",

@@ -145,11 +145,19 @@ export interface StartRunPayload {
   model: string;
   repetitions: number;
   task_limit: number;
+  source?: string;
   oa_override?: string;
   pipeline_mode?: "auto" | "semi";
   quality_type?: string;
   top_k?: number;
   alpha?: number;
+}
+
+export interface DatasetInfo {
+  name: string;
+  task_type: string;
+  contamination_risk: string;
+  license: string;
 }
 
 export interface StartRunResponse {
@@ -282,6 +290,9 @@ export const api = {
   syncStatus: () => fetchApi<SyncStatus>("/api/models/sync"),
   triggerSync: () =>
     fetchApi<SyncResult>("/api/models/sync", { method: "POST" }),
+
+  // Datasets
+  listDatasets: () => fetchApi<DatasetInfo[]>("/api/datasets"),
 
   // Run Submission
   startRun: (payload: StartRunPayload) =>

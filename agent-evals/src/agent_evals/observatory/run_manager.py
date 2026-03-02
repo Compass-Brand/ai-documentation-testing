@@ -36,6 +36,17 @@ class RunSetupError(RuntimeError):
 _MODEL_PATTERN = re.compile(r"^[\w.-]+/[\w./-]+$")
 
 
+def _validate_model_name(model: str) -> None:
+    """Validate that model string follows LiteLLM provider/model format."""
+    for m in (m.strip() for m in model.split(",")):
+        if not _MODEL_PATTERN.match(m):
+            raise ValueError(
+                f"Invalid model name '{m}'. "
+                "Expected LiteLLM format: 'provider/model' "
+                "(e.g., 'openrouter/anthropic/claude-sonnet-4.5')."
+            )
+
+
 class StartRunRequest(BaseModel):
     """Validated request to start an evaluation run from the dashboard."""
 
@@ -50,17 +61,7 @@ class StartRunRequest(BaseModel):
     ] = "larger_is_better"
     top_k: int = Field(default=3, ge=1, le=10)
     alpha: float = Field(default=0.05, ge=0.001, le=0.1)
-
-
-def _validate_model_name(model: str) -> None:
-    """Validate that model string follows LiteLLM provider/model format."""
-    for m in (m.strip() for m in model.split(",")):
-        if not _MODEL_PATTERN.match(m):
-            raise ValueError(
-                f"Invalid model name '{m}'. "
-                "Expected LiteLLM format: 'provider/model' "
-                "(e.g., 'openrouter/anthropic/claude-sonnet-4.5')."
-            )
+    source: str = "gold_standard"
 
 
 class HeartbeatThread(threading.Thread):
@@ -112,7 +113,10 @@ class RunManager:
 
     @property
     def active_run(self) -> dict[str, Any] | None:
-        """Return info about the first active run, or None."""
+        """Return info about the first active run, or None.
+
+        Kept for backward compatibility. Prefer active_runs for multi-run.
+        """
         with self._lock:
             if not self._runs:
                 return None
@@ -128,12 +132,8 @@ class RunManager:
         """Start a background evaluation run.
 
         Returns the run_id. Multiple runs can execute concurrently.
-
-        Raises:
-            ValueError: If model name is invalid.
         """
         _validate_model_name(request.model)
-
         run_id = uuid.uuid4().hex[:12]
         models = [m.strip() for m in request.model.split(",")]
         cancel_event = threading.Event()
@@ -159,16 +159,25 @@ class RunManager:
         return run_id
 
     def cancel_run(self, run_id: str | None = None) -> bool:
-        """Request cancellation of a specific run, or all runs."""
+        """Request cancellation of a specific run, or all runs.
+
+        Args:
+            run_id: Specific run to cancel. If None, cancels all.
+
+        Returns True if at least one run was cancelled.
+        """
         with self._lock:
             if not self._runs:
                 return False
+
             if run_id is not None:
                 run_info = self._runs.get(run_id)
                 if run_info is None:
                     return False
                 run_info["cancel_event"].set()
                 return True
+
+            # Cancel all
             for info in self._runs.values():
                 info["cancel_event"].set()
             return True
@@ -198,47 +207,63 @@ class RunManager:
     def _execute_run(
         self, run_id: str, request: StartRunRequest
     ) -> None:
-        """Execute the evaluation run using the orchestrator."""
-        from pathlib import Path
+        """Execute the evaluation run using the orchestrator.
 
-        from agent_evals.fixtures import load_sample_doc_tree
+        Loads tasks, variants, doc_tree from gold_standard fixtures,
+        builds the orchestrator with the shared store/tracker, and runs.
+        """
         from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
         from agent_evals.runner import EvalRunConfig
-        from agent_evals.tasks.loader import load_tasks
         from agent_evals.variants.registry import get_all_variants, load_all
 
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         if not api_key:
             raise RunSetupError("OPENROUTER_API_KEY not set")
 
-        gold_standard_dir = (
-            Path(__file__).resolve().parent.parent.parent.parent / "gold_standard"
+        # Load tasks based on source
+        from agent_evals.source import (
+            SourceNotPreparedError,
+            load_tasks_for_source,
         )
-        if not gold_standard_dir.is_dir():
-            raise RunSetupError(
-                f"gold_standard directory not found: {gold_standard_dir}"
-            )
 
-        tasks = load_tasks(gold_standard_dir)
+        source = request.source
+        try:
+            tasks = load_tasks_for_source(source)
+        except (FileNotFoundError, SourceNotPreparedError) as exc:
+            raise RunSetupError(str(exc)) from exc
+
+        # Apply task limit
         if request.task_limit > 0:
             tasks = tasks[: request.task_limit]
-        if not tasks:
-            raise RunSetupError("no tasks loaded from gold_standard")
 
+        if not tasks:
+            logger.warning("No tasks loaded for run %s", run_id)
+            return
+
+        # Load variants
         load_all()
         variants = get_all_variants()
-        if not variants:
-            raise RunSetupError("no variants configured")
 
-        doc_tree = load_sample_doc_tree()
+        if not variants:
+            logger.warning("No variants loaded for run %s", run_id)
+            return
+
+        # Load doc_tree
+        from agent_evals.source import load_doc_tree_for_source
+
+        doc_tree = load_doc_tree_for_source(source)
+
+        # Parse models
         models = [m.strip() for m in request.model.split(",")]
 
+        # Build eval config
         eval_config = EvalRunConfig(
             repetitions=request.repetitions,
             continue_on_error=True,
             temperature=0.3,
         )
 
+        # Build orchestrator with shared store/tracker
         orch_config = OrchestratorConfig(
             mode=request.mode,
             models=models,
@@ -254,19 +279,19 @@ class RunManager:
         heartbeat = HeartbeatThread(self._store, run_id)
         heartbeat.start()
         try:
+            # Route to appropriate runner
             if request.mode == "taguchi" and request.pipeline_mode:
                 self._run_pipeline(
-                    orchestrator, request, tasks, variants, doc_tree,
-                    models, api_key,
+                    orchestrator, request, tasks, variants, doc_tree, models, api_key
                 )
             elif request.mode == "taguchi":
-                self._run_taguchi(
-                    orchestrator, request, tasks, variants, doc_tree,
-                )
+                self._run_taguchi(orchestrator, request, tasks, variants, doc_tree)
             else:
                 orchestrator.run(
-                    tasks=tasks, variants=variants, doc_tree=doc_tree,
-                    source="gold_standard",
+                    tasks=tasks,
+                    variants=variants,
+                    doc_tree=doc_tree,
+                    source=request.source,
                 )
         finally:
             heartbeat.stop()
@@ -275,12 +300,17 @@ class RunManager:
         logger.info("Run %s completed", run_id)
 
     def _run_taguchi(
-        self, orchestrator: Any, request: StartRunRequest,
-        tasks: list, variants: list, doc_tree: Any,
+        self,
+        orchestrator: Any,
+        request: StartRunRequest,
+        tasks: list,
+        variants: list,
+        doc_tree: Any,
     ) -> None:
         """Execute a Taguchi-mode run."""
         from agent_evals.taguchi.factors import build_design
 
+        # Build axes from variants (exclude axis 0 baselines)
         axes: dict[int, list[str]] = {}
         for v in variants:
             m = v.metadata()
@@ -299,16 +329,25 @@ class RunManager:
         )
 
         variant_lookup = {v.metadata().name: v for v in variants}
+
         orchestrator.run(
-            tasks=tasks, variants=variants, doc_tree=doc_tree,
-            design=design, variant_lookup=variant_lookup,
+            tasks=tasks,
+            variants=variants,
+            doc_tree=doc_tree,
+            design=design,
+            variant_lookup=variant_lookup,
             source="gold_standard",
         )
 
     def _run_pipeline(
-        self, orchestrator: Any, request: StartRunRequest,
-        tasks: list, variants: list, doc_tree: Any,
-        models: list[str], api_key: str,
+        self,
+        orchestrator: Any,
+        request: StartRunRequest,
+        tasks: list,
+        variants: list,
+        doc_tree: Any,
+        models: list[str],
+        api_key: str,
     ) -> None:
         """Execute a DOE pipeline run."""
         from agent_evals.pipeline import DOEPipeline, PipelineConfig

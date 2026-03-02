@@ -55,18 +55,6 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         default=None,
         help="LLM model in provider/name format (default: from config)",
     )
-    parser.add_argument(
-        "--model-config",
-        type=str,
-        default=None,
-        help="Path to model-specific args YAML file",
-    )
-    parser.add_argument(
-        "--judge-model",
-        type=str,
-        default=None,
-        help="Override judge model (default: GPT-4o)",
-    )
 
     # Execution parameters
     parser.add_argument(
@@ -106,12 +94,6 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=False,
         help="Estimate tokens and cost without API calls",
-    )
-    parser.add_argument(
-        "--max-cost",
-        type=float,
-        default=None,
-        help="Budget cap in dollars; pause if projected cost exceeds 2x",
     )
     parser.add_argument(
         "--no-cache",
@@ -195,7 +177,7 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
     # Taguchi / multi-model configuration
     parser.add_argument(
         "--mode",
-        choices=["full", "taguchi", "factorial"],
+        choices=["full", "taguchi"],
         default=None,
         help="Evaluation mode (default: full)",
     )
@@ -212,28 +194,10 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         help="Force specific Taguchi OA (e.g. L54). Default: auto-select",
     )
     parser.add_argument(
-        "--confirmation-runs",
-        type=int,
-        default=None,
-        help="Number of confirmation runs for optimal config (Taguchi mode)",
-    )
-    parser.add_argument(
         "--pipeline",
         choices=["auto", "semi"],
         default=None,
         help="Run full three-phase DOE pipeline (auto or semi-automatic)",
-    )
-    parser.add_argument(
-        "--phase",
-        choices=["screening", "confirmation", "refinement"],
-        default=None,
-        help="Run a single phase manually",
-    )
-    parser.add_argument(
-        "--parent-run",
-        type=str,
-        default=None,
-        help="Link to prior screening run ID for phase continuation",
     )
     parser.add_argument(
         "--quality-type",
@@ -430,15 +394,12 @@ _CONFIG_KEYS: dict[str, type] = {
     "task_id": str,
     "variant": str,
     "model": str,
-    "model_config": str,
-    "judge_model": str,
     "limit": int,
     "repetitions": int,
     "temperature": float,
     "max_connections": int,
     "max_tasks": int,
     "dry_run": bool,
-    "max_cost": float,
     "no_cache": bool,
     "output_dir": str,
     "output_format": str,
@@ -452,10 +413,7 @@ _CONFIG_KEYS: dict[str, type] = {
     "mode": str,
     "models": str,
     "oa_type": str,
-    "confirmation_runs": int,
     "pipeline": str,
-    "phase": str,
-    "parent_run": str,
     "quality_type": str,
     "top_k": int,
     "alpha": float,
@@ -711,13 +669,28 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         temperature=run_config.temperature,
     )
 
-    # Load tasks
-    gold_standard_dir = Path(__file__).resolve().parent.parent.parent / "gold_standard"
-    if not gold_standard_dir.is_dir():
-        logger.error("Gold standard directory not found: %s", gold_standard_dir)
-        return 1
+    # Load tasks and doc_tree based on --source
+    from agent_evals.source import (
+        SourceNotPreparedError,
+        load_doc_tree_for_source,
+        load_tasks_for_source,
+    )
 
-    tasks = load_tasks(gold_standard_dir)
+    source = resolved.get("source") or "gold_standard"
+
+    try:
+        tasks = load_tasks_for_source(source)
+    except FileNotFoundError:
+        logger.error("Gold standard directory not found.")
+        return 1
+    except SourceNotPreparedError:
+        logger.error(
+            "Dataset '%s' has not been prepared. Run first:\n"
+            "  agent-evals --prepare-datasets %s",
+            source,
+            source,
+        )
+        return 1
 
     # Filter tasks by type if specified
     task_filter = resolved.get("tasks")
@@ -759,9 +732,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         return 1
 
     # Load doc_tree
-    from agent_evals.fixtures import load_sample_doc_tree
-
-    doc_tree = load_sample_doc_tree()
+    doc_tree = load_doc_tree_for_source(source)
 
     # Route to the correct runner based on --mode
     mode = resolved.get("mode", "full")

@@ -1768,13 +1768,13 @@ class TestSourceRouting:
         """Unprepared dataset should return 1."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
 
-        class FakeCache:
-            def is_prepared(self, name: str) -> bool:
-                return False
+        from agent_evals.source import SourceNotPreparedError
 
-        monkeypatch.setattr("agent_evals.cli.DatasetCache", FakeCache)
         monkeypatch.setattr(
-            "agent_evals.cli._load_all_datasets", lambda: None,
+            "agent_evals.source.load_tasks_for_source",
+            lambda source: (_ for _ in ()).throw(
+                SourceNotPreparedError(f"Dataset '{source}' not prepared")
+            ),
         )
 
         resolved: dict[str, object] = {
@@ -1787,77 +1787,64 @@ class TestSourceRouting:
     def test_source_dataset_loads_from_cache_task_dir(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
     ) -> None:
-        """Tasks should be loaded from cache.task_dir(source)."""
+        """Tasks should be loaded from the correct source."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
-
-        task_dir = tmp_path / "tasks"
-        task_dir.mkdir()
-
-        class FakeCache:
-            def is_prepared(self, name: str) -> bool:
-                return True
-
-            def task_dir(self, name: str) -> Path:
-                return task_dir
-
-            def doc_tree_path(self, name: str) -> Path:
-                return tmp_path / "doc_tree.json"
-
-        monkeypatch.setattr("agent_evals.cli.DatasetCache", FakeCache)
-        monkeypatch.setattr(
-            "agent_evals.cli._load_all_datasets", lambda: None,
-        )
 
         captured: list = []
 
-        def fake_load_tasks(path: Path):
-            captured.append(path)
+        def fake_load_tasks_for_source(source: str):
+            captured.append(source)
             return []  # Empty triggers "no tasks" exit
 
-        monkeypatch.setattr("agent_evals.cli.load_tasks", fake_load_tasks)
+        monkeypatch.setattr(
+            "agent_evals.source.load_tasks_for_source",
+            fake_load_tasks_for_source,
+        )
 
         resolved: dict[str, object] = {
             "model": "openrouter/test/model",
             "source": "repliqa",
         }
         _run_evaluation(resolved)
-        assert captured == [task_dir]
+        assert captured == ["repliqa"]
 
     def test_source_dataset_loads_correct_doc_tree(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
     ) -> None:
-        """Doc tree should come from cache, not fixture, for dataset sources."""
+        """Doc tree should come from source loader for dataset sources."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
 
-        task_dir = tmp_path / "tasks"
-        task_dir.mkdir()
+        sentinel_source = "test-sentinel-source"
+        captured_sources: list = []
 
-        sentinel = "test-sentinel-source"
-
-        class FakeCache:
-            def is_prepared(self, name: str) -> bool:
-                return True
-
-            def task_dir(self, name: str) -> Path:
-                return task_dir
-
-            def doc_tree_path(self, name: str) -> Path:
-                return tmp_path / "doc_tree.json"
-
-        monkeypatch.setattr("agent_evals.cli.DatasetCache", FakeCache)
+        # Return a non-empty task list so execution reaches load_doc_tree_for_source
+        from agent_evals.tasks.base import TaskDefinition
+        from agent_evals.tasks.retrieval import RetrievalTask
+        fake_defn = TaskDefinition(
+            task_id="retrieval_001",
+            type="retrieval",
+            question="q",
+            domain="framework_api",
+            difficulty="easy",
+            metadata={},
+        )
+        fake_task = RetrievalTask(fake_defn)
         monkeypatch.setattr(
-            "agent_evals.cli._load_all_datasets", lambda: None,
+            "agent_evals.source.load_tasks_for_source",
+            lambda source: [fake_task],
         )
         monkeypatch.setattr(
-            "agent_evals.cli.load_tasks", lambda path: [],
+            "agent_evals.source.load_doc_tree_for_source",
+            lambda source: captured_sources.append(source) or (_ for _ in ()).throw(SystemExit(0)),
         )
 
         resolved: dict[str, object] = {
             "model": "openrouter/test/model",
-            "source": sentinel,
+            "source": sentinel_source,
         }
-        result = _run_evaluation(resolved)
-        assert result == 1
+        with pytest.raises(SystemExit):
+            _run_evaluation(resolved)
+        assert sentinel_source in captured_sources
 
 
 # ---------------------------------------------------------------------------
@@ -1906,7 +1893,9 @@ class TestRemovedFlags:
         "--dataset-cache-dir",
     ])
     def test_kept_flags_still_exist(self, flag: str) -> None:
-        """Flags that were NOT removed should still parse fine."""
+        """Flags that were NOT removed should still be recognized by the parser."""
         parser = build_parser()
-        args = parser.parse_args([flag, "dummy"])
-        assert args is not None
+        # Use _option_string_actions to verify flag exists without requiring a valid value
+        assert flag in parser._option_string_actions, (
+            f"{flag} was removed but should still exist"
+        )

@@ -169,6 +169,16 @@ export function useTriggerSync() {
   });
 }
 
+// --- Datasets ---
+export function useDatasets() {
+  return useQuery({
+    queryKey: ["datasets"],
+    queryFn: api.listDatasets,
+    staleTime: STALE_LONG,
+    gcTime: GC_TIME,
+  });
+}
+
 // --- Run Submission ---
 export function useStartRun() {
   const qc = useQueryClient();
