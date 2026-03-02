@@ -267,17 +267,18 @@ class ObservatoryStore:
         """Mark a run as failed with optional error message and timestamp."""
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
-            conn.execute(
-                "UPDATE runs SET status = 'failed', finished_at = ? "
-                "WHERE run_id = ?",
-                (now, run_id),
-            )
             if error:
                 conn.execute(
-                    "UPDATE runs SET config = json_set("
-                    "COALESCE(config, '{}'), '$.error', ?) "
+                    "UPDATE runs SET status = 'failed', finished_at = ?, "
+                    "config = json_set(COALESCE(config, '{}'), '$.error', ?) "
                     "WHERE run_id = ?",
-                    (error, run_id),
+                    (now, error, run_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE runs SET status = 'failed', finished_at = ? "
+                    "WHERE run_id = ?",
+                    (now, run_id),
                 )
 
     def update_heartbeat(self, run_id: str) -> None:
@@ -297,18 +298,20 @@ class ObservatoryStore:
         cutoff = (
             datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
         ).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
             stale = conn.execute(
                 "SELECT run_id FROM runs WHERE status = 'active' "
                 "AND heartbeat_at IS NOT NULL AND heartbeat_at < ?",
                 (cutoff,),
             ).fetchall()
-            now = datetime.now(timezone.utc).isoformat()
-            for row in stale:
+            if stale:
+                ids = [row["run_id"] for row in stale]
+                placeholders = ",".join("?" * len(ids))
                 conn.execute(
-                    "UPDATE runs SET status = 'failed', finished_at = ? "
-                    "WHERE run_id = ?",
-                    (now, row["run_id"]),
+                    f"UPDATE runs SET status = 'failed', finished_at = ? "
+                    f"WHERE run_id IN ({placeholders})",
+                    [now, *ids],
                 )
         return [row["run_id"] for row in stale]
 

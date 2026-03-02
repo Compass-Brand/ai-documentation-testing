@@ -53,16 +53,6 @@ class TestBuildParserDefaults:
         args = parser.parse_args([])
         assert args.model is None
 
-    def test_default_model_config_is_none(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args([])
-        assert args.model_config is None
-
-    def test_default_judge_model_is_none(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args([])
-        assert args.judge_model is None
-
     def test_default_limit_is_none(self) -> None:
         parser = build_parser()
         args = parser.parse_args([])
@@ -92,11 +82,6 @@ class TestBuildParserDefaults:
         parser = build_parser()
         args = parser.parse_args([])
         assert args.dry_run is False
-
-    def test_default_max_cost_is_none(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args([])
-        assert args.max_cost is None
 
     def test_default_no_cache_is_false(self) -> None:
         parser = build_parser()
@@ -147,16 +132,6 @@ class TestBuildParserFlags:
         args = parser.parse_args(["--model", "openrouter/anthropic/claude-sonnet-4.5"])
         assert args.model == "openrouter/anthropic/claude-sonnet-4.5"
 
-    def test_model_config_accepts_path(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--model-config", "model.yaml"])
-        assert args.model_config == "model.yaml"
-
-    def test_judge_model_accepts_provider_name(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--judge-model", "openrouter/openai/gpt-4o"])
-        assert args.judge_model == "openrouter/openai/gpt-4o"
-
     def test_limit_accepts_int(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["--limit", "50"])
@@ -186,11 +161,6 @@ class TestBuildParserFlags:
         parser = build_parser()
         args = parser.parse_args(["--dry-run"])
         assert args.dry_run is True
-
-    def test_max_cost_accepts_float(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--max-cost", "25.50"])
-        assert args.max_cost == pytest.approx(25.50)
 
     def test_no_cache_is_boolean_flag(self) -> None:
         parser = build_parser()
@@ -292,7 +262,6 @@ class TestLoadConfig:
         config_file = tmp_path / "eval-config.yaml"
         config_file.write_text(
             "model: openrouter/anthropic/claude-sonnet-4.5\n"
-            "judge_model: openrouter/openai/gpt-4o\n"
             "repetitions: 10\n"
             "temperature: 0.3\n"
             "max_connections: 10\n"
@@ -301,7 +270,6 @@ class TestLoadConfig:
         )
         result = load_config(config_file)
         assert result["model"] == "openrouter/anthropic/claude-sonnet-4.5"
-        assert result["judge_model"] == "openrouter/openai/gpt-4o"
         assert result["repetitions"] == 10
         assert result["temperature"] == pytest.approx(0.3)
         assert result["max_connections"] == 10
@@ -442,13 +410,11 @@ class TestResolveConfigFileDefaults:
         args = parser.parse_args([])
         config = {
             "model": "openrouter/anthropic/claude-sonnet-4.5",
-            "judge_model": "openrouter/openai/gpt-4o",
             "repetitions": 10,
             "temperature": 0.3,
         }
         resolved = resolve_config(args, config)
         assert resolved["model"] == "openrouter/anthropic/claude-sonnet-4.5"
-        assert resolved["judge_model"] == "openrouter/openai/gpt-4o"
         assert resolved["repetitions"] == 10
         assert resolved["temperature"] == pytest.approx(0.3)
 
@@ -983,11 +949,6 @@ class TestTaguchiModeDefaults:
         args = parser.parse_args([])
         assert args.oa_type is None
 
-    def test_default_confirmation_runs_is_none(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args([])
-        assert args.confirmation_runs is None
-
     def test_default_report_is_none(self) -> None:
         parser = build_parser()
         args = parser.parse_args([])
@@ -1032,11 +993,6 @@ class TestTaguchiModeParsing:
         args = parser.parse_args(["--mode", "taguchi"])
         assert args.mode == "taguchi"
 
-    def test_mode_factorial_accepted(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--mode", "factorial"])
-        assert args.mode == "factorial"
-
     def test_mode_full_accepted(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["--mode", "full"])
@@ -1056,11 +1012,6 @@ class TestTaguchiModeParsing:
         parser = build_parser()
         args = parser.parse_args(["--oa-type", "L54"])
         assert args.oa_type == "L54"
-
-    def test_confirmation_runs_accepts_int(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--confirmation-runs", "3"])
-        assert args.confirmation_runs == 3
 
     def test_report_html_accepted(self) -> None:
         parser = build_parser()
@@ -1145,12 +1096,6 @@ class TestTaguchiResolveConfig:
         args = parser.parse_args(["--oa-type", "L54"])
         resolved = resolve_config(args, {})
         assert resolved["oa_type"] == "L54"
-
-    def test_confirmation_runs_resolved_from_cli(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--confirmation-runs", "5"])
-        resolved = resolve_config(args, {})
-        assert resolved["confirmation_runs"] == 5
 
     def test_report_resolved_from_cli(self) -> None:
         parser = build_parser()
@@ -1516,41 +1461,6 @@ class TestPipelineFlagParsing:
         args = parser.parse_args([])
         assert args.pipeline is None
 
-    def test_phase_screening_accepted(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--phase", "screening"])
-        assert args.phase == "screening"
-
-    def test_phase_confirmation_accepted(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--phase", "confirmation"])
-        assert args.phase == "confirmation"
-
-    def test_phase_refinement_accepted(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--phase", "refinement"])
-        assert args.phase == "refinement"
-
-    def test_phase_invalid_rejected(self) -> None:
-        parser = build_parser()
-        with pytest.raises(SystemExit):
-            parser.parse_args(["--phase", "exploration"])
-
-    def test_phase_default_is_none(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args([])
-        assert args.phase is None
-
-    def test_parent_run_accepts_string(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--parent-run", "abc123"])
-        assert args.parent_run == "abc123"
-
-    def test_parent_run_default_is_none(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args([])
-        assert args.parent_run is None
-
     def test_quality_type_larger_is_better(self) -> None:
         parser = build_parser()
         args = parser.parse_args(["--quality-type", "larger_is_better"])
@@ -1610,18 +1520,6 @@ class TestPipelineResolveConfig:
         args = parser.parse_args(["--pipeline", "auto"])
         resolved = resolve_config(args, {})
         assert resolved["pipeline"] == "auto"
-
-    def test_phase_resolved_from_cli(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--phase", "confirmation"])
-        resolved = resolve_config(args, {})
-        assert resolved["phase"] == "confirmation"
-
-    def test_parent_run_resolved_from_cli(self) -> None:
-        parser = build_parser()
-        args = parser.parse_args(["--parent-run", "abc123"])
-        resolved = resolve_config(args, {})
-        assert resolved["parent_run"] == "abc123"
 
     def test_quality_type_resolved_from_cli(self) -> None:
         parser = build_parser()
@@ -1854,3 +1752,161 @@ class TestDashboardMain:
         with patch("agent_evals.cli.main", return_value=0) as mock_main:
             dashboard_main(None)
         mock_main.assert_called_once_with(["dashboard"])
+
+
+# ---------------------------------------------------------------------------
+# Source routing (Task 42) -- _run_evaluation loads from dataset cache
+# ---------------------------------------------------------------------------
+
+
+class TestSourceRouting:
+    """When --source is a dataset name, tasks and doc_tree come from cache."""
+
+    def test_source_dataset_not_prepared_returns_error(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Unprepared dataset should return 1."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        class FakeCache:
+            def is_prepared(self, name: str) -> bool:
+                return False
+
+        monkeypatch.setattr("agent_evals.cli.DatasetCache", FakeCache)
+        monkeypatch.setattr(
+            "agent_evals.cli._load_all_datasets", lambda: None,
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "source": "repliqa",
+        }
+        result = _run_evaluation(resolved)
+        assert result == 1
+
+    def test_source_dataset_loads_from_cache_task_dir(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        """Tasks should be loaded from cache.task_dir(source)."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        task_dir = tmp_path / "tasks"
+        task_dir.mkdir()
+
+        class FakeCache:
+            def is_prepared(self, name: str) -> bool:
+                return True
+
+            def task_dir(self, name: str) -> Path:
+                return task_dir
+
+            def doc_tree_path(self, name: str) -> Path:
+                return tmp_path / "doc_tree.json"
+
+        monkeypatch.setattr("agent_evals.cli.DatasetCache", FakeCache)
+        monkeypatch.setattr(
+            "agent_evals.cli._load_all_datasets", lambda: None,
+        )
+
+        captured: list = []
+
+        def fake_load_tasks(path: Path):
+            captured.append(path)
+            return []  # Empty triggers "no tasks" exit
+
+        monkeypatch.setattr("agent_evals.cli.load_tasks", fake_load_tasks)
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "source": "repliqa",
+        }
+        _run_evaluation(resolved)
+        assert captured == [task_dir]
+
+    def test_source_dataset_loads_correct_doc_tree(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ) -> None:
+        """Doc tree should come from cache, not fixture, for dataset sources."""
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
+
+        task_dir = tmp_path / "tasks"
+        task_dir.mkdir()
+
+        sentinel = "test-sentinel-source"
+
+        class FakeCache:
+            def is_prepared(self, name: str) -> bool:
+                return True
+
+            def task_dir(self, name: str) -> Path:
+                return task_dir
+
+            def doc_tree_path(self, name: str) -> Path:
+                return tmp_path / "doc_tree.json"
+
+        monkeypatch.setattr("agent_evals.cli.DatasetCache", FakeCache)
+        monkeypatch.setattr(
+            "agent_evals.cli._load_all_datasets", lambda: None,
+        )
+        monkeypatch.setattr(
+            "agent_evals.cli.load_tasks", lambda path: [],
+        )
+
+        resolved: dict[str, object] = {
+            "model": "openrouter/test/model",
+            "source": sentinel,
+        }
+        result = _run_evaluation(resolved)
+        assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# Removed flags (Task 43) -- dead CLI flags must not be recognized
+# ---------------------------------------------------------------------------
+
+
+class TestRemovedFlags:
+    """Removed flags should raise SystemExit and be absent from config."""
+
+    @pytest.mark.parametrize("flag", [
+        "--model-config",
+        "--judge-model",
+        "--max-cost",
+        "--confirmation-runs",
+        "--phase",
+        "--parent-run",
+    ])
+    def test_removed_flag_raises_system_exit(self, flag: str) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args([flag, "dummy"])
+
+    @pytest.mark.parametrize("key", [
+        "model_config",
+        "judge_model",
+        "max_cost",
+        "confirmation_runs",
+        "phase",
+        "parent_run",
+    ])
+    def test_removed_key_not_in_config_keys(self, key: str) -> None:
+        from agent_evals.cli import _CONFIG_KEYS
+        assert key not in _CONFIG_KEYS
+
+    def test_mode_factorial_is_not_a_valid_choice(self) -> None:
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--mode", "factorial"])
+
+    @pytest.mark.parametrize("flag", [
+        "--oa-type",
+        "--quality-type",
+        "--alpha",
+        "--model-budgets",
+        "--dataset-cache-dir",
+    ])
+    def test_kept_flags_still_exist(self, flag: str) -> None:
+        """Flags that were NOT removed should still parse fine."""
+        parser = build_parser()
+        args = parser.parse_args([flag, "dummy"])
+        assert args is not None
