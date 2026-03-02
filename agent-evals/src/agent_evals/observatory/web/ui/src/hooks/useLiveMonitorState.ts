@@ -76,10 +76,11 @@ export function useLiveMonitorState(totalTasksOverride?: number): LiveMonitorSta
 
   const onTrialComplete = useCallback((trial: Trial) => {
     setRecentTrials((prev) => [trial, ...prev].slice(0, MAX_RECENT_TRIALS));
-    setScores((prev) => {
-      const next = [...prev, trial.score];
-      return next.length > MAX_SCORES ? next.slice(-MAX_SCORES) : next;
-    });
+    setScores((prev) =>
+      prev.length >= MAX_SCORES
+        ? [...prev.slice(1), trial.score]
+        : [...prev, trial.score],
+    );
     setLastUpdated(new Date());
     setIsConnected(true);
     trialTimestamps.current.push(Date.now());
