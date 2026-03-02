@@ -298,13 +298,13 @@ describe("api methods", () => {
     );
   });
 
-  it("deleteGroup sends DELETE request", async () => {
+  it("deleteGroup sends DELETE request via fetchApi with signal", async () => {
     const { api } = await import("../../api/client");
     await api.deleteGroup("group-1");
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/models/groups/group-1",
-      expect.objectContaining({ method: "DELETE" }),
+      expect.objectContaining({ method: "DELETE", signal: expect.any(AbortSignal) }),
     );
   });
 

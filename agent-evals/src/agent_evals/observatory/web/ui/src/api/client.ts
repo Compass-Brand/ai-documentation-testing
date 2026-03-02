@@ -271,7 +271,7 @@ export const api = {
       },
     ),
   deleteGroup: (groupId: string) =>
-    fetch(`${BASE_URL}/api/models/groups/${groupId}`, {
+    fetchApi<void>(`/api/models/groups/${groupId}`, {
       method: "DELETE",
     }),
 
