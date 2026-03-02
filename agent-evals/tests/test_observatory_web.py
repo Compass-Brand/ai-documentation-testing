@@ -304,6 +304,15 @@ class TestPipelineAPI:
         assert data["approved"] is True
 
 
+class TestDatasetsAPI:
+    """GET /api/datasets returns available dataset sources."""
+
+    def test_list_datasets_returns_list(self, client: TestClient) -> None:
+        response = client.get("/api/datasets")
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+
 class TestModelsAPI:
     """Model browser endpoints return wrapped response format."""
 

@@ -15,6 +15,7 @@ vi.mock("react-router-dom", async () => {
 
 const mockStartRun = vi.fn();
 const mockGetActiveRuns = vi.fn();
+const mockListDatasets = vi.fn();
 
 vi.mock("../../api/client", async () => {
   const actual = await vi.importActual("../../api/client");
@@ -24,6 +25,7 @@ vi.mock("../../api/client", async () => {
       ...((actual as Record<string, unknown>).api as Record<string, unknown>),
       startRun: (...args: unknown[]) => mockStartRun(...args),
       getActiveRuns: () => mockGetActiveRuns(),
+      listDatasets: () => mockListDatasets(),
     },
   };
 });
@@ -43,6 +45,7 @@ describe("RunConfig", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetActiveRuns.mockResolvedValue({ runs: [], count: 0 });
+    mockListDatasets.mockResolvedValue([]);
   });
 
   it("should render the page heading", () => {
@@ -192,6 +195,28 @@ describe("RunConfig", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Internal server error/)).toBeInTheDocument();
+    });
+  });
+
+  it("should render source selector with gold_standard default", () => {
+    render(<RunConfig />, { wrapper });
+    expect(screen.getByLabelText(/Task Source/i)).toBeInTheDocument();
+  });
+
+  it("should include source in startRun payload", async () => {
+    mockStartRun.mockResolvedValue({ run_id: "abc", status: "started" });
+    render(<RunConfig />, { wrapper });
+
+    const modelInput = screen.getByLabelText(/model/i);
+    await userEvent.type(modelInput, "test-model");
+
+    const button = screen.getByRole("button", { name: /start/i });
+    await userEvent.click(button);
+
+    await waitFor(() => {
+      expect(mockStartRun).toHaveBeenCalledWith(
+        expect.objectContaining({ source: "gold_standard" }),
+      );
     });
   });
 

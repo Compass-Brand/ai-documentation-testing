@@ -8,7 +8,7 @@ import { Select } from "../components/Select";
 import { FadeIn } from "../components/FadeIn";
 import { cn } from "../lib/utils";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
-import { useStartRun, useActiveRuns } from "../api/hooks";
+import { useStartRun, useActiveRuns, useDatasets } from "../api/hooks";
 import type { StartRunPayload } from "../api/client";
 
 type RunMode = "taguchi" | "full";
@@ -27,6 +27,8 @@ export default function RunConfig() {
   const [qualityType, setQualityType] = useState("larger_is_better");
   const [topK, setTopK] = useState(3);
   const [alpha, setAlpha] = useState(0.05);
+  const [source, setSource] = useState("gold_standard");
+  const datasets = useDatasets();
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(false);
 
@@ -47,6 +49,7 @@ export default function RunConfig() {
       model: model.trim(),
       repetitions,
       task_limit: taskLimit,
+      source,
     };
 
     if (oaOverride) payload.oa_override = oaOverride;
@@ -142,6 +145,32 @@ export default function RunConfig() {
                     The LLM to evaluate against. Use OpenRouter format (e.g.
                     openrouter/anthropic/claude-sonnet-4). Separate multiple
                     models with commas.
+                  </p>
+                </div>
+
+                <div className="mt-sp-6">
+                  <label
+                    htmlFor="source"
+                    className="mb-sp-2 block text-body-sm font-medium text-brand-charcoal"
+                  >
+                    Task Source
+                  </label>
+                  <Select
+                    aria-label="Task Source"
+                    value={source}
+                    onValueChange={setSource}
+                    options={[
+                      { value: "gold_standard", label: "Gold Standard (built-in)" },
+                      ...(datasets.data ?? []).map((d) => ({
+                        value: d.name,
+                        label: d.name,
+                      })),
+                    ]}
+                  />
+                  <p className="mt-sp-1 text-caption text-brand-slate">
+                    Choose which task dataset to evaluate against. Gold Standard
+                    uses the built-in 355 tasks. External datasets must be
+                    prepared first.
                   </p>
                 </div>
               </CardContent>
