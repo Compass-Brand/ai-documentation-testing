@@ -174,18 +174,18 @@ class TestCodeGenerationTaskScoring:
     def test_empty_test_patterns_scores_based_on_violations_only(self) -> None:
         """When no test patterns, score depends on violation rate."""
         task = _codegen_task(test="", forbidden_patterns=[r"eval\s*\("])
-        # No patterns to match (0 match rate), but violation penalty applies
+        # match_rate=1.0 (vacuously satisfied), but violation penalty applies
         clean = task.score_response("def add(a, b): return a + b")
         dirty = task.score_response("result = eval('1+2')")
-        # Both have 0 required match rate, but dirty has violation
+        # Both have match_rate=1.0, but dirty has violation
         assert clean >= dirty
 
-    def test_empty_test_and_forbidden_returns_low(self) -> None:
-        """When no test patterns and no forbidden patterns, match rate is 0."""
+    def test_empty_test_and_forbidden_returns_high(self) -> None:
+        """When no test patterns and no forbidden, match rate defaults to 1.0."""
         task = _codegen_task(test="", forbidden_patterns=[])
         score = task.score_response("def add(a, b): return a + b")
-        # 0 * 0.7 + 1.0 * 0.2 + 1.0 * 0.1 = 0.3 (no patterns matched, no violations, valid syntax)
-        assert abs(score - 0.3) < 0.01
+        # 1.0 * 0.7 + 1.0 * 0.2 + 1.0 * 0.1 = 1.0 (vacuously satisfied, no violations, valid syntax)
+        assert abs(score - 1.0) < 0.01
 
     def test_all_forbidden_violated(self) -> None:
         """Violating all forbidden patterns maximizes penalty."""
@@ -298,3 +298,16 @@ class TestCodeGenerationPartialCredit:
         score_3 = task.score_response(response_3)
 
         assert score_1 < score_2 < score_3
+
+
+
+def test_no_test_patterns_does_not_cap_score_at_0_3():
+    """With no test patterns, score should exceed 0.3."""
+    defn = TaskDefinition(
+        task_id="code_generation_001", type="code_generation", question="Write a function",
+        domain="framework_api", difficulty="easy",
+        metadata={"test": "", "forbidden_patterns": []},
+    )
+    task = CodeGenerationTask(defn)
+    score = task.score_response("def add(a, b):\n    return a + b")
+    assert score > 0.3, f"Expected > 0.3, got {score}"
