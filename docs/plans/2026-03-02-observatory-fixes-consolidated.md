@@ -118,6 +118,14 @@ Expected: all three show `"status": "failed"` and a non-null `finished_at`.
 - Modify: `agent-evals/src/agent_evals/tasks/compositional.py:85-95`
 - Test: `agent-evals/tests/test_task_compositional.py` (add to existing)
 
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.compositional import CompositionalTask
+> defn = TaskDefinition(task_id="compositional_001", type="compositional", question="Q?", domain="framework_api", difficulty="easy", metadata={...})
+> task = CompositionalTask(defn)
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -285,6 +293,14 @@ git commit -m "feat(deps): add rapidfuzz>=3.0 for fuzzy answer matching (S1 prer
 - Modify: `agent-evals/src/agent_evals/tasks/compositional.py`
 - Test: `agent-evals/tests/test_task_compositional.py`
 
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.compositional import CompositionalTask
+> defn = TaskDefinition(task_id="compositional_002", type="compositional", question="Q?", domain="framework_api", difficulty="easy", metadata={...})
+> task = CompositionalTask(defn)
+> ```
+
 **Step 1 [RED]:** Write the failing tests
 
 ```python
@@ -407,6 +423,14 @@ git commit -m "fix(scoring): replace substring with rapidfuzz fuzzy matching in 
 - Modify: `agent-evals/src/agent_evals/tasks/negative.py:64-65`
 - Test: `agent-evals/tests/test_task_negative.py`
 
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.negative import NegativeTask
+> defn = TaskDefinition(task_id="negative_001", type="negative", question="Q?", domain="framework_api", difficulty="easy", metadata={})
+> task = NegativeTask(defn)
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -486,6 +510,14 @@ git commit -m "fix(scoring): remove false-positive abstention phrases from negat
 **Files:**
 - Modify: `agent-evals/src/agent_evals/tasks/negative.py:118-135`
 - Test: `agent-evals/tests/test_task_negative.py`
+
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.negative import NegativeTask
+> defn = TaskDefinition(task_id="negative_002", type="negative", question="Q?", domain="framework_api", difficulty="easy", metadata={})
+> task = NegativeTask(defn)
+> ```
 
 **Step 1 [RED]:** Write the failing tests
 
@@ -651,6 +683,14 @@ git commit -m "fix(scoring): graduate negative scorer to tiered rubric with part
 - Modify: `agent-evals/src/agent_evals/tasks/disambiguation.py:88-105`
 - Test: `agent-evals/tests/test_task_disambiguation.py`
 
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.disambiguation import DisambiguationTask
+> defn = TaskDefinition(task_id="disambiguation_001", type="disambiguation", question="Q?", domain="framework_api", difficulty="easy", metadata={...})
+> task = DisambiguationTask(defn)
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -755,6 +795,14 @@ git commit -m "fix(scoring): replace cliff threshold with continuous coverage in
 - Modify: `agent-evals/src/agent_evals/tasks/multi_hop.py:105`
 - Test: `agent-evals/tests/test_task_multi_hop.py`
 
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.multi_hop import MultiHopTask
+> defn = TaskDefinition(task_id="multi_hop_001", type="multi_hop", question="Q?", domain="framework_api", difficulty="easy", metadata={...})
+> task = MultiHopTask(defn)
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -841,6 +889,14 @@ git commit -m "fix(scoring): require 30% keyword coverage per step in multi-hop 
 **Files:**
 - Modify: `agent-evals/src/agent_evals/tasks/fact_extraction.py:73-87`
 - Test: `agent-evals/tests/test_task_fact_extraction.py`
+
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.fact_extraction import FactExtractionTask
+> defn = TaskDefinition(task_id="fact_extraction_001", type="fact_extraction", question="Q?", domain="framework_api", difficulty="easy", metadata={...})
+> task = FactExtractionTask(defn)
+> ```
 
 **Step 1 [RED]:** Write the failing test
 
@@ -932,6 +988,14 @@ git commit -m "fix(scoring): add rapidfuzz fuzzy layer to fact extraction scorer
 - Modify: `agent-evals/src/agent_evals/tasks/code_generation.py:115-121`
 - Test: `agent-evals/tests/test_task_code_generation.py`
 
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.code_generation import CodeGenerationTask
+> defn = TaskDefinition(task_id="code_generation_001", type="code_generation", question="Q?", domain="framework_api", difficulty="easy", metadata={...})
+> task = CodeGenerationTask(defn)
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -1017,6 +1081,15 @@ git commit -m "fix(scoring): default match_rate to 1.0 when no test patterns def
 - Modify: `agent-evals/src/agent_evals/tasks/agentic.py` (around line 47)
 - Test: `agent-evals/tests/test_task_agentic.py`
 
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.agentic import AgenticTask
+> from agent_evals.tasks.agentic import _parse_json_or_list   # module-level function
+> defn = TaskDefinition(task_id="agentic_001", type="agentic", question="Q?", domain="framework_api", difficulty="easy", metadata={...})
+> task = AgenticTask(defn)
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -1092,6 +1165,14 @@ git commit -m "fix(scoring): fall back to whitespace split in agentic _parse_jso
 **Files:**
 - Modify: `agent-evals/src/agent_evals/tasks/agentic.py` (score_response method, around line 108)
 - Test: `agent-evals/tests/test_task_agentic.py`
+
+> **Context:** `task_id` must match `^[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)*_\d+$`, use `domain="framework_api"`.
+> ```python
+> from agent_evals.tasks.base import TaskDefinition
+> from agent_evals.tasks.agentic import AgenticTask
+> defn = TaskDefinition(task_id="agentic_001", type="agentic", question="Q?", domain="framework_api", difficulty="easy", metadata={...})
+> task = AgenticTask(defn)
+> ```
 
 **Step 1 [RED]:** Write the failing test
 
@@ -1188,6 +1269,18 @@ git commit -m "fix(scoring): dynamic weight redistribution in agentic scorer for
 **Files:**
 - Modify: `agent-evals/src/agent_evals/observatory/store.py`
 - Test: `agent-evals/tests/test_observatory_store.py` (add to existing)
+
+> **Context:**
+> ```python
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> # Always use real tmp_path (not :memory:)
+> store = ObservatoryStore(db_path=tmp_path / "test.db")
+> tracker = EventTracker(store=store)
+> store.create_run("r1", "full", {}, phase="screening")
+> # record_trial() keyword-only args — required: run_id, task_id, task_type, variant_name, repetition, score,
+> #   prompt_tokens, completion_tokens, total_tokens, cost, latency_seconds, model
+> ```
 
 **Step 1 [RED]:** Write the failing test
 
@@ -1290,6 +1383,19 @@ git commit -m "feat(store): add fail_run() method; ensure finish_run() sets fini
 - Modify: `agent-evals/src/agent_evals/observatory/run_manager.py:145-155`
 - Test: `agent-evals/tests/test_run_manager.py`
 
+> **Context:**
+> ```python
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> from agent_evals.observatory.run_manager import RunManager, StartRunRequest
+> from unittest.mock import MagicMock
+> store = ObservatoryStore(db_path=tmp_path / "test.db")
+> tracker = MagicMock(spec=EventTracker)
+> manager = RunManager(store=store, tracker=tracker)
+> # start_run() generates run_id internally — do NOT pass run_id:
+> manager.start_run(request=StartRunRequest(model="openrouter/anthropic/claude-haiku-4-5-20251001", task_limit=1))
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -1383,6 +1489,19 @@ git commit -m "fix(runner): mark run as failed in DB when _run_wrapper catches e
 - Modify: `agent-evals/src/agent_evals/observatory/run_manager.py:157-244`
 - Test: `agent-evals/tests/test_run_manager.py`
 
+> **Context:**
+> ```python
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> from agent_evals.observatory.run_manager import RunManager, StartRunRequest
+> from unittest.mock import MagicMock
+> store = ObservatoryStore(db_path=tmp_path / "test.db")
+> tracker = MagicMock(spec=EventTracker)
+> manager = RunManager(store=store, tracker=tracker)
+> # start_run() generates run_id internally — do NOT pass run_id:
+> manager.start_run(request=StartRunRequest(model="openrouter/anthropic/claude-haiku-4-5-20251001", task_limit=1))
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -1474,6 +1593,18 @@ git commit -m "fix(runner): raise RunSetupError from early exits so wrapper mark
 **Files:**
 - Modify: `agent-evals/src/agent_evals/observatory/store.py`
 - Test: `agent-evals/tests/test_observatory_store.py`
+
+> **Context:**
+> ```python
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> # Always use real tmp_path (not :memory:)
+> store = ObservatoryStore(db_path=tmp_path / "test.db")
+> tracker = EventTracker(store=store)
+> store.create_run("r1", "full", {}, phase="screening")
+> # record_trial() keyword-only args — required: run_id, task_id, task_type, variant_name, repetition, score,
+> #   prompt_tokens, completion_tokens, total_tokens, cost, latency_seconds, model
+> ```
 
 **Step 1 [RED]:** Write the failing tests
 
@@ -1598,6 +1729,19 @@ git commit -m "feat(store): add heartbeat column, update_heartbeat() and reap_st
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py` (add reaper to lifespan)
 - Test: `agent-evals/tests/test_run_manager.py`
 
+> **Context:**
+> ```python
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> from agent_evals.observatory.run_manager import RunManager, StartRunRequest
+> from unittest.mock import MagicMock
+> store = ObservatoryStore(db_path=tmp_path / "test.db")
+> tracker = MagicMock(spec=EventTracker)
+> manager = RunManager(store=store, tracker=tracker)
+> # start_run() generates run_id internally — do NOT pass run_id:
+> manager.start_run(request=StartRunRequest(model="openrouter/anthropic/claude-haiku-4-5-20251001", task_limit=1))
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -1721,6 +1865,18 @@ git commit -m "feat(runner): wire HeartbeatThread and server-side reaper for sta
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py:188`
 - Test: `agent-evals/tests/test_observatory_web.py`
 
+> **Context:**
+> ```python
+> from fastapi.testclient import TestClient
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> from agent_evals.observatory.web.server import create_app
+> store = ObservatoryStore(tmp_path / "obs.db")
+> tracker = EventTracker(store=store)
+> app = create_app(store=store, tracker=tracker)   # pass catalog=, model_sync= etc. if needed
+> client = TestClient(app)
+> ```
+
 **Step 1 [RED]:** Write the failing test
 
 ```python
@@ -1801,6 +1957,19 @@ git commit -m "fix(api): expose stored run config in API response instead of har
 **Files:**
 - Modify: `agent-evals/src/agent_evals/observatory/run_manager.py`
 - Test: `agent-evals/tests/test_run_manager.py`
+
+> **Context:**
+> ```python
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> from agent_evals.observatory.run_manager import RunManager, StartRunRequest
+> from unittest.mock import MagicMock
+> store = ObservatoryStore(db_path=tmp_path / "test.db")
+> tracker = MagicMock(spec=EventTracker)
+> manager = RunManager(store=store, tracker=tracker)
+> # start_run() generates run_id internally — do NOT pass run_id:
+> manager.start_run(request=StartRunRequest(model="openrouter/anthropic/claude-haiku-4-5-20251001", task_limit=1))
+> ```
 
 **Step 1 [RED]:** Write the failing test
 
@@ -1893,6 +2062,18 @@ git commit -m "fix(api): validate model name follows LiteLLM provider/model form
 - Modify: `agent-evals/src/agent_evals/observatory/store.py`
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py:141` (and the full `_enrich_run` body)
 - Test: `agent-evals/tests/test_observatory_store.py`
+
+> **Context:**
+> ```python
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> # Always use real tmp_path (not :memory:)
+> store = ObservatoryStore(db_path=tmp_path / "test.db")
+> tracker = EventTracker(store=store)
+> store.create_run("r1", "full", {}, phase="screening")
+> # record_trial() keyword-only args — required: run_id, task_id, task_type, variant_name, repetition, score,
+> #   prompt_tokens, completion_tokens, total_tokens, cost, latency_seconds, model
+> ```
 
 **Step 1 [RED]:** Write the failing test
 
@@ -2020,6 +2201,19 @@ git commit -m "perf(api): move trial aggregation to SQL in _enrich_run (I11/N4)"
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py:111-112, 384-401`
 - Test: `agent-evals/tests/test_observatory_web.py`
 
+> **Context:**
+> ```python
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> from agent_evals.observatory.run_manager import RunManager, StartRunRequest
+> from unittest.mock import MagicMock
+> store = ObservatoryStore(db_path=tmp_path / "test.db")
+> tracker = MagicMock(spec=EventTracker)
+> manager = RunManager(store=store, tracker=tracker)
+> # start_run() generates run_id internally — do NOT pass run_id:
+> manager.start_run(request=StartRunRequest(model="openrouter/anthropic/claude-haiku-4-5-20251001", task_limit=1))
+> ```
+
 **Step 1 [RED]:** Write the failing tests (one per bug)
 
 ```python
@@ -2115,6 +2309,18 @@ git commit -m "fix(api): push pagination into SQL; add pipeline_id to RunSummary
 **Files:**
 - Modify: `agent-evals/src/agent_evals/observatory/store.py:18-35`
 - Test: `agent-evals/tests/test_observatory_store.py`
+
+> **Context:**
+> ```python
+> from agent_evals.observatory.store import ObservatoryStore
+> from agent_evals.observatory.tracker import EventTracker
+> # Always use real tmp_path (not :memory:)
+> store = ObservatoryStore(db_path=tmp_path / "test.db")
+> tracker = EventTracker(store=store)
+> store.create_run("r1", "full", {}, phase="screening")
+> # record_trial() keyword-only args — required: run_id, task_id, task_type, variant_name, repetition, score,
+> #   prompt_tokens, completion_tokens, total_tokens, cost, latency_seconds, model
+> ```
 
 **Step 1 [RED]:** Write the failing test
 
@@ -2974,9 +3180,13 @@ def test_all_robustness_tasks_have_base_task_id():
 uv run pytest agent-evals/tests/test_gold_standard_schema.py::test_all_robustness_tasks_have_base_task_id -v
 ```
 
-**Step 3 [GREEN]:** Write and run fix script
+**Step 3 [GREEN]:** Run the fix script
 
-After inspecting actual task IDs and existing metadata to understand the naming convention:
+These 30 robustness tasks are hand-authored standalones — they were NOT generated from
+existing gold standard tasks. Cross-referencing `original_question` against every other
+gold standard task confirmed zero matches. Therefore `base_task_id` is `""` (empty string)
+for all 30, signalling "standalone — no source task". The `RobustnessTask` class reads this
+field with `meta.get("base_task_id", "")`, so empty string is the correct sentinel value.
 
 ```python
 # scripts/add_robustness_base_task_ids.py (run once, then delete)
@@ -2984,22 +3194,26 @@ import yaml
 from pathlib import Path
 
 gold_dir = Path("agent-evals/gold_standard/robustness")
+updated = 0
 for f in sorted(gold_dir.glob("robustness_*.yaml")):
     data = yaml.safe_load(f.read_text())
     if "base_task_id" not in data.get("metadata", {}):
-        # Inspect data["metadata"] to find the correct base task reference
-        # e.g., if metadata has "original_task_id", use that
-        # Otherwise infer from the task's metadata["derived_from"] or task_id pattern
-        # VERIFY the inferred value against the gold_standard/ directory before applying
-        base_id = data["metadata"].get("derived_from") or data["task_id"].replace("robustness_", "")
-        data.setdefault("metadata", {})["base_task_id"] = base_id
-        f.write_text(yaml.safe_dump(data, default_flow_style=False, allow_unicode=True))
-print("Done. Review git diff before committing.")
+        # Empty string = standalone (no source task exists in gold_standard/)
+        data.setdefault("metadata", {})["base_task_id"] = ""
+        f.write_text(yaml.safe_dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False))
+        updated += 1
+print(f"Updated {updated} files — base_task_id='' added to all standalone robustness tasks")
+```
+
+Run it:
+```bash
+uv run python scripts/add_robustness_base_task_ids.py
 ```
 
 **Review the diff manually:**
 ```bash
 git diff agent-evals/gold_standard/robustness/ | head -60
+# Expected: each file gains exactly one new line: `base_task_id: ''`
 ```
 
 **Step 4 [GREEN]:** Run test to verify
@@ -3010,8 +3224,8 @@ uv run pytest agent-evals/tests/test_gold_standard_schema.py -v
 
 **Step 5 [REFACTOR]:** Review the data changes while keeping tests green
 
-- Check: Is `base_id` inferred correctly for all 30 files? Inspect the first 3-5 files manually via `git diff` to confirm the inferred IDs make sense.
-- Check: Does `yaml.safe_dump(data, default_flow_style=False, allow_unicode=True)` preserve the original YAML structure (especially list formatting for `sub_tasks`, `reasoning_chain`, etc.)?
+- Check: Does `git diff` show exactly one new `base_task_id: ''` line per file — nothing else changed?
+- Check: Does `yaml.safe_dump(data, default_flow_style=False, allow_unicode=True, sort_keys=False)` preserve the original YAML key order?
 - Check: Are any existing `base_task_id` values being overwritten by the script? The `if "base_task_id" not in` guard prevents this, but verify.
 - Check: Is the fix script deleted after running? It should not be committed.
 - Run the full test suite to confirm nothing regressed:
@@ -3903,6 +4117,11 @@ git commit -m "fix(frontend): opt into React Router v7 future flags (W1)"
 ---
 
 ### Task 41: Re-run compositional evaluation to confirm score distribution improved (D1, D2)
+
+> ⚠️ **HUMAN-ONLY — Do not execute automatically.**
+> This task makes live LLM API calls, costs real money (~$2–5), and takes 10–30 minutes.
+> Execute manually only after ALL of Tasks 1–11 are complete and their unit tests pass.
+> An automated agent must skip this task entirely.
 
 **This requires a live LLM call (not `--dry-run`).**
 
