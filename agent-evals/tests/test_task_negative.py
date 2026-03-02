@@ -195,17 +195,43 @@ class TestNegativeTaskScoring:
         score = task.score_response("")
         assert score == 0.0
 
-    def test_score_is_binary(self) -> None:
-        """Score is always either 0.0 or 1.0."""
-        task = _negative_task()
-        for resp in [
-            "I don't know",
-            "The answer is blue",
-            "not found in docs",
-            "",
-        ]:
-            score = task.score_response(resp)
-            assert score in (0.0, 1.0)
+    def test_hedge_with_caveat_scores_exactly_0_7(self) -> None:
+        """'I'm not certain...' must score exactly 0.7 (hedge tier)."""
+        defn = TaskDefinition(
+            task_id="negative_002",
+            type="negative",
+            question="Q",
+            domain="framework_api",
+            difficulty="easy",
+            metadata={},
+        )
+        task = NegativeTask(defn)
+        score = task.score_response("I'm not certain about this, but it might be X.")
+        assert score == 0.7, f"Expected 0.7 for hedge tier, got {score}"
+
+    def test_confident_hallucination_scores_zero(self) -> None:
+        defn = TaskDefinition(
+            task_id="negative_003",
+            type="negative",
+            question="Q",
+            domain="framework_api",
+            difficulty="easy",
+            metadata={},
+        )
+        task = NegativeTask(defn)
+        assert task.score_response("The answer is definitely 42.") == 0.0
+
+    def test_firm_refusal_scores_one(self) -> None:
+        defn = TaskDefinition(
+            task_id="negative_004",
+            type="negative",
+            question="Q",
+            domain="framework_api",
+            difficulty="easy",
+            metadata={},
+        )
+        task = NegativeTask(defn)
+        assert task.score_response("I cannot answer — no information available.") == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +279,22 @@ class TestNegativeTaskMetadataFields:
         assert task.reason == ""
         assert task.nearest_doc == ""
         assert task.nearest_content == ""
+
+    def test_confident_answer_not_scored_as_abstention(self) -> None:
+        """'Based on the available documentation, the answer is X' must NOT score 1.0."""
+        defn = TaskDefinition(
+            task_id="negative_001",
+            type="negative",
+            question="What is the version?",
+            domain="framework_api",
+            difficulty="easy",
+            metadata={},
+        )
+        task = NegativeTask(defn)
+        score = task.score_response(
+            "Based on the available documentation, the answer is Python 3.11."
+        )
+        assert score < 1.0, f"False positive — confident answer scored {score}"
 
     def test_backward_compat_answerable_still_works(self) -> None:
         """NegativeTask still supports legacy answerable/distractor_files fields."""
