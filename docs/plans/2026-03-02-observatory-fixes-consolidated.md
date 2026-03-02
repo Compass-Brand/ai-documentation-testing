@@ -4733,6 +4733,996 @@ git commit -m "fix(cli): remove 7 confirmed-dead CLI flags, drop factorial mode 
 
 ---
 
+## Sprint 13 — Dashboard Source Selection & Real Dataset Verification
+
+**Goal:** Complete the dataset integration loop: expose `--source` in the dashboard UI, prepare all real datasets, and verify the full Taguchi pipeline runs correctly end-to-end with real data.
+
+**Tasks:** 44, 45, 46
+
+---
+
+### Task 44: Wire `--source` into dashboard RunConfig (E11 — HIGH)
+
+**Goal:** Add dataset source selection to the Run Configuration page so users can choose which dataset to evaluate against from the UI. Mirrors Task 42 (CLI path) but for the dashboard path.
+
+**Key files:**
+- Modify: `agent-evals/src/agent_evals/observatory/run_manager.py` — add `source` to `StartRunRequest`, fix `_execute_run`
+- Modify: `agent-evals/src/agent_evals/observatory/web/routes.py` — add `GET /api/datasets` endpoint
+- Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/api/client.ts` — add `source?` to `StartRunPayload`, add `listDatasets()`
+- Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/api/hooks.ts` — add `useDatasets()` hook
+- Modify: `agent-evals/src/agent_evals/observatory/web/ui/src/pages/RunConfig.tsx` — add "Data Source" select
+- Test: `agent-evals/tests/test_run_manager.py`
+- Test: `agent-evals/tests/test_observatory_web.py`
+- Test: `agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/pages/RunConfig.test.tsx`
+
+**Key imports / architecture (self-contained):**
+
+```python
+# run_manager.py — existing imports already in file:
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
+from pydantic import BaseModel, Field
+from typing import Literal
+
+# New imports needed in _execute_run (inside function, same as Task 42):
+from agent_evals.datasets import load_all as _load_all_datasets, list_available
+from agent_evals.datasets.cache import DatasetCache
+from agent_index.models import DocTree
+```
+
+```typescript
+// client.ts — existing type that needs source field added:
+export interface StartRunPayload {
+  mode: "taguchi" | "full";
+  model: string;
+  repetitions: number;
+  task_limit: number;
+  oa_override?: string;
+  pipeline_mode?: "auto" | "semi";
+  quality_type?: string;
+  top_k?: number;
+  alpha?: number;
+  // ADD THIS:
+  source?: string;  // e.g. "gold_standard", "repliqa", "ambigqa"
+}
+```
+
+---
+
+**Step 1 [RED]: Write the failing backend tests**
+
+File: `agent-evals/tests/test_run_manager.py`
+
+```python
+# Add to existing test file (or create if absent)
+
+def test_start_run_request_has_source_field():
+    """StartRunRequest must accept a source field."""
+    req = StartRunRequest(model="openrouter/anthropic/claude-haiku-4-5-20251001", source="repliqa")
+    assert req.source == "repliqa"
+
+def test_start_run_request_source_defaults_to_gold_standard():
+    """source defaults to gold_standard for backward compatibility."""
+    req = StartRunRequest(model="openrouter/anthropic/claude-haiku-4-5-20251001")
+    assert req.source == "gold_standard"
+```
+
+File: `agent-evals/tests/test_observatory_web.py`
+
+```python
+def test_get_datasets_endpoint_returns_list(client):
+    """GET /api/datasets returns a list of available datasets with prepared status."""
+    resp = client.get("/api/datasets")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "datasets" in data
+    assert isinstance(data["datasets"], list)
+    # gold_standard always appears
+    names = [d["name"] for d in data["datasets"]]
+    assert "gold_standard" in names
+
+def test_get_datasets_includes_prepared_field(client):
+    """Each dataset entry has a 'prepared' boolean field."""
+    resp = client.get("/api/datasets")
+    datasets = resp.json()["datasets"]
+    for d in datasets:
+        assert "name" in d
+        assert "prepared" in d
+        assert isinstance(d["prepared"], bool)
+```
+
+**Step 2 [VERIFY RED]:** Run the failing tests
+
+```bash
+uv run pytest agent-evals/tests/test_run_manager.py -k "source" -v
+# Expected: AttributeError — StartRunRequest has no field 'source'
+uv run pytest agent-evals/tests/test_observatory_web.py -k "datasets" -v
+# Expected: FAIL — 404 Not Found on GET /api/datasets
+```
+
+**Step 3 [GREEN]: Add `source` field to `StartRunRequest`**
+
+File: `agent-evals/src/agent_evals/observatory/run_manager.py`
+
+In the `StartRunRequest` Pydantic model (after `alpha` field):
+
+```python
+# In StartRunRequest, add after alpha field:
+source: str = "gold_standard"
+```
+
+In `_execute_run` (lines 178-205), replace the hardcoded gold_standard block:
+
+```python
+# REPLACE THIS (lines 178-205 of run_manager.py):
+#   gold_standard_dir = (
+#       Path(__file__).resolve().parent.parent.parent.parent / "gold_standard"
+#   )
+#   if not gold_standard_dir.is_dir():
+#       logger.error(...)
+#       return
+#   tasks = load_tasks(gold_standard_dir)
+#   ...
+#   doc_tree = load_sample_doc_tree()
+
+# WITH THIS:
+source = request.source or "gold_standard"
+
+if source == "gold_standard":
+    gold_standard_dir = (
+        Path(__file__).resolve().parent.parent.parent.parent / "gold_standard"
+    )
+    if not gold_standard_dir.is_dir():
+        logger.error("Gold standard directory not found: %s", gold_standard_dir)
+        return
+    tasks = load_tasks(gold_standard_dir)
+    doc_tree = load_sample_doc_tree()
+else:
+    from agent_evals.datasets import load_all as _load_all_datasets
+    from agent_evals.datasets.cache import DatasetCache
+    from agent_index.models import DocTree
+
+    _load_all_datasets()
+    cache = DatasetCache()
+    if not cache.is_prepared(source):
+        logger.error(
+            "Dataset '%s' not prepared. Run first:\n"
+            "  agent-evals --prepare-datasets %s",
+            source, source,
+        )
+        return
+    tasks = load_tasks(cache.task_dir(source))
+    doc_tree = DocTree.model_validate_json(
+        cache.doc_tree_path(source).read_text(encoding="utf-8")
+    )
+```
+
+**Step 4 [GREEN]: Add `GET /api/datasets` endpoint to routes.py**
+
+File: `agent-evals/src/agent_evals/observatory/web/routes.py`
+
+Add after the `GET /api/runs/active` route (around line 130):
+
+```python
+@router.get("/api/datasets")
+def list_datasets() -> dict:
+    """Return all registered dataset adapters with their prepared status."""
+    from agent_evals.datasets import load_all as _load_all_datasets, list_available
+    from agent_evals.datasets.cache import DatasetCache
+
+    _load_all_datasets()
+    cache = DatasetCache()
+    adapters = list_available()
+
+    datasets = [
+        {
+            "name": "gold_standard",
+            "task_type": "mixed",
+            "domain": "compass_brand",
+            "license": "internal",
+            "prepared": True,  # always available
+        }
+    ]
+    for adapter in adapters:
+        datasets.append({
+            **adapter,
+            "prepared": cache.is_prepared(adapter["name"]),
+        })
+    return {"datasets": datasets}
+```
+
+**Step 5 [VERIFY GREEN — backend]:** Run backend tests
+
+```bash
+uv run pytest agent-evals/tests/test_run_manager.py -k "source" -v
+# Expected: PASS
+uv run pytest agent-evals/tests/test_observatory_web.py -k "datasets" -v
+# Expected: PASS
+```
+
+**Step 6 [COMMIT — backend]:**
+
+```bash
+git add agent-evals/src/agent_evals/observatory/run_manager.py \
+        agent-evals/src/agent_evals/observatory/web/routes.py \
+        agent-evals/tests/test_run_manager.py \
+        agent-evals/tests/test_observatory_web.py
+git commit -m "feat(dashboard): add source field to StartRunRequest and GET /api/datasets endpoint (E11)"
+```
+
+**Step 7 [RED]: Write failing frontend tests**
+
+File: `agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/pages/RunConfig.test.tsx`
+
+Add to existing test file:
+
+```typescript
+it("renders Data Source select", () => {
+  render(<RunConfig />);
+  expect(screen.getByLabelText(/data source/i)).toBeInTheDocument();
+});
+
+it("sends source field in start run payload", async () => {
+  const mockMutate = vi.fn();
+  vi.mocked(useStartRun).mockReturnValue({
+    mutate: mockMutate,
+    isPending: false,
+  } as any);
+  // Mock useDatasets to return gold_standard + repliqa
+  vi.mocked(useDatasets).mockReturnValue({
+    data: {
+      datasets: [
+        { name: "gold_standard", prepared: true },
+        { name: "repliqa", prepared: true },
+      ],
+    },
+  } as any);
+
+  render(<RunConfig />);
+  // Fill required model field
+  await userEvent.type(screen.getByLabelText(/model/i), "openrouter/anthropic/claude-haiku-4-5-20251001");
+  // Change source to repliqa
+  await userEvent.selectOptions(screen.getByLabelText(/data source/i), "repliqa");
+  // Submit
+  await userEvent.click(screen.getByRole("button", { name: /start evaluation/i }));
+
+  expect(mockMutate).toHaveBeenCalledWith(
+    expect.objectContaining({ source: "repliqa" }),
+    expect.anything(),
+  );
+});
+```
+
+**Step 8 [VERIFY RED]:** Run the failing frontend tests
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm test -- --run 2>&1 | grep -E "PASS|FAIL|source|Data Source"
+# Expected: FAIL — useDatasets not defined, no Data Source element
+```
+
+**Step 9 [GREEN]: Update client.ts — add `source` to payload and `listDatasets()`**
+
+File: `agent-evals/src/agent_evals/observatory/web/ui/src/api/client.ts`
+
+In the `StartRunPayload` interface, add `source?: string` after `alpha`:
+
+```typescript
+// In StartRunPayload interface, add:
+source?: string;  // e.g. "gold_standard", "repliqa"
+```
+
+Add a new `listDatasets` function to the `api` object:
+
+```typescript
+listDatasets: async (): Promise<{ datasets: Array<{ name: string; prepared: boolean; task_type?: string; domain?: string }> }> => {
+  const resp = await fetch(`${BASE}/api/datasets`);
+  if (!resp.ok) throw new Error(`listDatasets: ${resp.status}`);
+  return resp.json();
+},
+```
+
+**Step 10 [GREEN]: Add `useDatasets()` hook to hooks.ts**
+
+File: `agent-evals/src/agent_evals/observatory/web/ui/src/api/hooks.ts`
+
+Add after `useActiveRuns`:
+
+```typescript
+export function useDatasets() {
+  return useQuery({
+    queryKey: ["datasets"],
+    queryFn: api.listDatasets,
+    staleTime: STALE_LONG,
+    gcTime: GC_TIME,
+  });
+}
+```
+
+**Step 11 [GREEN]: Add "Data Source" select to RunConfig.tsx**
+
+File: `agent-evals/src/agent_evals/observatory/web/ui/src/pages/RunConfig.tsx`
+
+Add `source` state and `useDatasets` import:
+
+```typescript
+// Add to imports:
+import { useStartRun, useActiveRuns, useDatasets } from "../api/hooks";
+
+// Add to state declarations:
+const [source, setSource] = useState("gold_standard");
+const datasetsQuery = useDatasets();
+const datasets = datasetsQuery.data?.datasets ?? [{ name: "gold_standard", prepared: true }];
+const preparedDatasets = datasets.filter((d) => d.prepared);
+```
+
+Add `source` to the form payload in `handleSubmit`:
+
+```typescript
+// In handleSubmit, add source to payload:
+const payload: StartRunPayload = {
+  mode,
+  model: model.trim(),
+  repetitions,
+  task_limit: taskLimit,
+  source,  // ADD THIS
+};
+```
+
+Add the UI element inside the left column Card (after the Model input):
+
+```tsx
+<div className="mt-sp-6">
+  <label
+    htmlFor="source"
+    className="mb-sp-2 block text-body-sm font-medium text-brand-charcoal"
+  >
+    Data Source
+  </label>
+  <Select
+    aria-label="Data Source"
+    value={source}
+    onValueChange={setSource}
+    options={preparedDatasets.map((d) => ({
+      value: d.name,
+      label: d.name === "gold_standard"
+        ? "Gold Standard (Compass Brand internal)"
+        : d.name,
+    }))}
+  />
+  <p className="mt-sp-1 text-caption text-brand-slate">
+    Dataset to evaluate against. Only prepared datasets are shown.
+    Run <code>agent-evals --prepare-datasets &lt;name&gt;</code> to add more.
+  </p>
+</div>
+```
+
+**Step 12 [VERIFY GREEN — frontend]:** Run the frontend tests
+
+```bash
+cd agent-evals/src/agent_evals/observatory/web/ui
+npm test -- --run 2>&1 | grep -E "PASS|FAIL|RunConfig"
+# Expected: RunConfig tests PASS
+```
+
+**Step 13 [REFACTOR]:** Review
+- `source` defaults to `"gold_standard"` everywhere — no behaviour change for existing runs
+- Dashboard and CLI now both route to real datasets when `source != "gold_standard"`
+- `/api/datasets` always lists `gold_standard` first (always prepared)
+- Unprepared datasets appear in the API (`prepared: false`) but RunConfig.tsx filters them with `.filter(d => d.prepared)` — only shows runnable sources
+
+**Step 14 [VERIFY]:** Smoke test
+
+```bash
+# Backend endpoint smoke test
+uv run python -m agent_evals.observatory.server --port 8765 &
+SERVER_PID=$!
+sleep 2
+curl -s http://localhost:8765/api/datasets | python -m json.tool
+# Expected: { "datasets": [{ "name": "gold_standard", "prepared": true }, ...] }
+kill $SERVER_PID
+
+# Test that gold_standard still works (backward compat)
+uv run pytest agent-evals/tests/test_run_manager.py agent-evals/tests/test_observatory_web.py -v --tb=short
+```
+
+**Step 15: Commit**
+
+```bash
+git add agent-evals/src/agent_evals/observatory/web/ui/src/api/client.ts \
+        agent-evals/src/agent_evals/observatory/web/ui/src/api/hooks.ts \
+        agent-evals/src/agent_evals/observatory/web/ui/src/pages/RunConfig.tsx \
+        agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/pages/RunConfig.test.tsx
+git commit -m "feat(ui): add Data Source selector to RunConfig with useDatasets hook (E11)"
+```
+
+---
+
+### Task 45: Prepare all real datasets (E12 — HIGH)
+
+**Goal:** Download and cache all dataset adapters so real benchmarks are available for evaluation and testing. Create an idempotent setup script so this can be re-run safely.
+
+**Key files:**
+- Create: `scripts/prepare-datasets.sh`
+- No source code changes — this is a data preparation task
+
+**Key imports / architecture (self-contained):**
+
+```bash
+# The prepare-datasets command invokes DatasetCache.mark_prepared() after
+# calling adapter.convert_tasks(cache.task_dir(name)) and
+#       adapter.build_doc_tree() -> saved to cache.doc_tree_path(name)
+# Cache location: ~/.agent-evals/datasets/{name}/
+# Marker file:    ~/.agent-evals/datasets/{name}/.prepared
+# Task YAMLs:     ~/.agent-evals/datasets/{name}/tasks/*.yaml
+# Doc tree:       ~/.agent-evals/datasets/{name}/doc_tree.json
+
+# Available adapters (from agent_evals/datasets/):
+# repliqa, ambigqa, ibm-techqa, multihop-rag, ds1000,
+# bigcodebench, swe-bench, wikicontradict, perturbation,
+# synthetic-efficiency, code-rag-bench
+```
+
+---
+
+**Step 1: Check what adapters are registered**
+
+```bash
+uv run python -c "
+from agent_evals.datasets import load_all, list_available
+load_all()
+for a in list_available():
+    print(a['name'], '|', a['license'], '|', a['task_type'])
+"
+# Note the exact names — these are the values to pass to --prepare-datasets
+```
+
+**Step 2: Check which datasets are already prepared**
+
+```bash
+uv run python -c "
+from agent_evals.datasets import load_all, list_available
+from agent_evals.datasets.cache import DatasetCache
+load_all()
+cache = DatasetCache()
+for a in list_available():
+    status = 'READY' if cache.is_prepared(a['name']) else 'NOT PREPARED'
+    print(f'{status}: {a[\"name\"]}')
+"
+```
+
+**Step 3: Create `scripts/prepare-datasets.sh`**
+
+```bash
+#!/usr/bin/env bash
+# prepare-datasets.sh — idempotent dataset preparation script
+# Run from the workspace root (ai-documentation-testing/)
+# Usage: bash scripts/prepare-datasets.sh [--limit N]
+#
+# Downloads and caches all registered dataset adapters.
+# Already-prepared datasets are skipped automatically (idempotent).
+# Default limit: 200 tasks per dataset. Override with --limit N.
+
+set -euo pipefail
+
+LIMIT="${1:-200}"
+if [[ "${1:-}" == "--limit" ]]; then
+    LIMIT="$2"
+fi
+
+echo "=== Preparing datasets (limit: ${LIMIT} tasks each) ==="
+
+# Prepare each dataset individually so one failure does not block others
+DATASETS=(
+  repliqa
+  ambigqa
+  ibm-techqa
+  multihop-rag
+  ds1000
+  bigcodebench
+  swe-bench
+  wikicontradict
+)
+
+FAILED=()
+for DATASET in "${DATASETS[@]}"; do
+    echo ""
+    echo "--- Preparing: ${DATASET} ---"
+    if uv run agent-evals --prepare-datasets "${DATASET}" --dataset-limit "${LIMIT}"; then
+        echo "OK: ${DATASET}"
+    else
+        echo "FAILED: ${DATASET} (continuing with others)"
+        FAILED+=("${DATASET}")
+    fi
+done
+
+echo ""
+echo "=== Dataset preparation complete ==="
+
+# Final status report
+uv run python -c "
+from agent_evals.datasets import load_all, list_available
+from agent_evals.datasets.cache import DatasetCache
+load_all()
+cache = DatasetCache()
+ready = []
+missing = []
+for a in list_available():
+    if cache.is_prepared(a['name']):
+        ready.append(a['name'])
+    else:
+        missing.append(a['name'])
+print(f'Ready ({len(ready)}): {ready}')
+print(f'Missing ({len(missing)}): {missing}')
+"
+
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+    echo ""
+    echo "WARNING: Failed to prepare: ${FAILED[*]}"
+    echo "These datasets may require network access, HuggingFace authentication,"
+    echo "or special download permissions. Check error messages above."
+    exit 1
+fi
+```
+
+**Step 4: Make the script executable and run it**
+
+```bash
+chmod +x scripts/prepare-datasets.sh
+bash scripts/prepare-datasets.sh --limit 200
+# This will download from HuggingFace. May take 5-30 minutes depending on network.
+# Each dataset is idempotent — already-prepared datasets are skipped.
+```
+
+**Step 5: Verify task counts after preparation**
+
+```bash
+uv run python -c "
+from agent_evals.datasets import load_all, list_available
+from agent_evals.datasets.cache import DatasetCache
+from agent_evals.tasks.loader import load_tasks
+load_all()
+cache = DatasetCache()
+for a in list_available():
+    name = a['name']
+    if cache.is_prepared(name):
+        tasks = load_tasks(cache.task_dir(name))
+        print(f'{name}: {len(tasks)} tasks')
+    else:
+        print(f'{name}: NOT PREPARED')
+"
+# Expected: each prepared dataset shows > 0 tasks (up to 200)
+```
+
+**Step 6: Verify a quick dry-run evaluation loads correctly**
+
+```bash
+# Test gold_standard still works (must not regress)
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --dry-run 2>&1 | grep -E "tasks loaded|error"
+
+# Test repliqa source (or whichever was prepared first)
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 \
+  --source repliqa \
+  --task-limit 5 \
+  --dry-run \
+  2>&1 | grep -E "tasks loaded|error|repliqa"
+# Expected: loads repliqa tasks, no errors
+```
+
+**Step 7: Commit**
+
+```bash
+git add scripts/prepare-datasets.sh
+git commit -m "chore(datasets): add idempotent prepare-datasets.sh setup script (E12)"
+```
+
+**Note on HuggingFace access:** Some datasets (SWE-Bench, BigCodeBench) require `huggingface-hub` authentication. If download fails:
+1. Run `huggingface-cli login` with a read token from huggingface.co/settings/tokens
+2. Re-run `bash scripts/prepare-datasets.sh` — already-prepared datasets are skipped
+
+---
+
+### Task 46: End-to-end Taguchi verification with real datasets (E13 — HIGH)
+
+**Goal:** Verify 100% confidence that the complete Taguchi pipeline (screening → confirmation/retesting) works correctly with real datasets. This task has automated integration tests (TDD) plus human-only full-scale verification steps.
+
+**Key files:**
+- Test: `agent-evals/tests/test_taguchi_e2e.py` (new file — integration tests)
+- No production code changes unless a bug is found
+
+**Key imports / architecture (self-contained):**
+
+```python
+# The DOE pipeline runs in three phases:
+# Phase 1 — Taguchi Screening: builds orthogonal array, runs trials
+# Phase 2 — ANOVA Analysis: identifies significant factors
+# Phase 3 — Confirmation/Retesting: validates optimal config found in Phase 1
+#
+# The "retesting" = Phase 3 (confirmation run).
+# --pipeline auto  -> all phases run automatically
+# --pipeline semi  -> UI pauses between phases for approval
+#
+# Key classes:
+from agent_evals.pipeline import DOEPipeline, PipelineConfig
+from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+from agent_evals.taguchi.factors import build_design
+from agent_evals.tasks.loader import load_tasks
+from agent_evals.datasets import load_all as load_all_datasets
+from agent_evals.datasets.cache import DatasetCache
+from agent_index.models import DocTree
+```
+
+---
+
+**Step 1 [RED]: Write failing integration tests**
+
+File: `agent-evals/tests/test_taguchi_e2e.py` (new)
+
+```python
+"""End-to-end integration tests for the Taguchi evaluation pipeline.
+
+Uses real datasets (small limits) to verify the complete evaluation loop:
+  dataset load -> trial execution -> scoring -> ANOVA analysis -> confirmation.
+
+Requires OPENROUTER_API_KEY and at least one prepared dataset.
+Skips gracefully when neither is available so CI passes without credentials.
+"""
+
+from __future__ import annotations
+
+import os
+import pytest
+from pathlib import Path
+
+from agent_evals.datasets import load_all as load_all_datasets, list_available
+from agent_evals.datasets.cache import DatasetCache
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def api_key() -> str:
+    key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not key:
+        pytest.skip("OPENROUTER_API_KEY not set — skipping live evaluation tests")
+    return key
+
+
+@pytest.fixture(scope="module")
+def prepared_dataset_name() -> str:
+    """Return the name of the first prepared dataset, or skip."""
+    load_all_datasets()
+    cache = DatasetCache()
+    for adapter in list_available():
+        if cache.is_prepared(adapter["name"]):
+            return adapter["name"]
+    pytest.skip("No datasets prepared — run scripts/prepare-datasets.sh first")
+
+
+# ---------------------------------------------------------------------------
+# Source routing tests (no API key needed — validates data loading only)
+# ---------------------------------------------------------------------------
+
+class TestSourceRouting:
+    """Verify that source routing loads correct tasks and doc_tree."""
+
+    def test_gold_standard_loads(self):
+        """gold_standard source loads tasks from the gold_standard/ directory."""
+        gold_dir = Path(__file__).resolve().parents[3] / "gold_standard"
+        if not gold_dir.is_dir():
+            pytest.skip("gold_standard directory not found")
+        from agent_evals.tasks.loader import load_tasks
+        tasks = load_tasks(gold_dir)
+        assert len(tasks) > 0, "gold_standard must have at least one task"
+
+    def test_dataset_source_loads_tasks(self, prepared_dataset_name):
+        """Prepared dataset source loads task YAML files from cache."""
+        from agent_evals.tasks.loader import load_tasks
+        cache = DatasetCache()
+        task_dir = cache.task_dir(prepared_dataset_name)
+        tasks = load_tasks(task_dir)
+        assert len(tasks) > 0, f"Dataset '{prepared_dataset_name}' has no tasks"
+
+    def test_dataset_source_loads_doc_tree(self, prepared_dataset_name):
+        """Prepared dataset source loads doc_tree.json from cache."""
+        from agent_index.models import DocTree
+        cache = DatasetCache()
+        doc_tree_path = cache.doc_tree_path(prepared_dataset_name)
+        assert doc_tree_path.exists(), f"doc_tree.json missing for {prepared_dataset_name}"
+        doc_tree = DocTree.model_validate_json(doc_tree_path.read_text(encoding="utf-8"))
+        assert doc_tree is not None
+        assert len(doc_tree.files) > 0, "DocTree must contain at least one file"
+
+    def test_unprepared_source_cache_reports_false(self):
+        """Cache.is_prepared() returns False for an unknown dataset name."""
+        cache = DatasetCache()
+        assert not cache.is_prepared("__test_nonexistent_dataset__")
+
+
+# ---------------------------------------------------------------------------
+# Taguchi pipeline smoke tests (require API key — small limits)
+# ---------------------------------------------------------------------------
+
+class TestTaguchiPipelineSmoke:
+    """Smoke tests for the full Taguchi pipeline with minimal data."""
+
+    def test_taguchi_screening_runs_with_prepared_dataset(
+        self, api_key, prepared_dataset_name
+    ):
+        """Taguchi screening phase completes without exception using a real dataset.
+
+        Uses task-limit=2, repetitions=1 to minimize API calls.
+        Verifies: trials execute, scores are returned, no crash.
+        """
+        from agent_evals.datasets.cache import DatasetCache
+        from agent_evals.observatory.store import ObservatoryStore
+        from agent_evals.observatory.tracker import EventTracker
+        from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+        from agent_evals.runner import EvalRunConfig
+        from agent_evals.taguchi.factors import build_design
+        from agent_evals.tasks.loader import load_tasks
+        from agent_evals.variants.registry import get_all_variants, load_all
+        from agent_index.models import DocTree
+
+        load_all_datasets()
+        load_all()
+
+        cache = DatasetCache()
+        tasks = list(load_tasks(cache.task_dir(prepared_dataset_name)))[:2]
+        doc_tree = DocTree.model_validate_json(
+            cache.doc_tree_path(prepared_dataset_name).read_text(encoding="utf-8")
+        )
+        variants = get_all_variants()
+
+        axes: dict[int, list[str]] = {}
+        for v in variants:
+            m = v.metadata()
+            if m.axis == 0:
+                continue
+            if m.axis not in axes:
+                axes[m.axis] = []
+            if m.name not in axes[m.axis]:
+                axes[m.axis].append(m.name)
+        design = build_design(axes, models=None, oa_override=None)
+
+        eval_config = EvalRunConfig(repetitions=1, continue_on_error=True, temperature=0.3)
+        store = ObservatoryStore()
+        tracker = EventTracker(store=store)
+        orch_config = OrchestratorConfig(
+            mode="taguchi",
+            models=["openrouter/anthropic/claude-haiku-4-5-20251001"],
+            api_key=api_key,
+            temperature=0.3,
+            eval_config=eval_config,
+            store=store,
+            tracker=tracker,
+            run_id="test-e2e-smoke",
+        )
+        orchestrator = EvalOrchestrator(orch_config)
+        variant_lookup = {v.metadata().name: v for v in variants}
+
+        # Should not raise
+        orchestrator.run(
+            tasks=tasks,
+            variants=variants,
+            doc_tree=doc_tree,
+            design=design,
+            variant_lookup=variant_lookup,
+            source=prepared_dataset_name,
+        )
+
+        trials = store.get_trials(run_id="test-e2e-smoke")
+        assert len(trials) > 0, "No trials recorded — Taguchi screening failed silently"
+
+    def test_trial_scores_are_nonzero(self, api_key, prepared_dataset_name):
+        """At least some trials in a real evaluation produce non-zero scores.
+
+        If all scores are 0.0, the scorer is broken (the original D1/D2 bug).
+        """
+        from agent_evals.datasets.cache import DatasetCache
+        from agent_evals.observatory.store import ObservatoryStore
+        from agent_evals.observatory.tracker import EventTracker
+        from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+        from agent_evals.runner import EvalRunConfig
+        from agent_evals.tasks.loader import load_tasks
+        from agent_evals.variants.registry import get_all_variants, load_all
+        from agent_index.models import DocTree
+
+        load_all_datasets()
+        load_all()
+
+        cache = DatasetCache()
+        tasks = list(load_tasks(cache.task_dir(prepared_dataset_name)))[:3]
+        doc_tree = DocTree.model_validate_json(
+            cache.doc_tree_path(prepared_dataset_name).read_text(encoding="utf-8")
+        )
+        variants = get_all_variants()
+        baselines = [v for v in variants if v.metadata().axis == 0][:1]
+
+        eval_config = EvalRunConfig(repetitions=1, continue_on_error=True, temperature=0.3)
+        store = ObservatoryStore()
+        tracker = EventTracker(store=store)
+        orch_config = OrchestratorConfig(
+            mode="full",
+            models=["openrouter/anthropic/claude-haiku-4-5-20251001"],
+            api_key=api_key,
+            temperature=0.3,
+            eval_config=eval_config,
+            store=store,
+            tracker=tracker,
+            run_id="test-e2e-scores",
+        )
+        orchestrator = EvalOrchestrator(orch_config)
+        orchestrator.run(
+            tasks=tasks,
+            variants=baselines,
+            doc_tree=doc_tree,
+            source=prepared_dataset_name,
+        )
+
+        trials = store.get_trials(run_id="test-e2e-scores")
+        assert trials, "No trials recorded"
+        scores = [t.score for t in trials if t.score is not None]
+        assert scores, "No scores recorded"
+        nonzero = [s for s in scores if s > 0.0]
+        assert len(nonzero) > 0, (
+            f"All {len(scores)} scores are 0.0 — scorer is broken. "
+            "Check that scorer fix tasks (D1/D2) were applied first."
+        )
+```
+
+**Step 2 [VERIFY RED]:** Run the failing tests
+
+```bash
+uv run pytest agent-evals/tests/test_taguchi_e2e.py -v --tb=short
+# Expected with no API key: live tests SKIP; source routing tests PASS or SKIP
+# Expected with API key but no prepared datasets: prepared_dataset_name fixture SKIPs
+# Expected with API key + prepared datasets: may FAIL on scorer if D1/D2 not yet applied
+```
+
+**Step 3 [GREEN]: Fix any failures found**
+
+**Scenario A — Tests PASS:** Pipeline works. Proceed to Step 4.
+
+**Scenario B — Tests FAIL:** File a beads issue immediately, fix it (TDD), return to this step.
+
+Common failure modes and fixes:
+- `source` kwarg not accepted by `orchestrator.run()` → add as optional kwarg with default `"gold_standard"`
+- `store.get_trials(run_id=...)` method missing → check `ObservatoryStore` API for the correct method name
+- All scores 0.0 → scorer fix from Tasks D1/D2 not applied first — apply those tasks before this one
+
+**Step 4 [VERIFY]:** CLI smoke — full mode with real dataset
+
+```bash
+uv run agent-evals \
+  --model openrouter/anthropic/claude-haiku-4-5-20251001 \
+  --source repliqa \
+  --mode full \
+  --task-limit 2 \
+  --repetitions 1 \
+  --output-format json \
+  --output-path /tmp/e2e_full_smoke.json
+
+uv run python -c "
+import json
+data = json.load(open('/tmp/e2e_full_smoke.json'))
+trials = data.get('trials', [])
+print(f'Trials: {len(trials)}')
+scores = [t['score'] for t in trials if t.get('score') is not None]
+nonzero = [s for s in scores if s > 0]
+print(f'Non-zero scores: {len(nonzero)}/{len(scores)}')
+assert nonzero, 'ERROR: all scores are 0 — scorer is broken'
+print('PASS: scorer producing non-zero scores')
+"
+```
+
+**Step 5 [VERIFY]:** CLI smoke — Taguchi screening with real dataset
+
+```bash
+uv run agent-evals \
+  --model openrouter/anthropic/claude-haiku-4-5-20251001 \
+  --source repliqa \
+  --mode taguchi \
+  --task-limit 5 \
+  --repetitions 1 \
+  --output-format json \
+  --output-path /tmp/e2e_taguchi_smoke.json
+
+uv run python -c "
+import json
+data = json.load(open('/tmp/e2e_taguchi_smoke.json'))
+trials = data.get('trials', [])
+print(f'Trials: {len(trials)}')
+assert len(trials) > 1, f'Expected multiple OA trials, got {len(trials)}'
+print('PASS: Taguchi screening generated multiple trials')
+"
+```
+
+**Step 6 [VERIFY — Human-only]:** Full DOE pipeline with confirmation/retesting
+
+> This step requires human monitoring and is **not automated**.
+> Run during a work session so you can respond to the semi-mode approval prompt.
+
+```bash
+# Semi mode: pauses between phases for your approval
+uv run agent-evals \
+  --model openrouter/anthropic/claude-haiku-4-5-20251001 \
+  --source repliqa \
+  --mode taguchi \
+  --pipeline semi \
+  --task-limit 20 \
+  --repetitions 2 \
+  --quality-type larger_is_better \
+  --top-k 3 \
+  --alpha 0.05 \
+  --output-format json \
+  --output-path /tmp/e2e_pipeline_full.json
+
+# After all phases complete:
+uv run python -c "
+import json
+data = json.load(open('/tmp/e2e_pipeline_full.json'))
+report = data.get('report', {})
+phases = report.get('phases', [])
+print(f'Phases completed: {len(phases)}')
+for p in phases:
+    print(f'  {p.get(\"name\")}: {p.get(\"status\")}')
+confirmation = next((p for p in phases if 'confirm' in p.get('name','').lower()), None)
+assert confirmation, 'ERROR: no confirmation/retesting phase in report'
+print(f'Confirmation status: {confirmation.get(\"status\")}')
+optimal = report.get('optimal_config', {})
+print('Optimal config:', optimal)
+print('PASS: Full Taguchi pipeline with retesting completed')
+"
+```
+
+**Step 7 [VERIFY — Human-only]:** Auto-pipeline overnight run
+
+```bash
+# Auto mode — all phases without human intervention
+uv run agent-evals \
+  --model openrouter/anthropic/claude-haiku-4-5-20251001 \
+  --source repliqa \
+  --mode taguchi \
+  --pipeline auto \
+  --task-limit 50 \
+  --repetitions 3 \
+  --quality-type larger_is_better \
+  --top-k 3 \
+  --alpha 0.05 \
+  --output-format both \
+  --output-path /tmp/e2e_pipeline_auto
+# Produces: /tmp/e2e_pipeline_auto.json and /tmp/e2e_pipeline_auto.csv
+```
+
+**Step 8 [COMMIT]:** Commit integration tests
+
+```bash
+git add agent-evals/tests/test_taguchi_e2e.py
+git commit -m "test(e2e): add Taguchi pipeline integration tests with real datasets (E13)"
+```
+
+**Step 9 [REFACTOR]:** Full test suite check
+
+```bash
+uv run pytest --tb=short 2>&1 | tail -20
+# Expected: all tests pass (skips for missing API key/datasets are acceptable)
+
+uv run pytest --cov=agent_evals --cov-report=term-missing -q 2>&1 | tail -10
+# Expected: >= 80% overall coverage
+```
+
+**Step 10: Final commit**
+
+```bash
+git add -p
+git commit -m "test(e2e): fix any coverage gaps from integration test review (E13)"
+```
+
+---
+
 ## Manual Investigations (No Code Change)
 
 ### Task 38: Review perfect-score latency anomaly (D4)
@@ -4812,6 +5802,51 @@ uv run agent-evals --model-config foo.yaml --dry-run 2>&1 | grep -E "unrecognize
 uv run agent-evals --prepare-datasets repliqa --dataset-limit 10
 uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --source repliqa --dry-run 2>&1 | grep -E "tasks|error"
 # Expected: loads 10 repliqa tasks, no errors
+```
+
+**Dashboard source integration check (Tasks 44-46):**
+```bash
+# 7. Verify GET /api/datasets endpoint returns gold_standard + all adapters
+uv run python -m agent_evals.observatory.server --port 8765 &
+SERVER_PID=$!
+sleep 2
+curl -s http://localhost:8765/api/datasets | python -m json.tool
+# Expected: {"datasets": [{"name": "gold_standard", "prepared": true}, ...]}
+kill $SERVER_PID
+
+# 8. Verify datasets are prepared
+uv run python -c "
+from agent_evals.datasets import load_all, list_available
+from agent_evals.datasets.cache import DatasetCache
+load_all()
+cache = DatasetCache()
+prepared = [a['name'] for a in list_available() if cache.is_prepared(a['name'])]
+print(f'Prepared datasets ({len(prepared)}): {prepared}')
+assert prepared, 'ERROR: no datasets prepared — run scripts/prepare-datasets.sh'
+"
+
+# 9. End-to-end smoke: repliqa source loads correctly
+uv run agent-evals \
+  --model openrouter/anthropic/claude-haiku-4-5-20251001 \
+  --source repliqa \
+  --task-limit 2 \
+  --repetitions 1 \
+  --mode full \
+  --output-format json \
+  --output-path /tmp/e2e_final_check.json
+uv run python -c "
+import json
+data = json.load(open('/tmp/e2e_final_check.json'))
+scores = [t['score'] for t in data.get('trials', []) if t.get('score') is not None]
+nonzero = [s for s in scores if s > 0]
+print(f'Non-zero scores: {len(nonzero)}/{len(scores)}')
+assert nonzero, 'ERROR: all scores 0 with real dataset — scorer broken'
+print('PASS: real dataset evaluation working end-to-end')
+"
+
+# 10. Integration tests pass (skip if no API key/datasets in CI)
+uv run pytest agent-evals/tests/test_taguchi_e2e.py -v --tb=short
+# Expected: source routing tests PASS; live tests SKIP if no API key
 ```
 
 **Investigation tasks (D4, D5):** Tasks 38 and 39 are manual investigations with no automated tests. They are complete when a beads issue has been filed with root cause identified. They do not appear in the test suite pass/fail count.
