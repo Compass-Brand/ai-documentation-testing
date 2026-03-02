@@ -304,6 +304,87 @@ class TestConcurrency:
 
 
 # ---------------------------------------------------------------------------
+# TestFailRun (Task 12)
+# ---------------------------------------------------------------------------
+
+
+class TestFailRun:
+    """fail_run() marks runs as failed with error and timestamp."""
+
+    def test_fail_run_sets_failed_status_and_finished_at(
+        self, tmp_path: Path
+    ) -> None:
+        store = ObservatoryStore(db_path=tmp_path / "test.db")
+        store.create_run("run1", "full", {}, phase="screening")
+        store.fail_run("run1", error="Runner crashed")
+        summary = store.get_run_summary("run1")
+        assert summary.status == "failed"
+        assert summary.finished_at is not None
+
+
+# ---------------------------------------------------------------------------
+# TestHeartbeat (Task 15a)
+# ---------------------------------------------------------------------------
+
+
+class TestHeartbeat:
+    """Heartbeat and stale run reaping."""
+
+    def test_update_heartbeat_sets_timestamp(self, tmp_path: Path) -> None:
+        store = ObservatoryStore(db_path=tmp_path / "test.db")
+        store.create_run("run1", "full", {}, phase="screening")
+        store.update_heartbeat("run1")
+        summary = store.get_run_summary("run1")
+        assert summary.heartbeat_at is not None
+
+    def test_reap_stale_runs_marks_stale_active_runs_failed(
+        self, tmp_path: Path
+    ) -> None:
+        store = ObservatoryStore(db_path=tmp_path / "test.db")
+        store.create_run("stale", "full", {}, phase="screening")
+        store.update_heartbeat("stale")
+        reaped = store.reap_stale_runs(max_age_seconds=0)
+        assert "stale" in reaped
+        summary = store.get_run_summary("stale")
+        assert summary.status == "failed"
+
+
+# ---------------------------------------------------------------------------
+# TestTrialRecordFields (Task 20)
+# ---------------------------------------------------------------------------
+
+
+class TestTrialRecordFields:
+    """TrialRecord includes oa_row_id and phase fields."""
+
+    def test_trial_record_includes_oa_row_id_and_phase(
+        self, tmp_path: Path
+    ) -> None:
+        store = ObservatoryStore(db_path=tmp_path / "test.db")
+        store.create_run("r", "taguchi", {}, phase="screening")
+        store.record_trial(
+            run_id="r",
+            task_id="negative_001",
+            task_type="negative",
+            variant_name="baseline",
+            repetition=1,
+            score=0.5,
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=0.001,
+            latency_seconds=0.1,
+            model="openrouter/anthropic/claude-haiku-4-5-20251001",
+            source="gold_standard",
+            oa_row_id=3,
+            phase="screening",
+        )
+        trials = store.get_trials("r")
+        assert trials[0].oa_row_id == 3
+        assert trials[0].phase == "screening"
+
+
+# ---------------------------------------------------------------------------
 # TestPhaseAndPipeline
 # ---------------------------------------------------------------------------
 
