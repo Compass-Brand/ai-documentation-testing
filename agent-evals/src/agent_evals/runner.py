@@ -658,6 +658,7 @@ class EvalRunner:
             "scoring_ms": round(scoring_ms, 2),
             "prompt_build_ms": round(prompt_build_ms, 2),
         }
+        # LLM-as-judge sampling: evaluate 2% of trials
         if trial_index > 0 and trial_index % JUDGE_SAMPLE_RATE == 0:
             try:
                 question = getattr(task.definition, "question", None) or ""
@@ -667,9 +668,11 @@ class EvalRunner:
                     generation.content,
                 )
                 metrics["judge_score"] = judge_result.score
-                metrics["judge_heuristic_delta"] = abs(judge_result.score - score)
+                metrics["judge_heuristic_delta"] = round(
+                    abs(judge_result.score - score), 4,
+                )
             except Exception:
-                pass  # Judge failure must never affect trial outcome
+                logger.debug("Judge call failed for trial %d", trial_index, exc_info=True)
 
         return TrialResult(
             task_id=task.definition.task_id,
