@@ -16,6 +16,11 @@ if TYPE_CHECKING:
     from agent_index.models import DocTree
 
 
+def _escape_pipe(text: str) -> str:
+    """Escape pipe characters so they don't act as column delimiters."""
+    return text.replace("|", "\\|")
+
+
 @register_variant
 class FormatPipeDelimited(IndexVariant):
     """Render the documentation index as a pipe-delimited table.
@@ -50,6 +55,8 @@ class FormatPipeDelimited(IndexVariant):
             summary = doc.summary if doc.summary else _summarise(doc.content)
             tokens = doc.token_count if doc.token_count is not None else 0
             lines.append(
-                f"{doc.rel_path}|{doc.section}|{doc.tier}|{tokens}|{summary}"
+                f"{_escape_pipe(doc.rel_path)}|{_escape_pipe(doc.section)}"
+                f"|{_escape_pipe(doc.tier)}|{tokens}"
+                f"|{_escape_pipe(summary)}"
             )
         return "\n".join(lines)
