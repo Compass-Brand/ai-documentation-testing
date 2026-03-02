@@ -6,7 +6,7 @@ Covers E6-S5: Model Browser Web UI.
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -198,3 +198,19 @@ class TestModelBrowserHTML:
     def test_models_page_has_view_toggle(self, client: TestClient) -> None:
         response = client.get("/")
         assert "view-toggle" in response.text
+
+
+class TestStartupSync:
+    """ModelSync.run_sync() is called during server startup lifespan."""
+
+    def test_model_sync_run_sync_called_on_startup(self, tmp_path: Path) -> None:
+        store = ObservatoryStore(tmp_path / "obs.db")
+        tracker = EventTracker(store=store)
+        catalog = ModelCatalog(tmp_path / "models.db")
+        mock_sync = MagicMock(spec=ModelSync)
+
+        app = create_app(
+            store=store, tracker=tracker, catalog=catalog, model_sync=mock_sync
+        )
+        with TestClient(app):
+            mock_sync.run_sync.assert_called_once()

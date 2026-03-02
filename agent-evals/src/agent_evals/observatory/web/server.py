@@ -6,8 +6,10 @@ model browser, and historical analytics endpoints.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -99,11 +101,6 @@ def launch_dashboard(
         catalog=catalog, interval_hours=config.sync_interval_hours
     )
 
-    # Auto-sync if catalog is empty
-    if config.auto_sync and not catalog.get_active_models():
-        logger.info("Model catalog empty — running initial sync")
-        model_sync.run_sync()
-
     # Create run manager for dashboard-initiated runs
     run_manager = RunManager(store=store, tracker=tracker)
 
@@ -158,7 +155,17 @@ def create_app(
         model_sync: Optional ModelSync for triggering syncs.
         run_manager: Optional RunManager for dashboard-started runs.
     """
-    app = FastAPI(title="Observatory Dashboard")
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        if model_sync is not None:
+            try:
+                await asyncio.to_thread(model_sync.run_sync)
+                logger.info("Model catalog synced on startup")
+            except Exception as exc:
+                logger.warning("Model catalog sync failed on startup: %s", exc)
+        yield
+
+    app = FastAPI(title="Observatory Dashboard", lifespan=_lifespan)
     app.state.store = store
     app.state.tracker = tracker
 
