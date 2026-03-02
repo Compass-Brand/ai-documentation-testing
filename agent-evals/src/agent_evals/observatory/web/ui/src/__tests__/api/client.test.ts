@@ -87,6 +87,18 @@ describe("fetchApi", () => {
       }),
     );
   });
+
+  it("should return undefined for 204 No Content responses", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue({
+      ok: true,
+      status: 204,
+    } as Response);
+
+    const { fetchApi } = await import("../../api/client");
+    const result = await fetchApi("/api/runs/run-1");
+
+    expect(result).toBeUndefined();
+  });
 });
 
 describe("api methods", () => {
