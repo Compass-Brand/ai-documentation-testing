@@ -4,6 +4,7 @@ import {
   CHART_LINE_WIDTHS,
   CHART_BACKGROUNDS,
   CHART_PROJECTION,
+  CHART_ANIMATION,
 } from "../lib/chart-theme";
 
 describe("chart-theme constants", () => {
@@ -31,5 +32,10 @@ describe("chart-theme constants", () => {
     expect(CHART_PROJECTION.borderDash).toEqual([6, 4]);
     expect(CHART_PROJECTION.borderColor).toBe("#1A1A1A");
     expect(CHART_PROJECTION.borderWidth).toBe(1);
+  });
+
+  it("CHART_ANIMATION has duration 800 and easeOutQuart easing", () => {
+    expect(CHART_ANIMATION.duration).toBe(800);
+    expect(CHART_ANIMATION.easing).toBe("easeOutQuart");
   });
 });

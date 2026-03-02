@@ -73,4 +73,14 @@ describe("SlideOutPanel", () => {
     expect(header?.className).toContain("sticky");
     expect(header?.className).toContain("border-brand-mist");
   });
+
+  it("close button has focus-visible styling", () => {
+    render(
+      <SlideOutPanel open={true} onClose={() => {}} title="Test Panel">
+        <p>content</p>
+      </SlideOutPanel>,
+    );
+    const closeBtn = screen.getByRole("button");
+    expect(closeBtn.className).toContain("focus-visible:ring-brand-goldenrod");
+  });
 });
