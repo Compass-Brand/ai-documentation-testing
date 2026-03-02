@@ -251,12 +251,12 @@ class TestAgenticTaskScoring:
             assert 0.0 <= score <= 1.0
 
     def test_empty_files_metadata(self) -> None:
-        """When files metadata is empty, file and content scores are 0.0."""
+        """When files metadata is empty, weights redistribute to remaining components."""
         task = _agentic_task(files={})
         response = "test_auth_login test_auth_logout"
         score = task.score_response(response)
-        # Only correctness: 1.0 * 0.2 = 0.2
-        assert abs(score - 0.2) < 0.01
+        # correctness=1.0 (w=0.2) + tool_usage=0.0 (w=0.2), normalised: 0.5
+        assert abs(score - 0.5) < 0.01
 
     def test_case_insensitive_file_matching(self) -> None:
         """File path matching is case-insensitive."""
@@ -327,3 +327,24 @@ class TestAgenticToolOrdering:
         clean_score = task.score_response(clean_response)
         extra_score = task.score_response(extra_response)
         assert clean_score >= extra_score
+
+
+def test_space_separated_test_names_parsed_correctly():
+    """test_foo test_bar must parse as two items."""
+    from agent_evals.tasks.agentic import _parse_json_or_list
+    result = _parse_json_or_list("test_foo test_bar")
+    assert result == ["test_foo", "test_bar"], f"Got: {result}"
+
+def test_agentic_score_redistributes_weights_when_no_files():
+    """With only expected_tools metadata, score must reflect full tool detection weight."""
+    from agent_evals.tasks.base import TaskDefinition
+    from agent_evals.tasks.agentic import AgenticTask
+    defn = TaskDefinition(
+        task_id="agentic_001", type="agentic", question="Q",
+        domain="framework_api", difficulty="easy",
+        metadata={"expected_tools": [{"name": "read_file"}], "files": {}, "FAIL_TO_PASS": []},
+    )
+    task = AgenticTask(defn)
+    score = task.score_response("I would use read_file to read the configuration.")
+    assert score >= 0.8, f"Expected >= 0.8 with tool match and redistributed weights, got {score}"
+
