@@ -257,7 +257,7 @@ class TestDashboardSourceIntegration:
         run_manager: RunManager,
     ) -> None:
         """StartRunRequest.source is passed to _execute_run."""
-        request = StartRunRequest(model="m", source="repliqa")
+        request = StartRunRequest(model="test/model", source="repliqa")
         captured: list[StartRunRequest] = []
 
         def spy_execute(run_id, req):
@@ -280,7 +280,7 @@ class TestDashboardSourceIntegration:
         run_manager: RunManager,
     ) -> None:
         """Default StartRunRequest has source=gold_standard."""
-        request = StartRunRequest(model="m")
+        request = StartRunRequest(model="test/model")
         captured: list[StartRunRequest] = []
 
         def spy_execute(run_id, req):
