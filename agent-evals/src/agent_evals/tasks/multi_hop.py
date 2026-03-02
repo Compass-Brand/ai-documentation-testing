@@ -98,7 +98,7 @@ class MultiHopTask(EvalTask):
             return 1.0
 
         response_lower = response.lower()
-        step_scores: list[float] = []
+        score_sum = 0.0
         steps_counted = 0
 
         for step in steps:
@@ -109,12 +109,12 @@ class MultiHopTask(EvalTask):
             steps_counted += 1
             matched = sum(1 for kw in keywords if self._keyword_in_response(kw, response_lower))
             coverage = matched / len(keywords)
-            step_scores.append(coverage if coverage >= STEP_COVERAGE_THRESHOLD else 0.0)
+            score_sum += coverage if coverage >= STEP_COVERAGE_THRESHOLD else 0.0
 
         if steps_counted == 0:
             return 1.0
 
-        score = sum(step_scores) / steps_counted
+        score = score_sum / steps_counted
         return max(0.0, min(1.0, score))
 
     # ------------------------------------------------------------------

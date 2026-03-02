@@ -300,7 +300,6 @@ class TestCodeGenerationPartialCredit:
         assert score_1 < score_2 < score_3
 
 
-
 def test_no_test_patterns_does_not_cap_score_at_0_3():
     """With no test patterns, score should exceed 0.3."""
     defn = TaskDefinition(

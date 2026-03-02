@@ -13,6 +13,8 @@ from typing import Any
 from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
+_AMBIGUITY_PHRASES = ("ambiguous", "multiple interpretations", "could mean")
+
 
 class DisambiguationTask(EvalTask):
     """Task type for evaluating disambiguation accuracy.
@@ -94,8 +96,7 @@ class DisambiguationTask(EvalTask):
                 hits = sum(1 for kw in keywords if kw.lower() in response_lower)
                 coverage = hits / len(keywords)
                 ambiguity_bonus = 0.1 if any(
-                    p in response_lower
-                    for p in ["ambiguous", "multiple interpretations", "could mean"]
+                    p in response_lower for p in _AMBIGUITY_PHRASES
                 ) else 0.0
                 answer_score = min(1.0, coverage + ambiguity_bonus)
 

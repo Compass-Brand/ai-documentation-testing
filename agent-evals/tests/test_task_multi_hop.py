@@ -328,7 +328,6 @@ class TestMultiHopTaskScoring:
         assert score == 1.0
 
 
-
 def test_single_keyword_hit_does_not_pass_step():
     """A step with 5 keywords must not pass on a single keyword match."""
     defn = TaskDefinition(
