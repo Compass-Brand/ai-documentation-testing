@@ -105,7 +105,7 @@ class TestRunsAPI:
     def test_list_runs_empty(self, client: TestClient) -> None:
         response = client.get("/api/runs")
         assert response.status_code == 200
-        assert response.json() == []
+        assert response.json() == {"runs": []}
 
     def test_list_runs_with_data(
         self, client: TestClient, _store: ObservatoryStore
@@ -113,8 +113,8 @@ class TestRunsAPI:
         _store.create_run("run-1", "test", {})
         response = client.get("/api/runs")
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["run_id"] == "run-1"
+        assert len(data["runs"]) == 1
+        assert data["runs"][0]["run_id"] == "run-1"
 
     def test_get_run_summary(
         self, client: TestClient, _store: ObservatoryStore
@@ -241,7 +241,7 @@ class TestPipelineAPI:
         data = response.json()
         assert isinstance(data, list)
         assert len(data) >= 1
-        assert data[0]["pipeline_id"] == "pipe-1"
+        assert any(p.get("pipeline_id") == "pipe-1" for p in data)
 
     def test_list_pipelines_empty(self, client: TestClient) -> None:
         response = client.get("/api/pipelines")
@@ -340,6 +340,51 @@ class TestModelsAPI:
         assert response.status_code == 200
         data = response.json()
         assert data == {"models": [], "total": 0}
+
+
+class TestRunConfigAPI:
+    """Run config is exposed through the API (Task 16)."""
+
+    def test_run_detail_includes_config(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        _store.create_run(
+            "r1", "full", {"model": "test-model", "task_limit": 10},
+            phase="screening",
+        )
+        resp = client.get("/api/runs/r1")
+        data = resp.json()
+        assert data.get("run", {}).get("config") != {}, (
+            "config must not be hardcoded empty dict"
+        )
+
+
+class TestPaginationAPI:
+    """SQL pagination in list_runs (Task 19)."""
+
+    def test_list_runs_pagination_uses_sql_limit_offset(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """SQL LIMIT/OFFSET must be used, not Python slicing."""
+        for i in range(20):
+            _store.create_run(f"run{i}", "full", {})
+        resp1 = client.get("/api/runs?limit=5&offset=0")
+        resp2 = client.get("/api/runs?limit=5&offset=5")
+        page1 = resp1.json()["runs"]
+        page2 = resp2.json()["runs"]
+        assert len(page1) == 5
+        assert len(page2) == 5
+        assert page1[0]["run_id"] != page2[0]["run_id"]
+
+    def test_list_pipelines_does_not_make_per_run_queries(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        for i in range(3):
+            _store.create_run(f"run{i}", "full", {}, pipeline_id="pipe1")
+        resp = client.get("/api/pipelines")
+        assert resp.status_code == 200
+        pipelines = resp.json()
+        assert any(p.get("pipeline_id") == "pipe1" for p in pipelines)
 
 
 class TestRunSubmissionAPI:

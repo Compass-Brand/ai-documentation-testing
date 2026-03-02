@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -50,6 +50,8 @@ class RunSummary:
     total_cost: float
     avg_latency: float
     heartbeat_at: str | None = None
+    config: dict = field(default_factory=dict)
+    pipeline_id: str | None = None
 
 
 _SCHEMA = """\
@@ -152,6 +154,23 @@ class ObservatoryStore:
             ).fetchall()
         return [r["name"] for r in rows]
 
+    @staticmethod
+    def _row_to_summary(r: sqlite3.Row) -> RunSummary:
+        """Convert a joined run+trials aggregate row to RunSummary."""
+        return RunSummary(
+            run_id=r["run_id"],
+            run_type=r["run_type"],
+            status=r["status"],
+            created_at=r["created_at"],
+            finished_at=r["finished_at"],
+            total_trials=r["total_trials"],
+            total_cost=r["total_cost"],
+            avg_latency=r["avg_latency"],
+            heartbeat_at=r["heartbeat_at"],
+            config=json.loads(r["config"] or "{}"),
+            pipeline_id=r["pipeline_id"],
+        )
+
     def create_run(
         self,
         run_id: str,
@@ -212,26 +231,7 @@ class ObservatoryStore:
         oa_row_id: int | None = None,
         phase: str | None = None,
     ) -> None:
-        """Record a single trial result.
-
-        Args:
-            run_id: The run this trial belongs to.
-            task_id: Task identifier.
-            task_type: Task type classification.
-            variant_name: Name of the variant used.
-            repetition: 1-based repetition number.
-            score: Score between 0.0 and 1.0.
-            prompt_tokens: Prompt token count.
-            completion_tokens: Completion token count.
-            total_tokens: Total token count.
-            cost: Monetary cost (None if unknown).
-            latency_seconds: Wall-clock latency.
-            model: Model identifier.
-            source: Task source (e.g. "gold_standard", "repliqa").
-            error: Error message if trial failed.
-            oa_row_id: Orthogonal array row index (Taguchi runs).
-            phase: Pipeline phase (e.g. "screening").
-        """
+        """Record a single trial result."""
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
             conn.execute(
@@ -250,11 +250,7 @@ class ObservatoryStore:
             )
 
     def finish_run(self, run_id: str) -> None:
-        """Mark a run as completed with a timestamp.
-
-        Args:
-            run_id: The run to finish.
-        """
+        """Mark a run as completed with a timestamp."""
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
             conn.execute(
@@ -315,53 +311,33 @@ class ObservatoryStore:
                 )
         return [row["run_id"] for row in stale]
 
-    def list_runs(self) -> list[RunSummary]:
-        """Return summaries of all runs.
-
-        Returns:
-            List of RunSummary with aggregate trial statistics.
-        """
+    def list_runs(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[RunSummary]:
+        """Return summaries of all runs with optional SQL pagination."""
+        query = (
+            "SELECT r.run_id, r.run_type, r.status, r.created_at, "
+            "r.finished_at, r.config, r.pipeline_id, r.heartbeat_at, "
+            "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
+            "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
+            "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
+            "FROM runs r LEFT JOIN trials t ON r.run_id = t.run_id "
+            "GROUP BY r.run_id ORDER BY r.created_at DESC"
+        )
+        params: list[int] = []
+        if limit is not None:
+            query += " LIMIT ? OFFSET ?"
+            params = [int(limit), int(offset)]
         with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT r.run_id, r.run_type, r.status, r.created_at, "
-                "r.finished_at, r.heartbeat_at, "
-                "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
-                "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
-                "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
-                "FROM runs r LEFT JOIN trials t ON r.run_id = t.run_id "
-                "GROUP BY r.run_id ORDER BY r.created_at"
-            ).fetchall()
-        return [
-            RunSummary(
-                run_id=r["run_id"],
-                run_type=r["run_type"],
-                status=r["status"],
-                created_at=r["created_at"],
-                finished_at=r["finished_at"],
-                total_trials=r["total_trials"],
-                total_cost=r["total_cost"],
-                avg_latency=r["avg_latency"],
-                heartbeat_at=r["heartbeat_at"],
-            )
-            for r in rows
-        ]
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_summary(r) for r in rows]
 
     def get_run_summary(self, run_id: str) -> RunSummary:
-        """Return summary for a specific run.
-
-        Args:
-            run_id: The run to summarize.
-
-        Returns:
-            RunSummary with aggregate statistics.
-
-        Raises:
-            ValueError: If run_id is not found.
-        """
+        """Return summary for a specific run."""
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT r.run_id, r.run_type, r.status, r.created_at, "
-                "r.finished_at, r.heartbeat_at, "
+                "r.finished_at, r.config, r.pipeline_id, r.heartbeat_at, "
                 "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
                 "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
                 "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
@@ -371,17 +347,38 @@ class ObservatoryStore:
             ).fetchone()
         if row is None:
             raise ValueError(f"Run '{run_id}' not found")
-        return RunSummary(
-            run_id=row["run_id"],
-            run_type=row["run_type"],
-            status=row["status"],
-            created_at=row["created_at"],
-            finished_at=row["finished_at"],
-            total_trials=row["total_trials"],
-            total_cost=row["total_cost"],
-            avg_latency=row["avg_latency"],
-            heartbeat_at=row["heartbeat_at"],
-        )
+        return self._row_to_summary(row)
+
+    def get_run_aggregates(self, run_id: str) -> dict:
+        """Return SQL-aggregated trial statistics without loading individual records."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt, AVG(score) AS avg_score, "
+                "SUM(prompt_tokens + completion_tokens) AS tok, "
+                "AVG(latency_seconds) AS avg_lat "
+                "FROM trials WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
+            by_variant = conn.execute(
+                "SELECT variant_name, COUNT(*) AS cnt, AVG(score) AS avg_score "
+                "FROM trials WHERE run_id = ? "
+                "GROUP BY variant_name",
+                (run_id,),
+            ).fetchall()
+        return {
+            "trial_count": row["cnt"] or 0,
+            "mean_score": row["avg_score"] or 0.0,
+            "total_tokens": row["tok"] or 0,
+            "mean_latency_seconds": row["avg_lat"] or 0.0,
+            "by_variant": [
+                {
+                    "variant": r["variant_name"],
+                    "count": r["cnt"],
+                    "mean_score": r["avg_score"],
+                }
+                for r in by_variant
+            ],
+        }
 
     def get_trials(
         self,
@@ -390,16 +387,7 @@ class ObservatoryStore:
         model: str | None = None,
         source: str | None = None,
     ) -> list[TrialRecord]:
-        """Return trials for a run, optionally filtered.
-
-        Args:
-            run_id: The run to query.
-            model: If set, only return trials with this model.
-            source: If set, only return trials with this source.
-
-        Returns:
-            List of TrialRecord instances.
-        """
+        """Return trials for a run, optionally filtered."""
         query = "SELECT * FROM trials WHERE run_id = ?"
         params: list[str] = [run_id]
         if model is not None:
@@ -445,16 +433,7 @@ class ObservatoryStore:
         significant_factors: list[str],
         quality_type: str,
     ) -> None:
-        """Save Taguchi phase analysis results for a run.
-
-        Args:
-            run_id: The run these results belong to.
-            main_effects: Factor main-effect means (JSON-serialized).
-            anova: ANOVA table with p-values and effect sizes.
-            optimal: Optimal level per factor.
-            significant_factors: List of statistically significant factors.
-            quality_type: Quality characteristic type (e.g. "larger_is_better").
-        """
+        """Save Taguchi phase analysis results for a run."""
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
             conn.execute(
@@ -474,15 +453,7 @@ class ObservatoryStore:
             )
 
     def get_phase_results(self, run_id: str) -> dict | None:
-        """Retrieve phase analysis results for a run.
-
-        Args:
-            run_id: The run to query.
-
-        Returns:
-            Dict with main_effects, anova, optimal, significant_factors,
-            quality_type keys, or None if no results exist.
-        """
+        """Retrieve phase analysis results for a run."""
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM phase_results WHERE run_id = ?",
@@ -499,18 +470,11 @@ class ObservatoryStore:
         }
 
     def get_pipeline_runs(self, pipeline_id: str) -> list[RunSummary]:
-        """Return all runs in a pipeline ordered by creation time.
-
-        Args:
-            pipeline_id: The pipeline to query.
-
-        Returns:
-            List of RunSummary for runs in this pipeline.
-        """
+        """Return all runs in a pipeline ordered by creation time."""
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT r.run_id, r.run_type, r.status, r.created_at, "
-                "r.finished_at, r.heartbeat_at, "
+                "r.finished_at, r.config, r.pipeline_id, r.heartbeat_at, "
                 "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
                 "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
                 "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
@@ -519,17 +483,18 @@ class ObservatoryStore:
                 "GROUP BY r.run_id ORDER BY r.created_at",
                 (pipeline_id,),
             ).fetchall()
+        return [self._row_to_summary(r) for r in rows]
+
+    def list_pipelines(self) -> list[dict]:
+        """Return all distinct pipelines with aggregated run statistics."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT pipeline_id, COUNT(*) as run_count, "
+                "MAX(created_at) as last_run_at "
+                "FROM runs WHERE pipeline_id IS NOT NULL "
+                "GROUP BY pipeline_id ORDER BY last_run_at DESC"
+            ).fetchall()
         return [
-            RunSummary(
-                run_id=r["run_id"],
-                run_type=r["run_type"],
-                status=r["status"],
-                created_at=r["created_at"],
-                finished_at=r["finished_at"],
-                total_trials=r["total_trials"],
-                total_cost=r["total_cost"],
-                avg_latency=r["avg_latency"],
-                heartbeat_at=r["heartbeat_at"],
-            )
+            {"pipeline_id": r["pipeline_id"], "run_count": r["run_count"]}
             for r in rows
         ]
