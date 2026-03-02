@@ -144,7 +144,8 @@ class TestMultiHopTaskScoring:
                 "Guido van Rossum worked at Google.",
             ],
         )
-        response = "Python was created by Guido. He worked at Google."
+        # Include all keywords from both steps for full coverage
+        response = "Python was created by Guido van Rossum. Guido van Rossum worked at Google."
         score = task.score_response(response)
         assert score == 1.0
 
@@ -201,9 +202,10 @@ class TestMultiHopTaskScoring:
             ],
             reasoning_chain=[],
         )
+        # Response must match >= 30% of keywords per step to score
         response = "Python was created by someone. The creator worked somewhere."
         score = task.score_response(response)
-        assert score == 1.0
+        assert score > 0.0
 
     def test_falls_back_to_decomposition_when_chain_shorter(self) -> None:
         """Falls back to question_decomposition when reasoning_chain is shorter."""
@@ -237,8 +239,8 @@ class TestMultiHopTaskScoring:
             ],
             question_decomposition=[],
         )
-        # Only 1 scorable step (the second). Response matches it.
-        response = "Python was created by Guido."
+        # Only 1 scorable step (the second). Response matches most keywords.
+        response = "Python was created by Guido van Rossum."
         score = task.score_response(response)
         assert score == 1.0
 
@@ -282,7 +284,7 @@ class TestMultiHopTaskScoring:
             ],
             question_decomposition=[],
         )
-        response = "PYTHON was CREATED by GUIDO."
+        response = "PYTHON was CREATED by GUIDO VAN ROSSUM."
         score = task.score_response(response)
         assert score == 1.0
 
@@ -307,7 +309,7 @@ class TestMultiHopTaskScoring:
             ],
             question_decomposition=[],
         )
-        response = "The TTL is set to 300 seconds."
+        response = "The TTL value is 300 seconds."
         score = task.score_response(response)
         assert score == 1.0
 
@@ -320,8 +322,22 @@ class TestMultiHopTaskScoring:
             ],
             question_decomposition=[],
         )
-        # "300" should match even though source had "300." (trailing period)
-        # "REDIS_URL" should match even though source had "var." (trailing period)
-        response = "The default_ttl is 300 and REDIS_URL must be set."
+        # Keywords are properly stripped of punctuation before matching
+        response = "The default_ttl value is 300 and REDIS_URL is the required env var."
         score = task.score_response(response)
         assert score == 1.0
+
+
+def test_single_keyword_hit_does_not_pass_step():
+    """A step with 5 keywords must not pass on a single keyword match."""
+    defn = TaskDefinition(
+        task_id="multi_hop_001", type="multi_hop", question="Q",
+        domain="framework_api", difficulty="easy",
+        metadata={"reasoning_chain": [
+            "alpha beta gamma delta epsilon"
+        ]},
+    )
+    task = MultiHopTask(defn)
+    # Only "alpha" appears -- 1/5 = 20% < 30% threshold
+    score = task.score_response("alpha is mentioned but nothing else.")
+    assert score == 0.0, f"Expected 0.0 for 20% coverage, got {score}"

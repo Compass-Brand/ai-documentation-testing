@@ -2,8 +2,8 @@
 
 Scores responses by checking whether the model correctly identified the
 expected interpretation from a set of ambiguous alternatives.
-Score: 1.0 for keyword coverage >= 50% of expected answer keywords,
-0.5 for label match (underscore-normalized), 0.0 for neither.
+Score: continuous keyword coverage (0.0-1.0) with optional ambiguity bonus,
+0.5 for label match (underscore-normalized), max of both paths.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ from typing import Any
 
 from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
+
+_AMBIGUITY_PHRASES = ("ambiguous", "multiple interpretations", "could mean")
 
 
 class DisambiguationTask(EvalTask):
@@ -56,7 +58,8 @@ class DisambiguationTask(EvalTask):
         """Score response by keyword coverage and label matching.
 
         Scoring logic:
-        - 1.0 if >= 50% of expected answer keywords appear in the response
+        - Continuous keyword coverage (0.0-1.0) plus optional 0.1
+          ambiguity bonus (capped at 1.0)
         - 0.5 if the expected interpretation label (or its underscore-
           normalized form) appears in the response
         - Returns the max of answer score and label score
@@ -85,15 +88,17 @@ class DisambiguationTask(EvalTask):
         response_lower = response.lower()
         expected_answer: str = expected.get("answer", "")
 
-        # --- Answer keyword coverage scoring ---
+        # --- Answer keyword coverage scoring (continuous) ---
         answer_score = 0.0
         if expected_answer:
             keywords = extract_keywords(expected_answer)
             if keywords:
                 hits = sum(1 for kw in keywords if kw.lower() in response_lower)
                 coverage = hits / len(keywords)
-                if coverage >= 0.5:
-                    answer_score = 1.0
+                ambiguity_bonus = 0.1 if any(
+                    p in response_lower for p in _AMBIGUITY_PHRASES
+                ) else 0.0
+                answer_score = min(1.0, coverage + ambiguity_bonus)
 
         # --- Label match scoring (underscore-normalized) ---
         label_score = 0.0

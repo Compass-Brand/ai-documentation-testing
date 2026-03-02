@@ -3,6 +3,8 @@
 Scores responses by checking regex test patterns and forbidden pattern
 violations, with syntax validation via ast.parse.  Case-insensitive
 matching is used for literal fallback patterns.
+
+Score formula: match_rate * 0.7 + (1 - violation_rate) * 0.2 + syntax_bonus * 0.1
 """
 
 from __future__ import annotations
@@ -50,7 +52,7 @@ class CodeGenerationTask(EvalTask):
     Parses the ``test`` field into regex patterns (one per line) and
     checks each against the response. Also checks ``forbidden_patterns``
     for violations. Score formula:
-        required_match_rate * 0.8 + (1 - violation_rate) * 0.2
+        match_rate * 0.7 + (1 - violation_rate) * 0.2 + syntax_bonus * 0.1
     Clamped to [0, 1].
     """
 
@@ -107,8 +109,9 @@ class CodeGenerationTask(EvalTask):
             Score between 0.0 and 1.0.
         """
         # Parse test patterns (one per line, skip empty)
+        test_str = self.test if isinstance(self.test, str) else ""
         patterns = [
-            line for line in self.test.split("\n") if line.strip()
+            line for line in test_str.split("\n") if line.strip()
         ]
 
         # Compute required match rate (case-insensitive via _match_pattern)
@@ -118,7 +121,7 @@ class CodeGenerationTask(EvalTask):
             )
             match_rate = matched / len(patterns)
         else:
-            match_rate = 0.0
+            match_rate = 1.0  # No patterns -> vacuously satisfied
 
         # Compute violation rate (patterns may be literal strings or regex)
         if self.forbidden_patterns:

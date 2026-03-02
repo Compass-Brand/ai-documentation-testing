@@ -9,13 +9,15 @@ Tests cover:
 - score_response: label-only match with underscore normalization (0.5)
 - score_response: no match (0.0)
 - Case-insensitive matching
-- Partial keyword coverage below threshold scores 0.0
+- Continuous keyword coverage scoring
 - Edge cases: empty interpretations, empty expected_interpretation
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+import pytest
 
 from agent_evals.tasks.base import TASK_TYPES, TaskDefinition
 from agent_evals.tasks.disambiguation import DisambiguationTask
@@ -145,7 +147,6 @@ class TestDisambiguationTaskScoring:
     def test_label_only_match_returns_half(self) -> None:
         """Response mentioning only the label (not the answer) scores 0.5."""
         task = _disambiguation_task()
-        # Contains label "database_pool" but NOT the full answer text
         score = task.score_response(
             "This refers to the database_pool concept."
         )
@@ -160,7 +161,6 @@ class TestDisambiguationTaskScoring:
     def test_wrong_interpretation_answer_only(self) -> None:
         """Response with wrong interpretation's answer but not the expected one scores 0.0."""
         task = _disambiguation_task()
-        # Contains the OTHER interpretation's answer, not the expected one
         score = task.score_response(
             "Thread pool for parallel execution is the meaning here."
         )
@@ -181,31 +181,26 @@ class TestDisambiguationTaskScoring:
     def test_label_normalized_underscore_to_space(self) -> None:
         """Label with underscores matches when response uses spaces instead."""
         task = _disambiguation_task()
-        # "database pool" (with space) should match label "database_pool"
         score = task.score_response(
             "This refers to the database pool concept."
         )
         assert score == 0.5
 
     def test_partial_keyword_coverage_above_threshold(self) -> None:
-        """Response with >= 50% keyword coverage scores 1.0."""
+        """Response with >= 50% keyword coverage scores proportionally."""
         task = _disambiguation_task()
-        # Keywords: ["Connection", "pooling", "databases"]
-        # "connection" and "pooling" present = 2/3 = 0.67 >= 0.5
         score = task.score_response(
             "It uses connection pooling to manage resources."
         )
-        assert score == 1.0
+        assert score == pytest.approx(2 / 3, abs=0.01)
 
     def test_partial_keyword_coverage_below_threshold(self) -> None:
-        """Response with < 50% keyword coverage scores 0.0 (no label match either)."""
+        """Response with low keyword coverage scores proportionally (continuous)."""
         task = _disambiguation_task()
-        # Keywords: ["Connection", "pooling", "databases"]
-        # Only "connection" present = 1/3 = 0.33 < 0.5
         score = task.score_response(
             "It opens a connection to the server."
         )
-        assert score == 0.0
+        assert score == pytest.approx(1 / 3, abs=0.01)
 
     def test_score_clamped_between_0_and_1(self) -> None:
         """Score is always between 0.0 and 1.0."""
@@ -243,10 +238,22 @@ class TestDisambiguationDedicatedScorer:
             ],
             expected_interpretation="connection_pool",
         )
-        # Correct interpretation
         correct = task.score_response("This uses database connection pooling with 10 max connections.")
-        # Wrong interpretation
         wrong = task.score_response("This uses worker thread pool with 4 threads.")
         assert correct > wrong
         assert correct == 1.0
         assert wrong == 0.0
+
+
+def test_49_percent_keyword_coverage_not_binary():
+    """Coverage below 50% must produce a partial score, not 0.0."""
+    defn = TaskDefinition(
+        task_id="disambiguation_001", type="disambiguation", question="Q",
+        domain="framework_api", difficulty="easy",
+        metadata={"expected_interpretation": "option_a", "interpretations": [
+            {"label": "option_a", "answer": "alpha beta gamma delta"}
+        ]},
+    )
+    task = DisambiguationTask(defn)
+    score = task.score_response("Only alpha is mentioned here.")
+    assert 0.0 < score < 1.0, f"Expected partial score for 25% coverage, got {score}"

@@ -8,6 +8,8 @@ specific factual content instead of generic question terms.
 
 When a keyword is short (3-4 characters) word-boundary matching is used to
 avoid false positives from substring collisions.
+
+Steps require at least 30% keyword coverage to count as matched.
 """
 
 from __future__ import annotations
@@ -18,6 +20,8 @@ from typing import Any
 from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
+STEP_COVERAGE_THRESHOLD = 0.30
+
 
 class MultiHopTask(EvalTask):
     """Task type for evaluating multi-hop reasoning across evidence paragraphs.
@@ -25,7 +29,7 @@ class MultiHopTask(EvalTask):
     Checks if the response addresses each reasoning-chain step by looking for
     keyword matches from the expected answers.  Falls back to
     question_decomposition only when reasoning_chain is empty or shorter.
-    Score = fraction of scorable steps with at least one keyword match.
+    Score = fraction of scorable steps with at least 30% keyword coverage.
     Steps with no extractable keywords are excluded from the denominator.
     """
 
@@ -71,6 +75,7 @@ class MultiHopTask(EvalTask):
         answers).  Falls back to ``question_decomposition`` only when the
         reasoning chain is empty or shorter.
 
+        Steps require at least 30% keyword coverage to count as matched.
         Steps with no extractable keywords are excluded from the denominator
         so they neither inflate nor deflate the score.  Short keywords (3-4
         chars) use word-boundary regex to avoid substring false positives.
@@ -93,7 +98,7 @@ class MultiHopTask(EvalTask):
             return 1.0
 
         response_lower = response.lower()
-        steps_matched = 0
+        score_sum = 0.0
         steps_counted = 0
 
         for step in steps:
@@ -102,13 +107,14 @@ class MultiHopTask(EvalTask):
                 # No extractable keywords -- skip from denominator entirely
                 continue
             steps_counted += 1
-            if any(self._keyword_in_response(kw, response_lower) for kw in keywords):
-                steps_matched += 1
+            matched = sum(1 for kw in keywords if self._keyword_in_response(kw, response_lower))
+            coverage = matched / len(keywords)
+            score_sum += coverage if coverage >= STEP_COVERAGE_THRESHOLD else 0.0
 
         if steps_counted == 0:
             return 1.0
 
-        score = steps_matched / steps_counted
+        score = score_sum / steps_counted
         return max(0.0, min(1.0, score))
 
     # ------------------------------------------------------------------
