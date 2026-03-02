@@ -87,6 +87,18 @@ describe("fetchApi", () => {
       }),
     );
   });
+
+  it("should return undefined for 204 No Content responses", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue({
+      ok: true,
+      status: 204,
+    } as Response);
+
+    const { fetchApi } = await import("../../api/client");
+    const result = await fetchApi("/api/runs/run-1");
+
+    expect(result).toBeUndefined();
+  });
 });
 
 describe("api methods", () => {
@@ -298,13 +310,13 @@ describe("api methods", () => {
     );
   });
 
-  it("deleteGroup sends DELETE request", async () => {
+  it("deleteGroup sends DELETE request via fetchApi with signal", async () => {
     const { api } = await import("../../api/client");
     await api.deleteGroup("group-1");
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/models/groups/group-1",
-      expect.objectContaining({ method: "DELETE" }),
+      expect.objectContaining({ method: "DELETE", signal: expect.any(AbortSignal) }),
     );
   });
 

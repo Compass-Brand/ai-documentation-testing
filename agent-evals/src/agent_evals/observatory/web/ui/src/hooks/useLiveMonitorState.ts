@@ -5,6 +5,7 @@ import type { Trial } from "../api/client";
 import type { AlertItem } from "../components/AlertsFeed";
 
 const MAX_RECENT_TRIALS = 50;
+const MAX_SCORES = 1000;
 const MAX_TIMESTAMPS = 1000;
 // Fallback for total gold tasks; should be replaced with API-provided value when available
 const DEFAULT_TOTAL_TASKS = 355;
@@ -75,7 +76,11 @@ export function useLiveMonitorState(totalTasksOverride?: number): LiveMonitorSta
 
   const onTrialComplete = useCallback((trial: Trial) => {
     setRecentTrials((prev) => [trial, ...prev].slice(0, MAX_RECENT_TRIALS));
-    setScores((prev) => [...prev, trial.score]);
+    setScores((prev) =>
+      prev.length >= MAX_SCORES
+        ? [...prev.slice(1), trial.score]
+        : [...prev, trial.score],
+    );
     setLastUpdated(new Date());
     setIsConnected(true);
     trialTimestamps.current.push(Date.now());

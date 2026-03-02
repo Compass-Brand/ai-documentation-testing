@@ -154,4 +154,16 @@ describe("useLiveMonitorState", () => {
 
     expect(result.current.selectedRunId).toBe("run-2");
   });
+
+  it("scores array stays bounded after many trials", async () => {
+    const { useLiveMonitorState } = await import("../../hooks/useLiveMonitorState");
+    const wrapper = createWrapper();
+    const { result } = renderHook(() => useLiveMonitorState(), { wrapper });
+    act(() => {
+      for (let i = 0; i < 1500; i++) {
+        MockEventSource.instances[0]?.emit("trial_completed", { score: 0.5, task_id: `t${i}` });
+      }
+    });
+    expect(result.current.scores.length).toBeLessThanOrEqual(1000);
+  });
 });
