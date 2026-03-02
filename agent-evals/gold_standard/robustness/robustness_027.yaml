@@ -1,14 +1,19 @@
 task_id: robustness_027
 type: robustness
-question: "ERROR: AppError raised with unknown error code. Stack trace points to ErrorMiddleware. What is the error handling hierarchy?"
+question: 'ERROR: AppError raised with unknown error code. Stack trace points to ErrorMiddleware.
+  What is the error handling hierarchy?'
 domain: framework_api
 difficulty: hard
 tags:
-  - errors
-  - middleware
-  - format
+- errors
+- middleware
+- format
 metadata:
-  perturbation_type: "format_change"
-  original_question: "What is the error handling hierarchy in the framework?"
-  expected_answer: "The framework uses an AppError hierarchy for structured error handling. The ErrorMiddleware catches these errors and maps them to appropriate error codes and responses."
-  perturbation_details: "Question formatted as an error message / debugging scenario rather than a direct question"
+  perturbation_type: format_change
+  original_question: What is the error handling hierarchy in the framework?
+  expected_answer: The framework uses an AppError hierarchy for structured error handling.
+    The ErrorMiddleware catches these errors and maps them to appropriate error codes
+    and responses.
+  perturbation_details: Question formatted as an error message / debugging scenario
+    rather than a direct question
+  base_task_id: ''

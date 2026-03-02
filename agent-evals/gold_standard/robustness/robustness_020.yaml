@@ -1,13 +1,20 @@
 task_id: robustness_020
 type: robustness
-question: "We recently adopted Terraform for infrastructure and moved our secrets to HashiCorp Vault. Our SRE team also set up Datadog for monitoring. Quick question though -- what common error type does the troubleshooting guide mention for configuration issues?"
+question: We recently adopted Terraform for infrastructure and moved our secrets to
+  HashiCorp Vault. Our SRE team also set up Datadog for monitoring. Quick question
+  though -- what common error type does the troubleshooting guide mention for configuration
+  issues?
 domain: project_repo
 difficulty: easy
 tags:
-  - troubleshooting
-  - errors
+- troubleshooting
+- errors
 metadata:
-  perturbation_type: "irrelevant_context"
-  original_question: "What common error type does the troubleshooting guide mention for configuration issues?"
-  expected_answer: "The troubleshooting guide mentions ConfigurationError as a common error type, along with DB connection errors."
-  perturbation_details: "Added irrelevant context about Terraform, HashiCorp Vault, and Datadog before the actual question"
+  perturbation_type: irrelevant_context
+  original_question: What common error type does the troubleshooting guide mention
+    for configuration issues?
+  expected_answer: The troubleshooting guide mentions ConfigurationError as a common
+    error type, along with DB connection errors.
+  perturbation_details: Added irrelevant context about Terraform, HashiCorp Vault,
+    and Datadog before the actual question
+  base_task_id: ''

@@ -1,14 +1,19 @@
 task_id: robustness_025
 type: robustness
-question: "Since the code review process requires only 1 approval, can a single senior developer merge PRs directly?"
+question: Since the code review process requires only 1 approval, can a single senior
+  developer merge PRs directly?
 domain: skills_workflows
 difficulty: hard
 tags:
-  - code_review
-  - process
-  - misleading
+- code_review
+- process
+- misleading
 metadata:
-  perturbation_type: "misleading_premise"
-  original_question: "What are the code review approval rules?"
-  expected_answer: "The premise may be incorrect. The code review workflow documents a review checklist and approval rules. The model should reference the actual approval rules from workflows/code-review.md rather than accepting the premise of single-approval."
-  perturbation_details: "False premise about the number of required approvals to test if the model blindly accepts it"
+  perturbation_type: misleading_premise
+  original_question: What are the code review approval rules?
+  expected_answer: The premise may be incorrect. The code review workflow documents
+    a review checklist and approval rules. The model should reference the actual approval
+    rules from workflows/code-review.md rather than accepting the premise of single-approval.
+  perturbation_details: False premise about the number of required approvals to test
+    if the model blindly accepts it
+  base_task_id: ''

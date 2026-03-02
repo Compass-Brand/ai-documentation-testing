@@ -1,14 +1,19 @@
 task_id: robustness_024
 type: robustness
-question: "The release workflow uses calendar versioning (CalVer). How do I create a release branch following the documented process?"
+question: The release workflow uses calendar versioning (CalVer). How do I create
+  a release branch following the documented process?
 domain: skills_workflows
 difficulty: hard
 tags:
-  - release
-  - versioning
-  - misleading
+- release
+- versioning
+- misleading
 metadata:
-  perturbation_type: "misleading_premise"
-  original_question: "What versioning scheme does the release workflow use?"
-  expected_answer: "The premise is incorrect. The release workflow uses semantic versioning (semver), not calendar versioning (CalVer). The process involves release branches and changelog updates."
-  perturbation_details: "False premise that the project uses CalVer when it actually uses semver"
+  perturbation_type: misleading_premise
+  original_question: What versioning scheme does the release workflow use?
+  expected_answer: The premise is incorrect. The release workflow uses semantic versioning
+    (semver), not calendar versioning (CalVer). The process involves release branches
+    and changelog updates.
+  perturbation_details: False premise that the project uses CalVer when it actually
+    uses semver
+  base_task_id: ''

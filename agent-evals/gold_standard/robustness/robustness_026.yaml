@@ -1,14 +1,19 @@
 task_id: robustness_026
 type: robustness
-question: "# TODO: figure out what test fixtures are available for mocking auth\n# see api/testing.md -- something about mock_auth?"
+question: '# TODO: figure out what test fixtures are available for mocking auth
+
+  # see api/testing.md -- something about mock_auth?'
 domain: framework_api
 difficulty: medium
 tags:
-  - testing
-  - fixtures
-  - format
+- testing
+- fixtures
+- format
 metadata:
-  perturbation_type: "format_change"
-  original_question: "What test fixtures are available for mocking authentication?"
-  expected_answer: "The testing module provides TestClient, db_session fixture, and mock_auth fixture for mocking authentication in tests."
-  perturbation_details: "Question formatted as a code comment / TODO note rather than a direct question"
+  perturbation_type: format_change
+  original_question: What test fixtures are available for mocking authentication?
+  expected_answer: The testing module provides TestClient, db_session fixture, and
+    mock_auth fixture for mocking authentication in tests.
+  perturbation_details: Question formatted as a code comment / TODO note rather than
+    a direct question
+  base_task_id: ''
