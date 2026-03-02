@@ -182,3 +182,23 @@ class TestFactExtractionTaskScoring:
         for resp in ["test answer here", "nothing", "test something"]:
             score = task.score_response(resp)
             assert 0.0 <= score <= 1.0
+
+    def test_fuzzy_paraphrase_scores_above_0_7(self) -> None:
+        """Fuzzy match boosts score when keyword matching alone falls short."""
+        defn = TaskDefinition(
+            task_id="fact_extraction_001",
+            type="fact_extraction",
+            question="Q",
+            domain="framework_api",
+            difficulty="easy",
+            metadata={
+                "expected_answer": "dependency injection container",
+                "answer_aliases": [],
+            },
+        )
+        task = FactExtractionTask(defn)
+        score = task.score_response(
+            "The DI injection container manages services."
+        )
+        assert score >= 0.7, f"Expected >= 0.7 for fuzzy paraphrase, got {score}"
+
