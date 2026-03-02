@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -28,6 +29,24 @@ class RunConflictError(Exception):
     """Raised when attempting to start a run while one is already active."""
 
 
+class RunSetupError(RuntimeError):
+    """Raised when run setup fails; causes _run_wrapper to mark run as failed."""
+
+
+_MODEL_PATTERN = re.compile(r"^[\w.-]+/[\w./-]+$")
+
+
+def _validate_model_name(model: str) -> None:
+    """Validate that model string follows LiteLLM provider/model format."""
+    for m in (m.strip() for m in model.split(",")):
+        if not _MODEL_PATTERN.match(m):
+            raise ValueError(
+                f"Invalid model name '{m}'. "
+                "Expected LiteLLM format: 'provider/model' "
+                "(e.g., 'openrouter/anthropic/claude-sonnet-4.5')."
+            )
+
+
 class StartRunRequest(BaseModel):
     """Validated request to start an evaluation run from the dashboard."""
 
@@ -43,6 +62,29 @@ class StartRunRequest(BaseModel):
     top_k: int = Field(default=3, ge=1, le=10)
     alpha: float = Field(default=0.05, ge=0.001, le=0.1)
     source: str = "gold_standard"
+
+
+class HeartbeatThread(threading.Thread):
+    """Periodically writes a heartbeat timestamp for a run."""
+
+    def __init__(
+        self, store: ObservatoryStore, run_id: str, interval: float = 30
+    ) -> None:
+        super().__init__(daemon=True, name=f"heartbeat-{run_id}")
+        self._store = store
+        self._run_id = run_id
+        self._interval = interval
+        self._stop_event = threading.Event()
+
+    def run(self) -> None:
+        while not self._stop_event.wait(self._interval):
+            try:
+                self._store.update_heartbeat(self._run_id)
+            except Exception:
+                pass
+
+    def stop(self) -> None:
+        self._stop_event.set()
 
 
 class RunManager:
@@ -91,6 +133,7 @@ class RunManager:
 
         Returns the run_id. Multiple runs can execute concurrently.
         """
+        _validate_model_name(request.model)
         run_id = uuid.uuid4().hex[:12]
         models = [m.strip() for m in request.model.split(",")]
         cancel_event = threading.Event()
@@ -149,8 +192,14 @@ class RunManager:
         """Wrapper that calls _execute_run and cleans up afterwards."""
         try:
             self._execute_run(run_id, request)
-        except Exception:
-            logger.exception("Run %s failed", run_id)
+        except Exception as exc:
+            logger.error("Run %s failed: %s", run_id, exc, exc_info=True)
+            try:
+                self._store.fail_run(run_id, error=str(exc))
+            except Exception:
+                logger.exception(
+                    "Failed to update DB status for run %s", run_id
+                )
         finally:
             with self._lock:
                 self._runs.pop(run_id, None)
@@ -163,16 +212,13 @@ class RunManager:
         Loads tasks, variants, doc_tree from gold_standard fixtures,
         builds the orchestrator with the shared store/tracker, and runs.
         """
-        from pathlib import Path
-
         from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
         from agent_evals.runner import EvalRunConfig
         from agent_evals.variants.registry import get_all_variants, load_all
 
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
         if not api_key:
-            logger.error("OPENROUTER_API_KEY not set, cannot start run %s", run_id)
-            return
+            raise RunSetupError("OPENROUTER_API_KEY not set")
 
         # Load tasks based on source
         from agent_evals.source import (
@@ -184,8 +230,7 @@ class RunManager:
         try:
             tasks = load_tasks_for_source(source)
         except (FileNotFoundError, SourceNotPreparedError) as exc:
-            logger.error("Run %s: %s", run_id, exc)
-            return
+            raise RunSetupError(str(exc)) from exc
 
         # Apply task limit
         if request.task_limit > 0:
@@ -231,20 +276,26 @@ class RunManager:
         )
         orchestrator = EvalOrchestrator(orch_config)
 
-        # Route to appropriate runner
-        if request.mode == "taguchi" and request.pipeline_mode:
-            self._run_pipeline(
-                orchestrator, request, tasks, variants, doc_tree, models, api_key
-            )
-        elif request.mode == "taguchi":
-            self._run_taguchi(orchestrator, request, tasks, variants, doc_tree)
-        else:
-            orchestrator.run(
-                tasks=tasks,
-                variants=variants,
-                doc_tree=doc_tree,
-                source="gold_standard",
-            )
+        heartbeat = HeartbeatThread(self._store, run_id)
+        heartbeat.start()
+        try:
+            # Route to appropriate runner
+            if request.mode == "taguchi" and request.pipeline_mode:
+                self._run_pipeline(
+                    orchestrator, request, tasks, variants, doc_tree, models, api_key
+                )
+            elif request.mode == "taguchi":
+                self._run_taguchi(orchestrator, request, tasks, variants, doc_tree)
+            else:
+                orchestrator.run(
+                    tasks=tasks,
+                    variants=variants,
+                    doc_tree=doc_tree,
+                    source=request.source,
+                )
+        finally:
+            heartbeat.stop()
+            heartbeat.join(timeout=5.0)
 
         logger.info("Run %s completed", run_id)
 
