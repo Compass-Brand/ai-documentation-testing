@@ -342,7 +342,7 @@ class TestRunSubmissionAPI:
         with patch.object(_run_manager, "_execute_run"):
             response = client.post(
                 "/api/runs",
-                json={"model": "test-model"},
+                json={"model": "test/model"},
             )
         assert response.status_code == 202
         data = response.json()
@@ -361,7 +361,7 @@ class TestRunSubmissionAPI:
     ) -> None:
         """POST /api/runs with invalid mode returns 422."""
         response = client.post(
-            "/api/runs", json={"model": "m", "mode": "bad"}
+            "/api/runs", json={"model": "test/model", "mode": "bad"}
         )
         assert response.status_code == 422
 
@@ -378,10 +378,10 @@ class TestRunSubmissionAPI:
             hold.wait(timeout=5)
 
         with patch.object(_run_manager, "_execute_run", side_effect=slow):
-            first = client.post("/api/runs", json={"model": "model-a"})
+            first = client.post("/api/runs", json={"model": "model/a"})
             assert first.status_code == 202
 
-            second = client.post("/api/runs", json={"model": "model-b"})
+            second = client.post("/api/runs", json={"model": "model/b"})
             assert second.status_code == 202
             assert first.json()["run_id"] != second.json()["run_id"]
 
@@ -410,7 +410,7 @@ class TestRunSubmissionAPI:
             hold.wait(timeout=5)
 
         with patch.object(_run_manager, "_execute_run", side_effect=slow):
-            client.post("/api/runs", json={"model": "test-model"})
+            client.post("/api/runs", json={"model": "test/model"})
             started.wait(timeout=2)
 
             response = client.get("/api/runs/active")
@@ -436,7 +436,7 @@ class TestRunSubmissionAPI:
             hold.wait(timeout=5)
 
         with patch.object(_run_manager, "_execute_run", side_effect=slow):
-            client.post("/api/runs", json={"model": "m"})
+            client.post("/api/runs", json={"model": "test/model"})
             started.wait(timeout=2)
 
             response = client.post("/api/runs/active/cancel")
