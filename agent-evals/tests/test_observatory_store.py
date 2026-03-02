@@ -476,6 +476,54 @@ class TestPhaseAndPipeline:
         assert len(runs) == 3
         assert runs[0].run_id == "r1"
 
+    def test_get_run_aggregates_returns_correct_statistics(
+        self, tmp_path: Path
+    ) -> None:
+        """SQL aggregation returns correct trial statistics (Task 18)."""
+        store = ObservatoryStore(db_path=tmp_path / "test.db")
+        store.create_run("r", "full", {}, phase="screening")
+        for i in range(100):
+            store.record_trial(
+                run_id="r",
+                task_id=f"compositional_{i:03d}",
+                task_type="compositional",
+                variant_name="v1",
+                repetition=1,
+                score=i / 100.0,
+                prompt_tokens=10,
+                completion_tokens=5,
+                total_tokens=15,
+                cost=0.001,
+                latency_seconds=0.5,
+                model="openrouter/anthropic/claude-haiku-4-5-20251001",
+                source="gold_standard",
+            )
+        aggs = store.get_run_aggregates("r")
+        assert aggs["trial_count"] == 100
+        assert abs(aggs["mean_score"] - 0.495) < 0.01
+        assert len(aggs["by_variant"]) == 1
+        assert aggs["by_variant"][0]["variant"] == "v1"
+
+    def test_list_runs_pagination(self, tmp_path: Path) -> None:
+        """SQL LIMIT/OFFSET pagination works correctly (Task 19)."""
+        store = ObservatoryStore(db_path=tmp_path / "test.db")
+        for i in range(20):
+            store.create_run(f"run{i}", "full", {})
+        page2 = store.list_runs(limit=5, offset=5)
+        page1 = store.list_runs(limit=5, offset=0)
+        assert len(page2) == 5
+        assert page2[0].run_id != page1[0].run_id
+
+    def test_list_pipelines(self, tmp_path: Path) -> None:
+        """list_pipelines returns aggregated pipeline stats (Task 19)."""
+        store = ObservatoryStore(db_path=tmp_path / "test.db")
+        for i in range(3):
+            store.create_run(f"run{i}", "full", {}, pipeline_id="pipe1")
+        pipelines = store.list_pipelines()
+        assert len(pipelines) == 1
+        assert pipelines[0]["pipeline_id"] == "pipe1"
+        assert pipelines[0]["run_count"] == 3
+
     def test_schema_migration_preserves_existing_data(
         self, tmp_path: Path
     ) -> None:

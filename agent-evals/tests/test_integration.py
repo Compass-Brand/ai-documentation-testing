@@ -135,9 +135,10 @@ class TestWebAPIIntegration:
 
         response = client.get("/api/runs")
         data = response.json()
-        assert len(data) == 1
-        assert data[0]["run_id"] == "run-1"
-        assert data[0]["status"] == "completed"
+        runs = data["runs"]
+        assert len(runs) == 1
+        assert runs[0]["run_id"] == "run-1"
+        assert runs[0]["status"] == "completed"
 
     def test_trials_available_via_api(self, tmp_path: Path) -> None:
         store = ObservatoryStore(tmp_path / "test.db")

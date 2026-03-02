@@ -72,17 +72,6 @@ class CreateGroupRequest(BaseModel):
     models: list[str] = []
 
 
-def _get_pipeline_id(store: ObservatoryStore, run_id: str) -> str | None:
-    """Look up the pipeline_id for a given run from the database."""
-    with store._connect() as conn:
-        row = conn.execute(
-            "SELECT pipeline_id FROM runs WHERE run_id = ?", (run_id,)
-        ).fetchone()
-    if row is None:
-        return None
-    return row["pipeline_id"]
-
-
 def create_router(
     store: ObservatoryStore,
     tracker: EventTracker,
@@ -110,9 +99,9 @@ def create_router(
     async def list_runs(
         limit: int = Query(50, ge=1, le=500),
         offset: int = Query(0, ge=0),
-    ) -> list[dict[str, Any]]:
-        runs = store.list_runs()
-        return [asdict(r) for r in runs[offset : offset + limit]]
+    ) -> dict[str, Any]:
+        runs = store.list_runs(limit=limit, offset=offset)
+        return {"runs": [asdict(r) for r in runs]}
 
     # Run submission endpoints (must be before /api/runs/{run_id})
     @router.post("/api/runs", status_code=202)
@@ -139,23 +128,17 @@ def create_router(
         return {"cancelled": cancelled}
 
     def _enrich_run(run_id: str) -> dict[str, Any]:
-        """Build enriched run summary with variant/model aggregations."""
+        """Build enriched run summary with SQL-aggregated trial statistics."""
         summary = store.get_run_summary(run_id)
+        aggs = store.get_run_aggregates(run_id)
         trials = store.get_trials(run_id)
 
-        by_variant: dict[str, dict[str, Any]] = {}
-        for t in trials:
-            entry = by_variant.setdefault(
-                t.variant_name, {"total_score": 0.0, "trial_count": 0}
-            )
-            entry["total_score"] += t.score
-            entry["trial_count"] += 1
         by_variant_out = {
-            k: {
-                "mean_score": v["total_score"] / v["trial_count"] if v["trial_count"] else 0.0,
-                "trial_count": v["trial_count"],
+            v["variant"]: {
+                "mean_score": v["mean_score"],
+                "trial_count": v["count"],
             }
-            for k, v in by_variant.items()
+            for v in aggs["by_variant"]
         }
 
         by_model: dict[str, dict[str, Any]] = {}
@@ -178,31 +161,25 @@ def create_router(
         } or None
 
         completed_trials = sum(1 for t in trials if t.error is None)
-        total_tokens = sum(t.total_tokens for t in trials)
-        mean_score = (
-            (sum(t.score for t in trials) / len(trials)) if trials else 0.0
-        )
 
         return {
             "run": {
                 "run_id": summary.run_id,
                 "run_type": summary.run_type,
                 "status": summary.status,
-                "config": {},
+                "config": summary.config,
                 "created_at": summary.created_at,
                 "finished_at": summary.finished_at,
             },
-            "total_trials": summary.total_trials,
+            "total_trials": aggs["trial_count"],
             "completed_trials": completed_trials,
             "total_cost": summary.total_cost,
-            "total_tokens": total_tokens,
-            "mean_score": mean_score,
+            "total_tokens": aggs["total_tokens"],
+            "mean_score": aggs["mean_score"],
             "by_variant": by_variant_out,
             "by_model": by_model_out,
-            "unique_tasks": len(set(t.task_id for t in trials)),
-            "avg_latency": (
-                sum(t.latency_seconds for t in trials) / len(trials)
-            ) if trials else 0.0,
+            "unique_tasks": len({t.task_id for t in trials}),
+            "avg_latency": aggs["mean_latency_seconds"],
         }
 
     @router.get("/api/runs/{run_id}")
@@ -357,7 +334,10 @@ def create_router(
     @router.get("/api/models/sync")
     async def sync_status() -> dict[str, Any]:
         if catalog is None:
-            return {"total_models": 0, "last_sync": None, "models_added": 0, "models_removed": 0, "models_updated": 0}
+            return {
+                "total_models": 0, "last_sync": None,
+                "models_added": 0, "models_removed": 0, "models_updated": 0,
+            }
         history = catalog.get_sync_history()
         latest = history[0] if history else {}
         active = catalog.get_active_models()
@@ -382,7 +362,9 @@ def create_router(
             raise HTTPException(status_code=503, detail="Catalog not configured")
         model = catalog.get_model(model_id)
         if model is None:
-            raise HTTPException(status_code=404, detail=f"Model '{model_id}' not found")
+            raise HTTPException(
+                status_code=404, detail=f"Model '{model_id}' not found"
+            )
         return model
 
     # ------------------------------------------------------------------
@@ -391,22 +373,7 @@ def create_router(
 
     @router.get("/api/pipelines")
     async def list_pipelines() -> list[dict[str, Any]]:
-        runs = store.list_runs()
-        pipelines: dict[str, list[dict[str, Any]]] = {}
-        for r in runs:
-            rd = asdict(r)
-            pid = _get_pipeline_id(store, r.run_id)
-            if pid is None:
-                continue
-            pipelines.setdefault(pid, []).append(rd)
-        return [
-            {
-                "pipeline_id": pid,
-                "run_count": len(pipe_runs),
-                "latest_status": pipe_runs[-1]["status"],
-            }
-            for pid, pipe_runs in pipelines.items()
-        ]
+        return store.list_pipelines()
 
     @router.get("/api/pipelines/{pipeline_id}")
     async def get_pipeline_detail(pipeline_id: str) -> dict[str, Any]:
