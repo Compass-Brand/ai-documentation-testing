@@ -220,44 +220,19 @@ class TestLaunchDashboardEmbedded:
 
 
 class TestLaunchDashboardAutoSync:
-    """Tests for auto-sync behavior."""
+    """Tests for auto-sync behavior.
+
+    Note: Model sync was moved from launch_dashboard() to the FastAPI
+    lifespan in create_app(). See TestStartupSync in test_model_browser_web.py
+    for lifespan sync tests. These tests verify launch_dashboard() no longer
+    calls run_sync() directly.
+    """
 
     @patch("agent_evals.observatory.web.server.uvicorn.Server")
-    def test_auto_sync_triggers_when_catalog_empty(
+    def test_launch_dashboard_does_not_call_run_sync_directly(
         self, mock_server_cls: MagicMock, tmp_config: DashboardConfig
     ) -> None:
-        mock_server = MagicMock()
-        mock_server_cls.return_value = mock_server
-
-        with (
-            patch(
-                "agent_evals.observatory.web.server.ModelCatalog"
-            ) as mock_catalog_cls,
-            patch(
-                "agent_evals.observatory.web.server.ModelSync"
-            ) as mock_sync_cls,
-        ):
-            mock_catalog = MagicMock()
-            mock_catalog.get_active_models.return_value = []  # empty
-            mock_catalog_cls.return_value = mock_catalog
-
-            mock_sync = MagicMock()
-            mock_sync_cls.return_value = mock_sync
-
-            handle = launch_dashboard(tmp_config, background=True)
-
-        mock_sync.run_sync.assert_called_once()
-        handle.stop()
-
-    @patch("agent_evals.observatory.web.server.uvicorn.Server")
-    def test_skips_sync_when_auto_sync_false(
-        self, mock_server_cls: MagicMock, tmp_path: Path
-    ) -> None:
-        cfg = DashboardConfig(
-            observatory_db=tmp_path / "observatory.db",
-            models_db=tmp_path / "models.db",
-            auto_sync=False,
-        )
+        """Sync moved to lifespan — launch_dashboard no longer calls it."""
         mock_server = MagicMock()
         mock_server_cls.return_value = mock_server
 
@@ -271,33 +246,6 @@ class TestLaunchDashboardAutoSync:
         ):
             mock_catalog = MagicMock()
             mock_catalog.get_active_models.return_value = []
-            mock_catalog_cls.return_value = mock_catalog
-
-            mock_sync = MagicMock()
-            mock_sync_cls.return_value = mock_sync
-
-            handle = launch_dashboard(cfg, background=True)
-
-        mock_sync.run_sync.assert_not_called()
-        handle.stop()
-
-    @patch("agent_evals.observatory.web.server.uvicorn.Server")
-    def test_skips_sync_when_catalog_not_empty(
-        self, mock_server_cls: MagicMock, tmp_config: DashboardConfig
-    ) -> None:
-        mock_server = MagicMock()
-        mock_server_cls.return_value = mock_server
-
-        with (
-            patch(
-                "agent_evals.observatory.web.server.ModelCatalog"
-            ) as mock_catalog_cls,
-            patch(
-                "agent_evals.observatory.web.server.ModelSync"
-            ) as mock_sync_cls,
-        ):
-            mock_catalog = MagicMock()
-            mock_catalog.get_active_models.return_value = [{"id": "m1"}]
             mock_catalog_cls.return_value = mock_catalog
 
             mock_sync = MagicMock()

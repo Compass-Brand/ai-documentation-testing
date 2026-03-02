@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 from dataclasses import asdict
 from typing import Any
@@ -18,6 +19,8 @@ from agent_evals.observatory.model_sync import ModelSync
 from agent_evals.observatory.run_manager import RunConflictError, RunManager, StartRunRequest
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
+
+_sse_seq = itertools.count(1)
 
 
 _DASHBOARD_HTML = """\
@@ -244,7 +247,11 @@ def create_router(
 
         async def _generator():
             try:
-                yield {"event": "connected", "data": json.dumps({"run_id": run_id})}
+                yield {
+                    "event": "connected",
+                    "id": str(next(_sse_seq)),
+                    "data": json.dumps({"run_id": run_id}),
+                }
                 while True:
                     if await request.is_disconnected():
                         break
@@ -252,6 +259,7 @@ def create_router(
                         event = await asyncio.wait_for(queue.get(), timeout=1.0)
                         yield {
                             "event": event["event_type"],
+                            "id": str(next(_sse_seq)),
                             "data": json.dumps(event["data"]),
                         }
                     except TimeoutError:
