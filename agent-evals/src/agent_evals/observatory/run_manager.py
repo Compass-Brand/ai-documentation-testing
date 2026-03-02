@@ -165,10 +165,8 @@ class RunManager:
         """
         from pathlib import Path
 
-        from agent_evals.fixtures import load_sample_doc_tree
         from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
         from agent_evals.runner import EvalRunConfig
-        from agent_evals.tasks.loader import load_tasks
         from agent_evals.variants.registry import get_all_variants, load_all
 
         api_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -177,31 +175,17 @@ class RunManager:
             return
 
         # Load tasks based on source
-        source = request.source
-        if source == "gold_standard":
-            gold_standard_dir = (
-                Path(__file__).resolve().parent.parent.parent.parent
-                / "gold_standard"
-            )
-            if not gold_standard_dir.is_dir():
-                logger.error(
-                    "Gold standard directory not found: %s",
-                    gold_standard_dir,
-                )
-                return
-            tasks = load_tasks(gold_standard_dir)
-        else:
-            from agent_evals.datasets import load_all as _load_all_datasets
-            from agent_evals.datasets.cache import DatasetCache
+        from agent_evals.source import (
+            SourceNotPreparedError,
+            load_tasks_for_source,
+        )
 
-            _load_all_datasets()
-            cache = DatasetCache()
-            if not cache.is_prepared(source):
-                logger.error(
-                    "Dataset '%s' has not been prepared", source,
-                )
-                return
-            tasks = load_tasks(cache.task_dir(source))
+        source = request.source
+        try:
+            tasks = load_tasks_for_source(source)
+        except (FileNotFoundError, SourceNotPreparedError) as exc:
+            logger.error("Run %s: %s", run_id, exc)
+            return
 
         # Apply task limit
         if request.task_limit > 0:
@@ -220,14 +204,9 @@ class RunManager:
             return
 
         # Load doc_tree
-        if source == "gold_standard":
-            doc_tree = load_sample_doc_tree()
-        else:
-            from agent_index.models import DocTree
+        from agent_evals.source import load_doc_tree_for_source
 
-            doc_tree = DocTree.model_validate_json(
-                cache.doc_tree_path(source).read_text(encoding="utf-8")
-            )
+        doc_tree = load_doc_tree_for_source(source)
 
         # Parse models
         models = [m.strip() for m in request.model.split(",")]

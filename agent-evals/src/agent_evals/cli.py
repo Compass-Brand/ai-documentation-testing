@@ -670,33 +670,27 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
     )
 
     # Load tasks and doc_tree based on --source
+    from agent_evals.source import (
+        SourceNotPreparedError,
+        load_doc_tree_for_source,
+        load_tasks_for_source,
+    )
+
     source = resolved.get("source") or "gold_standard"
 
-    if source == "gold_standard":
-        gold_standard_dir = (
-            Path(__file__).resolve().parent.parent.parent / "gold_standard"
+    try:
+        tasks = load_tasks_for_source(source)
+    except FileNotFoundError:
+        logger.error("Gold standard directory not found.")
+        return 1
+    except SourceNotPreparedError:
+        logger.error(
+            "Dataset '%s' has not been prepared. Run first:\n"
+            "  agent-evals --prepare-datasets %s",
+            source,
+            source,
         )
-        if not gold_standard_dir.is_dir():
-            logger.error(
-                "Gold standard directory not found: %s", gold_standard_dir,
-            )
-            return 1
-        tasks = load_tasks(gold_standard_dir)
-    else:
-        from agent_evals.datasets import load_all as _load_all_datasets
-        from agent_evals.datasets.cache import DatasetCache
-
-        _load_all_datasets()
-        cache = DatasetCache()
-        if not cache.is_prepared(source):
-            logger.error(
-                "Dataset '%s' has not been prepared. Run first:\n"
-                "  agent-evals --prepare-datasets %s",
-                source,
-                source,
-            )
-            return 1
-        tasks = load_tasks(cache.task_dir(source))
+        return 1
 
     # Filter tasks by type if specified
     task_filter = resolved.get("tasks")
@@ -738,16 +732,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         return 1
 
     # Load doc_tree
-    if source == "gold_standard":
-        from agent_evals.fixtures import load_sample_doc_tree
-
-        doc_tree = load_sample_doc_tree()
-    else:
-        from agent_index.models import DocTree
-
-        doc_tree = DocTree.model_validate_json(
-            cache.doc_tree_path(source).read_text(encoding="utf-8")
-        )
+    doc_tree = load_doc_tree_for_source(source)
 
     # Route to the correct runner based on --mode
     mode = resolved.get("mode", "full")
