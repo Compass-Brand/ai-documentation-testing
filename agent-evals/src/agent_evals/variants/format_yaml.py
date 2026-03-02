@@ -8,12 +8,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import yaml
+
 from agent_evals.variants._utils import summarise as _summarise
 from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.registry import register_variant
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
+
+
+def _yaml_safe_value(value: str) -> str:
+    """Serialize a string so it is safe to embed as a YAML scalar value."""
+    return yaml.safe_dump(value).splitlines()[0]
 
 
 @register_variant
@@ -53,9 +60,9 @@ class FormatYaml(IndexVariant):
         for _key, doc in sorted(doc_tree.files.items()):
             summary = doc.summary if doc.summary else _summarise(doc.content)
             tokens = doc.token_count if doc.token_count is not None else 0
-            lines.append(f"  - path: {doc.rel_path}")
-            lines.append(f"    section: {doc.section}")
-            lines.append(f"    tier: {doc.tier}")
+            lines.append(f"  - path: {_yaml_safe_value(doc.rel_path)}")
+            lines.append(f"    section: {_yaml_safe_value(doc.section)}")
+            lines.append(f"    tier: {_yaml_safe_value(doc.tier)}")
             lines.append(f"    tokens: {tokens}")
-            lines.append(f"    summary: {summary}")
+            lines.append(f"    summary: {_yaml_safe_value(summary)}")
         return "\n".join(lines)
