@@ -154,6 +154,23 @@ class ObservatoryStore:
             ).fetchall()
         return [r["name"] for r in rows]
 
+    @staticmethod
+    def _row_to_summary(r: sqlite3.Row) -> RunSummary:
+        """Convert a joined run+trials aggregate row to RunSummary."""
+        return RunSummary(
+            run_id=r["run_id"],
+            run_type=r["run_type"],
+            status=r["status"],
+            created_at=r["created_at"],
+            finished_at=r["finished_at"],
+            total_trials=r["total_trials"],
+            total_cost=r["total_cost"],
+            avg_latency=r["avg_latency"],
+            heartbeat_at=r["heartbeat_at"],
+            config=json.loads(r["config"] or "{}"),
+            pipeline_id=r["pipeline_id"],
+        )
+
     def create_run(
         self,
         run_id: str,
@@ -307,26 +324,13 @@ class ObservatoryStore:
             "FROM runs r LEFT JOIN trials t ON r.run_id = t.run_id "
             "GROUP BY r.run_id ORDER BY r.created_at DESC"
         )
+        params: list[int] = []
         if limit is not None:
-            query += f" LIMIT {int(limit)} OFFSET {int(offset)}"
+            query += " LIMIT ? OFFSET ?"
+            params = [int(limit), int(offset)]
         with self._connect() as conn:
-            rows = conn.execute(query).fetchall()
-        return [
-            RunSummary(
-                run_id=r["run_id"],
-                run_type=r["run_type"],
-                status=r["status"],
-                created_at=r["created_at"],
-                finished_at=r["finished_at"],
-                total_trials=r["total_trials"],
-                total_cost=r["total_cost"],
-                avg_latency=r["avg_latency"],
-                heartbeat_at=r["heartbeat_at"],
-                config=json.loads(r["config"] or "{}"),
-                pipeline_id=r["pipeline_id"],
-            )
-            for r in rows
-        ]
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_summary(r) for r in rows]
 
     def get_run_summary(self, run_id: str) -> RunSummary:
         """Return summary for a specific run."""
@@ -343,19 +347,7 @@ class ObservatoryStore:
             ).fetchone()
         if row is None:
             raise ValueError(f"Run '{run_id}' not found")
-        return RunSummary(
-            run_id=row["run_id"],
-            run_type=row["run_type"],
-            status=row["status"],
-            created_at=row["created_at"],
-            finished_at=row["finished_at"],
-            total_trials=row["total_trials"],
-            total_cost=row["total_cost"],
-            avg_latency=row["avg_latency"],
-            heartbeat_at=row["heartbeat_at"],
-            config=json.loads(row["config"] or "{}"),
-            pipeline_id=row["pipeline_id"],
-        )
+        return self._row_to_summary(row)
 
     def get_run_aggregates(self, run_id: str) -> dict:
         """Return SQL-aggregated trial statistics without loading individual records."""
@@ -491,22 +483,7 @@ class ObservatoryStore:
                 "GROUP BY r.run_id ORDER BY r.created_at",
                 (pipeline_id,),
             ).fetchall()
-        return [
-            RunSummary(
-                run_id=r["run_id"],
-                run_type=r["run_type"],
-                status=r["status"],
-                created_at=r["created_at"],
-                finished_at=r["finished_at"],
-                total_trials=r["total_trials"],
-                total_cost=r["total_cost"],
-                avg_latency=r["avg_latency"],
-                heartbeat_at=r["heartbeat_at"],
-                config=json.loads(r["config"] or "{}"),
-                pipeline_id=r["pipeline_id"],
-            )
-            for r in rows
-        ]
+        return [self._row_to_summary(r) for r in rows]
 
     def list_pipelines(self) -> list[dict]:
         """Return all distinct pipelines with aggregated run statistics."""
