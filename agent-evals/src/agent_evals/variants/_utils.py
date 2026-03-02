@@ -81,6 +81,25 @@ def summarise(content: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# escape_pipe
+# ---------------------------------------------------------------------------
+
+
+def escape_pipe(text: str) -> str:
+    """Escape pipe characters so they don't act as column delimiters.
+
+    Used by pipe-delimited and markdown table format variants.
+
+    Args:
+        text: Cell text that may contain literal ``|`` characters.
+
+    Returns:
+        Text with ``|`` replaced by ``\\|``.
+    """
+    return text.replace("|", "\\|")
+
+
+# ---------------------------------------------------------------------------
 # render_two_tier
 # ---------------------------------------------------------------------------
 

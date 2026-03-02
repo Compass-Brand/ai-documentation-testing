@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from agent_evals.variants._utils import escape_pipe as _escape_pipe
 from agent_evals.variants._utils import summarise as _summarise
 from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.registry import register_variant
@@ -50,6 +51,8 @@ class FormatPipeDelimited(IndexVariant):
             summary = doc.summary if doc.summary else _summarise(doc.content)
             tokens = doc.token_count if doc.token_count is not None else 0
             lines.append(
-                f"{doc.rel_path}|{doc.section}|{doc.tier}|{tokens}|{summary}"
+                f"{_escape_pipe(doc.rel_path)}|{_escape_pipe(doc.section)}"
+                f"|{_escape_pipe(doc.tier)}|{tokens}"
+                f"|{_escape_pipe(summary)}"
             )
         return "\n".join(lines)
