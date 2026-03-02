@@ -89,6 +89,7 @@ export function FilterRange({
         value={value[1]}
         onChange={(e) => onChange([value[0], parseInt(e.target.value)])}
         className="w-full accent-brand-goldenrod"
+        aria-label={label}
       />
     </div>
   );

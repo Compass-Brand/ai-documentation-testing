@@ -122,7 +122,7 @@ describe("RunConfig", () => {
 
   it("should show help text for Task Limit field", () => {
     render(<RunConfig />, { wrapper });
-    expect(screen.getByText(/355 tasks/i)).toBeInTheDocument();
+    expect(screen.getByText(/limit the number of gold standard tasks/i)).toBeInTheDocument();
   });
 
   it("should show help text for OA Override field", () => {
