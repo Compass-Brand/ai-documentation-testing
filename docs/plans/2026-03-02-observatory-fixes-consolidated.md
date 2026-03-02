@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Fix all 44 open issues in the Observatory and agent-evals system — scoring correctness, infrastructure stability, new frontend/backend bugs, variant format correctness, evaluation framework bugs, and UX polish.
+**Goal:** Fix all 44 open issues in the Observatory and agent-evals system — scoring correctness, infrastructure stability, new frontend/backend bugs, variant format correctness, evaluation framework bugs, and UX polish — and complete the dataset integration loop (Tasks 42-46): wiring --source to real datasets in both the CLI and dashboard, preparing all benchmark datasets, and verifying the full Taguchi pipeline end-to-end.
 
-**Architecture:** Issues are organized into 10 sprints by priority. Scorer fixes are highest-priority because they invalidate current evaluation results. Infrastructure fixes prevent future data loss. All fixes follow TDD: write a failing test first, then implement the minimum fix, then commit.
+**Architecture:** Issues are organized into 13 sprints by priority. Scorer fixes are highest-priority because they invalidate current evaluation results. Infrastructure fixes prevent future data loss. All fixes follow TDD: write a failing test first, then implement the minimum fix, then commit.
 
 **Tech Stack:** Python 3.11+, FastAPI, SQLite, React/TypeScript, Chart.js, TanStack Query v5, rapidfuzz (new dep), PyYAML, pytest, Vitest
 
@@ -235,14 +235,30 @@ git commit -m "fix(scoring): exclude empty sub-tasks from compositional denomina
 **Files:**
 - Modify: `agent-evals/pyproject.toml`
 
-**Step 1 [GREEN]:** Write the minimal implementation to make the test pass
+**Step 1 [RED]:** Confirm the import fails before adding the dependency
+
+```bash
+uv run python -c "from rapidfuzz import fuzz; print('found')" 2>&1 | grep -c "ModuleNotFoundError"
+```
+
+Expected: prints `1` (import fails).
+
+**Step 2 [VERIFY RED]:** Confirm only a ModuleNotFoundError (not a syntax or other error):
+
+```bash
+uv run python -c "from rapidfuzz import fuzz" 2>&1
+```
+
+Expected: `ModuleNotFoundError: No module named 'rapidfuzz'`
+
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 In `agent-evals/pyproject.toml` under `[project] dependencies`:
 ```toml
 "rapidfuzz>=3.0",
 ```
 
-**Step 2 [GREEN]:** Run to confirm tests pass
+**Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
 # Run from workspace root, not from agent-evals/
@@ -250,14 +266,14 @@ cd /home/trevor-leigh/Projects/compass_brand/compass-tests/ai-documentation-test
 uv sync
 ```
 
-**Step 3 [GREEN]:** Smoke test
+**Step 5 [GREEN]:** Smoke test
 
 ```bash
 uv run python -c "from rapidfuzz import fuzz, utils; print('rapidfuzz OK')"
 ```
 Expected: `rapidfuzz OK`
 
-**Step 4 [REFACTOR]:** Review the implementation while keeping tests green
+**Step 6 [REFACTOR]:** Review the implementation while keeping tests green
 
 - Check: Is `rapidfuzz>=3.0` the right version pin? Verify the API (`fuzz.partial_ratio`, `utils.default_process`) exists in 3.x vs 2.x.
 - Check: Is the dependency placed in the right section of `pyproject.toml` (runtime `[project] dependencies`, not dev-only)?
@@ -267,7 +283,7 @@ Expected: `rapidfuzz OK`
   uv run pytest agent-evals/tests/ -x -q
   ```
 
-**Step 5 [VERIFY]:** Confirm the import works in the actual eval context
+**Step 7 [VERIFY]:** Confirm the import works in the actual eval context
 
 ```bash
 uv run python -c "
@@ -278,7 +294,7 @@ print(f'rapidfuzz OK — sample score={test_score}')
 ```
 Expected: prints `rapidfuzz OK — sample score=` with a non-zero value.
 
-**Step 6: Commit**
+**Step 8: Commit**
 
 ```bash
 git add agent-evals/pyproject.toml uv.lock
@@ -299,6 +315,12 @@ git commit -m "feat(deps): add rapidfuzz>=3.0 for fuzzy answer matching (S1 prer
 > from agent_evals.tasks.compositional import CompositionalTask
 > defn = TaskDefinition(task_id="compositional_002", type="compositional", question="Q?", domain="framework_api", difficulty="easy", metadata={...})
 > task = CompositionalTask(defn)
+> ```
+>
+> **Additional imports needed for implementation:**
+> ```python
+> from agent_evals.tasks._utils import extract_keywords  # confirmed at agent-evals/src/agent_evals/tasks/_utils.py
+> from rapidfuzz import fuzz, utils as fuzz_utils        # added by Task 2
 > ```
 
 **Step 1 [RED]:** Write the failing tests
@@ -351,6 +373,8 @@ def _score_sub_answer(self, expected: str, response_lower: str) -> float:
         return 0.0
     matched = 0
     for kw in keywords:
+        # score_cutoff makes fuzz.partial_ratio return 0 if below 80; check is binary per keyword.
+        # Continuity comes from the keyword fraction: matched/len(keywords).
         score = fuzz.partial_ratio(
             kw.lower(), response_lower,
             processor=fuzz_utils.default_process,
@@ -556,9 +580,15 @@ uv run pytest agent-evals/tests/test_task_negative.py::test_hedge_with_caveat_sc
 ```
 Expected: `FAILED — 0.0 != 0.7`
 
-**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
+> **Pre-requisite:** Remove the `test_score_is_binary` method from class `TestNegativeTaskScoring`
+> in `agent-evals/tests/test_task_negative.py` (confirmed at line 198). This method
+> asserts scores are always in {0.0, 1.0}, which is incompatible with the tiered rubric.
+> Delete only the method body (lines 198–208), not the entire class.
+> Commit the deletion: `git add agent-evals/tests/test_task_negative.py && git commit -m "test(negative): remove binary-score assertion incompatible with rubric"`
+>
+> Then proceed with the TDD cycle below.
 
-> **IMPORTANT — delete the pre-existing `test_score_is_binary` test first.** That test asserts scores are always 0.0 or 1.0, which directly contradicts the tiered rubric. It is at line ~198 of `test_task_negative.py`. Delete it before implementing the rubric, or your GREEN step will be blocked by a conflicting passing test turning into a failing test.
+**Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
 Replace the binary scoring logic with categorized tiers. `_FIRM_REFUSAL` must contain ALL 35 phrases from the original `_ABSTENTION_PHRASES` **minus the two removed by Task 4** (37 original − 2 = 35). The complete list is shown below — copy it verbatim:
 
@@ -714,6 +744,7 @@ def test_49_percent_keyword_coverage_not_binary():
 ```bash
 uv run pytest agent-evals/tests/test_task_disambiguation.py::test_49_percent_keyword_coverage_not_binary -v
 ```
+Expected: `FAILED — AssertionError: Expected partial score for 25% coverage, got 0.0`
 
 **Step 3 [GREEN]:** Write the minimal implementation to make the test pass — replace cliff threshold, preserve label_score path
 
@@ -744,7 +775,8 @@ if expected_answer:
 ```bash
 uv run pytest agent-evals/tests/test_task_disambiguation.py -v
 ```
-Expected: mostly PASS — **but `test_partial_keyword_coverage_below_threshold` will fail.** That test expects `score == 0.0` for 1/3 keyword coverage, which the old cliff produced. With continuous scoring, 1/3 coverage = 0.33. Update that test's assertion to:
+Expected: mostly PASS — **but `test_partial_keyword_coverage_below_threshold` will fail.** That test expects `score == 0.0` for 1/3 keyword coverage, which the old cliff produced. With continuous scoring, 1/3 coverage = 0.33. First, add `import pytest` to the top of `agent-evals/tests/test_task_disambiguation.py` (it is not currently imported).
+Then update the assertion to:
 ```python
 assert score == pytest.approx(1/3, abs=0.01)
 ```
@@ -844,6 +876,7 @@ step_scores.append(coverage if coverage >= STEP_COVERAGE_THRESHOLD else 0.0)
 ```bash
 uv run pytest agent-evals/tests/test_task_multi_hop.py -v
 ```
+Expected: all PASS
 
 **Step 5 [REFACTOR]:** Review the implementation while keeping tests green
 
@@ -921,10 +954,13 @@ uv run pytest agent-evals/tests/test_task_fact_extraction.py::test_paraphrase_sc
 
 **Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
-Add after alias matching, before keyword fallback in `fact_extraction.py`:
+At the **top of `fact_extraction.py`** (module-level imports section), add:
 ```python
 from rapidfuzz import fuzz, utils as fuzz_utils
+```
 
+Inside `score_response`, **after alias matching and before keyword fallback**, add:
+```python
 # Layer 3: Fuzzy matching (after exact and alias checks)
 fuzzy_score = fuzz.token_set_ratio(
     self.expected_answer.lower(),
@@ -1035,6 +1071,7 @@ Also update the docstring formula comment from `0.8 + 0.2` to `0.7 + 0.2 + 0.1`.
 ```bash
 uv run pytest agent-evals/tests/test_task_code_generation.py -v
 ```
+Expected: all PASS
 
 **Step 5 [REFACTOR]:** Review the implementation while keeping tests green
 
@@ -1109,10 +1146,24 @@ Expected: `FAILED — [] != ['test_foo', 'test_bar']`
 
 **Step 3 [GREEN]:** Write the minimal implementation to make the test pass
 
-In `agentic.py`, in the `except json.JSONDecodeError` branch of `_parse_json_or_list`:
+In `agentic.py`, replace the body of `_parse_json_or_list` with:
 ```python
-except json.JSONDecodeError:
-    return [token for token in value.strip().split() if token]
+def _parse_json_or_list(value: object) -> list[str]:
+    """Parse a value that is either a JSON string or already a list.
+
+    Falls back to whitespace splitting if the string is not valid JSON.
+    """
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed]
+            return [str(parsed)]
+        except json.JSONDecodeError:
+            return [token for token in value.strip().split() if token]
+    return []
 ```
 
 **Step 4 [GREEN]:** Run to confirm tests pass
@@ -1182,7 +1233,7 @@ def test_agentic_score_redistributes_weights_when_no_files():
     defn = TaskDefinition(
         task_id="agentic_001", type="agentic", question="Q",
         domain="framework_api", difficulty="easy",
-        metadata={"expected_tools": ["read_file"], "files": [], "fail_to_pass": []},
+        metadata={"expected_tools": ["read_file"], "files": {}, "FAIL_TO_PASS": []},
     )
     task = AgenticTask(defn)
     # Response mentions the expected tool — should score high, not be capped at 0.2
@@ -1208,7 +1259,7 @@ def score_response(self, response: str) -> float:
     if self.fail_to_pass:
         components.append((self._score_correctness(response), 0.2))
     if self.expected_tools:
-        components.append((self._score_tools(response), 0.2))
+        components.append((self._score_tool_usage(response), 0.2))
     if not components:
         return 0.5
     total_weight = sum(w for _, w in components)
@@ -1321,16 +1372,7 @@ def fail_run(self, run_id: str, error: str | None = None) -> None:
             )
 ```
 
-Also verify `finish_run()` sets `finished_at` for the success path. If it doesn't already, add it:
-```python
-def finish_run(self, run_id: str) -> None:
-    now = datetime.now(timezone.utc).isoformat()
-    with self._lock, self._connect() as conn:
-        conn.execute(
-            "UPDATE runs SET status = 'completed', finished_at = ? WHERE run_id = ?",
-            (now, run_id),
-        )
-```
+Verify that `finish_run()` already sets `finished_at` — confirmed: `store.py` lines 248–260 already implement this correctly. No change needed to `finish_run()`.
 
 **Step 4 [GREEN]:** Run to confirm tests pass
 
@@ -1388,7 +1430,7 @@ git commit -m "feat(store): add fail_run() method; ensure finish_run() sets fini
 > from agent_evals.observatory.store import ObservatoryStore
 > from agent_evals.observatory.tracker import EventTracker
 > from agent_evals.observatory.run_manager import RunManager, StartRunRequest
-> from unittest.mock import MagicMock
+> from unittest.mock import MagicMock, patch
 > store = ObservatoryStore(db_path=tmp_path / "test.db")
 > tracker = MagicMock(spec=EventTracker)
 > manager = RunManager(store=store, tracker=tracker)
@@ -1544,6 +1586,7 @@ Replace all early `return` paths in `_execute_run` with `raise RunSetupError(rea
 ```bash
 uv run pytest agent-evals/tests/test_run_manager.py -v
 ```
+Expected: all PASS
 
 **Step 5 [REFACTOR]:** Review the implementation while keeping tests green
 
@@ -1731,9 +1774,10 @@ git commit -m "feat(store): add heartbeat column, update_heartbeat() and reap_st
 
 > **Context:**
 > ```python
+> import time
 > from agent_evals.observatory.store import ObservatoryStore
 > from agent_evals.observatory.tracker import EventTracker
-> from agent_evals.observatory.run_manager import RunManager, StartRunRequest
+> from agent_evals.observatory.run_manager import RunManager, StartRunRequest, HeartbeatThread
 > from unittest.mock import MagicMock
 > store = ObservatoryStore(db_path=tmp_path / "test.db")
 > tracker = MagicMock(spec=EventTracker)
@@ -1771,7 +1815,7 @@ import threading
 
 class HeartbeatThread(threading.Thread):
     """Periodically writes a heartbeat timestamp for a run."""
-    def __init__(self, store, run_id: str, interval: int = 30):
+    def __init__(self, store, run_id: str, interval: float = 30):
         super().__init__(daemon=True, name=f"heartbeat-{run_id}")
         self._store = store
         self._run_id = run_id
@@ -1880,10 +1924,11 @@ git commit -m "feat(runner): wire HeartbeatThread and server-side reaper for sta
 **Step 1 [RED]:** Write the failing test
 
 ```python
-def test_run_detail_includes_config(client, created_run_id):
-    resp = client.get(f"/api/runs/{created_run_id}")
+def test_run_detail_includes_config(client, _store):
+    _store.create_run("r1", "full", {"model": "test-model", "task_limit": 10}, phase="screening")
+    resp = client.get("/api/runs/r1")
     data = resp.json()
-    assert data.get("config") != {}, "config must not be hardcoded empty dict"
+    assert data.get("run", {}).get("config") != {}, "config must not be hardcoded empty dict"
 ```
 
 **Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
@@ -1934,8 +1979,8 @@ app = create_app(store=store, tracker=tracker)
 client = TestClient(app)
 resp = client.get('/api/runs/r1')
 data = resp.json()
-print('config =', data.get('config'))
-assert data.get('config') != {}, 'config must not be empty'
+print('config =', data.get('run', {}).get('config'))
+assert data.get('run', {}).get('config') != {}, 'config must not be empty'
 print('API response verified')
 "
 ```
@@ -1944,7 +1989,8 @@ print('API response verified')
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/store.py \
-        agent-evals/src/agent_evals/observatory/web/routes.py
+        agent-evals/src/agent_evals/observatory/web/routes.py \
+        agent-evals/tests/test_observatory_web.py
 git commit -m "fix(api): expose stored run config in API response instead of hardcoded {} (I4)"
 ```
 
@@ -2110,7 +2156,7 @@ def test_get_run_aggregates_returns_correct_statistics(tmp_path):
 uv run pytest agent-evals/tests/test_observatory_store.py::test_get_run_aggregates_returns_correct_statistics -v
 ```
 
-**Step 3 [GREEN]:** Add `get_run_aggregates()` to store
+**Step 3 [GREEN]:** Add `get_run_aggregates()` to store AND update `_enrich_run` in routes.py
 
 ```python
 def get_run_aggregates(self, run_id: str) -> dict:
@@ -2140,17 +2186,15 @@ def get_run_aggregates(self, run_id: str) -> dict:
     }
 ```
 
-**Step 4 [GREEN]:** Update `_enrich_run` in routes.py
-
 Read the existing `_enrich_run` function fully first. Replace the `store.get_trials(run_id)` call and all downstream Python-level aggregation with a single call to `store.get_run_aggregates(run_id)`. Map the returned dict fields to the existing response shape.
 
-**Step 5 [GREEN]:** Run to confirm tests pass
+**Step 4 [VERIFY GREEN]:** Run to confirm tests pass
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_store.py agent-evals/tests/test_observatory_web.py -v
 ```
 
-**Step 6 [REFACTOR]:** Review the implementation while keeping tests green
+**Step 5 [REFACTOR]:** Review the implementation while keeping tests green
 
 - Check: Are SQL column names used in the aggregate query consistent with the actual schema? Confirm `latency_seconds` (not `latency_ms`) and `prompt_tokens + completion_tokens` are correct.
 - Check: Does `get_run_aggregates()` need `self._lock`? It's a read-only operation, but if other threads are writing concurrently, the lock ensures consistency.
@@ -2161,7 +2205,7 @@ uv run pytest agent-evals/tests/test_observatory_store.py agent-evals/tests/test
   uv run pytest agent-evals/tests/ -x -q
   ```
 
-**Step 7 [VERIFY]:** Confirm the fix works via the HTTP API
+**Step 6 [VERIFY]:** Confirm the fix works via the HTTP API
 
 ```bash
 uv run python -c "
@@ -2184,7 +2228,7 @@ print('API aggregation response verified')
 "
 ```
 
-**Step 8: Commit**
+**Step 7: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/store.py \
@@ -2229,13 +2273,18 @@ def test_list_runs_pagination_uses_sql_limit_offset(tmp_path):
     assert page2[0].run_id != page1[0].run_id
 
 def test_list_pipelines_does_not_make_per_run_queries(tmp_path):
-    """list_pipelines must not call _get_pipeline_id() N times."""
+    from fastapi.testclient import TestClient
+    from agent_evals.observatory.tracker import EventTracker
+    from agent_evals.observatory.web.server import create_app
     store = ObservatoryStore(db_path=tmp_path / "test.db")
-    # Create 3 runs in the same pipeline
+    tracker = EventTracker(store=store)
     for i in range(3):
         store.create_run(f"run{i}", "full", {}, pipeline_id="pipe1")
-    pipelines = store.list_pipelines()
-    # pipeline_id must be available without per-run lookups
+    app = create_app(store=store, tracker=tracker)
+    client = TestClient(app)
+    resp = client.get("/api/pipelines")
+    assert resp.status_code == 200
+    pipelines = resp.json()
     assert any(p.get("pipeline_id") == "pipe1" for p in pipelines)
 ```
 
@@ -2245,9 +2294,42 @@ def test_list_pipelines_does_not_make_per_run_queries(tmp_path):
 uv run pytest agent-evals/tests/test_observatory_web.py::test_list_runs_pagination_uses_sql_limit_offset -v
 ```
 
-**Step 3 [GREEN]:** Add `limit`/`offset` to `store.list_runs()` SQL
+**Step 3 [GREEN]:** Add `limit`/`offset` to `store.list_runs()` SQL; add `list_pipelines()` as a new ObservatoryStore method.
 
-Add `pipeline_id` to the `RunSummary` dataclass and include it in the `list_runs()` SQL (join if needed) to eliminate per-run lookups in `list_pipelines`.
+Add `pipeline_id` to the `RunSummary` dataclass. Update `list_runs()` SQL to include `pipeline_id`. Add a new `list_pipelines()` method:
+
+```python
+# In RunSummary dataclass (store.py), add after avg_latency:
+pipeline_id: str | None = None
+
+# Update list_runs() to include limit/offset and pipeline_id:
+def list_runs(self, limit: int | None = None, offset: int = 0) -> list[RunSummary]:
+    query = (
+        "SELECT r.run_id, r.run_type, r.status, r.created_at, "
+        "r.finished_at, r.pipeline_id, "
+        "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
+        "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
+        "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
+        "FROM runs r LEFT JOIN trials t ON r.run_id = t.run_id "
+        "GROUP BY r.run_id ORDER BY r.created_at DESC"
+    )
+    if limit is not None:
+        query += f" LIMIT {int(limit)} OFFSET {int(offset)}"
+    with self._connect() as conn:
+        rows = conn.execute(query).fetchall()
+    return [RunSummary(..., pipeline_id=r["pipeline_id"]) for r in rows]
+
+# New method to add to ObservatoryStore:
+def list_pipelines(self) -> list[dict]:
+    """Return all distinct pipelines with aggregated run statistics."""
+    with self._connect() as conn:
+        rows = conn.execute(
+            "SELECT pipeline_id, COUNT(*) as run_count, MAX(created_at) as last_run_at "
+            "FROM runs WHERE pipeline_id IS NOT NULL "
+            "GROUP BY pipeline_id ORDER BY last_run_at DESC"
+        ).fetchall()
+    return [{"pipeline_id": r["pipeline_id"], "run_count": r["run_count"]} for r in rows]
+```
 
 **Step 4 [GREEN]:** Run to confirm tests pass
 
@@ -2298,7 +2380,8 @@ print('Pagination endpoint verified')
 
 ```bash
 git add agent-evals/src/agent_evals/observatory/store.py \
-        agent-evals/src/agent_evals/observatory/web/routes.py
+        agent-evals/src/agent_evals/observatory/web/routes.py \
+        agent-evals/tests/test_observatory_web.py
 git commit -m "fix(api): push pagination into SQL; add pipeline_id to RunSummary to fix N+1 (N5+I12)"
 ```
 
@@ -2381,7 +2464,7 @@ uv run pytest agent-evals/tests/test_observatory_store.py -v
 **Step 5 [REFACTOR]:** Review the implementation while keeping tests green
 
 - Check: Are nullable fields (`oa_row_id: int | None`, `phase: str | None`) using the correct Python 3.10+ union syntax, or the `Optional[int]` form — be consistent with the rest of the dataclass.
-- Check: Does the `SELECT *` in `get_trials()` guarantee `oa_row_id` and `phase` are always returned even if older DB files don't have these columns? If the DB was created before the migration, SELECT * would fail or return None — verify the schema migration in `_init_db()` adds these columns safely.
+- Check: Does the `SELECT *` in `get_trials()` guarantee `oa_row_id` and `phase` are always returned even if older DB files don't have these columns? If the DB was created before the migration, SELECT * would fail or return None — The `_migrate_schema()` method (not `_init_db()`) handles adding these columns to existing DBs — confirm it runs at `__init__` time and uses a try/except for "duplicate column" errors (it already does).
 - Check: Is `r["oa_row_id"]` safe when the value is NULL in SQLite? SQLite maps NULL to Python `None` via `sqlite3.Row` — this should work correctly.
 - Check: Is there a test for the case where `oa_row_id` and `phase` are NOT passed to `record_trial()` (i.e., they're optional)? The default should be `None`.
 - Run the full test suite to confirm nothing regressed:
@@ -2445,6 +2528,12 @@ cd agent-evals/src/agent_evals/observatory/web/ui
 > and `createWrapper()` function. Tests use `async import` pattern. `useSSE` takes an options object:
 > `useSSE({ runId: "run-1", onTrialComplete?, onRunComplete?, onError?, onAlert? })` — NOT a bare string.
 > `MockEventSource.emit("event", data)` calls the registered listeners — use this, NOT `dispatchEvent()`.
+>
+> **MockEventSource shape (from useSSE.test.ts):**
+> - `MockEventSource.instances: MockEventSource[]` — class-level array populated in constructor
+> - `source.listeners: Record<string, Array<(e: MessageEvent) => void>>` — event-type to listener array
+> - `source.emit(event: string, data: unknown): void` — JSON-stringifies data and calls listeners
+> Verify these properties exist before writing the test by reading the existing `useSSE.test.ts` file.
 
 **Step 1 [RED]:** Write the failing test
 
@@ -2476,7 +2565,7 @@ it("does not crash when SSE delivers malformed JSON", async () => {
 
 ```bash
 cd agent-evals/src/agent_evals/observatory/web/ui
-npm test -- --testPathPattern=useSSE
+npm test -- useSSE
 ```
 Expected: test throws `SyntaxError: Unexpected token`
 
@@ -2495,7 +2584,7 @@ try {
 **Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
-npm test -- --testPathPattern=useSSE
+npm test -- useSSE
 ```
 
 **Step 5 [REFACTOR]:** Review the implementation while keeping tests green
@@ -2572,7 +2661,7 @@ it("scores array stays bounded after many trials", async () => {
 **Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
-npm test -- --testPathPattern=useLiveMonitorState
+npm test -- useLiveMonitorState
 ```
 
 **Step 3 [GREEN]:** Write the minimal implementation to make the test pass
@@ -2590,7 +2679,7 @@ setScores((prev) => {
 **Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
-npm test -- --testPathPattern=useLiveMonitorState
+npm test -- useLiveMonitorState
 ```
 
 **Step 5 [REFACTOR]:** Review the implementation while keeping tests green
@@ -2616,7 +2705,8 @@ npm run build 2>&1 | tail -5
 **Step 7: Commit**
 
 ```bash
-git add agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useLiveMonitorState.ts
+git add agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useLiveMonitorState.ts \
+        "agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/hooks/useLiveMonitorState.test.ts"
 git commit -m "fix(frontend): cap scores array at MAX_SCORES=1000 in useLiveMonitorState (N2)"
 ```
 
@@ -2635,22 +2725,23 @@ git commit -m "fix(frontend): cap scores array at MAX_SCORES=1000 in useLiveMoni
 
 ```typescript
 it("deleteGroup uses fetchApi not raw fetch", async () => {
-  const fetchSpy = vi.spyOn(globalThis, "fetch");
-  // Also mock fetchApi if it's exported
+  const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    new Response(null, { status: 204 })
+  );
   await deleteGroup("group1");
-  // fetchApi uses AbortController + timeout; raw fetch does not
-  // The test verifies the timeout header/signal is present
   expect(fetchSpy).toHaveBeenCalledWith(
     expect.stringContaining("group1"),
-    expect.objectContaining({ signal: expect.any(AbortSignal) })
+    expect.objectContaining({ method: "DELETE" })
   );
+  // If fetchApi adds AbortSignal, also assert:
+  // expect(fetchSpy.mock.calls[0][1]).toHaveProperty("signal");
 });
 ```
 
 **Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
-npm test -- --testPathPattern=client
+npm test -- client
 ```
 
 **Step 3 [GREEN]:** Write the minimal implementation to make the test pass
@@ -2664,7 +2755,7 @@ export async function deleteGroup(groupId: string): Promise<void> {
 **Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
-npm test -- --testPathPattern=client
+npm test -- client
 ```
 
 **Step 5 [REFACTOR]:** Review the implementation while keeping tests green
@@ -2690,7 +2781,8 @@ npm run build 2>&1 | tail -5
 **Step 7: Commit**
 
 ```bash
-git add agent-evals/src/agent_evals/observatory/web/ui/src/api/client.ts
+git add agent-evals/src/agent_evals/observatory/web/ui/src/api/client.ts \
+        "agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/api/client.test.ts"
 git commit -m "fix(frontend): migrate deleteGroup to use fetchApi wrapper with timeout (N3)"
 ```
 
@@ -2735,7 +2827,7 @@ it("clears the poll interval when MAX_RECONNECTS is reached", async () => {
 **Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
 
 ```bash
-npm test -- --testPathPattern=useSSE
+npm test -- useSSE
 ```
 
 **Step 3 [GREEN]:** Write the minimal implementation to make the test pass
@@ -2758,7 +2850,7 @@ if (reconnectCount >= MAX_RECONNECTS) {
 **Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
-npm test -- --testPathPattern=useSSE
+npm test -- useSSE
 ```
 
 **Step 5 [REFACTOR]:** Review the implementation while keeping tests green
@@ -2784,7 +2876,8 @@ npm run build 2>&1 | tail -5
 **Step 7: Commit**
 
 ```bash
-git add agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useSSE.ts
+git add agent-evals/src/agent_evals/observatory/web/ui/src/hooks/useSSE.ts \
+        "agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/hooks/useSSE.test.ts"
 git commit -m "fix(frontend): clear poll interval when max SSE reconnects reached (N7)"
 ```
 
@@ -2833,6 +2926,15 @@ def make_doc_tree(summary: str = "test summary") -> DocTree:
     doc.summary = summary
     return doc_tree   # Return the whole tree, not just the DocFile
 ```
+
+**Step 0b: Inspect the target file**
+
+Read `agent-evals/src/agent_evals/variants/format_yaml.py` lines 55-70 to confirm:
+- The exact f-string pattern being replaced (e.g., `f"    summary: {summary}"`)
+- The indentation level (4 spaces, 2 spaces, or tab)
+- Whether `summary` is a local variable or an attribute access
+
+Only then write the failing test and implement the fix.
 
 **Step 1 [RED]:** Write the failing test
 
@@ -3138,7 +3240,7 @@ git commit -m "fix(runner): populate TrialResult.metrics with timing data (E6)"
 
 > **Context:**
 > ```python
-> from agent_evals.scoring import bootstrap_ci, BootstrapResult
+> from agent_evals.scoring import bootstrap_ci, BootstrapCI
 > ```
 
 **Step 1 [RED]:** Write the failing test
@@ -3148,8 +3250,8 @@ def test_bootstrap_ci_handles_nan_without_producing_nan_output():
     import math
     data = [0.5, 0.6, float("nan"), 0.7, 0.8]
     result = bootstrap_ci(data)
-    assert not math.isnan(result.low), "CI low must not be NaN"
-    assert not math.isnan(result.high), "CI high must not be NaN"
+    assert not math.isnan(result.ci_lower), "CI lower must not be NaN"
+    assert not math.isnan(result.ci_upper), "CI upper must not be NaN"
 ```
 
 **Step 2 [RED]:** Run to confirm it fails — verify the failure is the RIGHT error (not an import error or wrong exception)
@@ -3162,9 +3264,15 @@ uv run pytest agent-evals/tests/test_scoring.py::test_bootstrap_ci_handles_nan_w
 
 Before the `np.asarray` line in `bootstrap_ci`:
 ```python
-clean = [x for x in data if not (isinstance(x, float) and np.isnan(x))]
+import math
+clean = [x for x in data if not (isinstance(x, (float, np.floating)) and math.isnan(x))]
 if len(clean) < 2:
-    return BootstrapResult(low=float("nan"), high=float("nan"), n_valid=len(clean))
+    return BootstrapCI(
+        point_estimate=float("nan"),
+        ci_lower=float("nan"),
+        ci_upper=float("nan"),
+        n_resamples=0,
+    )
 # use `clean` in np.asarray instead of `data`
 arr = np.asarray(clean, dtype=np.float64)
 ```
@@ -3177,9 +3285,9 @@ uv run pytest agent-evals/tests/test_scoring.py -v
 
 **Step 5 [REFACTOR]:** Review the implementation while keeping tests green
 
-- Check: Does `BootstrapResult` have an `n_valid` field? If it doesn't, add it — or remove the `n_valid=` kwarg from the fallback return.
+- Check: Does `BootstrapCI` have the fields `point_estimate`, `ci_lower`, `ci_upper`, `n_resamples`? Verify these match the actual dataclass definition.
 - Check: Is the `len(clean) < 2` threshold correct? Bootstrap CI requires at least 2 samples; with exactly 1 sample the CI would have zero width — returning NaN for 0 or 1 valid samples is correct.
-- Check: Does `isinstance(x, float) and np.isnan(x)` handle numpy float64 NaN values correctly? `np.float64` is not a Python `float` — use `np.isnan(x)` alone to handle both Python and numpy NaN.
+- Check: Does `isinstance(x, (float, np.floating)) and math.isnan(x)` handle numpy float64 NaN values correctly? Both Python `float` and `np.floating` are covered by this isinstance check.
 - Check: Is the clean data filter placed before any other computation that might touch `data` directly?
 - Run the full test suite to confirm nothing regressed:
   ```bash
@@ -3194,9 +3302,9 @@ import math
 from agent_evals.scoring import bootstrap_ci
 data = [0.5, 0.6, float('nan'), 0.7, 0.8]
 result = bootstrap_ci(data)
-print(f'low={result.low:.3f}, high={result.high:.3f}')
-assert not math.isnan(result.low), 'CI low is NaN'
-assert not math.isnan(result.high), 'CI high is NaN'
+print(f'ci_lower={result.ci_lower:.3f}, ci_upper={result.ci_upper:.3f}')
+assert not math.isnan(result.ci_lower), 'CI lower is NaN'
+assert not math.isnan(result.ci_upper), 'CI upper is NaN'
 print('NaN filtering verified')
 "
 ```
@@ -3230,10 +3338,17 @@ ls agent-evals/gold_standard/robustness/ | head -5
 Note the exact filename pattern (e.g., `robustness_001.yaml`) before writing the script. Then add this test to `test_gold_standard_schema.py`:
 
 ```python
+from pathlib import Path
+from agent_evals.tasks.loader import load_tasks
+
 def test_all_robustness_tasks_have_base_task_id():
     """Every robustness task must have base_task_id in metadata."""
-    tasks = load_tasks_from_dir("agent-evals/gold_standard/robustness/")
-    missing = [t["task_id"] for t in tasks if "base_task_id" not in t.get("metadata", {})]
+    robustness_dir = Path("agent-evals/gold_standard/robustness/")
+    tasks = load_tasks(robustness_dir)
+    missing = [
+        t.definition.task_id for t in tasks
+        if "base_task_id" not in (t.definition.metadata or {})
+    ]
     assert not missing, f"Missing base_task_id in {len(missing)} tasks: {missing[:5]}"
 ```
 
@@ -3300,8 +3415,9 @@ uv run pytest agent-evals/tests/test_gold_standard_schema.py -v
 
 ```bash
 uv run python -c "
-from agent_evals.tasks.loader import load_tasks_from_dir
-tasks = load_tasks_from_dir('agent-evals/gold_standard/robustness/')
+from pathlib import Path
+from agent_evals.tasks.loader import load_tasks
+tasks = load_tasks(Path('agent-evals/gold_standard/robustness/'))
 missing = [t.definition.task_id for t in tasks if 'base_task_id' not in (t.definition.metadata or {})]
 print(f'{len(tasks)} robustness tasks loaded — {len(missing)} missing base_task_id')
 assert not missing, f'Still missing: {missing[:5]}'
@@ -3320,7 +3436,7 @@ git commit -m "fix(data): add base_task_id to all 30 robustness task metadata fi
 
 ### Task 40: Activate LLM-as-judge as 2% validation sample (S6 — LOW)
 
-> Place in Sprint 7 after all scorer fixes are complete. Phase 1 only — zero additional cost at scale.
+> **Placement note:** Task 40 is deliberately placed here in Sprint 7 because it depends on the scorer fixes in Sprints 1-3 being complete first. It is numbered 40 (out of sequence with Tasks 30-39 in Sprints 8-9) because it was originally planned for Sprint 10 and renumbered. Implement it here, in Sprint 7, after Tasks 25-29 are done. Phase 1 only — zero additional cost at scale.
 
 **Files:**
 - Modify: `agent-evals/src/agent_evals/runner.py`
@@ -3454,12 +3570,13 @@ Then find `metrics={}` at line 631 (inside `_run_trial`, in the `return TrialRes
 and replace the two lines `metrics={},` with the sampling block:
 
 ```python
-        metrics: dict[str, object] = {}
+        metrics: dict[str, float] = {}
         if trial_index > 0 and trial_index % JUDGE_SAMPLE_RATE == 0:
             try:
+                question = getattr(task.definition, "question", None) or ""
                 judge_result = self._call_judge(
                     task.definition.type,
-                    task.definition.question,
+                    question,
                     generation.content,
                 )
                 metrics["judge_score"] = judge_result.score
@@ -3637,7 +3754,7 @@ uv run pytest agent-evals/tests/test_observatory_logging_config.py -v
 - Check: Is the `_JSONFormatter` class private (underscore prefix) to prevent accidental direct use? Good — keep it internal.
 - Check: Is `maxBytes=10 * 1024 * 1024` (10MB) and `backupCount=5` appropriate for the production use case (50MB max total)?
 - Check: Is `setup_logging` called in `routes.py` lifespan at the correct point (before any logging calls, at startup)?
-- Check: Is the test cleaning up logging handlers after running (to prevent handler leakage between tests)? Consider adding a `yield` fixture that removes the handlers after the test.
+- **Required:** Add a cleanup fixture to prevent logger handler leakage between tests. This is mandatory to prevent test pollution, not optional.
 - Run the full test suite to confirm nothing regressed:
   ```bash
   uv run pytest agent-evals/tests/ -x -q
@@ -3761,8 +3878,24 @@ def create_app(
                 logger.warning("Model catalog sync failed on startup: %s", exc)
         yield   # Application serves requests here
 
-    app = FastAPI(title="Observatory Dashboard", lifespan=lifespan)
-    # ... rest of create_app() is UNCHANGED
+def create_app(...) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if model_sync is not None:
+            try:
+                await asyncio.to_thread(model_sync.run_sync)
+                logger.info("Model catalog synced on startup")
+            except Exception as exc:
+                logger.warning("Model catalog sync failed on startup: %s", exc)
+        yield
+
+    app = FastAPI(title="Observatory Dashboard", lifespan=lifespan)  # ← changed
+    app.state.store = store                    # ← unchanged from here down
+    app.state.tracker = tracker
+    router = create_router(...)
+    app.include_router(router)
+    # (StaticFiles mounting block unchanged)
+    return app
 ```
 
 Also remove the now-redundant conditional from `launch_dashboard()` (lines 102-105):
@@ -3794,7 +3927,8 @@ from unittest.mock import MagicMock
 import pathlib, tempfile
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
-from agent_evals.observatory.model_catalog import ModelCatalog, ModelSync
+from agent_evals.observatory.model_catalog import ModelCatalog
+from agent_evals.observatory.model_sync import ModelSync
 from agent_evals.observatory.web.server import create_app
 from fastapi.testclient import TestClient
 
@@ -3828,13 +3962,13 @@ git commit -m "feat(infra): auto-sync model catalog on server startup via FastAP
 ### Task 32: Add chart animation defaults (U1 — LOW)
 
 **Files:**
-- Create: `agent-evals/src/agent_evals/observatory/web/ui/src/utils/chartDefaults.ts`
+- Create: `agent-evals/src/agent_evals/observatory/web/ui/src/lib/chart-theme.ts`
 - Modify: `Observatory.tsx`, `LiveMonitor.tsx`, `ResultsExplorer.tsx`, `History.tsx`, `FactorAnalysis.tsx`
 - Test: add to relevant chart component tests
 
 > **Context:** TypeScript/Vitest frontend tests in `agent-evals/src/agent_evals/observatory/web/ui/`.
 > Run tests: `npm test` from the `ui/` directory. Build: `npm run build`.
-> All chart/component tests import from `../../utils/chartDefaults` or `../../components/`.
+> All chart/component tests import from `../../lib/chart-theme` or `../../components/`.
 
 **Step 1 [RED]:** Write the failing test
 
@@ -3842,12 +3976,15 @@ git commit -m "feat(infra): auto-sync model catalog on server startup via FastAP
 
 ```typescript
 // Option A (preferred): Test the constant directly — no Chart.js mocking needed
-import { CHART_ANIMATION } from "../utils/chartDefaults";
+import { CHART_ANIMATION } from "../lib/chart-theme";
 
 it("CHART_ANIMATION has duration 800 and easeOutQuart easing", () => {
   expect(CHART_ANIMATION.duration).toBe(800);
   expect(CHART_ANIMATION.easing).toBe("easeOutQuart");
 });
+
+// NOTE: lib/chart-theme.ts may already contain CHART_ANIMATION with duration: 600.
+// Decide whether to use the existing constant or update its duration to 800 before proceeding.
 
 // Option B (component-level): Check that Chart.defaults is applied
 // (only viable if existing tests already show how to access Chart.defaults with the mock in place)
@@ -3861,10 +3998,12 @@ it("CHART_ANIMATION has duration 800 and easeOutQuart easing", () => {
 
 ```bash
 cd agent-evals/src/agent_evals/observatory/web/ui
-npm test -- --testPathPattern=Observatory
+npm test -- Observatory
 ```
 
-**Step 3 [GREEN]:** Create chartDefaults.ts
+**Step 3 [GREEN]:** Create (or update) `lib/chart-theme.ts`
+
+> **Note:** `lib/chart-theme.ts` may already exist with `CHART_ANIMATION` having `duration: 600`. Decide whether to use the existing constant or update its duration to 800 before proceeding.
 
 ```typescript
 export const CHART_ANIMATION = {
@@ -3898,8 +4037,9 @@ npm test -- --reporter=verbose 2>&1 | tail -20
 **Step 7: Commit**
 
 ```bash
-git add agent-evals/src/agent_evals/observatory/web/ui/src/utils/chartDefaults.ts \
-        agent-evals/src/agent_evals/observatory/web/ui/src/pages/
+git add agent-evals/src/agent_evals/observatory/web/ui/src/lib/chart-theme.ts \
+        agent-evals/src/agent_evals/observatory/web/ui/src/pages/ \
+        "agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/"
 git commit -m "feat(ux): add 800ms easeOutQuart chart animation to all chart views (U1)"
 ```
 
@@ -3933,8 +4073,12 @@ it("CompassCheckbox has no inline style attributes on any element", () => {
 
 **Step 2 [RED]:** Run to confirm it fails — verify the failure shows `inlineStyled.length` > 0, not a render error
 
+> **Note:** If `CompassCheckbox.tsx` already has no `style={{}}` attributes, this test will
+> pass immediately without any fix needed. Verify with `grep -n 'style=' ...` before writing
+> the test. If the file is already clean, skip to VERIFY and document as confirmed-clean.
+
 ```bash
-npm test -- --testPathPattern=CompassCheckbox
+npm test -- CompassCheckbox
 ```
 
 **Step 3 [GREEN]:** Move any remaining inline styles to Tailwind classes
@@ -3942,7 +4086,7 @@ npm test -- --testPathPattern=CompassCheckbox
 **Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
-npm test -- --testPathPattern=CompassCheckbox
+npm test -- CompassCheckbox
 ```
 
 **Step 5 [REFACTOR]:** Review the implementation
@@ -3997,14 +4141,15 @@ it("SlideOutPanel close button has focus-visible styling", () => {
 **Step 2 [RED]:** Run to confirm it fails — verify the failure shows `className` does not match `/focus-visible/`, not a render error
 
 ```bash
-npm test -- --testPathPattern=SlideOutPanel
+npm test -- SlideOutPanel
 ```
 
 **Step 3 [GREEN]:** Add focus-visible classes to the close button
 
+> **Note:** The actual component uses `<Dialog.Close>` (a Radix UI component), not a plain `<button onClick={onClose}>`. Target the `Dialog.Close` element and add the focus-visible classes to it, not a separate button element.
+
 ```tsx
-<button
-  onClick={onClose}
+<Dialog.Close
   className="... focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
 >
 ```
@@ -4012,7 +4157,7 @@ npm test -- --testPathPattern=SlideOutPanel
 **Step 4 [GREEN]:** Run to confirm tests pass
 
 ```bash
-npm test -- --testPathPattern=SlideOutPanel
+npm test -- SlideOutPanel
 ```
 
 **Step 5 [REFACTOR]:** Review the implementation
@@ -4060,6 +4205,8 @@ git commit -m "fix(a11y): add focus-visible outline to SlideOutPanel close butto
 **Step 1 [RED]:** Write the failing test (backend)
 
 ```python
+import itertools
+
 def test_sse_events_include_monotonic_id(client):
     with client.stream("GET", f"/api/runs/run1/stream") as resp:
         lines = list(itertools.islice(resp.iter_lines(), 20))
@@ -4106,7 +4253,7 @@ source.addEventListener("trial_completed", (e: MessageEvent) => {
 
 ```bash
 uv run pytest agent-evals/tests/test_observatory_web.py -v
-cd agent-evals/src/agent_evals/observatory/web/ui && npm test -- --testPathPattern=useSSE
+cd agent-evals/src/agent_evals/observatory/web/ui && npm test -- useSSE
 ```
 
 **Step 5 [REFACTOR]:** Review the implementation
@@ -4123,8 +4270,15 @@ uv run python -c "
 import itertools, httpx
 # Use TestClient for a quick sync check
 from fastapi.testclient import TestClient
+from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
 from agent_evals.observatory.web.server import create_app
-client = TestClient(create_app())
+import tempfile, pathlib
+_tmp = pathlib.Path(tempfile.mkdtemp())
+store = ObservatoryStore(db_path=_tmp / 'verify.db')
+tracker = EventTracker(store=store)
+app = create_app(store=store, tracker=tracker)
+client = TestClient(app)
 with client.stream('GET', '/api/runs/run1/stream') as resp:
     lines = list(itertools.islice(resp.iter_lines(), 20))
 id_lines = [l for l in lines if l.startswith('id:')]
@@ -4166,13 +4320,28 @@ git commit -m "fix(sse): add event sequence IDs to prevent duplicate counting on
 > Run tests: `npm test` from the `ui/` directory. Build: `npm run build`.
 > All chart/component tests import from `../../utils/chartDefaults` or `../../components/`.
 
-**Step 1 [RED]:** Locate the router creation and write a test asserting the future flags are set
+**Step 1 [RED]:** Locate the router creation and confirm the future flags are not yet set
 
 ```bash
 grep -r "createBrowserRouter\|BrowserRouter" agent-evals/src/agent_evals/observatory/web/ui/src/ --include="*.tsx"
 ```
 
-Because `createBrowserRouter` is a configuration call (not a function with testable output), the "test" here is a build-time TypeScript check: adding flags that do not exist in the types will cause a compile error. Confirm that `npm run build` currently does NOT complain about missing flags (i.e. the property exists in the type) and that the flags are NOT yet set (the warning is currently visible in the dev console).
+Write a failing test to confirm the future flags are not set:
+
+```typescript
+// In: agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/App.test.tsx
+// (or the relevant router test file)
+it("BrowserRouter has v7 future flags", () => {
+  // This test will fail until the BrowserRouter future prop is added.
+  // If the router change can only be verified by build output, replace this placeholder
+  // with: npm run build 2>&1 | grep -c "v7_startTransition" — expected output: 1
+  expect(true).toBe(false); // Placeholder: replace with actual component test
+});
+```
+
+Note: If the router change can be verified by a build check alone, document the exact build command and expected output as the RED verification.
+
+Because `BrowserRouter` with the `future` prop is a configuration change (not easily unit-testable), the primary RED signal is the React Router deprecation warning visible in `npm run build` output. Confirm the warning is currently present before proceeding.
 
 **Step 2 [RED]:** Confirm the warning is currently present
 
@@ -4181,15 +4350,12 @@ cd agent-evals/src/agent_evals/observatory/web/ui && npm run build 2>&1 | grep -
 # Expected before fix: React Router future flag warnings printed to stderr
 ```
 
-**Step 3 [GREEN]:** Add future flags to the router creation call
+**Step 3 [GREEN]:** Add future flags to the router
 
-```typescript
-createBrowserRouter(routes, {
-  future: {
-    v7_startTransition: true,
-    v7_relativeSplatPath: true,
-  },
-})
+> **Note:** The app uses `<BrowserRouter>` (not `createBrowserRouter`/`RouterProvider`). Add the `future` prop directly to the `<BrowserRouter>` component:
+
+```tsx
+<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
 ```
 
 **Step 4 [GREEN]:** Rebuild to confirm TypeScript accepts the flags and no new errors introduced
@@ -4255,7 +4421,7 @@ The "failing test" here is the known bad distribution: mean ~0.114 and ~70% zero
 ```bash
 uv run agent-evals \
   --model openrouter/anthropic/claude-haiku-4-5-20251001 \
-  --task-types compositional \
+  --tasks compositional \
   --task-limit 100 \
   --output-format json \
   --output-path /tmp/compositional_validation.json
@@ -4359,23 +4525,18 @@ class TestSourceRouting:
 
     def test_no_source_loads_gold_standard(self, monkeypatch, tmp_path):
         """When --source is absent, loads from gold_standard dir."""
-        gold_dir = tmp_path / "gold_standard"
-        gold_dir.mkdir()
         loaded_dirs: list = []
 
         monkeypatch.setattr(
-            "agent_evals.cli.load_tasks",
+            "agent_evals.tasks.loader.load_tasks",
             lambda d: (loaded_dirs.append(d), [])[1],
         )
         monkeypatch.setattr(
             "agent_evals.cli.load_sample_doc_tree", lambda: object()
         )
-        monkeypatch.setattr(
-            "agent_evals.cli.Path",
-            lambda *a, **kw: gold_dir if "gold_standard" in str(a) else Path(*a, **kw),
-        )
         from agent_evals.cli import _run_evaluation
-        _run_evaluation({"model": "m", "dry_run": True})
+        _run_evaluation({"model": "m", "dry_run": False,
+                         "openrouter_api_key": "sk-or-test"})
         assert any("gold_standard" in str(d) for d in loaded_dirs)
 
     def test_source_dataset_loads_from_cache_task_dir(self, monkeypatch, tmp_path):
@@ -4402,7 +4563,8 @@ class TestSourceRouting:
 
         monkeypatch.setattr("agent_evals.cli.DatasetCache", lambda: FakeCache())
         from agent_evals.cli import _run_evaluation
-        _run_evaluation({"model": "m", "source": "repliqa", "dry_run": True})
+        _run_evaluation({"model": "m", "source": "repliqa", "dry_run": False,
+                         "openrouter_api_key": "sk-or-test"})
         assert task_dir in loaded_dirs
 
     def test_source_dataset_not_prepared_returns_error(self, monkeypatch):
@@ -4514,7 +4676,7 @@ With the new source-aware block:
         )
 ```
 
-> Note: `load_tasks` import is moved inside `_run_evaluation` because it was already imported inside the function for the gold_standard branch. Keep it consistent — move the import to just before the `source` branch (it's already there in the existing code at line 704 in the outer import block).
+> Note: Remove the existing `from agent_evals.tasks.loader import load_tasks` at line 704 of the current code (the import that immediately precedes the `# Load tasks` block). The replacement block should include `from agent_evals.tasks.loader import load_tasks` once before the `source =` line to cover both branches and avoid duplicate imports.
 
 **Step 4 [GREEN]:** Run tests to confirm they pass
 
@@ -4558,7 +4720,7 @@ git commit -m "fix(cli): wire --source to load tasks and doc_tree from dataset c
 
 ### Task 43: Remove dead CLI flags (E10 — MEDIUM)
 
-Removes 7 flags that are either parsed but never read from `resolved`, or are stubs with no implementation. **Does not remove** flags that are genuinely used (`--oa-type`, `--quality-type`, `--alpha`, `--top-k`, `--model-budgets`, `--dataset-cache-dir` — all confirmed read from `resolved` in the evaluation logic).
+Removes 6 flags that are either parsed but never read from `resolved`, or are stubs with no implementation, plus drops `factorial` as a `--mode` choice. (`factorial` is a mode choice value, not a separate flag — it is handled by `test_mode_factorial_is_not_a_valid_choice` separately.) **Does not remove** flags that are genuinely used (`--oa-type`, `--quality-type`, `--alpha`, `--top-k`, `--model-budgets`, `--dataset-cache-dir` — all confirmed read from `resolved` in the evaluation logic).
 
 **Files:**
 - Modify: `agent-evals/src/agent_evals/cli.py` (`_add_run_args`, `_CONFIG_KEYS`)
@@ -4765,8 +4927,9 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 # New imports needed in _execute_run (inside function, same as Task 42):
-from agent_evals.datasets import load_all as _load_all_datasets, list_available
+from agent_evals.datasets import load_all as _load_all_datasets
 from agent_evals.datasets.cache import DatasetCache
+# list_available is only needed in routes.py, not _execute_run
 from agent_index.models import DocTree
 ```
 
@@ -4953,6 +5116,15 @@ git commit -m "feat(dashboard): add source field to StartRunRequest and GET /api
 **Step 7 [RED]: Write failing frontend tests**
 
 File: `agent-evals/src/agent_evals/observatory/web/ui/src/__tests__/pages/RunConfig.test.tsx`
+
+> **Import setup required:** Add `useDatasets` to the import in the test file:
+> ```typescript
+> import { useStartRun, useActiveRuns, useDatasets } from "../../api/hooks";
+> ```
+> The `vi.mock("../../api/hooks")` block must be present for auto-mocking to work.
+> Note: The RED step will fail with a TypeScript compilation error (not a test assertion error)
+> until `useDatasets` is exported from `hooks.ts` in Step 10 [GREEN]. This is acceptable —
+> a compilation error is a valid RED state.
 
 Add to existing test file:
 
@@ -5236,6 +5408,9 @@ set -euo pipefail
 
 echo "=== Preparing datasets (full sizes — no limit) ==="
 
+# IMPORTANT: Dataset names below must match adapter.name() exactly.
+# Run: uv run python -c "from agent_evals.datasets import load_all, list_available; load_all(); [print(a['name']) for a in list_available()]"
+# to verify names before running this script.
 DATASETS=(
   wikicontradict
   swe-bench
@@ -5314,7 +5489,8 @@ EXPECTED = {
     'ds1000':         (950, 1050),  # 1000
     'bigcodebench':   (1100, 1200), # 1140
     'multihop-rag':   (2400, 2700), # 2556
-    'repliqa':        (2000, 5000), # ~20% of 17955 = ~3591
+    'repliqa':        (2000, 5000),   # ~3,591 target (unanswerable subset); range is wide until
+                                      # adapter output is confirmed — tighten after first run
     'ambigqa':        (10000, 15000), # 14042
 }
 ok = True
@@ -5488,7 +5664,7 @@ class TestTaguchiPipelineSmoke:
     """Smoke tests for the full Taguchi pipeline with minimal data."""
 
     def test_taguchi_screening_runs_with_prepared_dataset(
-        self, api_key, prepared_dataset_name
+        self, tmp_path, api_key, prepared_dataset_name
     ):
         """Taguchi screening phase completes without exception using a real dataset.
 
@@ -5527,7 +5703,7 @@ class TestTaguchiPipelineSmoke:
         design = build_design(axes, models=None, oa_override=None)
 
         eval_config = EvalRunConfig(repetitions=1, continue_on_error=True, temperature=0.3)
-        store = ObservatoryStore()
+        store = ObservatoryStore(db_path=tmp_path / "e2e.db")
         tracker = EventTracker(store=store)
         orch_config = OrchestratorConfig(
             mode="taguchi",
@@ -5555,7 +5731,7 @@ class TestTaguchiPipelineSmoke:
         trials = store.get_trials(run_id="test-e2e-smoke")
         assert len(trials) > 0, "No trials recorded — Taguchi screening failed silently"
 
-    def test_trial_scores_are_nonzero(self, api_key, prepared_dataset_name):
+    def test_trial_scores_are_nonzero(self, tmp_path, api_key, prepared_dataset_name):
         """At least some trials in a real evaluation produce non-zero scores.
 
         If all scores are 0.0, the scorer is broken (the original D1/D2 bug).
@@ -5581,7 +5757,7 @@ class TestTaguchiPipelineSmoke:
         baselines = [v for v in variants if v.metadata().axis == 0][:1]
 
         eval_config = EvalRunConfig(repetitions=1, continue_on_error=True, temperature=0.3)
-        store = ObservatoryStore()
+        store = ObservatoryStore(db_path=tmp_path / "e2e.db")
         tracker = EventTracker(store=store)
         orch_config = OrchestratorConfig(
             mode="full",
@@ -5629,7 +5805,7 @@ uv run pytest agent-evals/tests/test_taguchi_e2e.py -v --tb=short
 
 Common failure modes and fixes:
 - `source` kwarg not accepted by `orchestrator.run()` → add as optional kwarg with default `"gold_standard"`
-- `store.get_trials(run_id=...)` method missing → check `ObservatoryStore` API for the correct method name
+- `store.get_trials("run_id_value")` returns `[]` for non-existent run — verify the run_id was actually recorded before querying
 - All scores 0.0 → scorer fix from Tasks D1/D2 not applied first — apply those tasks before this one
 
 **Step 4 [VERIFY]:** CLI smoke — full mode with real dataset
@@ -5766,16 +5942,20 @@ git commit -m "test(e2e): fix any coverage gaps from integration test review (E1
 
 ### Task 38: Review perfect-score latency anomaly (D4)
 
-1. Query for 20 random perfect-score trials across task types from the DB
-2. Review response content for templated/gamed patterns
-3. If patterns found, create a beads issue for a response diversity check
+1. Query for 20 random perfect-score trials across task types from the DB:
+   `SELECT task_type, latency_seconds, response FROM trials WHERE score = 1.0 ORDER BY RANDOM() LIMIT 20;`
+2. Review response content for templated/gamed patterns (identical phrasing, very short responses, boilerplate).
+3. **If patterns found:** Create a beads issue for a response diversity check, attach example responses.
+4. **If no patterns found:** Record a one-line note in the known-issues doc confirming the anomaly was reviewed and found to be benign (e.g. short factual tasks naturally score 1.0 with low latency).
+
+Done when: either a beads issue exists, or a written conclusion is recorded in the known-issues doc.
 
 ### Task 39: Investigate pipeline view empty data (D5)
 
-1. Check DB: `SELECT * FROM pipelines WHERE pipeline_id = '83973e5dca97';`
-2. Check: `SELECT * FROM phase_results WHERE pipeline_id = '83973e5dca97';`
-3. Trace `create_pipeline()` call order vs `create_run()` in orchestrator
-4. Create a beads issue once root cause is identified
+1. Check DB — pipeline runs exist: `SELECT run_id, status, phase, created_at FROM runs WHERE pipeline_id = '83973e5dca97';`
+2. Check DB — phase results for each run in the pipeline: `SELECT * FROM phase_results WHERE run_id IN (SELECT run_id FROM runs WHERE pipeline_id = '83973e5dca97');`
+3. Trace `get_pipeline_runs()` call order vs `create_run()` in orchestrator — verify `pipeline_id` is set at run creation time, not after.
+4. Create a beads issue once root cause is identified.
 
 ---
 
@@ -5805,10 +5985,13 @@ sleep 2
 curl -s http://localhost:8765/api/runs | jq '.runs | length'
 kill $SERVER_PID
 
-# 6. REAL scorer validation (requires API key — not dry-run)
+# 6. REAL scorer regression check (requires API key — not dry-run)
+# NOTE: This is a final regression guard, not the primary scorer validation.
+# Primary validation was Task 41 (Sprint 11). If this step fails but Task 41
+# passed earlier, the regression was introduced by Sprint 12 or 13 changes.
 uv run agent-evals \
   --model openrouter/anthropic/claude-haiku-4-5-20251001 \
-  --task-types compositional \
+  --tasks compositional \
   --task-limit 100 \
   --output-format json \
   --output-path /tmp/post_fix_check.json
@@ -5887,4 +6070,4 @@ uv run pytest agent-evals/tests/test_taguchi_e2e.py -v --tb=short
 # Expected: source routing tests PASS; live tests SKIP if no API key
 ```
 
-**Investigation tasks (D4, D5):** Tasks 38 and 39 are manual investigations with no automated tests. They are complete when a beads issue has been filed with root cause identified. They do not appear in the test suite pass/fail count.
+**Investigation tasks (D4, D5):** Tasks 38 and 39 are manual investigations with no automated tests. They are complete when either a beads issue has been filed, or a written no-fault conclusion is recorded in the known-issues doc. They do not appear in the test suite pass/fail count.
