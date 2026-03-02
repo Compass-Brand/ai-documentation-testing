@@ -42,7 +42,7 @@ export function SlideOutPanel({
             <Dialog.Title className="text-h4 text-brand-charcoal">
               {title}
             </Dialog.Title>
-            <Dialog.Close className="rounded-card p-sp-2 text-brand-slate hover:bg-brand-cream hover:text-brand-charcoal transition-colors duration-micro focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+            <Dialog.Close className="rounded-card p-sp-2 text-brand-slate hover:bg-brand-cream hover:text-brand-charcoal transition-colors duration-micro focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-goldenrod focus-visible:ring-offset-2">
               <X className="h-5 w-5" />
             </Dialog.Close>
           </div>

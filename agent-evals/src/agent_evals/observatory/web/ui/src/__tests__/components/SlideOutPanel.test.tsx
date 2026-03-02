@@ -81,6 +81,6 @@ describe("SlideOutPanel", () => {
       </SlideOutPanel>,
     );
     const closeBtn = screen.getByRole("button");
-    expect(closeBtn.className).toMatch(/focus-visible/);
+    expect(closeBtn.className).toContain("focus-visible:ring-brand-goldenrod");
   });
 });
