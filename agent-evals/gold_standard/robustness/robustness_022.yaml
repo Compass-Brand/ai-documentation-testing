@@ -1,13 +1,18 @@
 task_id: robustness_022
 type: robustness
-question: "The project uses a 4-layer architecture (API, Service, Data, and Messaging). Can you explain how the Messaging layer interacts with the Service layer?"
+question: The project uses a 4-layer architecture (API, Service, Data, and Messaging).
+  Can you explain how the Messaging layer interacts with the Service layer?
 domain: project_repo
 difficulty: hard
 tags:
-  - architecture
-  - misleading
+- architecture
+- misleading
 metadata:
-  perturbation_type: "misleading_premise"
-  original_question: "What layers does the project architecture have?"
-  expected_answer: "The premise is incorrect. The project uses a 3-layer architecture (API, Service, and Data layers) with dependency injection. There is no Messaging layer described in the architecture docs."
-  perturbation_details: "False premise claiming a 4-layer architecture with a non-existent Messaging layer"
+  perturbation_type: misleading_premise
+  original_question: What layers does the project architecture have?
+  expected_answer: The premise is incorrect. The project uses a 3-layer architecture
+    (API, Service, and Data layers) with dependency injection. There is no Messaging
+    layer described in the architecture docs.
+  perturbation_details: False premise claiming a 4-layer architecture with a non-existent
+    Messaging layer
+  base_task_id: ''

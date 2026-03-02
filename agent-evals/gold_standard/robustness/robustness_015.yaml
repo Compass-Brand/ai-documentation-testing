@@ -1,13 +1,16 @@
 task_id: robustness_015
 type: robustness
-question: "It's not the case that CORS is unsupported by the middleware chain, right?"
+question: It's not the case that CORS is unsupported by the middleware chain, right?
 domain: framework_api
 difficulty: hard
 tags:
-  - middleware
-  - cors
+- middleware
+- cors
 metadata:
-  perturbation_type: "negation_flip"
-  original_question: "Does the middleware chain support CORS?"
-  expected_answer: "Correct -- CORS IS supported by the middleware chain. The middleware module includes CORS support along with rate limiting (100 req/min)."
-  perturbation_details: "Double negation ('not the case that ... unsupported') to confuse the model while the answer is that CORS is supported"
+  perturbation_type: negation_flip
+  original_question: Does the middleware chain support CORS?
+  expected_answer: Correct -- CORS IS supported by the middleware chain. The middleware
+    module includes CORS support along with rate limiting (100 req/min).
+  perturbation_details: Double negation ('not the case that ... unsupported') to confuse
+    the model while the answer is that CORS is supported
+  base_task_id: ''

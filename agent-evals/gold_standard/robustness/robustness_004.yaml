@@ -1,13 +1,14 @@
 task_id: robustness_004
 type: robustness
-question: "Where is the endpont for user logn located?"
+question: Where is the endpont for user logn located?
 domain: framework_api
 difficulty: easy
 tags:
-  - auth
-  - endpoints
+- auth
+- endpoints
 metadata:
-  perturbation_type: "typo"
-  original_question: "Where is the endpoint for user login located?"
-  expected_answer: "The login endpoint is located at /api/auth/login."
-  perturbation_details: "Misspelled 'endpoint' as 'endpont' and 'login' as 'logn'"
+  perturbation_type: typo
+  original_question: Where is the endpoint for user login located?
+  expected_answer: The login endpoint is located at /api/auth/login.
+  perturbation_details: Misspelled 'endpoint' as 'endpont' and 'login' as 'logn'
+  base_task_id: ''

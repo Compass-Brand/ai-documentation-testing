@@ -281,18 +281,15 @@ def bootstrap_ci(
         )
         raise ValueError(msg)
 
-    import math
-
-    clean = [x for x in data if not (isinstance(x, (float, np.floating)) and math.isnan(x))]
-    if len(clean) < 2:
+    arr = np.asarray(data, dtype=np.float64)
+    arr = arr[~np.isnan(arr)]
+    if len(arr) < 2:
         return BootstrapCI(
             point_estimate=float("nan"),
             ci_lower=float("nan"),
             ci_upper=float("nan"),
             n_resamples=0,
         )
-
-    arr = np.asarray(clean, dtype=np.float64)
     point_est = float(statistic(arr))
 
     # Zero-variance data: all values are identical, so the CI is degenerate.

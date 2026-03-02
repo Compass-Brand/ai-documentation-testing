@@ -1,14 +1,19 @@
 task_id: robustness_023
 type: robustness
-question: "Given that DATABASE_URL is optional in the configuration, what happens when it's not provided?"
+question: Given that DATABASE_URL is optional in the configuration, what happens when
+  it's not provided?
 domain: framework_api
 difficulty: hard
 tags:
-  - config
-  - database
-  - misleading
+- config
+- database
+- misleading
 metadata:
-  perturbation_type: "misleading_premise"
-  original_question: "Is DATABASE_URL required or optional in the configuration?"
-  expected_answer: "The premise is incorrect. DATABASE_URL is required, not optional. The application configuration mandates DATABASE_URL. REDIS_URL is the optional variable."
-  perturbation_details: "False premise that DATABASE_URL is optional when it is actually required"
+  perturbation_type: misleading_premise
+  original_question: Is DATABASE_URL required or optional in the configuration?
+  expected_answer: The premise is incorrect. DATABASE_URL is required, not optional.
+    The application configuration mandates DATABASE_URL. REDIS_URL is the optional
+    variable.
+  perturbation_details: False premise that DATABASE_URL is optional when it is actually
+    required
+  base_task_id: ''

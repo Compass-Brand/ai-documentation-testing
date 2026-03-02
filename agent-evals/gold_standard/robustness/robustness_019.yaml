@@ -1,13 +1,20 @@
 task_id: robustness_019
 type: robustness
-question: "I just set up a new M2 MacBook Pro with 32GB RAM and installed Docker Desktop 4.28. I also configured my terminal with Oh My Zsh and added some custom aliases. Unrelated, but what container orchestration options are described in the deployment docs?"
+question: I just set up a new M2 MacBook Pro with 32GB RAM and installed Docker Desktop
+  4.28. I also configured my terminal with Oh My Zsh and added some custom aliases.
+  Unrelated, but what container orchestration options are described in the deployment
+  docs?
 domain: framework_api
 difficulty: easy
 tags:
-  - deployment
-  - containers
+- deployment
+- containers
 metadata:
-  perturbation_type: "irrelevant_context"
-  original_question: "What container orchestration options are described in the deployment docs?"
-  expected_answer: "The deployment documentation describes Docker and Kubernetes as container/orchestration options, along with health checks."
-  perturbation_details: "Added irrelevant context about new MacBook setup, Docker Desktop version, and terminal configuration"
+  perturbation_type: irrelevant_context
+  original_question: What container orchestration options are described in the deployment
+    docs?
+  expected_answer: The deployment documentation describes Docker and Kubernetes as
+    container/orchestration options, along with health checks.
+  perturbation_details: Added irrelevant context about new MacBook setup, Docker Desktop
+    version, and terminal configuration
+  base_task_id: ''
