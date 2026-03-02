@@ -418,7 +418,7 @@ Expected: `FAILED — 0.0 != 0.7`
 
 > **IMPORTANT — delete the pre-existing `test_score_is_binary` test first.** That test asserts scores are always 0.0 or 1.0, which directly contradicts the tiered rubric. It is at line ~198 of `test_task_negative.py`. Delete it before implementing the rubric, or your GREEN step will be blocked by a conflicting passing test turning into a failing test.
 
-Replace the binary scoring logic with categorized tiers. `_FIRM_REFUSAL` must contain ALL 31 phrases from the original `_ABSTENTION_PHRASES` **minus the two removed by Task 4**. The complete list is shown below — copy it verbatim:
+Replace the binary scoring logic with categorized tiers. `_FIRM_REFUSAL` must contain ALL 35 phrases from the original `_ABSTENTION_PHRASES` **minus the two removed by Task 4** (37 original − 2 = 35). The complete list is shown below — copy it verbatim:
 
 ```python
 # Replace _ABSTENTION_PHRASES with three categorized frozensets:
@@ -1514,7 +1514,24 @@ git commit -m "fix(api): push pagination into SQL; add pipeline_id to RunSummary
 def test_trial_record_includes_oa_row_id_and_phase(tmp_path):
     store = ObservatoryStore(db_path=tmp_path / "test.db")
     store.create_run("r", "taguchi", {}, phase="screening")
-    store.save_trial(make_trial(run_id="r", oa_row_id=3, phase="screening"))
+    # Use record_trial() (not save_trial — that doesn't exist); all args keyword-only
+    store.record_trial(
+        run_id="r",
+        task_id="negative_001",
+        task_type="negative",
+        variant_name="baseline",
+        repetition=1,
+        score=0.5,
+        prompt_tokens=10,
+        completion_tokens=5,
+        total_tokens=15,
+        cost=0.001,
+        latency_seconds=0.1,
+        model="openrouter/anthropic/claude-haiku-4-5-20251001",
+        source="gold_standard",
+        oa_row_id=3,
+        phase="screening",
+    )
     trials = store.get_trials("r")
     assert trials[0].oa_row_id == 3
     assert trials[0].phase == "screening"
@@ -1528,13 +1545,18 @@ uv run pytest agent-evals/tests/test_observatory_store.py::test_trial_record_inc
 
 **Step 3: Implement**
 
-Add to `TrialRecord`:
+Add to `TrialRecord` dataclass (after the last existing field):
 ```python
 oa_row_id: int | None = None
 phase: str | None = None
 ```
 
-Update `get_trials()` SELECT and constructor to include these columns.
+Then in `get_trials()`, the constructor call maps row fields by name. Locate the `TrialRecord(...)` constructor call inside `get_trials()` and add two keyword arguments:
+```python
+oa_row_id=r["oa_row_id"],
+phase=r["phase"],
+```
+The database schema already has these columns (`oa_row_id INTEGER` and `phase TEXT`) — the SELECT uses `SELECT *` so the values are already in `r`, they're just not mapped. No SQL change needed.
 
 **Step 4: Run tests**
 
@@ -1573,19 +1595,24 @@ cd agent-evals/src/agent_evals/observatory/web/ui
 **Step 1: Write failing test**
 
 ```typescript
-// Mock EventSource at module level to control events
-import MockEventSource from 'mock-eventsource'; // or whatever the project uses
+// The project defines MockEventSource inline in useSSE.test.ts (not an npm package).
+// useSSE takes an OPTIONS OBJECT — not a bare string. Its mock uses emit() not dispatchEvent().
+// To send malformed JSON, bypass emit() (which JSON.stringifies) and call the listener directly.
 
-it("does not crash when SSE delivers malformed JSON", () => {
-  // Set up a mock EventSource that fires a bad-JSON message event
-  vi.stubGlobal("EventSource", MockEventSource);
-  const { result } = renderHook(() => useSSE("run1"));
-  // Fire a message event with invalid JSON
+it("does not crash when SSE delivers malformed JSON", async () => {
+  const { useSSE } = await import("../../hooks/useSSE");
+  const wrapper = createWrapper();
+  // useSSE takes { runId } object (not a bare string)
+  renderHook(() => useSSE({ runId: "run1" }), { wrapper });
+
+  const source = MockEventSource.instances[0];
+  // Call the trial_completed listener directly with a bad-JSON MessageEvent
   expect(() => {
     act(() => {
-      MockEventSource.instances[0]?.dispatchEvent(
-        Object.assign(new MessageEvent("trial_completed"), { data: "{not json!!" })
-      );
+      const handlers = source?.listeners["trial_completed"] ?? [];
+      for (const handler of handlers) {
+        handler(new MessageEvent("trial_completed", { data: "{not json!!" }));
+      }
     });
   }).not.toThrow();
 });
@@ -1636,17 +1663,20 @@ git commit -m "fix(frontend): wrap JSON.parse in try/catch in useSSE event handl
 **Step 1: Write failing test**
 
 ```typescript
-it("scores array stays bounded after many trials", () => {
-  // Render hook and simulate 1500 trial_completed SSE events via MockEventSource
-  vi.stubGlobal("EventSource", MockEventSource);
-  const { result } = renderHook(() => useLiveMonitorState("run1"));
+// Check useLiveMonitorState hook signature before writing — it may take { runId } not a bare string.
+// Also check if it uses the same MockEventSource pattern as useSSE.test.ts.
+// The mock's emit() JSON-stringifies its data arg — use it for well-formed events.
+it("scores array stays bounded after many trials", async () => {
+  const { useLiveMonitorState } = await import("../../hooks/useLiveMonitorState");
+  const wrapper = createWrapper();
+  // Adjust hook call if it takes an options object like useSSE does
+  const { result } = renderHook(() => useLiveMonitorState({ runId: "run1" }), { wrapper });
   act(() => {
     for (let i = 0; i < 1500; i++) {
-      MockEventSource.instances[0]?.dispatchEvent(
-        new MessageEvent("trial_completed", {
-          data: JSON.stringify({ score: 0.5, task_id: `t${i}`, ...trialBase }),
-        })
-      );
+      // Use emit() (mock helper) to fire trial_completed with well-formed data
+      MockEventSource.instances[0]?.emit("trial_completed", {
+        score: 0.5, task_id: `t${i}`,
+      });
     }
   });
   expect(result.current.scores.length).toBeLessThanOrEqual(1000);
@@ -1818,28 +1848,25 @@ git commit -m "fix(frontend): clear poll interval when max SSE reconnects reache
 """Tests for the YAML format variant."""
 import pytest
 import yaml
-from agent_evals.variants.format_yaml import FormatYamlVariant
-from agent_evals.fixtures.doc_tree import DocNode   # or whichever fixture creates a sample doc
+from agent_evals.variants.format_yaml import FormatYaml   # NOT FormatYamlVariant
+from agent_evals.fixtures import load_sample_doc_tree      # NOT make_sample_doc_tree
+from agent_index.models import DocFile                     # NOT DocNode
 
 
-def make_doc(summary: str = "test summary") -> DocNode:
-    """Return a minimal DocNode with the given summary for testing."""
-    # Check agent-evals/src/agent_evals/fixtures/ for the exact DocNode constructor
-    from agent_evals.fixtures.doc_tree import make_sample_doc_tree
-    docs = make_sample_doc_tree()
-    doc = docs[0]
+def make_doc(summary: str = "test summary") -> DocFile:
+    """Return a minimal DocFile with the given summary for testing."""
+    doc_tree = load_sample_doc_tree()
+    doc = next(iter(doc_tree.files.values()))   # DocTree.files is a dict[str, DocFile]
     doc.summary = summary
     return doc
 ```
-
-> **Note:** Verify the exact import path for `FormatYamlVariant` and the helper that creates a `DocNode`. Run `grep -r "class FormatYamlVariant" agent-evals/src/` to find the module. Adjust the import above if needed.
 
 **Step 1: Write failing test**
 
 ```python
 def test_yaml_summary_with_colon_is_parseable():
     import yaml
-    variant = FormatYamlVariant()
+    variant = FormatYaml()   # NOT FormatYamlVariant()
     doc = make_doc(summary="JWT auth: token-based login")
     output = variant.render([doc])
     parsed = yaml.safe_load(output)  # Must not raise ScannerError
@@ -1893,25 +1920,30 @@ git commit -m "fix(variants): use yaml.safe_dump for summary to handle colon con
 ```python
 """Tests for the pipe-delimited format variant."""
 import pytest
-from agent_evals.variants.format_pipe_delimited import PipeDelimitedVariant
+from agent_evals.variants.format_pipe_delimited import FormatPipeDelimited  # NOT PipeDelimitedVariant
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_index.models import DocFile
 
-# Adjust this based on the actual header columns in format_pipe_delimited.py
-# Run: head -20 agent-evals/src/agent_evals/variants/format_pipe_delimited.py
-# Count the pipes in the header row to set EXPECTED_PIPE_COUNT
-EXPECTED_PIPE_COUNT = 4  # placeholder — verify before writing the test
+
+def make_doc(summary: str = "test summary") -> DocFile:
+    """Return a minimal DocFile with the given summary for testing."""
+    doc_tree = load_sample_doc_tree()
+    doc = next(iter(doc_tree.files.values()))
+    doc.summary = summary
+    return doc
+
+
+# Check the actual header in format_pipe_delimited.py to determine EXPECTED_PIPE_COUNT:
+# head -30 agent-evals/src/agent_evals/variants/format_pipe_delimited.py
+# Count the | characters in the header row (e.g., "path|section|tier|tokens|summary" → 4 pipes)
+EXPECTED_PIPE_COUNT = 4  # placeholder — verify against actual header before running
 ```
-
-> **Note:** Read the actual `format_pipe_delimited.py` header to determine the real column count. Use `grep "header\|columns\|pipe" agent-evals/src/agent_evals/variants/format_pipe_delimited.py | head -10` to find it. Also check `make_doc` or the fixture approach from Task 25.
 
 **Step 1: Write failing test**
 
 ```python
-# Define the expected column count for this variant (check the actual header to determine)
-# e.g., if the header is "path|section|tier|tokens|summary" then EXPECTED_PIPE_COUNT = 4
-EXPECTED_PIPE_COUNT = 4  # Adjust after reading format_pipe_delimited.py header
-
 def test_pipe_in_summary_does_not_add_extra_columns():
-    variant = PipeDelimitedVariant()
+    variant = FormatPipeDelimited()   # NOT PipeDelimitedVariant()
     doc = make_doc(summary="A|B comparison")
     output = variant.render([doc])
     data_rows = [r for r in output.splitlines() if "comparison" in r]
@@ -1963,8 +1995,19 @@ git commit -m "fix(variants): escape pipe characters in table cell content (E4)"
 ```python
 def test_trial_result_metrics_contains_timing_keys():
     """TrialResult.metrics must be populated after a successful trial."""
-    runner = EvalRunner(config=make_test_config())
-    result = runner._run_trial(make_trial_spec())
+    # Use the helpers already in test_runner.py — make_trial_spec() does NOT exist
+    task = _make_mock_task()
+    variant = _make_mock_variant()
+    doc_tree = _make_sample_doc_tree()
+    client = _make_mock_client()
+    # Build a real EvalRunConfig (check EvalRunConfig fields in runner.py before filling)
+    config = EvalRunConfig(
+        model="openrouter/anthropic/claude-haiku-4-5-20251001",
+        task_types=["retrieval"],
+        task_limit=1,
+    )
+    runner = EvalRunner(config=config, client=client)
+    result = runner._run_trial(task, variant, doc_tree, repetition=1)
     assert result.metrics != {}, "metrics dict must not be empty"
     assert "scoring_ms" in result.metrics, "scoring_ms must be present"
     assert "prompt_build_ms" in result.metrics, "prompt_build_ms must be present"
@@ -2142,24 +2185,42 @@ git commit -m "fix(data): add base_task_id to all 30 robustness task metadata fi
 
 **Step 1: Write failing test**
 
-> **Note:** The judge module does NOT have a `calibrator.score()` function. The API is: `build_judge_prompt(question, response, rubric) → str`, then call the LLM, then `parse_judge_response(llm_response) → JudgeScore`. For testing, mock the LLM call layer only.
+> **⚠️ ARCHITECTURE WARNING — Read before writing any code:**
+>
+> The test below references APIs that do NOT exist:
+> - `runner.run_batch()` — no such method; `EvalRunner.run()` is the top-level entry point
+> - `make_trial_spec(index=i)` — no such helper in test_runner.py
+> - `make_test_config(sample_judge_rate=50)` — `sample_judge_rate` is not an existing `EvalRunConfig` field
+> - `trial_index` is not available inside the concurrent ThreadPoolExecutor loop
+>
+> **Before implementing,** read `runner.py` lines 230-260 and determine where to hook in:
+> - `_run_trial()` is called concurrently — add a `trial_index: int` param there, OR
+> - Track a thread-safe counter in the `EvalRunner` and pass it through, OR
+> - Move sampling to the orchestrator where sequential indexing is easier
+>
+> The test must be adapted to match whichever approach is chosen. Below is the intent — adjust the test API to match the real runner:
 
 ```python
 def test_judge_score_sampled_into_metrics(monkeypatch):
-    """2% of trials must have judge_score in their metrics."""
+    """When JUDGE_SAMPLE_RATE is set, every Nth trial must have judge_score in its metrics."""
     from agent_evals.judge.calibrator import JudgeScore
-    # Mock the LLM call that the judge uses, not a non-existent calibrator.score()
-    mock_llm_response = "Score: 0.8\nRationale: good"
     mock_judge_score = JudgeScore(
         example_id="test", judge_model="mock", score=0.8,
-        rationale="good", raw_response=mock_llm_response,
+        rationale="good", raw_response="Score: 0.8\nRationale: good",
     )
     monkeypatch.setattr(
         "agent_evals.runner._call_judge",   # the wrapper function to create in Step 3
         lambda task_type, question, response: mock_judge_score,
     )
-    runner = EvalRunner(config=make_test_config(sample_judge_rate=50))  # 1 in 50
-    results = runner.run_batch([make_trial_spec(index=i) for i in range(100)])
+    # Adapt config and runner construction to match actual EvalRunConfig fields:
+    task = _make_mock_task()
+    variant = _make_mock_variant()
+    doc_tree = _make_sample_doc_tree()
+    client = _make_mock_client()
+    config = EvalRunConfig(model="openrouter/anthropic/claude-haiku-4-5-20251001", task_types=["retrieval"])
+    runner = EvalRunner(config=config, client=client)
+    # Run enough trials that at least one hits the sampling rate
+    results = [runner._run_trial(task, variant, doc_tree, repetition=i) for i in range(1, 55)]
     judged = [r for r in results if "judge_score" in r.metrics]
     assert len(judged) >= 1, "At least one trial must be judge-sampled"
 ```
@@ -2175,16 +2236,34 @@ uv run pytest agent-evals/tests/test_runner.py::test_judge_score_sampled_into_me
 First, add a `_call_judge` wrapper function to `runner.py` that uses the actual judge API:
 ```python
 from agent_evals.judge.calibrator import build_judge_prompt, parse_judge_response, JudgeScore
-from agent_evals.llm.client import call_llm   # or whatever the LLM call interface is
 
 JUDGE_SAMPLE_RATE = 50  # 1 in every 50 trials (2%)
 JUDGE_MODEL = "openrouter/openai/gpt-5-mini"  # cheap routine model
 
 def _call_judge(task_type: str, question: str, response: str) -> JudgeScore:
-    """Call LLM judge for one trial. Returns JudgeScore with score 0.0–1.0."""
-    prompt = build_judge_prompt(question=question, response=response, rubric=None)
-    raw = call_llm(model=JUDGE_MODEL, prompt=prompt)
-    return parse_judge_response(example_id="", judge_model=JUDGE_MODEL, raw_response=raw)
+    """Call LLM judge for one trial. Returns JudgeScore with score 0.0–1.0.
+
+    build_judge_prompt() returns list[dict] (messages), NOT a str.
+    parse_judge_response() takes only `response: str` and returns tuple[float, str].
+    """
+    messages = build_judge_prompt(
+        task_type=task_type,   # REQUIRED first positional arg
+        question=question,
+        response=response,
+        rubric=None,
+    )
+    # Check actual LLM interface in agent-evals/src/agent_evals/llm/client.py:
+    # LLMClient.complete(messages: list[dict]) is the method — it's NOT a module-level call_llm()
+    # Access via the runner's self._client.complete(messages) or create a temporary LLMClient.
+    raw = self._client.complete(messages).content   # adjust if _call_judge is a method, not a function
+    score, rationale = parse_judge_response(raw)   # returns tuple[float, str], NOT JudgeScore
+    return JudgeScore(
+        example_id="",
+        judge_model=JUDGE_MODEL,
+        score=score,
+        rationale=rationale,
+        raw_response=raw,
+    )
 ```
 
 Then in the trial loop, after computing `heuristic_score`:
@@ -2198,7 +2277,9 @@ if trial_index % JUDGE_SAMPLE_RATE == 0:
         pass  # Judge failure must not affect trial outcome
 ```
 
-> **Note:** Check the actual LLM call interface in `agent-evals/src/agent_evals/llm/` — the exact function name and signature may differ from `call_llm` above. Adjust to match.
+> **Note on `trial_index`:** `_run_trial()` is called concurrently via `ThreadPoolExecutor`. There is no sequential `trial_index` variable inside it. To implement sampling, either: (a) add an `trial_index: int` parameter to `_run_trial()` and pass it from the submission loop, or (b) use a `threading.atomic` counter on the runner. The loop code (lines ~230-241 of runner.py) must be read to choose the cleanest approach.
+>
+> **Note on `_call_judge` scope:** If `_call_judge` is a module-level function (not a method), it cannot use `self._client`. Either make it a private method (`self._call_judge(...)`) or accept a `client` parameter explicitly. Check the runner's architecture and decide before implementing.
 
 **Step 4: Run tests**
 
@@ -2318,21 +2399,37 @@ git commit -m "feat(infra): add rotating JSON file logging to Observatory (I7)"
 
 **Step 1: Write failing test**
 
-Add this fixture and test to `test_observatory_web.py`. The fixture patches the `catalog` object in the routes module before the app starts:
+> **IMPORTANT — `catalog` is NOT a module-level variable.** In `routes.py`, `catalog` is a parameter to `create_router(config, ...)` — it lives in the closure, not at module level. `monkeypatch.setattr(routes, "catalog", mock)` will fail with `AttributeError`.
+>
+> **Fix approach:** Add a module-level sentinel in `routes.py` that `create_router()` assigns to when called, then patch that. Alternatively, re-create the app in the test with a mock catalog injected. Check how `app` is constructed in `test_observatory_web.py` — there may already be a fixture that builds the app with injected dependencies.
+>
+> **Implementation check:** Before writing this test, read how `app` is built in the existing test file:
+> ```bash
+> grep -n "create_router\|app\s*=" agent-evals/tests/test_observatory_web.py | head -20
+> ```
+> Then inject the mock via the same pattern. If `create_router()` is called with `catalog=None`, re-call it with `catalog=mock_catalog_instance`.
 
 ```python
 @pytest.fixture
-def mock_catalog(monkeypatch):
-    """Patch routes.catalog with a MagicMock so we can verify sync() is called."""
+def mock_catalog():
+    """Return a MagicMock for ModelCatalog."""
     from unittest.mock import MagicMock
-    from agent_evals.observatory.web import routes
-    mock = MagicMock()
-    monkeypatch.setattr(routes, "catalog", mock)
-    return mock
+    from agent_evals.observatory.model_catalog import ModelCatalog
+    return MagicMock(spec=ModelCatalog)
 
-def test_model_catalog_sync_called_on_startup(mock_catalog):
+def test_model_catalog_sync_called_on_startup(mock_catalog, tmp_path):
     """Model catalog sync must be called during server lifespan startup."""
-    with TestClient(app) as _client:
+    from agent_evals.observatory.store import ObservatoryStore
+    from agent_evals.observatory.tracker import EventTracker
+    from agent_evals.observatory.web.routes import create_router
+    from fastapi import FastAPI
+    store = ObservatoryStore(db_path=tmp_path / "test.db")
+    tracker = EventTracker(store=store)
+    # Inject mock catalog into the router at creation time
+    router = create_router(store=store, tracker=tracker, catalog=mock_catalog)
+    test_app = FastAPI()
+    test_app.include_router(router)
+    with TestClient(test_app) as _client:
         mock_catalog.sync.assert_called_once()
 ```
 
@@ -2381,21 +2478,23 @@ git commit -m "feat(infra): auto-sync model catalog on server startup (I8)"
 
 **Step 1: Write failing test**
 
+> **Note:** `vi.spyOn(Chart, "constructor")` will NOT work — Chart.js is mocked at module level in this project, making constructor spying incompatible. Instead, test the `CHART_ANIMATION` constant directly (simpler and more reliable). Check `vitest.setup.ts` or existing chart tests to see how Chart.js is mocked before writing component-level tests.
+
 ```typescript
-it("chart options include animation with duration 800", () => {
-  // Spy on Chart constructor to capture options
-  const chartSpy = vi.spyOn(Chart, "constructor"); // adjust based on Chart.js mocking in project
-  render(<Observatory />);
-  // Verify animation.duration === 800 is passed to Chart
-  expect(chartSpy).toHaveBeenCalledWith(
-    expect.anything(),
-    expect.objectContaining({
-      options: expect.objectContaining({
-        animation: expect.objectContaining({ duration: 800 }),
-      }),
-    })
-  );
+// Option A (preferred): Test the constant directly — no Chart.js mocking needed
+import { CHART_ANIMATION } from "../utils/chartDefaults";
+
+it("CHART_ANIMATION has duration 800 and easeOutQuart easing", () => {
+  expect(CHART_ANIMATION.duration).toBe(800);
+  expect(CHART_ANIMATION.easing).toBe("easeOutQuart");
 });
+
+// Option B (component-level): Check that Chart.defaults is applied
+// (only viable if existing tests already show how to access Chart.defaults with the mock in place)
+// it("chart defaults are applied on Observatory mount", () => {
+//   render(<Observatory />);
+//   expect(Chart.defaults.animation).toEqual(expect.objectContaining({ duration: 800 }));
+// });
 ```
 
 **Step 2: Run to confirm fail**
@@ -2483,10 +2582,14 @@ git commit -m "fix(ux): remove remaining inline styles from CompassCheckbox (U2)
 **Step 1: Write failing test**
 
 ```typescript
+// SlideOutPanel props: { open: boolean, onClose: () => void, title: string, children }
+// NOT isOpen — the actual prop is `open`. Also `title` is REQUIRED.
+// Dialog.Close renders a Radix UI button — it IS queryable via getByRole("button").
 it("SlideOutPanel close button has focus-visible styling", () => {
   const { getByRole } = render(
-    <SlideOutPanel isOpen onClose={vi.fn()}>content</SlideOutPanel>
+    <SlideOutPanel open onClose={vi.fn()} title="Test Panel">content</SlideOutPanel>
   );
+  // Dialog.Close renders as a <button> — accessible via role "button"
   const closeBtn = getByRole("button");
   expect(closeBtn.className).toMatch(/focus-visible/);
 });
@@ -2550,13 +2653,20 @@ _sse_seq = itertools.count(1)
 
 **Step 3: Add deduplication in useSSE.ts**
 
+> **IMPORTANT:** `useSSE.ts` already has existing `addEventListener` handlers for `trial_completed` and other events (see lines 48-65). Do NOT add a second, separate `addEventListener` call. Instead, add the deduplication guard at the TOP of the existing `trial_completed` handler body.
+
 ```typescript
+// Add ONCE at the hook level (inside useEffect, before the EventSource creation):
 const lastEventIdRef = useRef(0);
+
+// Then INSIDE the existing trial_completed addEventListener handler, add at the TOP:
 source.addEventListener("trial_completed", (e: MessageEvent) => {
+  // --- Deduplication guard (add this block at the start) ---
   const eventId = parseInt(e.lastEventId, 10);
   if (!isNaN(eventId) && eventId <= lastEventIdRef.current) return;
   lastEventIdRef.current = eventId;
-  // ... existing handler
+  // --- End guard --- then the existing JSON.parse + dispatch logic follows unchanged
+  // ... existing handler content here
 });
 ```
 
