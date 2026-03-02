@@ -35,6 +35,8 @@ _TOOL_NAME_PATTERN: re.Pattern[str] = re.compile(
 def _parse_json_or_list(value: object) -> list[str]:
     """Parse a value that is either a JSON string or already a list.
 
+    Falls back to whitespace splitting if the string is not valid JSON.
+
     Args:
         value: A JSON string, a list, or any other value.
 
@@ -44,10 +46,13 @@ def _parse_json_or_list(value: object) -> list[str]:
     if isinstance(value, list):
         return [str(item) for item in value]
     if isinstance(value, str) and value.strip():
-        parsed = json.loads(value)
-        if isinstance(parsed, list):
-            return [str(item) for item in parsed]
-        return [str(parsed)]
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(item) for item in parsed]
+            return [str(parsed)]
+        except json.JSONDecodeError:
+            return [token for token in value.strip().split() if token]
     return []
 
 
@@ -134,69 +139,35 @@ class AgenticTask(EvalTask):
         return max(0.0, min(1.0, composite))
 
     def _score_file_mentions(self, response: str) -> float:
-        """Score whether expected file paths appear in the response text.
-
-        Args:
-            response: The raw text response from the LLM.
-
-        Returns:
-            Fraction of expected file paths mentioned in the response.
-        """
+        """Score whether expected file paths appear in the response text."""
         if not self.files:
             return 0.0
-
         response_lower = response.lower()
         expected_paths = list(self.files.keys())
         matched = sum(
-            1 for path in expected_paths
-            if path.lower() in response_lower
+            1 for path in expected_paths if path.lower() in response_lower
         )
         return matched / len(expected_paths)
 
     def _score_content(self, response: str) -> float:
-        """Score keyword overlap between file content summaries and response.
-
-        Extracts keywords from the value strings in ``self.files`` and
-        checks how many appear in the response text.
-
-        Args:
-            response: The raw text response from the LLM.
-
-        Returns:
-            Fraction of content keywords found in the response.
-        """
+        """Score keyword overlap between file content summaries and response."""
         if not self.files:
             return 0.0
-
         all_keywords: list[str] = []
         for summary in self.files.values():
             all_keywords.extend(extract_keywords(summary))
-
         if not all_keywords:
             return 0.0
-
         response_lower = response.lower()
         matched = sum(
-            1 for kw in all_keywords
-            if kw.lower() in response_lower
+            1 for kw in all_keywords if kw.lower() in response_lower
         )
         return matched / len(all_keywords)
 
     def _score_correctness(self, response: str) -> float:
-        """Bonus score if FAIL_TO_PASS test names appear in the response.
-
-        This is treated as a bonus signal rather than a hard requirement
-        because LLM responses rarely contain literal pytest test names.
-
-        Args:
-            response: The raw text response from the LLM.
-
-        Returns:
-            Fraction of FAIL_TO_PASS test names mentioned in the response.
-        """
+        """Bonus score if FAIL_TO_PASS test names appear in the response."""
         if not self.fail_to_pass:
             return 0.0
-
         response_lower = response.lower()
         matched = sum(
             1 for test_name in self.fail_to_pass
@@ -205,49 +176,27 @@ class AgenticTask(EvalTask):
         return matched / len(self.fail_to_pass)
 
     def _score_tool_usage(self, response: str) -> float:
-        """Score tool usage: mention coverage, ordering, and extra-tool penalty.
-
-        Computes three sub-scores and combines them:
-        - Coverage (0.5): fraction of expected tools mentioned
-        - Ordering (0.3): 1.0 if mentioned tools appear in expected order, 0.0 otherwise
-        - Precision (0.2): 1.0 if no extra (hallucinated) tools, scaled down by extra count
-
-        Args:
-            response: The raw text response from the LLM.
-
-        Returns:
-            Combined tool usage score between 0.0 and 1.0.
-        """
+        """Score tool usage: mention coverage, ordering, and extra-tool penalty."""
         if not self.expected_tools:
             return 0.0
-
         response_lower = response.lower()
         expected_names = [
             tool.get("name", "").lower() for tool in self.expected_tools
             if tool.get("name")
         ]
-
         if not expected_names:
             return 0.0
-
-        # --- Coverage: fraction of expected tools mentioned ---
         mentioned_expected = [
             name for name in expected_names if name in response_lower
         ]
         coverage = len(mentioned_expected) / len(expected_names)
-
-        # If no expected tools were mentioned, the score is 0
         if not mentioned_expected:
             return 0.0
-
-        # --- Ordering: check if mentioned tools appear in expected order ---
         if len(mentioned_expected) >= 2:
             positions = [response_lower.index(name) for name in mentioned_expected]
             ordering = 1.0 if positions == sorted(positions) else 0.0
         else:
-            ordering = 1.0  # 1 mentioned tool is trivially in order
-
-        # --- Precision: penalise hallucinated (extra) tool mentions ---
+            ordering = 1.0
         all_mentioned = set(
             m.group().lower() for m in _TOOL_NAME_PATTERN.finditer(response_lower)
         )
@@ -257,7 +206,6 @@ class AgenticTask(EvalTask):
             precision = 1.0 - len(extra_tools) / max(len(all_mentioned), 1)
         else:
             precision = 1.0
-
         return coverage * 0.5 + ordering * 0.3 + precision * 0.2
 
 

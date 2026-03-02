@@ -327,3 +327,11 @@ class TestAgenticToolOrdering:
         clean_score = task.score_response(clean_response)
         extra_score = task.score_response(extra_response)
         assert clean_score >= extra_score
+
+
+def test_space_separated_test_names_parsed_correctly():
+    """test_foo test_bar must parse as two items."""
+    from agent_evals.tasks.agentic import _parse_json_or_list
+    result = _parse_json_or_list("test_foo test_bar")
+    assert result == ["test_foo", "test_bar"], f"Got: {result}"
+
