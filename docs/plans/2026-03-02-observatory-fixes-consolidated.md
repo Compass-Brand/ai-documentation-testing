@@ -4556,11 +4556,13 @@ git commit -m "fix(cli): wire --source to load tasks and doc_tree from dataset c
 
 ---
 
-### Task 43: Remove dead and overcomplicated CLI flags (E10 — MEDIUM)
+### Task 43: Remove dead CLI flags (E10 — MEDIUM)
+
+Removes 7 flags that are either parsed but never read from `resolved`, or are stubs with no implementation. **Does not remove** flags that are genuinely used (`--oa-type`, `--quality-type`, `--alpha`, `--top-k`, `--model-budgets`, `--dataset-cache-dir` — all confirmed read from `resolved` in the evaluation logic).
 
 **Files:**
-- Modify: `agent-evals/src/agent_evals/cli.py` (throughout: `_add_run_args`, `_CONFIG_KEYS`, `_run_taguchi`, `_run_pipeline`)
-- Modify: `agent-evals/tests/test_evals_cli.py` (remove tests for deleted flags, add tests for removed flags raising errors)
+- Modify: `agent-evals/src/agent_evals/cli.py` (`_add_run_args`, `_CONFIG_KEYS`)
+- Modify: `agent-evals/tests/test_evals_cli.py` (remove tests for deleted flags, add tests that deleted flags error)
 
 > **Context:**
 > ```python
@@ -4569,54 +4571,50 @@ git commit -m "fix(cli): wire --source to load tasks and doc_tree from dataset c
 > args = parser.parse_args(["--model", "m"])
 > resolved = resolve_config(args, {})
 > # After cleanup, these keys must NOT be in resolved or _CONFIG_KEYS:
-> # model_config, judge_model, max_cost, oa_type, confirmation_runs,
-> # phase, parent_run, quality_type, top_k, alpha, model_budgets, dataset_cache_dir
+> # model_config, judge_model, max_cost, confirmation_runs, phase, parent_run
+> # --mode must not accept 'factorial'
 > ```
 
-**Flags to remove** (13 total):
+**Flags to remove** (7 total — confirmed never read from `resolved`):
 
-| Flag | Reason |
-|------|--------|
-| `--model-config` | Parsed into `resolved` but never read anywhere in evaluation logic |
-| `--judge-model` | Parsed into `resolved` but never read anywhere in evaluation logic |
-| `--max-cost` | Parsed but never read; confusingly distinct from `--budget` which IS used |
-| `--oa-type` | Forces specific Taguchi OA table — internal Taguchi detail, auto-selection works |
-| `--confirmation-runs` | Parsed but never read (not used in `_run_pipeline` or `PipelineConfig`) |
-| `--phase` | Manual DOE phase control — overly complex; pipeline runs all phases automatically |
-| `--parent-run` | Parsed but never read from `resolved` in either pipeline or taguchi |
-| `--quality-type` | S/N ratio quality type — always `larger_is_better` for doc eval |
-| `--alpha` | ANOVA significance threshold — 0.05 is universal, no user should change this |
-| `--top-k` | Top factors for Phase 3 factorial — hardcode 3 |
-| `--model-budgets` | Complex `"model=amount,model2=amount2"` string format — confusing; use `--budget` |
-| `--dataset-cache-dir` | Internal implementation detail; cache at `~/.agent-evals/datasets/` always |
-| `factorial` (from `--mode` choices) | Listed as a choice but `_run_evaluation` has no `_run_factorial`; falls through to full mode silently |
+| Flag | Evidence it is dead |
+|------|---------------------|
+| `--model-config` | In `_CONFIG_KEYS` at line 433; `resolved.get("model_config")` appears nowhere in evaluation logic |
+| `--judge-model` | In `_CONFIG_KEYS` at line 434; `resolved.get("judge_model")` appears nowhere in evaluation logic |
+| `--max-cost` | In `_CONFIG_KEYS` at line 441; `resolved.get("max_cost")` appears nowhere (`--budget` is the live budget flag) |
+| `--confirmation-runs` | In `_CONFIG_KEYS` at line 455; `resolved.get("confirmation_runs")` appears nowhere |
+| `--parent-run` | In `_CONFIG_KEYS` at line 458; `resolved.get("parent_run")` appears nowhere |
+| `--phase` | Dead because `--parent-run` (needed to link phases) is dead; `_run_pipeline` handles full flow automatically |
+| `factorial` (from `--mode`) | Listed as a choice but there is no `_run_factorial`; falls through silently to full mode |
 
-**Also:** Update `_run_pipeline` and `_run_taguchi` to remove reads of deleted keys and hardcode their defaults.
+**Flags explicitly kept** (confirmed read from `resolved` and genuinely useful):
+
+| Flag | Why kept |
+|------|----------|
+| `--oa-type` | Read at lines 671, 839, 955 — forces specific Taguchi OA table for reproducibility |
+| `--quality-type` | Read at line 952 — S/N ratio type (users may test `smaller_is_better` for latency) |
+| `--alpha` | Read at line 953 — ANOVA significance threshold (researchers legitimately change this) |
+| `--top-k` | Read at line 954 — Phase 3 factor count (valid to explore more/fewer factors) |
+| `--model-budgets` | Read at lines 855, 926 — per-model budget caps for multi-model runs |
+| `--dataset-cache-dir` | Read at line 592 — override cache location (valid for CI environments) |
 
 **Step 1 [RED]:** Write failing tests confirming removed flags are gone
 
 ```python
 class TestRemovedFlags:
-    """Removed flags must not exist in parser or _CONFIG_KEYS."""
+    """Confirmed-dead flags must not exist in parser or _CONFIG_KEYS."""
 
     REMOVED_FLAGS = [
         "--model-config",
         "--judge-model",
         "--max-cost",
-        "--oa-type",
         "--confirmation-runs",
         "--phase",
         "--parent-run",
-        "--quality-type",
-        "--alpha",
-        "--top-k",
-        "--model-budgets",
-        "--dataset-cache-dir",
     ]
     REMOVED_KEYS = [
-        "model_config", "judge_model", "max_cost", "oa_type",
-        "confirmation_runs", "phase", "parent_run", "quality_type",
-        "top_k", "alpha", "model_budgets", "dataset_cache_dir",
+        "model_config", "judge_model", "max_cost",
+        "confirmation_runs", "phase", "parent_run",
     ]
 
     @pytest.mark.parametrize("flag", REMOVED_FLAGS)
@@ -4637,13 +4635,31 @@ class TestRemovedFlags:
         parser = build_parser()
         with pytest.raises(SystemExit):
             parser.parse_args(["--mode", "factorial"])
+
+    def test_kept_flags_still_exist(self):
+        """Flags that ARE used must remain in the parser."""
+        parser = build_parser()
+        args = parser.parse_args([
+            "--oa-type", "L54",
+            "--quality-type", "larger_is_better",
+            "--alpha", "0.05",
+            "--top-k", "3",
+            "--model-budgets", "claude=20.00",
+            "--dataset-cache-dir", "/tmp/cache",
+        ])
+        assert args.oa_type == "L54"
+        assert args.quality_type == "larger_is_better"
+        assert args.alpha == 0.05
+        assert args.top_k == 3
+        assert args.model_budgets == "claude=20.00"
+        assert args.dataset_cache_dir == "/tmp/cache"
 ```
 
-**Step 2 [RED]:** Also update existing tests that assert on the removed flags
+**Step 2 [RED]:** Delete obsolete tests for removed flags from `test_evals_cli.py`
 
-In `test_evals_cli.py`, find and delete the following test methods (they test flags that no longer exist):
+Find and delete test methods that reference the removed flags:
 ```bash
-grep -n "model_config\|judge_model\|max_cost\|oa_type\|confirmation_runs\|parent_run\|quality_type\|top_k.*default\|alpha.*default\|model_budgets\|dataset_cache_dir\|factorial" \
+grep -n "model_config\|judge_model\|max_cost\|confirmation_runs\|parent_run\|\"phase\"\|factorial" \
     agent-evals/tests/test_evals_cli.py
 # Delete all matching test methods
 ```
@@ -4655,127 +4671,64 @@ uv run pytest agent-evals/tests/test_evals_cli.py::TestRemovedFlags -v
 # Expected: FAIL — flags still exist in current parser
 ```
 
-**Step 4 [GREEN]:** Remove flags from `_add_run_args` in `cli.py`
+**Step 4 [GREEN]:** Remove the 7 dead flags from `_add_run_args` in `cli.py`
 
-Delete the `parser.add_argument` blocks for all 13 flags listed above. Also change `--mode` choices from `["full", "taguchi", "factorial"]` to `["full", "taguchi"]`.
+Delete the `parser.add_argument` blocks for:
+- `--model-config` (lines 59–63)
+- `--judge-model` (lines 64–68)
+- `--max-cost` (lines 110–115)
+- `--confirmation-runs` (lines 215–219)
+- `--phase` (lines 228–232)
+- `--parent-run` (lines 233–237)
 
-**Step 5 [GREEN]:** Remove keys from `_CONFIG_KEYS`
+Change `--mode` choices from `["full", "taguchi", "factorial"]` to `["full", "taguchi"]`.
 
-Delete these 13 entries from the `_CONFIG_KEYS` dict:
+**Step 5 [GREEN]:** Remove 6 dead keys from `_CONFIG_KEYS`
+
+Delete these lines from the `_CONFIG_KEYS` dict:
 ```python
-# DELETE these lines:
+# DELETE these 6 lines:
 "model_config": str,
 "judge_model": str,
 "max_cost": float,
-"oa_type": str,
 "confirmation_runs": int,
 "phase": str,
 "parent_run": str,
-"quality_type": str,
-"top_k": int,
-"alpha": float,
-"model_budgets": str,
-"dataset_cache_dir": str,
 ```
 
-**Step 6 [GREEN]:** Update `_run_taguchi` — remove reads of deleted keys
-
-In `_run_taguchi`, replace:
-```python
-    oa_override = resolved.get("oa_type")
-    design = build_design(
-        axes,
-        models=models_list if len(models_list) > 1 else None,
-        oa_override=str(oa_override) if oa_override else None,
-    )
-```
-With:
-```python
-    design = build_design(
-        axes,
-        models=models_list if len(models_list) > 1 else None,
-    )
-```
-
-Remove the `model_budgets` parsing block in `_run_taguchi` and pass `model_budgets=None` to `OrchestratorConfig`:
-```python
-    orch_config = OrchestratorConfig(
-        mode="taguchi",
-        models=models_list,
-        api_key=api_key,
-        report_format=resolved.get("report"),
-        global_budget=resolved.get("budget"),
-        model_budgets=None,   # removed --model-budgets flag
-        temperature=run_config.temperature,
-        eval_config=run_config,
-        dashboard=resolved.get("dashboard", False),
-        dashboard_port=int(resolved.get("dashboard_port", 8501)),
-    )
-```
-
-**Step 7 [GREEN]:** Update `_run_pipeline` — remove reads of deleted keys and hardcode defaults
-
-Replace the `PipelineConfig` construction in `_run_pipeline`:
-```python
-    pipeline_config = PipelineConfig(
-        models=models_list,
-        mode=str(resolved.get("pipeline", "auto")),
-        quality_type="larger_is_better",   # hardcoded: always correct for doc eval
-        alpha=0.05,                         # hardcoded: standard significance level
-        top_k=3,                            # hardcoded: sensible default
-        oa_override=None,                   # removed: auto-select OA always
-        report_format=resolved.get("report"),
-        api_key=api_key,
-        dashboard=resolved.get("dashboard", False),
-        temperature=run_config.temperature,
-        global_budget=resolved.get("budget"),
-        model_budgets=None,                 # removed --model-budgets flag
-    )
-```
-
-Also remove the `model_budgets` parsing block at the top of `_run_pipeline` (the `raw_budgets = resolved.get("model_budgets")` block and the for-loop that parses `"key=val,key2=val2"`).
-
-Also remove the `orch_config` `model_budgets` parsing block in `_run_pipeline` (same pattern as in `_run_taguchi`).
-
-**Step 8 [GREEN]:** Delete obsolete tests for removed flags from `test_evals_cli.py`
-
-Delete test methods that assert `args.model_config is None`, `args.judge_model is None`, and any other methods that reference removed attribute names on parsed `args`.
-
-**Step 9 [GREEN]:** Run all tests to confirm they pass
+**Step 6 [GREEN]:** Run all tests
 
 ```bash
 uv run pytest agent-evals/tests/test_evals_cli.py -v
 # Expected: TestRemovedFlags all PASS; no failures from removed flag tests
 uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -20
-# Expected: all tests pass (confirm test count did not decrease unexpectedly)
+# Expected: all tests pass
 ```
 
-**Step 10 [REFACTOR]:** Review the cleanup
-- `_CONFIG_KEYS` should now have exactly these keys: `axis, tasks, task_id, variant, model, limit, repetitions, temperature, max_connections, max_tasks, dry_run, no_cache, output_dir, output_format, display, continue_on_error, source, dataset_limit, prepare_datasets, list_datasets, mode, models, confirmation_runs... wait — confirmation_runs is being removed.`
-- Confirm `--mode` only accepts `full` and `taguchi` (not `factorial`).
-- The `--pipeline` flag still exists with `auto/semi` choices — this triggers `_run_pipeline` which is still in the code. The three-phase DOE pipeline is not removed, just simplified (no manual overrides).
-- `--budget` remains and maps to `global_budget` in `OrchestratorConfig`.
-- `--sync-interval` in the run subcommand — check if it's used. If not, add to remove list.
+**Step 7 [REFACTOR]:** Review
+- `_CONFIG_KEYS` no longer has `model_config`, `judge_model`, `max_cost`, `confirmation_runs`, `phase`, `parent_run`
+- `--mode` only accepts `full` and `taguchi`
+- No changes to `_run_taguchi` or `_run_pipeline` — they already didn't use the removed keys
+- Kept flags (`--oa-type`, `--quality-type`, `--alpha`, `--top-k`, `--model-budgets`, `--dataset-cache-dir`) unchanged
 
-**Step 11 [VERIFY]:** Confirm `--help` output is clean
+**Step 8 [VERIFY]:** Confirm `--help` is clean
 
 ```bash
 uv run agent-evals --help 2>&1
-# Expected: no mention of model-config, judge-model, max-cost, oa-type,
-#           confirmation-runs, phase, parent-run, quality-type, top-k,
-#           alpha, model-budgets, dataset-cache-dir
-#           --mode only shows: {full,taguchi}
+# Expected: no mention of model-config, judge-model, max-cost,
+#           confirmation-runs, phase, parent-run
+#           --mode shows: {full,taguchi}   (no factorial)
 
-uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --dry-run 2>&1 | head -20
-# Expected: runs successfully, prints dry-run config with no unexpected keys
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --dry-run 2>&1
+# Expected: runs successfully with no unexpected errors
 ```
 
-**Step 12: Commit**
+**Step 9: Commit**
 
 ```bash
 git add agent-evals/src/agent_evals/cli.py \
         agent-evals/tests/test_evals_cli.py
-git commit -m "fix(cli): remove 13 dead/overcomplicated flags, simplify to core options (E10)"
+git commit -m "fix(cli): remove 7 confirmed-dead CLI flags, drop factorial mode stub (E10)"
 ```
 
 ---
