@@ -1372,10 +1372,11 @@ def test_get_run_aggregates_returns_correct_statistics(tmp_path):
             task_id=f"compositional_{i:03d}",
             task_type="compositional",
             variant_name="v1",
+            repetition=1,          # REQUIRED keyword arg
             score=i / 100.0,
-            response="ok",
             prompt_tokens=10,
             completion_tokens=5,
+            total_tokens=15,       # REQUIRED keyword arg (prompt_tokens + completion_tokens)
             cost=0.001,
             latency_seconds=0.5,   # column is latency_seconds — not latency_ms
             model="openrouter/anthropic/claude-haiku-4-5-20251001",
@@ -1669,18 +1670,23 @@ git commit -m "fix(frontend): wrap JSON.parse in try/catch in useSSE event handl
 // Read useLiveMonitorState.ts fully before writing this test to understand its internal queries.
 
 it("scores array stays bounded after many trials", async () => {
-  // Step A: Read useLiveMonitorState.ts to find which queries need mocking
-  // (useActiveRuns, useRun, useTrials are all internal — must mock at TanStack Query level)
-  // Step B: Mock useActiveRuns to return a fake run ID
-  // Step C: Set up MockEventSource so trial_completed events are fired
-  // The pattern below is a sketch — adjust to the actual internal dependencies:
+  // Step A: Look at existing useLiveMonitorState.test.ts for the correct mock setup.
+  //   The file already mocks useActiveRuns, useRun, and useTrials in its beforeEach block.
+  //   Re-use that pattern: mockUseActiveRuns.mockReturnValue({ data: { runs: [...], count: 1 } })
+  // Step B: useActiveRuns returns TanStack Query shape — NOT a bare array.
+  //   Hook reads: const { data: activeRunsData } = useActiveRuns(); activeRunsData?.runs ?? []
+  // Step C: Set up MockEventSource so trial_completed events fire via source.emit()
+  // The pattern below uses the existing test file's mock variables (mockUseActiveRuns etc.):
   const { useLiveMonitorState } = await import("../../hooks/useLiveMonitorState");
   const wrapper = createWrapper();
   // Hook signature: useLiveMonitorState(totalTasksOverride?: number)
-  // Run ID comes from internal useActiveRuns() — mock that query to return "run1"
-  vi.mock("../../api/hooks", async () => {
-    const actual = await vi.importActual("../../api/hooks");
-    return { ...actual, useActiveRuns: () => [{ run_id: "run1", status: "active" }] };
+  // Run ID comes from internal useActiveRuns() — use existing mockUseActiveRuns from beforeEach
+  // Override to return a specific run ID for this test:
+  mockUseActiveRuns.mockReturnValue({
+    data: {
+      runs: [{ run_id: "run1", mode: "taguchi", models: [], started_at: "" }],
+      count: 1,
+    },
   });
   const { result } = renderHook(() => useLiveMonitorState(), { wrapper });
   act(() => {
@@ -1787,20 +1793,25 @@ git commit -m "fix(frontend): migrate deleteGroup to use fetchApi wrapper with t
 **Step 1: Write failing test**
 
 ```typescript
-it("clears the poll interval when MAX_RECONNECTS is reached", () => {
-  vi.useFakeTimers();
+// IMPORTANT: The test file already has beforeEach/afterEach managing fake timers and
+// EventSource stub — do NOT duplicate those calls inside the test body.
+// useSSE takes an OPTIONS OBJECT { runId, ... } — NOT a bare string.
+// MockEventSource has no dispatchEvent() method — call source.emit("error", {}) instead.
+// renderHook needs the QueryClient wrapper from createWrapper().
+it("clears the poll interval when MAX_RECONNECTS is reached", async () => {
+  const { useSSE } = await import("../../hooks/useSSE");
+  const wrapper = createWrapper();
   const clearSpy = vi.spyOn(globalThis, "clearInterval");
-  vi.stubGlobal("EventSource", MockEventSource);
-  const { result } = renderHook(() => useSSE("run1"));
-  // Trigger MAX_RECONNECTS errors via the mock EventSource
+  renderHook(() => useSSE({ runId: "run1" }), { wrapper });
+  // Trigger MAX_RECONNECTS (=10) errors by calling the registered error handler directly
   act(() => {
     for (let i = 0; i <= 10; i++) {
-      MockEventSource.instances[0]?.dispatchEvent(new Event("error"));
+      // MockEventSource.emit() calls all listeners for the event — use it, NOT dispatchEvent()
+      MockEventSource.instances[0]?.emit("error", {});
       vi.advanceTimersByTime(1000);
     }
   });
   expect(clearSpy).toHaveBeenCalled();
-  vi.useRealTimers();
 });
 ```
 
@@ -2238,7 +2249,8 @@ def test_judge_score_sampled_into_metrics(monkeypatch):
     runner = EvalRunner(client, config=config)  # client is FIRST positional arg
     # Run enough trials that at least one hits the sampling rate (JUDGE_SAMPLE_RATE=50)
     # NOTE: _run_trial() returns metrics={} by default — Step 3 must change that
-    results = [runner._run_trial(task, variant, doc_tree, repetition=i) for i in range(1, 55)]
+    # NOTE: After adding trial_index param in Step 3, this call MUST include trial_index=i
+    results = [runner._run_trial(task, variant, doc_tree, repetition=i, trial_index=i) for i in range(1, 55)]
     judged = [r for r in results if "judge_score" in r.metrics]
     assert len(judged) >= 1, "At least one trial must be judge-sampled"
 ```
@@ -2311,10 +2323,21 @@ return TrialResult(
 
 > **Implementation checklist:**
 > 1. Add `trial_index: int` parameter to `_run_trial()` signature
-> 2. Pass `trial_index=idx` from the futures submission loop (read lines 230-241)
+> 2. Convert the ThreadPoolExecutor dict comprehension (runner.py ~lines 236-241) to an explicit
+>    for-loop with `enumerate` so the index is available to pass as `trial_index`. Dict comprehensions
+>    don't natively support `enumerate`. Replace with:
+>    ```python
+>    future_to_item = {}
+>    for idx, (task, variant, rep) in enumerate(work_items, 1):
+>        future = executor.submit(
+>            self._run_trial, task, variant, doc_tree, rep, source, trial_index=idx
+>        )
+>        future_to_item[future] = (task, variant, rep)
+>    ```
 > 3. Add `_call_judge` as an instance method on `EvalRunner`
 > 4. Change `metrics={}` (line 631) to the populated dict above
 > 5. Monkeypatch target in test: `"agent_evals.runner.EvalRunner._call_judge"` (not `"agent_evals.runner._call_judge"`)
+> 6. Test call must pass `trial_index=i` once `_run_trial` signature is updated (already included above)
 
 **Step 4: Run tests**
 
