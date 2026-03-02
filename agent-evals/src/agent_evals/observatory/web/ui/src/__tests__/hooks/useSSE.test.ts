@@ -255,4 +255,28 @@ describe("useSSE", () => {
       data: alertData,
     });
   });
+
+  it("clears the poll interval when MAX_RECONNECTS is reached", async () => {
+    const { useSSE } = await import("../../hooks/useSSE");
+    const wrapper = createWrapper();
+    renderHook(() => useSSE({ runId: "run1" }), { wrapper });
+
+    // Reset fetch call count before triggering errors
+    mockFetchForPolling.mockClear();
+
+    // Trigger MAX_RECONNECTS (=10) errors
+    act(() => {
+      for (let i = 0; i < 10; i++) {
+        MockEventSource.instances[0]?.emit("error", {});
+      }
+    });
+
+    // After max reconnects, poll interval should be cleared.
+    // Advance past multiple poll intervals (5s each) — fetch should NOT be called.
+    mockFetchForPolling.mockClear();
+    await act(async () => {
+      vi.advanceTimersByTime(15000);
+    });
+    expect(mockFetchForPolling).not.toHaveBeenCalled();
+  });
 });

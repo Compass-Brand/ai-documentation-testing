@@ -100,6 +100,7 @@ export function useSSE({
     source.addEventListener("error", () => {
       reconnectCountRef.current += 1;
       if (reconnectCountRef.current >= MAX_RECONNECTS) {
+        clearInterval(pollInterval);
         disconnect();
         onError?.("SSE connection failed after maximum reconnection attempts.");
       } else {
