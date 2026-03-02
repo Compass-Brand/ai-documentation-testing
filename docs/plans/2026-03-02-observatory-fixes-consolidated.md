@@ -1663,17 +1663,28 @@ git commit -m "fix(frontend): wrap JSON.parse in try/catch in useSSE event handl
 **Step 1: Write failing test**
 
 ```typescript
-// Check useLiveMonitorState hook signature before writing — it may take { runId } not a bare string.
-// Also check if it uses the same MockEventSource pattern as useSSE.test.ts.
-// The mock's emit() JSON-stringifies its data arg — use it for well-formed events.
+// useLiveMonitorState takes: useLiveMonitorState(totalTasksOverride?: number)
+// It does NOT take { runId } — it selects the run ID internally via useActiveRuns().
+// To test this hook in isolation, the test must mock useActiveRuns() to return a run ID.
+// Read useLiveMonitorState.ts fully before writing this test to understand its internal queries.
+
 it("scores array stays bounded after many trials", async () => {
+  // Step A: Read useLiveMonitorState.ts to find which queries need mocking
+  // (useActiveRuns, useRun, useTrials are all internal — must mock at TanStack Query level)
+  // Step B: Mock useActiveRuns to return a fake run ID
+  // Step C: Set up MockEventSource so trial_completed events are fired
+  // The pattern below is a sketch — adjust to the actual internal dependencies:
   const { useLiveMonitorState } = await import("../../hooks/useLiveMonitorState");
   const wrapper = createWrapper();
-  // Adjust hook call if it takes an options object like useSSE does
-  const { result } = renderHook(() => useLiveMonitorState({ runId: "run1" }), { wrapper });
+  // Hook signature: useLiveMonitorState(totalTasksOverride?: number)
+  // Run ID comes from internal useActiveRuns() — mock that query to return "run1"
+  vi.mock("../../api/hooks", async () => {
+    const actual = await vi.importActual("../../api/hooks");
+    return { ...actual, useActiveRuns: () => [{ run_id: "run1", status: "active" }] };
+  });
+  const { result } = renderHook(() => useLiveMonitorState(), { wrapper });
   act(() => {
     for (let i = 0; i < 1500; i++) {
-      // Use emit() (mock helper) to fire trial_completed with well-formed data
       MockEventSource.instances[0]?.emit("trial_completed", {
         score: 0.5, task_id: `t${i}`,
       });
@@ -1849,16 +1860,19 @@ git commit -m "fix(frontend): clear poll interval when max SSE reconnects reache
 import pytest
 import yaml
 from agent_evals.variants.format_yaml import FormatYaml   # NOT FormatYamlVariant
-from agent_evals.fixtures import load_sample_doc_tree      # NOT make_sample_doc_tree
-from agent_index.models import DocFile                     # NOT DocNode
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_index.models import DocTree
 
 
-def make_doc(summary: str = "test summary") -> DocFile:
-    """Return a minimal DocFile with the given summary for testing."""
+def make_doc_tree(summary: str = "test summary") -> DocTree:
+    """Return a DocTree with the first file's summary set for testing.
+
+    render() takes DocTree NOT list[DocFile] — always pass the full DocTree.
+    """
     doc_tree = load_sample_doc_tree()
     doc = next(iter(doc_tree.files.values()))   # DocTree.files is a dict[str, DocFile]
     doc.summary = summary
-    return doc
+    return doc_tree   # Return the whole tree, not just the DocFile
 ```
 
 **Step 1: Write failing test**
@@ -1867,8 +1881,8 @@ def make_doc(summary: str = "test summary") -> DocFile:
 def test_yaml_summary_with_colon_is_parseable():
     import yaml
     variant = FormatYaml()   # NOT FormatYamlVariant()
-    doc = make_doc(summary="JWT auth: token-based login")
-    output = variant.render([doc])
+    doc_tree = make_doc_tree(summary="JWT auth: token-based login")
+    output = variant.render(doc_tree)   # render() takes DocTree, NOT list[DocFile]
     parsed = yaml.safe_load(output)  # Must not raise ScannerError
     assert parsed is not None
 ```
@@ -1922,15 +1936,18 @@ git commit -m "fix(variants): use yaml.safe_dump for summary to handle colon con
 import pytest
 from agent_evals.variants.format_pipe_delimited import FormatPipeDelimited  # NOT PipeDelimitedVariant
 from agent_evals.fixtures import load_sample_doc_tree
-from agent_index.models import DocFile
+from agent_index.models import DocTree
 
 
-def make_doc(summary: str = "test summary") -> DocFile:
-    """Return a minimal DocFile with the given summary for testing."""
+def make_doc_tree(summary: str = "test summary") -> DocTree:
+    """Return a DocTree with the first file's summary set for testing.
+
+    render() takes DocTree NOT list[DocFile] — always pass the full DocTree.
+    """
     doc_tree = load_sample_doc_tree()
     doc = next(iter(doc_tree.files.values()))
     doc.summary = summary
-    return doc
+    return doc_tree   # Return the whole tree, not just the DocFile
 
 
 # Check the actual header in format_pipe_delimited.py to determine EXPECTED_PIPE_COUNT:
@@ -1944,8 +1961,8 @@ EXPECTED_PIPE_COUNT = 4  # placeholder — verify against actual header before r
 ```python
 def test_pipe_in_summary_does_not_add_extra_columns():
     variant = FormatPipeDelimited()   # NOT PipeDelimitedVariant()
-    doc = make_doc(summary="A|B comparison")
-    output = variant.render([doc])
+    doc_tree = make_doc_tree(summary="A|B comparison")
+    output = variant.render(doc_tree)   # render() takes DocTree, NOT list[DocFile]
     data_rows = [r for r in output.splitlines() if "comparison" in r]
     assert len(data_rows) == 1
     assert data_rows[0].count("|") == EXPECTED_PIPE_COUNT
@@ -2000,13 +2017,11 @@ def test_trial_result_metrics_contains_timing_keys():
     variant = _make_mock_variant()
     doc_tree = _make_sample_doc_tree()
     client = _make_mock_client()
-    # Build a real EvalRunConfig (check EvalRunConfig fields in runner.py before filling)
-    config = EvalRunConfig(
-        model="openrouter/anthropic/claude-haiku-4-5-20251001",
-        task_types=["retrieval"],
-        task_limit=1,
-    )
-    runner = EvalRunner(config=config, client=client)
+    # EvalRunConfig has NO model/task_types/task_limit fields — use actual fields:
+    # repetitions, max_connections, max_tasks, temperature, max_tokens, use_cache, etc.
+    config = EvalRunConfig(max_tasks=1, repetitions=1, use_cache=False)
+    # EvalRunner takes client as FIRST positional arg, config as keyword arg
+    runner = EvalRunner(client, config=config)
     result = runner._run_trial(task, variant, doc_tree, repetition=1)
     assert result.metrics != {}, "metrics dict must not be empty"
     assert "scoring_ms" in result.metrics, "scoring_ms must be present"
@@ -2209,17 +2224,20 @@ def test_judge_score_sampled_into_metrics(monkeypatch):
         rationale="good", raw_response="Score: 0.8\nRationale: good",
     )
     monkeypatch.setattr(
-        "agent_evals.runner._call_judge",   # the wrapper function to create in Step 3
-        lambda task_type, question, response: mock_judge_score,
+        # _call_judge is an INSTANCE METHOD on EvalRunner, not a module-level function
+        "agent_evals.runner.EvalRunner._call_judge",
+        lambda self, task_type, question, response: mock_judge_score,
     )
-    # Adapt config and runner construction to match actual EvalRunConfig fields:
+    # EvalRunConfig has NO model/task_types fields — use actual runner config fields only
+    # EvalRunner takes client as FIRST positional arg, not keyword
     task = _make_mock_task()
     variant = _make_mock_variant()
     doc_tree = _make_sample_doc_tree()
     client = _make_mock_client()
-    config = EvalRunConfig(model="openrouter/anthropic/claude-haiku-4-5-20251001", task_types=["retrieval"])
-    runner = EvalRunner(config=config, client=client)
-    # Run enough trials that at least one hits the sampling rate
+    config = EvalRunConfig(use_cache=False)   # no model/task_types — those are CLI-level
+    runner = EvalRunner(client, config=config)  # client is FIRST positional arg
+    # Run enough trials that at least one hits the sampling rate (JUDGE_SAMPLE_RATE=50)
+    # NOTE: _run_trial() returns metrics={} by default — Step 3 must change that
     results = [runner._run_trial(task, variant, doc_tree, repetition=i) for i in range(1, 55)]
     judged = [r for r in results if "judge_score" in r.metrics]
     assert len(judged) >= 1, "At least one trial must be judge-sampled"
@@ -2233,30 +2251,30 @@ uv run pytest agent-evals/tests/test_runner.py::test_judge_score_sampled_into_me
 
 **Step 3: Implement Phase 1 sampling**
 
-First, add a `_call_judge` wrapper function to `runner.py` that uses the actual judge API:
+Add `_call_judge` as a **private method on `EvalRunner`** (NOT a module-level function — it needs access to `self._client`):
+
 ```python
 from agent_evals.judge.calibrator import build_judge_prompt, parse_judge_response, JudgeScore
 
 JUDGE_SAMPLE_RATE = 50  # 1 in every 50 trials (2%)
 JUDGE_MODEL = "openrouter/openai/gpt-5-mini"  # cheap routine model
 
-def _call_judge(task_type: str, question: str, response: str) -> JudgeScore:
-    """Call LLM judge for one trial. Returns JudgeScore with score 0.0–1.0.
+# Add to EvalRunner class as a method (NOT module-level — needs self._client):
+def _call_judge(self, task_type: str, question: str, response: str) -> JudgeScore:
+    """Call LLM judge for one trial.
 
-    build_judge_prompt() returns list[dict] (messages), NOT a str.
-    parse_judge_response() takes only `response: str` and returns tuple[float, str].
+    - build_judge_prompt() returns list[dict] messages (NOT a str)
+    - parse_judge_response() takes str, returns tuple[float, str]
+    - LLMClient.complete() takes list[dict], returns GenerationResult with .content
     """
     messages = build_judge_prompt(
-        task_type=task_type,   # REQUIRED first positional arg
+        task_type=task_type,   # REQUIRED first arg
         question=question,
         response=response,
         rubric=None,
     )
-    # Check actual LLM interface in agent-evals/src/agent_evals/llm/client.py:
-    # LLMClient.complete(messages: list[dict]) is the method — it's NOT a module-level call_llm()
-    # Access via the runner's self._client.complete(messages) or create a temporary LLMClient.
-    raw = self._client.complete(messages).content   # adjust if _call_judge is a method, not a function
-    score, rationale = parse_judge_response(raw)   # returns tuple[float, str], NOT JudgeScore
+    raw = self._client.complete(messages).content  # complete() takes list[dict]
+    score, rationale = parse_judge_response(raw)   # unpack tuple[float, str]
     return JudgeScore(
         example_id="",
         judge_model=JUDGE_MODEL,
@@ -2266,20 +2284,37 @@ def _call_judge(task_type: str, question: str, response: str) -> JudgeScore:
     )
 ```
 
-Then in the trial loop, after computing `heuristic_score`:
+Then add sampling to `_run_trial()` — the method already returns `metrics={}` (line 631). Change it to:
 ```python
+# Add a trial_index parameter to _run_trial() so sampling is deterministic.
+# In the ThreadPoolExecutor submission loop (runner.py ~lines 230-241), enumerate the submissions
+# and pass the index as trial_index. Then inside _run_trial():
+metrics: dict[str, object] = {}
 if trial_index % JUDGE_SAMPLE_RATE == 0:
     try:
-        judge_result = _call_judge(task_type, question, response)
+        judge_result = self._call_judge(
+            task.definition.type,
+            task.definition.question,
+            generation.content,
+        )
         metrics["judge_score"] = judge_result.score
-        metrics["judge_heuristic_delta"] = abs(judge_result.score - heuristic_score)
+        metrics["judge_heuristic_delta"] = abs(judge_result.score - score)
     except Exception:
         pass  # Judge failure must not affect trial outcome
+
+return TrialResult(
+    ...
+    metrics=metrics,   # replace the hardcoded metrics={}
+    ...
+)
 ```
 
-> **Note on `trial_index`:** `_run_trial()` is called concurrently via `ThreadPoolExecutor`. There is no sequential `trial_index` variable inside it. To implement sampling, either: (a) add an `trial_index: int` parameter to `_run_trial()` and pass it from the submission loop, or (b) use a `threading.atomic` counter on the runner. The loop code (lines ~230-241 of runner.py) must be read to choose the cleanest approach.
->
-> **Note on `_call_judge` scope:** If `_call_judge` is a module-level function (not a method), it cannot use `self._client`. Either make it a private method (`self._call_judge(...)`) or accept a `client` parameter explicitly. Check the runner's architecture and decide before implementing.
+> **Implementation checklist:**
+> 1. Add `trial_index: int` parameter to `_run_trial()` signature
+> 2. Pass `trial_index=idx` from the futures submission loop (read lines 230-241)
+> 3. Add `_call_judge` as an instance method on `EvalRunner`
+> 4. Change `metrics={}` (line 631) to the populated dict above
+> 5. Monkeypatch target in test: `"agent_evals.runner.EvalRunner._call_judge"` (not `"agent_evals.runner._call_judge"`)
 
 **Step 4: Run tests**
 
@@ -2397,25 +2432,36 @@ git commit -m "feat(infra): add rotating JSON file logging to Observatory (I7)"
 - Modify: `agent-evals/src/agent_evals/observatory/web/routes.py` (lifespan)
 - Test: `agent-evals/tests/test_observatory_web.py`
 
+**⚠️ Pre-implementation investigation required — read this FIRST:**
+
+Verification found that `routes.py` and `server.py` currently have **NO lifespan context manager** and `ModelCatalog` has **NO `sync()` method**. Before writing the test, the implementer MUST:
+
+1. **Check if Task 15b (HeartbeatThread) adds a lifespan.** If Task 15b adds a `@asynccontextmanager` lifespan to the FastAPI app, Task 31 can add the catalog sync to it. If Task 15b was NOT implemented yet, implement it first.
+
+2. **Check ModelCatalog for the actual sync method name.** Read `agent-evals/src/agent_evals/observatory/model_catalog.py`. There is also a separate `ModelSync` class (`model_sync.py`) and `model_sync: ModelSync | None = None` parameter in `create_router()`. The "sync" may go through `ModelSync.sync_models()` or a different method name — verify before writing the test.
+
+3. **Adjust the test to match the real method name.**
+
+**Step 0: Investigate**
+```bash
+# Check ModelCatalog for sync-like methods
+grep -n "def " agent-evals/src/agent_evals/observatory/model_catalog.py
+# Check ModelSync
+grep -n "def " agent-evals/src/agent_evals/observatory/model_sync.py
+# Check if lifespan exists (added by Task 15b)
+grep -n "lifespan\|asynccontextmanager" agent-evals/src/agent_evals/observatory/web/routes.py
+```
+
 **Step 1: Write failing test**
 
-> **IMPORTANT — `catalog` is NOT a module-level variable.** In `routes.py`, `catalog` is a parameter to `create_router(config, ...)` — it lives in the closure, not at module level. `monkeypatch.setattr(routes, "catalog", mock)` will fail with `AttributeError`.
->
-> **Fix approach:** Add a module-level sentinel in `routes.py` that `create_router()` assigns to when called, then patch that. Alternatively, re-create the app in the test with a mock catalog injected. Check how `app` is constructed in `test_observatory_web.py` — there may already be a fixture that builds the app with injected dependencies.
->
-> **Implementation check:** Before writing this test, read how `app` is built in the existing test file:
-> ```bash
-> grep -n "create_router\|app\s*=" agent-evals/tests/test_observatory_web.py | head -20
-> ```
-> Then inject the mock via the same pattern. If `create_router()` is called with `catalog=None`, re-call it with `catalog=mock_catalog_instance`.
-
+Once the actual method name and lifespan existence are confirmed, the test pattern is:
 ```python
 @pytest.fixture
 def mock_catalog():
     """Return a MagicMock for ModelCatalog."""
     from unittest.mock import MagicMock
     from agent_evals.observatory.model_catalog import ModelCatalog
-    return MagicMock(spec=ModelCatalog)
+    return MagicMock()  # use MagicMock() not spec=ModelCatalog if sync() doesn't exist yet
 
 def test_model_catalog_sync_called_on_startup(mock_catalog, tmp_path):
     """Model catalog sync must be called during server lifespan startup."""
@@ -2425,11 +2471,12 @@ def test_model_catalog_sync_called_on_startup(mock_catalog, tmp_path):
     from fastapi import FastAPI
     store = ObservatoryStore(db_path=tmp_path / "test.db")
     tracker = EventTracker(store=store)
-    # Inject mock catalog into the router at creation time
+    # Inject mock catalog into the router at creation time (create_router accepts catalog kwarg)
     router = create_router(store=store, tracker=tracker, catalog=mock_catalog)
     test_app = FastAPI()
     test_app.include_router(router)
     with TestClient(test_app) as _client:
+        # Replace .sync with the actual method name confirmed in Step 0
         mock_catalog.sync.assert_called_once()
 ```
 
@@ -2441,11 +2488,12 @@ uv run pytest agent-evals/tests/test_observatory_web.py::test_model_catalog_sync
 
 **Step 3: Add sync call to lifespan**
 
-In `routes.py` lifespan (the same one modified in Task 15b):
+In `routes.py`, ensure the lifespan (from Task 15b) includes:
 ```python
 try:
-    await asyncio.to_thread(catalog.sync)
-    logger.info("Model catalog synced on startup")
+    if catalog is not None:
+        await asyncio.to_thread(catalog.sync)  # replace .sync() with actual method name
+        logger.info("Model catalog synced on startup")
 except Exception as e:
     logger.warning("Model catalog sync failed on startup: %s", e)
 ```
