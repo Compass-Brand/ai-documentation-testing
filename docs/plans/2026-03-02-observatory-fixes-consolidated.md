@@ -4315,6 +4315,471 @@ uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -20
 
 ---
 
+## Sprint 12 — Dataset Integration & CLI Cleanup
+
+> **Why these are bugs, not features:** The `--source` flag is parsed but its value is never read — the CLI silently ignores it and always loads from `gold_standard/`. Running `agent-evals --source repliqa` produces the same results as `agent-evals`, making the flag a lie. The CLI also has 13 flags that are either completely dead (parsed, never read from `resolved`) or expose Taguchi internals with no sensible user-facing meaning (S/N ratio quality type, ANOVA alpha, OA override). Both issues make the tool misleading and hard to use correctly.
+
+---
+
+### Task 42: Wire `--source` to load from dataset adapters (E9 — HIGH)
+
+**Files:**
+- Modify: `agent-evals/src/agent_evals/cli.py` (lines 714–764, the task+doc_tree loading block)
+- Modify: `agent-evals/tests/test_evals_cli.py` (new tests for `--source` routing)
+
+> **Context:** The `DatasetCache` class lives in `agent_evals.datasets.cache`:
+> ```python
+> from agent_evals.datasets.cache import DatasetCache
+> cache = DatasetCache()           # defaults to ~/.agent-evals/datasets/
+> cache.is_prepared("repliqa")    # bool — True if --prepare-datasets was run
+> cache.task_dir("repliqa")       # Path → .../repliqa/tasks/   (YAML files)
+> cache.doc_tree_path("repliqa")  # Path → .../repliqa/doc_tree.json
+> ```
+> Load the DocTree from JSON:
+> ```python
+> from agent_index.models import DocTree
+> doc_tree = DocTree.model_validate_json(cache.doc_tree_path("repliqa").read_text())
+> ```
+> The fixture fallback:
+> ```python
+> from agent_evals.fixtures import load_sample_doc_tree
+> doc_tree = load_sample_doc_tree()
+> ```
+> The existing task loader:
+> ```python
+> from agent_evals.tasks.loader import load_tasks
+> tasks = load_tasks(some_dir)   # returns list of task instances
+> ```
+
+**Step 1 [RED]:** Write failing tests in `test_evals_cli.py`
+
+```python
+class TestSourceRouting:
+    """--source flag routes task and doc_tree loading correctly."""
+
+    def test_no_source_loads_gold_standard(self, monkeypatch, tmp_path):
+        """When --source is absent, loads from gold_standard dir."""
+        gold_dir = tmp_path / "gold_standard"
+        gold_dir.mkdir()
+        loaded_dirs: list = []
+
+        monkeypatch.setattr(
+            "agent_evals.cli.load_tasks",
+            lambda d: (loaded_dirs.append(d), [])[1],
+        )
+        monkeypatch.setattr(
+            "agent_evals.cli.load_sample_doc_tree", lambda: object()
+        )
+        monkeypatch.setattr(
+            "agent_evals.cli.Path",
+            lambda *a, **kw: gold_dir if "gold_standard" in str(a) else Path(*a, **kw),
+        )
+        from agent_evals.cli import _run_evaluation
+        _run_evaluation({"model": "m", "dry_run": True})
+        assert any("gold_standard" in str(d) for d in loaded_dirs)
+
+    def test_source_dataset_loads_from_cache_task_dir(self, monkeypatch, tmp_path):
+        """When --source repliqa, tasks come from DatasetCache.task_dir."""
+        task_dir = tmp_path / "repliqa" / "tasks"
+        task_dir.mkdir(parents=True)
+        dt_path = tmp_path / "repliqa" / "doc_tree.json"
+
+        from agent_index.models import DocTree
+        from datetime import UTC, datetime
+        dt = DocTree(files={}, scanned_at=datetime.now(tz=UTC), source="repliqa", total_tokens=0)
+        dt_path.write_text(dt.model_dump_json())
+
+        loaded_dirs: list = []
+        monkeypatch.setattr(
+            "agent_evals.cli.load_tasks",
+            lambda d: (loaded_dirs.append(d), [])[1],
+        )
+
+        class FakeCache:
+            def is_prepared(self, name): return True
+            def task_dir(self, name): return task_dir
+            def doc_tree_path(self, name): return dt_path
+
+        monkeypatch.setattr("agent_evals.cli.DatasetCache", lambda: FakeCache())
+        from agent_evals.cli import _run_evaluation
+        _run_evaluation({"model": "m", "source": "repliqa", "dry_run": True})
+        assert task_dir in loaded_dirs
+
+    def test_source_dataset_not_prepared_returns_error(self, monkeypatch):
+        """When dataset not prepared, returns exit code 1 with helpful message."""
+        class FakeCache:
+            def is_prepared(self, name): return False
+            def task_dir(self, name): raise AssertionError("should not call task_dir")
+            def doc_tree_path(self, name): raise AssertionError("should not call doc_tree_path")
+
+        monkeypatch.setattr("agent_evals.cli.DatasetCache", lambda: FakeCache())
+        from agent_evals.cli import _run_evaluation
+        result = _run_evaluation({"model": "m", "source": "repliqa"})
+        assert result == 1
+
+    def test_source_dataset_loads_correct_doc_tree(self, monkeypatch, tmp_path):
+        """When --source repliqa, doc_tree is from cache, NOT load_sample_doc_tree."""
+        task_dir = tmp_path / "repliqa" / "tasks"
+        task_dir.mkdir(parents=True)
+        dt_path = tmp_path / "repliqa" / "doc_tree.json"
+
+        from agent_index.models import DocTree
+        from datetime import UTC, datetime
+        sentinel_source = "REPLIQA_SENTINEL"
+        dt = DocTree(files={}, scanned_at=datetime.now(tz=UTC), source=sentinel_source, total_tokens=0)
+        dt_path.write_text(dt.model_dump_json())
+
+        captured_doc_tree: list = []
+
+        class FakeRunner:
+            def __init__(self, **kw): pass
+            def run(self, tasks, variants, doc_tree, **kw):
+                captured_doc_tree.append(doc_tree)
+                from agent_evals.runner import EvalResult
+                return EvalResult(trials=[], total_cost=0.0, elapsed_seconds=0.0)
+
+        class FakeCache:
+            def is_prepared(self, name): return True
+            def task_dir(self, name): return task_dir
+            def doc_tree_path(self, name): return dt_path
+
+        monkeypatch.setattr("agent_evals.cli.DatasetCache", lambda: FakeCache())
+        monkeypatch.setattr("agent_evals.cli.load_tasks", lambda d: [])
+        monkeypatch.setattr("agent_evals.cli.EvalRunner", FakeRunner)
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+        from agent_evals.cli import _run_evaluation
+        _run_evaluation({"model": "m", "source": "repliqa"})
+        # Must NOT have called load_sample_doc_tree (sentinel proves we used cache)
+        assert captured_doc_tree and captured_doc_tree[0].source == sentinel_source
+```
+
+**Step 2 [RED]:** Run to confirm failures
+
+```bash
+uv run pytest agent-evals/tests/test_evals_cli.py::TestSourceRouting -v
+# Expected: FAIL — source is ignored, always loads gold_standard
+```
+
+**Step 3 [GREEN]:** Replace the task+doc_tree loading block in `_run_evaluation` (cli.py lines 714–764)
+
+Replace the current hardcoded block:
+```python
+    # Load tasks
+    gold_standard_dir = Path(__file__).resolve().parent.parent.parent / "gold_standard"
+    if not gold_standard_dir.is_dir():
+        logger.error("Gold standard directory not found: %s", gold_standard_dir)
+        return 1
+
+    tasks = load_tasks(gold_standard_dir)
+
+    ...
+
+    # Load doc_tree
+    from agent_evals.fixtures import load_sample_doc_tree
+
+    doc_tree = load_sample_doc_tree()
+```
+
+With the new source-aware block:
+```python
+    from agent_evals.tasks.loader import load_tasks
+
+    source = resolved.get("source") or "gold_standard"
+
+    if source == "gold_standard":
+        gold_standard_dir = Path(__file__).resolve().parent.parent.parent / "gold_standard"
+        if not gold_standard_dir.is_dir():
+            logger.error("Gold standard directory not found: %s", gold_standard_dir)
+            return 1
+        tasks = load_tasks(gold_standard_dir)
+        from agent_evals.fixtures import load_sample_doc_tree
+        doc_tree = load_sample_doc_tree()
+    else:
+        from agent_evals.datasets import load_all as _load_all_datasets
+        from agent_evals.datasets.cache import DatasetCache
+        from agent_index.models import DocTree
+
+        _load_all_datasets()
+        cache = DatasetCache()
+        if not cache.is_prepared(source):
+            logger.error(
+                "Dataset '%s' has not been prepared. Run first:\n"
+                "  agent-evals --prepare-datasets %s",
+                source, source,
+            )
+            return 1
+        tasks = load_tasks(cache.task_dir(source))
+        doc_tree = DocTree.model_validate_json(
+            cache.doc_tree_path(source).read_text(encoding="utf-8")
+        )
+```
+
+> Note: `load_tasks` import is moved inside `_run_evaluation` because it was already imported inside the function for the gold_standard branch. Keep it consistent — move the import to just before the `source` branch (it's already there in the existing code at line 704 in the outer import block).
+
+**Step 4 [GREEN]:** Run tests to confirm they pass
+
+```bash
+uv run pytest agent-evals/tests/test_evals_cli.py::TestSourceRouting -v
+# Expected: all 4 tests PASS
+```
+
+**Step 5 [REFACTOR]:** Review the implementation
+- Single `source` value only — no comma-separated mixing. Different datasets have different corpora; mixing would use the wrong doc_tree for half the tasks.
+- The error message when not prepared tells the user exactly what command to run.
+- `_load_all_datasets()` must be called before `DatasetCache` is queried so adapters register themselves.
+- If `source == "gold_standard"` explicitly, uses the fixture (same as no `--source`).
+
+**Step 6 [VERIFY]:** Dry-run smoke test
+
+```bash
+# Confirm gold_standard still works (no --source)
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --dry-run 2>&1 | grep -E "tasks|source|error"
+# Expected: no errors, prints task count from gold_standard
+
+# Confirm unprepared dataset gives clear error
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --source repliqa --dry-run 2>&1
+# Expected: "Dataset 'repliqa' has not been prepared. Run first: agent-evals --prepare-datasets repliqa"
+
+# Prepare and confirm it works
+uv run agent-evals --prepare-datasets repliqa --dataset-limit 10 2>&1
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --source repliqa --dry-run 2>&1 | grep -E "tasks|error"
+# Expected: loads 10 tasks from repliqa, no errors
+```
+
+**Step 7: Commit**
+
+```bash
+git add agent-evals/src/agent_evals/cli.py \
+        agent-evals/tests/test_evals_cli.py
+git commit -m "fix(cli): wire --source to load tasks and doc_tree from dataset cache (E9)"
+```
+
+---
+
+### Task 43: Remove dead and overcomplicated CLI flags (E10 — MEDIUM)
+
+**Files:**
+- Modify: `agent-evals/src/agent_evals/cli.py` (throughout: `_add_run_args`, `_CONFIG_KEYS`, `_run_taguchi`, `_run_pipeline`)
+- Modify: `agent-evals/tests/test_evals_cli.py` (remove tests for deleted flags, add tests for removed flags raising errors)
+
+> **Context:**
+> ```python
+> from agent_evals.cli import build_parser, _CONFIG_KEYS, resolve_config
+> parser = build_parser()
+> args = parser.parse_args(["--model", "m"])
+> resolved = resolve_config(args, {})
+> # After cleanup, these keys must NOT be in resolved or _CONFIG_KEYS:
+> # model_config, judge_model, max_cost, oa_type, confirmation_runs,
+> # phase, parent_run, quality_type, top_k, alpha, model_budgets, dataset_cache_dir
+> ```
+
+**Flags to remove** (13 total):
+
+| Flag | Reason |
+|------|--------|
+| `--model-config` | Parsed into `resolved` but never read anywhere in evaluation logic |
+| `--judge-model` | Parsed into `resolved` but never read anywhere in evaluation logic |
+| `--max-cost` | Parsed but never read; confusingly distinct from `--budget` which IS used |
+| `--oa-type` | Forces specific Taguchi OA table — internal Taguchi detail, auto-selection works |
+| `--confirmation-runs` | Parsed but never read (not used in `_run_pipeline` or `PipelineConfig`) |
+| `--phase` | Manual DOE phase control — overly complex; pipeline runs all phases automatically |
+| `--parent-run` | Parsed but never read from `resolved` in either pipeline or taguchi |
+| `--quality-type` | S/N ratio quality type — always `larger_is_better` for doc eval |
+| `--alpha` | ANOVA significance threshold — 0.05 is universal, no user should change this |
+| `--top-k` | Top factors for Phase 3 factorial — hardcode 3 |
+| `--model-budgets` | Complex `"model=amount,model2=amount2"` string format — confusing; use `--budget` |
+| `--dataset-cache-dir` | Internal implementation detail; cache at `~/.agent-evals/datasets/` always |
+| `factorial` (from `--mode` choices) | Listed as a choice but `_run_evaluation` has no `_run_factorial`; falls through to full mode silently |
+
+**Also:** Update `_run_pipeline` and `_run_taguchi` to remove reads of deleted keys and hardcode their defaults.
+
+**Step 1 [RED]:** Write failing tests confirming removed flags are gone
+
+```python
+class TestRemovedFlags:
+    """Removed flags must not exist in parser or _CONFIG_KEYS."""
+
+    REMOVED_FLAGS = [
+        "--model-config",
+        "--judge-model",
+        "--max-cost",
+        "--oa-type",
+        "--confirmation-runs",
+        "--phase",
+        "--parent-run",
+        "--quality-type",
+        "--alpha",
+        "--top-k",
+        "--model-budgets",
+        "--dataset-cache-dir",
+    ]
+    REMOVED_KEYS = [
+        "model_config", "judge_model", "max_cost", "oa_type",
+        "confirmation_runs", "phase", "parent_run", "quality_type",
+        "top_k", "alpha", "model_budgets", "dataset_cache_dir",
+    ]
+
+    @pytest.mark.parametrize("flag", REMOVED_FLAGS)
+    def test_removed_flag_raises_system_exit(self, flag):
+        """Passing a removed flag must cause argparse to exit (unrecognized)."""
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args([flag, "value"])
+
+    @pytest.mark.parametrize("key", REMOVED_KEYS)
+    def test_removed_key_not_in_config_keys(self, key):
+        """Removed flags must not appear in _CONFIG_KEYS."""
+        from agent_evals.cli import _CONFIG_KEYS
+        assert key not in _CONFIG_KEYS
+
+    def test_mode_factorial_is_not_a_valid_choice(self):
+        """factorial is removed from --mode choices."""
+        parser = build_parser()
+        with pytest.raises(SystemExit):
+            parser.parse_args(["--mode", "factorial"])
+```
+
+**Step 2 [RED]:** Also update existing tests that assert on the removed flags
+
+In `test_evals_cli.py`, find and delete the following test methods (they test flags that no longer exist):
+```bash
+grep -n "model_config\|judge_model\|max_cost\|oa_type\|confirmation_runs\|parent_run\|quality_type\|top_k.*default\|alpha.*default\|model_budgets\|dataset_cache_dir\|factorial" \
+    agent-evals/tests/test_evals_cli.py
+# Delete all matching test methods
+```
+
+**Step 3 [RED]:** Run to confirm failures
+
+```bash
+uv run pytest agent-evals/tests/test_evals_cli.py::TestRemovedFlags -v
+# Expected: FAIL — flags still exist in current parser
+```
+
+**Step 4 [GREEN]:** Remove flags from `_add_run_args` in `cli.py`
+
+Delete the `parser.add_argument` blocks for all 13 flags listed above. Also change `--mode` choices from `["full", "taguchi", "factorial"]` to `["full", "taguchi"]`.
+
+**Step 5 [GREEN]:** Remove keys from `_CONFIG_KEYS`
+
+Delete these 13 entries from the `_CONFIG_KEYS` dict:
+```python
+# DELETE these lines:
+"model_config": str,
+"judge_model": str,
+"max_cost": float,
+"oa_type": str,
+"confirmation_runs": int,
+"phase": str,
+"parent_run": str,
+"quality_type": str,
+"top_k": int,
+"alpha": float,
+"model_budgets": str,
+"dataset_cache_dir": str,
+```
+
+**Step 6 [GREEN]:** Update `_run_taguchi` — remove reads of deleted keys
+
+In `_run_taguchi`, replace:
+```python
+    oa_override = resolved.get("oa_type")
+    design = build_design(
+        axes,
+        models=models_list if len(models_list) > 1 else None,
+        oa_override=str(oa_override) if oa_override else None,
+    )
+```
+With:
+```python
+    design = build_design(
+        axes,
+        models=models_list if len(models_list) > 1 else None,
+    )
+```
+
+Remove the `model_budgets` parsing block in `_run_taguchi` and pass `model_budgets=None` to `OrchestratorConfig`:
+```python
+    orch_config = OrchestratorConfig(
+        mode="taguchi",
+        models=models_list,
+        api_key=api_key,
+        report_format=resolved.get("report"),
+        global_budget=resolved.get("budget"),
+        model_budgets=None,   # removed --model-budgets flag
+        temperature=run_config.temperature,
+        eval_config=run_config,
+        dashboard=resolved.get("dashboard", False),
+        dashboard_port=int(resolved.get("dashboard_port", 8501)),
+    )
+```
+
+**Step 7 [GREEN]:** Update `_run_pipeline` — remove reads of deleted keys and hardcode defaults
+
+Replace the `PipelineConfig` construction in `_run_pipeline`:
+```python
+    pipeline_config = PipelineConfig(
+        models=models_list,
+        mode=str(resolved.get("pipeline", "auto")),
+        quality_type="larger_is_better",   # hardcoded: always correct for doc eval
+        alpha=0.05,                         # hardcoded: standard significance level
+        top_k=3,                            # hardcoded: sensible default
+        oa_override=None,                   # removed: auto-select OA always
+        report_format=resolved.get("report"),
+        api_key=api_key,
+        dashboard=resolved.get("dashboard", False),
+        temperature=run_config.temperature,
+        global_budget=resolved.get("budget"),
+        model_budgets=None,                 # removed --model-budgets flag
+    )
+```
+
+Also remove the `model_budgets` parsing block at the top of `_run_pipeline` (the `raw_budgets = resolved.get("model_budgets")` block and the for-loop that parses `"key=val,key2=val2"`).
+
+Also remove the `orch_config` `model_budgets` parsing block in `_run_pipeline` (same pattern as in `_run_taguchi`).
+
+**Step 8 [GREEN]:** Delete obsolete tests for removed flags from `test_evals_cli.py`
+
+Delete test methods that assert `args.model_config is None`, `args.judge_model is None`, and any other methods that reference removed attribute names on parsed `args`.
+
+**Step 9 [GREEN]:** Run all tests to confirm they pass
+
+```bash
+uv run pytest agent-evals/tests/test_evals_cli.py -v
+# Expected: TestRemovedFlags all PASS; no failures from removed flag tests
+uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -20
+# Expected: all tests pass (confirm test count did not decrease unexpectedly)
+```
+
+**Step 10 [REFACTOR]:** Review the cleanup
+- `_CONFIG_KEYS` should now have exactly these keys: `axis, tasks, task_id, variant, model, limit, repetitions, temperature, max_connections, max_tasks, dry_run, no_cache, output_dir, output_format, display, continue_on_error, source, dataset_limit, prepare_datasets, list_datasets, mode, models, confirmation_runs... wait — confirmation_runs is being removed.`
+- Confirm `--mode` only accepts `full` and `taguchi` (not `factorial`).
+- The `--pipeline` flag still exists with `auto/semi` choices — this triggers `_run_pipeline` which is still in the code. The three-phase DOE pipeline is not removed, just simplified (no manual overrides).
+- `--budget` remains and maps to `global_budget` in `OrchestratorConfig`.
+- `--sync-interval` in the run subcommand — check if it's used. If not, add to remove list.
+
+**Step 11 [VERIFY]:** Confirm `--help` output is clean
+
+```bash
+uv run agent-evals --help 2>&1
+# Expected: no mention of model-config, judge-model, max-cost, oa-type,
+#           confirmation-runs, phase, parent-run, quality-type, top-k,
+#           alpha, model-budgets, dataset-cache-dir
+#           --mode only shows: {full,taguchi}
+
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --dry-run 2>&1 | head -20
+# Expected: runs successfully, prints dry-run config with no unexpected keys
+```
+
+**Step 12: Commit**
+
+```bash
+git add agent-evals/src/agent_evals/cli.py \
+        agent-evals/tests/test_evals_cli.py
+git commit -m "fix(cli): remove 13 dead/overcomplicated flags, simplify to core options (E10)"
+```
+
+---
+
 ## Manual Investigations (No Code Change)
 
 ### Task 38: Review perfect-score latency anomaly (D4)
@@ -4379,6 +4844,21 @@ assert sum(scores)/len(scores) > 0.30, 'Scorer fix did not improve compositional
 ```bash
 uv run pytest --collect-only -q 2>&1 | tail -3
 # Note total test count and compare to before
+```
+
+**Dataset integration check (Tasks 42 + 43):**
+```bash
+# Confirm --source gold_standard still works (backward compat)
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --dry-run 2>&1 | grep -E "tasks|error"
+
+# Confirm removed flags are gone
+uv run agent-evals --model-config foo.yaml --dry-run 2>&1 | grep -E "unrecognized|error"
+# Expected: "unrecognized arguments: --model-config"
+
+# Confirm dataset source works
+uv run agent-evals --prepare-datasets repliqa --dataset-limit 10
+uv run agent-evals --model openrouter/anthropic/claude-haiku-4-5-20251001 --source repliqa --dry-run 2>&1 | grep -E "tasks|error"
+# Expected: loads 10 repliqa tasks, no errors
 ```
 
 **Investigation tasks (D4, D5):** Tasks 38 and 39 are manual investigations with no automated tests. They are complete when a beads issue has been filed with root cause identified. They do not appear in the test suite pass/fail count.
