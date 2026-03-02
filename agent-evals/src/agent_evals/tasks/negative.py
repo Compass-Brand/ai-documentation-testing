@@ -1,12 +1,13 @@
 """Negative (unanswerable) task type for evaluating abstention behaviour.
 
-Scores responses by checking for the presence of recognised abstention
+Scores responses using a tiered rubric that checks for recognised abstention
 phrases.  A correct response to an unanswerable question should contain
-one of these phrases and therefore receives a score of 1.0.
+a firm refusal phrase (1.0), a hedge with caveat (0.7), or an answer
+with a disclaimer (0.3).  Confident hallucinations score 0.0.
 
-The abstention phrase list covers 30+ common LLM refusal and uncertainty
-wordings grouped into categories: explicit refusal, information absence,
-search failure, uncertainty hedging, and scope limitation.
+The phrase lists cover 35+ common LLM refusal and uncertainty wordings
+grouped into three tiers: firm refusal, hedge with caveat, and answer
+with disclaimer.
 """
 
 from __future__ import annotations
@@ -16,10 +17,10 @@ from typing import Any
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 # ---------------------------------------------------------------------------
-# Abstention phrases — checked case-insensitively via ``phrase in response``.
-# Grouped by category so maintainers can easily spot gaps.
+# Tiered abstention phrases — checked case-insensitively via
+# ``phrase in response``.  Priority order: firm_refusal > hedge > disclaimer.
 # ---------------------------------------------------------------------------
-_ABSTENTION_PHRASES: tuple[str, ...] = (
+_FIRM_REFUSAL: frozenset[str] = frozenset([
     # -- Explicit refusal / inability --
     "cannot be determined",
     "cannot answer",
@@ -60,10 +61,15 @@ _ABSTENTION_PHRASES: tuple[str, ...] = (
     "i am not sure",
     "not clear from",
     "insufficient information",
-    # -- Scope limitation --
-    "based on the available",
-    "the provided documentation",
-)
+])
+_HEDGE_WITH_CAVEAT: frozenset[str] = frozenset([
+    "i'm not certain", "i cannot confirm", "it's unclear",
+    "the documentation doesn't explicitly",
+])
+_ANSWER_WITH_DISCLAIMER: frozenset[str] = frozenset([
+    "based on limited information", "this may not be accurate",
+    "i'm making an assumption",
+])
 
 
 class NegativeTask(EvalTask):
@@ -116,22 +122,28 @@ class NegativeTask(EvalTask):
         ]
 
     def score_response(self, response: str, **kwargs: object) -> float:
-        """Score response based on presence of abstention phrases.
+        """Score response using tiered rubric for abstention quality.
 
-        Returns 1.0 if the response contains any recognised abstention
-        phrase (case-insensitive), otherwise 0.0.
+        Tiers (checked in priority order):
+        - 1.0: Firm refusal (e.g. "cannot be determined")
+        - 0.7: Hedge with caveat (e.g. "I'm not certain")
+        - 0.3: Answer with disclaimer (e.g. "based on limited information")
+        - 0.0: Confident hallucination (no abstention phrases)
 
         Args:
             response: The raw text response from the LLM.
             **kwargs: Additional scoring context (unused).
 
         Returns:
-            1.0 if abstention detected, 0.0 otherwise.
+            Score between 0.0 and 1.0 based on abstention tier.
         """
         response_lower = response.lower()
-        for phrase in _ABSTENTION_PHRASES:
-            if phrase in response_lower:
-                return 1.0
+        if any(p in response_lower for p in _FIRM_REFUSAL):
+            return 1.0
+        if any(p in response_lower for p in _HEDGE_WITH_CAVEAT):
+            return 0.7
+        if any(p in response_lower for p in _ANSWER_WITH_DISCLAIMER):
+            return 0.3
         return 0.0
 
 

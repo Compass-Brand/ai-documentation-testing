@@ -65,3 +65,4 @@
 # - linear.api-key
 # - github.org
 # - github.repo
+no-db: true
