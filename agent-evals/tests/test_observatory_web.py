@@ -6,6 +6,7 @@ Uses FastAPI TestClient for endpoint testing.
 
 from __future__ import annotations
 
+import itertools
 from pathlib import Path
 
 import pytest
@@ -171,6 +172,17 @@ class TestSSE:
         """Verify the SSE stream route exists in the app's route table."""
         routes = [r.path for r in client.app.routes]
         assert "/api/runs/{run_id}/stream" in routes
+
+    def test_sse_events_include_monotonic_id(self) -> None:
+        """SSE generator includes 'id' key in yielded event dicts."""
+        from agent_evals.observatory.web.routes import _sse_seq
+
+        # Verify the module-level sequence counter exists and produces
+        # monotonically increasing integers
+        start = next(_sse_seq)
+        ids = [start] + [next(_sse_seq) for _ in range(4)]
+        assert ids == sorted(ids), "SSE sequence IDs must be monotonic"
+        assert len(set(ids)) == 5, "SSE sequence IDs must be unique"
 
 
 class TestHistoryAPI:
