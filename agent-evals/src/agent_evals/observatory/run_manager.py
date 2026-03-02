@@ -33,7 +33,7 @@ class RunSetupError(RuntimeError):
     """Raised when run setup fails; causes _run_wrapper to mark run as failed."""
 
 
-_MODEL_PATTERN = re.compile(r"^[\w.-]+/[\w./-]+$")
+_MODEL_PATTERN = re.compile(r"^[\w.-]+/[\w.:/-]+$")
 
 
 def _validate_model_name(model: str) -> None:

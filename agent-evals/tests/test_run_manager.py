@@ -237,3 +237,17 @@ class TestModelValidation:
                 request=StartRunRequest(model="openrouter/anthropic/claude-sonnet-4", task_limit=1)
             )
         assert isinstance(run_id, str)
+
+    def test_free_tier_colon_suffix_accepted(self, tmp_path: Path) -> None:
+        """OpenRouter ':free' tier suffix must be accepted by model validation."""
+        store = ObservatoryStore(db_path=tmp_path / "test.db")
+        tracker = EventTracker(store=store)
+        manager = RunManager(store=store, tracker=tracker)
+        with patch.object(manager, "_execute_run"):
+            run_id = manager.start_run(
+                request=StartRunRequest(
+                    model="openrouter/arcee-ai/trinity-large-preview:free",
+                    task_limit=1,
+                )
+            )
+        assert isinstance(run_id, str)
