@@ -9,6 +9,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from rapidfuzz import fuzz, utils as fuzz_utils
+
+from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
@@ -65,11 +68,30 @@ class CompositionalTask(EvalTask):
             },
         ]
 
+    def _score_sub_answer(self, expected: str, response_lower: str) -> float:
+        """Score one sub-answer using exact containment, then fuzzy keyword coverage."""
+        if expected.lower() in response_lower:
+            return 1.0
+        keywords = extract_keywords(expected)
+        if not keywords:
+            return 0.0
+        matched = 0
+        for kw in keywords:
+            score = fuzz.partial_ratio(
+                kw.lower(), response_lower,
+                processor=fuzz_utils.default_process,
+                score_cutoff=80.0,
+            )
+            if score > 0:
+                matched += 1
+        return matched / len(keywords)
+
     def score_response(self, response: str, **kwargs: object) -> float:
         """Score response by checking sub-task answer coverage.
 
         For each sub-task with a non-empty expected_answer, checks whether
-        the answer appears (case-insensitive) in the response.
+        the answer appears (case-insensitive) in the response, falling back
+        to fuzzy keyword matching via rapidfuzz.
         Score = matched / scored_count (only non-empty sub-tasks count).
 
         Args:
@@ -83,7 +105,7 @@ class CompositionalTask(EvalTask):
             return 1.0
 
         response_lower = response.lower()
-        matched = 0
+        matched = 0.0
         scored_count = 0
 
         for sub_task in self.sub_tasks:
@@ -91,8 +113,7 @@ class CompositionalTask(EvalTask):
             if not expected:
                 continue
             scored_count += 1
-            if expected.lower() in response_lower:
-                matched += 1
+            matched += self._score_sub_answer(expected, response_lower)
 
         if scored_count == 0:
             return 1.0
