@@ -194,6 +194,9 @@ export function Models() {
 
   const selectedModels = models.filter((m) => selectedModelIds.has(m.id));
 
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [searchTerm, setSearchTerm] = useState(filters.search ?? "");
+
   const hasActiveFilters = Boolean(
     filters.search || filters.free || filters.maxPrice != null ||
     filters.minContext != null || filters.modality
@@ -203,9 +206,21 @@ export function Models() {
     setSelectedModelIds(new Set());
   }, []);
 
-  // Escape key clears selection
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilters({ search: searchTerm || undefined });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm, setFilters]);
+
+  // Keyboard shortcuts: "/" focuses search, Escape clears selection
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
       if (e.key === "Escape") {
         clearSelection();
       }
@@ -309,9 +324,10 @@ export function Models() {
         <aside className="hidden lg:block w-[264px] shrink-0">
           <FadeIn delay={1}>
             <Input
+              ref={searchRef}
               placeholder="Search models..."
-              value={filters.search ?? ""}
-              onChange={(e) => setFilters({ search: e.target.value })}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
             />
 
             <div className="mt-sp-6">
@@ -372,6 +388,7 @@ export function Models() {
                         minContext: undefined,
                         modality: undefined,
                       });
+                      setSearchTerm("");
                     }}
                   >
                     Clear all
