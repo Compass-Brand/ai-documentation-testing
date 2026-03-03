@@ -81,4 +81,25 @@ describe("DataTable", () => {
     expect(wrapper.className).toContain("rounded-card");
     expect(wrapper.className).toContain("border-brand-mist");
   });
+
+  it("should render a scrollable container for large datasets", () => {
+    const manyRows = Array.from({ length: 100 }, (_, i) => ({
+      id: i,
+      name: `Item ${i}`,
+      score: i * 10,
+    }));
+    const { container } = render(
+      <DataTable columns={columns} data={manyRows} />,
+    );
+    const scrollContainer = container.querySelector("[data-virtual-scroller]");
+    expect(scrollContainer).toBeInTheDocument();
+  });
+
+  it("should render normally for small datasets without virtualization", () => {
+    const { container } = render(
+      <DataTable columns={columns} data={data} />,
+    );
+    const scrollContainer = container.querySelector("[data-virtual-scroller]");
+    expect(scrollContainer).not.toBeInTheDocument();
+  });
 });
