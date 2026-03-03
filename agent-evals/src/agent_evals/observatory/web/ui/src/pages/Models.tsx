@@ -8,6 +8,7 @@ import {
   Copy,
   Check,
   X,
+  Filter,
 } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
 import {
@@ -220,6 +221,7 @@ export function Models() {
   const createGroup = useCreateGroup();
 
   const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
 
   const models = modelsData?.models ?? [];
   const total = modelsData?.total ?? 0;
@@ -341,6 +343,72 @@ export function Models() {
     },
   ];
 
+  const filterContent = (
+    <>
+      <FilterSection label="Pricing">
+        <FilterCheckbox
+          label="Free models only"
+          checked={filters.free ?? false}
+          onCheckedChange={(checked) =>
+            setFilters({ free: checked || undefined })
+          }
+        />
+        <FilterRange
+          label="Max price per 1M tokens"
+          min={0}
+          max={100}
+          value={[0, filters.maxPrice ?? 100]}
+          onChange={([, max]) => setFilters({ maxPrice: max })}
+          format={(n) => `$${n}`}
+        />
+      </FilterSection>
+
+      <FilterSection label="Context Length">
+        <FilterRange
+          label="Min context length"
+          min={0}
+          max={1000}
+          value={[filters.minContext ? filters.minContext / 1000 : 0, 1000]}
+          onChange={([min]) =>
+            setFilters({ minContext: min > 0 ? min * 1000 : undefined })
+          }
+          format={(n) => `${n}k`}
+        />
+      </FilterSection>
+
+      <FilterSection label="Modality">
+        {["text->text", "text+image->text", "text->image"].map((m) => (
+          <FilterCheckbox
+            key={m}
+            label={m}
+            checked={filters.modality === m}
+            onCheckedChange={(checked) =>
+              setFilters({ modality: checked ? m : undefined })
+            }
+          />
+        ))}
+      </FilterSection>
+
+      <FilterSection label="Provider">
+        {providers.slice(0, 10).map((p) => (
+          <FilterCheckbox
+            key={p.name}
+            label={`${p.name} (${p.count})`}
+            checked={selectedProviders.has(p.name.toLowerCase())}
+            onCheckedChange={(checked) => {
+              setSelectedProviders((prev) => {
+                const next = new Set(prev);
+                if (checked) next.add(p.name.toLowerCase());
+                else next.delete(p.name.toLowerCase());
+                return next;
+              });
+            }}
+          />
+        ))}
+      </FilterSection>
+    </>
+  );
+
   if (isLoading) {
     return (
       <div className="px-sp-6 py-sp-8">
@@ -362,6 +430,17 @@ export function Models() {
         </h1>
       </FadeIn>
 
+      {/* Mobile filter bar */}
+      <div className="lg:hidden mb-sp-4 flex items-center gap-sp-3">
+        <Button variant="secondary" size="sm" onClick={() => setShowMobileFilters(true)}>
+          <Filter className="h-4 w-4 mr-sp-1" />
+          Filters
+          {hasActiveFilters && (
+            <span className="ml-sp-1 bg-brand-goldenrod text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">!</span>
+          )}
+        </Button>
+      </div>
+
       <div className="flex gap-sp-6">
         {/* Left sidebar -- 264px */}
         <aside className="hidden lg:block w-[264px] shrink-0">
@@ -374,67 +453,7 @@ export function Models() {
             />
 
             <div className="mt-sp-6">
-              <FilterSection label="Pricing">
-                <FilterCheckbox
-                  label="Free models only"
-                  checked={filters.free ?? false}
-                  onCheckedChange={(checked) =>
-                    setFilters({ free: checked || undefined })
-                  }
-                />
-                <FilterRange
-                  label="Max price per 1M tokens"
-                  min={0}
-                  max={100}
-                  value={[0, filters.maxPrice ?? 100]}
-                  onChange={([, max]) => setFilters({ maxPrice: max })}
-                  format={(n) => `$${n}`}
-                />
-              </FilterSection>
-
-              <FilterSection label="Context Length">
-                <FilterRange
-                  label="Min context length"
-                  min={0}
-                  max={1000}
-                  value={[filters.minContext ? filters.minContext / 1000 : 0, 1000]}
-                  onChange={([min]) =>
-                    setFilters({ minContext: min > 0 ? min * 1000 : undefined })
-                  }
-                  format={(n) => `${n}k`}
-                />
-              </FilterSection>
-
-              <FilterSection label="Modality">
-                {["text->text", "text+image->text", "text->image"].map((m) => (
-                  <FilterCheckbox
-                    key={m}
-                    label={m}
-                    checked={filters.modality === m}
-                    onCheckedChange={(checked) =>
-                      setFilters({ modality: checked ? m : undefined })
-                    }
-                  />
-                ))}
-              </FilterSection>
-
-              <FilterSection label="Provider">
-                {providers.slice(0, 10).map((p) => (
-                  <FilterCheckbox
-                    key={p.name}
-                    label={`${p.name} (${p.count})`}
-                    checked={selectedProviders.has(p.name.toLowerCase())}
-                    onCheckedChange={(checked) => {
-                      setSelectedProviders((prev) => {
-                        const next = new Set(prev);
-                        if (checked) next.add(p.name.toLowerCase());
-                        else next.delete(p.name.toLowerCase());
-                        return next;
-                      });
-                    }}
-                  />
-                ))}
-              </FilterSection>
+              {filterContent}
 
               <p className="text-caption text-brand-slate mt-sp-4">
                 {total} models found
@@ -766,6 +785,37 @@ export function Models() {
 
         {!modelDetail && selectedModelId && (
           <p className="text-body-sm text-brand-slate">Loading details...</p>
+        )}
+      </SlideOutPanel>
+
+      {/* Mobile filter panel */}
+      <SlideOutPanel
+        open={showMobileFilters}
+        onClose={() => setShowMobileFilters(false)}
+        title="Filters"
+        width="md"
+      >
+        {filterContent}
+        {hasActiveFilters && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-sp-4 w-full"
+            onClick={() => {
+              setFilters({
+                search: undefined,
+                free: undefined,
+                maxPrice: undefined,
+                minContext: undefined,
+                modality: undefined,
+              });
+              setSearchTerm("");
+              setSelectedProviders(new Set());
+              setShowMobileFilters(false);
+            }}
+          >
+            Clear all filters
+          </Button>
         )}
       </SlideOutPanel>
     </div>

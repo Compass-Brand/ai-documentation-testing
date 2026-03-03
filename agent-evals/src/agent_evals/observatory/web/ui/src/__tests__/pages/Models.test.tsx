@@ -602,3 +602,80 @@ describe("Models page — History tab dates (Bug Fix)", () => {
     expect(screen.queryByText("Invalid Date")).not.toBeInTheDocument();
   });
 });
+
+describe("Models page — Mobile responsive filters (Task 15)", () => {
+  it("should render a mobile Filters button", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByRole("button", { name: /filters/i })).toBeInTheDocument();
+  });
+
+  it("should open mobile filter panel when Filters button clicked", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    // The SlideOutPanel title should appear
+    const panelHeadings = screen.getAllByText("Filters");
+    expect(panelHeadings.length).toBeGreaterThanOrEqual(2); // button + panel title
+  });
+
+  it("should show filter sections inside the mobile panel", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    // Pricing section should appear in the panel
+    const pricingSections = screen.getAllByText("Pricing");
+    expect(pricingSections.length).toBeGreaterThanOrEqual(2); // sidebar + panel
+  });
+
+  it("should show active filter indicator on mobile button when filters active", () => {
+    vi.mocked(useFilterParams).mockReturnValue([
+      { free: true },
+      mockSetFilters,
+    ]);
+    render(<Models />, { wrapper: createWrapper() });
+    const filtersButton = screen.getByRole("button", { name: /filters/i });
+    // Should contain the active indicator badge (!)
+    expect(filtersButton.querySelector("span")).toBeInTheDocument();
+  });
+
+  it("should not show active filter indicator when no filters active", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const filtersButton = screen.getByRole("button", { name: /filters/i });
+    // The badge span with "!" should not be present
+    expect(filtersButton.textContent).not.toContain("!");
+  });
+
+  it("should show Clear all filters button in mobile panel when filters active", () => {
+    vi.mocked(useFilterParams).mockReturnValue([
+      { free: true },
+      mockSetFilters,
+    ]);
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    expect(screen.getByText("Clear all filters")).toBeInTheDocument();
+  });
+
+  it("should clear filters and close panel when Clear all filters clicked", () => {
+    vi.mocked(useFilterParams).mockReturnValue([
+      { free: true },
+      mockSetFilters,
+    ]);
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /filters/i }));
+    fireEvent.click(screen.getByText("Clear all filters"));
+    expect(mockSetFilters).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: undefined,
+        free: undefined,
+        maxPrice: undefined,
+        minContext: undefined,
+        modality: undefined,
+      })
+    );
+  });
+
+  it("should still focus desktop search on '/' key press with mobile filter bar present", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const searchInput = screen.getByPlaceholderText(/search/i);
+    fireEvent.keyDown(document, { key: "/" });
+    expect(document.activeElement).toBe(searchInput);
+  });
+});
