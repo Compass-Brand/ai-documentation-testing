@@ -379,6 +379,29 @@ describe("Models page — Tokenizer column (Bug Fix)", () => {
   });
 });
 
+describe("Models page — Card view (Bug Fix)", () => {
+  it("should render model cards instead of table in card view mode", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    // Verify table exists initially
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    // Switch to card view
+    fireEvent.click(screen.getByLabelText(/card view/i));
+    // Table should be gone
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    // Models still visible
+    expect(screen.getByText("GPT-4o")).toBeInTheDocument();
+    expect(screen.getByText("Claude Sonnet 4")).toBeInTheDocument();
+  });
+
+  it("should switch back to table view", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByLabelText(/card view/i));
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/table view/i));
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+});
+
 describe("Models page — History tab dates (Bug Fix)", () => {
   it("should display first_seen and last_seen as valid dates", () => {
     vi.mocked(useModelDetail).mockReturnValue({
