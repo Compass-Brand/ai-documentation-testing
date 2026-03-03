@@ -98,6 +98,13 @@ CREATE TABLE IF NOT EXISTS phase_results (
     quality_type        TEXT NOT NULL,
     created_at          TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS trial_traces (
+    trial_id      INTEGER PRIMARY KEY REFERENCES trials(trial_id),
+    prompt_json   TEXT NOT NULL,
+    response_text TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+);
 """
 
 
@@ -230,11 +237,15 @@ class ObservatoryStore:
         error: str | None = None,
         oa_row_id: int | None = None,
         phase: str | None = None,
-    ) -> None:
-        """Record a single trial result."""
+    ) -> int:
+        """Record a single trial result.
+
+        Returns:
+            The auto-generated trial_id for the inserted row.
+        """
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO trials "
                 "(run_id, task_id, task_type, variant_name, repetition, "
                 "score, prompt_tokens, completion_tokens, total_tokens, "
@@ -248,6 +259,54 @@ class ObservatoryStore:
                     oa_row_id, phase,
                 ),
             )
+            return cursor.lastrowid  # type: ignore[return-value]
+
+    def record_trace(
+        self,
+        *,
+        trial_id: int,
+        prompt_json: list[dict],
+        response_text: str,
+    ) -> None:
+        """Store prompt/response trace for a trial.
+
+        Idempotent: silently ignores duplicate insertions for the same
+        trial_id (INSERT OR IGNORE).
+
+        Args:
+            trial_id: The trial to attach the trace to.
+            prompt_json: Prompt messages as a list of dicts.
+            response_text: Raw LLM response text.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO trial_traces "
+                "(trial_id, prompt_json, response_text, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (trial_id, json.dumps(prompt_json), response_text, now),
+            )
+
+    def get_trace(self, trial_id: int) -> dict | None:
+        """Retrieve the trace for a given trial.
+
+        Returns:
+            Dict with prompt_json (parsed), response_text, created_at,
+            or None if no trace exists.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT prompt_json, response_text, created_at "
+                "FROM trial_traces WHERE trial_id = ?",
+                (trial_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "prompt_json": json.loads(row["prompt_json"]),
+            "response_text": row["response_text"],
+            "created_at": row["created_at"],
+        }
 
     def finish_run(self, run_id: str) -> None:
         """Mark a run as completed with a timestamp."""

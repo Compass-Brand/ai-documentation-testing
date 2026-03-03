@@ -98,10 +98,14 @@ class EventTracker:
         error: str | None = None,
         oa_row_id: int | None = None,
         phase: str | None = None,
-    ) -> None:
-        """Record a trial, persist it, update stats, and notify listeners."""
+    ) -> int:
+        """Record a trial, persist it, update stats, and notify listeners.
+
+        Returns:
+            The trial_id from the store.
+        """
         # Persist to store.
-        self._store.record_trial(
+        trial_id = self._store.record_trial(
             run_id=run_id,
             task_id=task_id,
             task_type=task_type,
@@ -232,6 +236,8 @@ class EventTracker:
                 },
             )
             self._notify(listeners, burn_event)
+
+        return trial_id
 
     def is_model_over_budget(self, model: str) -> bool:
         """Check whether a model has exceeded its per-model budget."""
