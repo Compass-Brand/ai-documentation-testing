@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
+from fastapi.testclient import TestClient
+
 from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.tracker import EventTracker
+from agent_evals.observatory.web.routes import create_router
 
 
 # ---------------------------------------------------------------------------
@@ -112,3 +116,86 @@ class TestTrialTraces:
         # Should keep the first insertion (INSERT OR IGNORE)
         trace = store.get_trace(trial_id)
         assert trace["response_text"] == "v1"
+
+
+# ---------------------------------------------------------------------------
+# Step 5: EventTracker trace forwarding
+# ---------------------------------------------------------------------------
+
+
+class TestTrackerTraceForwarding:
+    """EventTracker conditionally stores traces based on store_traces flag."""
+
+    def test_store_traces_false_no_trace_stored(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store, store_traces=False)
+
+        prompt = [{"role": "user", "content": "Hello"}]
+        trial_id = tracker.record_trial(
+            **_trial_kwargs(),
+            prompt_messages=prompt,
+            response_text="response",
+        )
+
+        assert store.get_trace(trial_id) is None
+
+    def test_store_traces_true_with_messages_stores_trace(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store, store_traces=True)
+
+        prompt = [{"role": "user", "content": "Hello"}]
+        trial_id = tracker.record_trial(
+            **_trial_kwargs(),
+            prompt_messages=prompt,
+            response_text="response",
+        )
+
+        trace = store.get_trace(trial_id)
+        assert trace is not None
+        assert trace["prompt_json"] == prompt
+        assert trace["response_text"] == "response"
+
+    def test_store_traces_true_without_messages_no_trace(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store, store_traces=True)
+
+        trial_id = tracker.record_trial(**_trial_kwargs())
+
+        assert store.get_trace(trial_id) is None
+
+
+# ---------------------------------------------------------------------------
+# Step 7: API endpoint for traces
+# ---------------------------------------------------------------------------
+
+
+class TestTraceAPIEndpoint:
+    """GET /api/trials/{trial_id}/trace endpoint."""
+
+    def _make_client(self, tmp_path: Path) -> tuple[TestClient, ObservatoryStore]:
+        from fastapi import FastAPI
+
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store)
+        router = create_router(store=store, tracker=tracker)
+        app = FastAPI()
+        app.include_router(router)
+        return TestClient(app), store
+
+    def test_returns_404_when_no_trace(self, tmp_path: Path) -> None:
+        client, _ = self._make_client(tmp_path)
+        resp = client.get("/api/trials/99999/trace")
+        assert resp.status_code == 404
+
+    def test_returns_trace_data(self, tmp_path: Path) -> None:
+        client, store = self._make_client(tmp_path)
+
+        trial_id = store.record_trial(**_trial_kwargs())
+        prompt = [{"role": "user", "content": "Test"}]
+        store.record_trace(trial_id=trial_id, prompt_json=prompt, response_text="OK")
+
+        resp = client.get(f"/api/trials/{trial_id}/trace")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["prompt_json"] == prompt
+        assert data["response_text"] == "OK"

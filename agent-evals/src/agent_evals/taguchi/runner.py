@@ -184,6 +184,7 @@ class TaguchiRunner:
                 response=generation.content,
                 cached=False,
                 source=source,
+                prompt_messages=messages,
             )
         except Exception as exc:
             logger.warning(

@@ -63,6 +63,7 @@ class OrchestratorConfig:
     store: ObservatoryStore | None = None
     tracker: EventTracker | None = None
     run_id: str | None = None
+    store_traces: bool = False
 
 
 @dataclass
@@ -121,6 +122,7 @@ class EvalOrchestrator:
             self.tracker = EventTracker(
                 store=self.store,
                 model_budgets=config.model_budgets,
+                store_traces=config.store_traces,
             )
 
         # Initialize client pool.
@@ -242,6 +244,8 @@ class EvalOrchestrator:
                 error=trial.error,
                 oa_row_id=trial_oa_row_id,
                 phase=trial_phase,
+                prompt_messages=trial.prompt_messages,
+                response_text=trial.response if trial.prompt_messages else None,
             )
 
         # Route to the correct runner.

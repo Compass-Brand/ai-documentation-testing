@@ -54,10 +54,12 @@ class EventTracker:
         store: ObservatoryStore,
         model_budgets: dict[str, float] | None = None,
         burn_rate_threshold: float | None = None,
+        store_traces: bool = False,
     ) -> None:
         self._store = store
         self._model_budgets: dict[str, float] = dict(model_budgets or {})
         self._burn_rate_threshold = burn_rate_threshold
+        self._store_traces = store_traces
         self._listeners: list[ListenerCallback] = []
         self._lock = threading.Lock()
 
@@ -98,8 +100,14 @@ class EventTracker:
         error: str | None = None,
         oa_row_id: int | None = None,
         phase: str | None = None,
+        prompt_messages: list[dict] | None = None,
+        response_text: str | None = None,
     ) -> int:
         """Record a trial, persist it, update stats, and notify listeners.
+
+        Args:
+            prompt_messages: Optional prompt messages for trace storage.
+            response_text: Optional response text for trace storage.
 
         Returns:
             The trial_id from the store.
@@ -123,6 +131,14 @@ class EventTracker:
             oa_row_id=oa_row_id,
             phase=phase,
         )
+
+        # Conditionally store trace.
+        if self._store_traces and prompt_messages is not None:
+            self._store.record_trace(
+                trial_id=trial_id,
+                prompt_json=prompt_messages,
+                response_text=response_text or "",
+            )
 
         trial_cost = cost or 0.0
         now = time.monotonic()

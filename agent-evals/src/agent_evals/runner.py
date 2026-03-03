@@ -81,6 +81,7 @@ class TrialResult:
     cached: bool
     error: str | None = None
     source: str = "gold_standard"
+    prompt_messages: list[dict] | None = None
 
 
 @dataclass
@@ -111,6 +112,7 @@ class EvalRunConfig:
     output_format: str = "both"
     display_mode: str = "rich"
     continue_on_error: bool = False
+    store_traces: bool = False
 
 
 @dataclass
@@ -689,4 +691,5 @@ class EvalRunner:
             response=generation.content,
             cached=cached,
             source=source,
+            prompt_messages=messages,
         )

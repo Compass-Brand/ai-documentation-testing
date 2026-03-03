@@ -236,6 +236,12 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         help='Per-model budget caps, e.g. "claude=20.00,gpt-4o=30.00"',
     )
     parser.add_argument(
+        "--store-traces",
+        action="store_true",
+        default=False,
+        help="Store prompt/response text in observatory DB",
+    )
+    parser.add_argument(
         "--dashboard",
         action="store_true",
         default=False,
@@ -420,6 +426,7 @@ _CONFIG_KEYS: dict[str, type] = {
     "report": str,
     "budget": float,
     "model_budgets": str,
+    "store_traces": bool,
     "dashboard": bool,
     "model_group": str,
     "sync_interval": float,
@@ -842,6 +849,7 @@ def _run_taguchi(
         eval_config=run_config,
         dashboard=resolved.get("dashboard", False),
         dashboard_port=int(resolved.get("dashboard_port", 8501)),
+        store_traces=resolved.get("store_traces", False),
     )
     orchestrator = EvalOrchestrator(orch_config)
 
@@ -913,6 +921,7 @@ def _run_pipeline(
         eval_config=run_config,
         dashboard=resolved.get("dashboard", False),
         dashboard_port=int(resolved.get("dashboard_port", 8501)),
+        store_traces=resolved.get("store_traces", False),
     )
     orchestrator = EvalOrchestrator(orch_config)
 

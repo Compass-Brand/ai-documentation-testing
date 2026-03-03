@@ -436,6 +436,16 @@ def create_router(
             "runs": [asdict(r) for r in runs],
         }
 
+    @router.get("/api/trials/{trial_id}/trace")
+    async def get_trial_trace(trial_id: int) -> dict[str, Any]:
+        trace = store.get_trace(trial_id)
+        if trace is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No trace for trial {trial_id}",
+            )
+        return trace
+
     @router.get("/api/runs/{run_id}/analysis")
     async def get_run_analysis(run_id: str) -> dict[str, Any]:
         results = store.get_phase_results(run_id)
