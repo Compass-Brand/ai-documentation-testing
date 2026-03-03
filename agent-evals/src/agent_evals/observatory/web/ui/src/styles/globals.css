@@ -97,6 +97,13 @@
   animation: compass-draw-check 300ms ease-out forwards;
 }
 
+.compass-checkmark-erase {
+  stroke-dasharray: 16;
+  stroke-dashoffset: 16;
+  opacity: 0;
+  animation: compass-erase-check 250ms ease-in forwards;
+}
+
 .compass-checkmark-hidden {
   stroke-dasharray: 16;
   stroke-dashoffset: 16;
@@ -109,6 +116,17 @@
   }
   to {
     stroke-dashoffset: 0;
+  }
+}
+
+@keyframes compass-erase-check {
+  from {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  to {
+    stroke-dashoffset: 16;
+    opacity: 0;
   }
 }
 

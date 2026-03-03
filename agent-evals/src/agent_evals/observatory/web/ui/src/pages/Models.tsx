@@ -37,6 +37,7 @@ import { FadeIn } from "../components/FadeIn";
 import { Skeleton } from "../components/Skeleton";
 import { Tooltip } from "../components/Tooltip";
 import { TabBar } from "../components/TabBar";
+import { AnimatedNumber } from "../components/AnimatedNumber";
 import { cn } from "../lib/utils";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
@@ -422,7 +423,7 @@ export function Models() {
   }
 
   return (
-    <div className="px-sp-6 py-sp-8 max-w-full 2xl:max-w-[1400px] mx-auto">
+    <div className="px-sp-6 py-sp-8 max-w-[1800px] mx-auto">
       <FadeIn>
         <h1 className="text-h2 text-brand-charcoal inline-flex items-center gap-sp-3 mb-sp-8">
           <Cpu className="h-8 w-8 text-brand-goldenrod" />
@@ -456,7 +457,7 @@ export function Models() {
               {filterContent}
 
               <p className="text-caption text-brand-slate mt-sp-4">
-                {total} models found
+                <AnimatedNumber value={total} format={(n) => `${Math.round(n)}`} /> models found
                 {hasActiveFilters && (
                   <button
                     className="ml-sp-2 text-brand-goldenrod hover:underline"
@@ -489,7 +490,7 @@ export function Models() {
                 {selectedModels.length > 0 && (
                   <>
                     <span className="text-body-sm text-brand-slate">
-                      {selectedModels.length} selected
+                      <AnimatedNumber value={selectedModels.length} format={(n) => `${Math.round(n)}`} /> selected
                     </span>
                     <Button
                       variant="secondary"

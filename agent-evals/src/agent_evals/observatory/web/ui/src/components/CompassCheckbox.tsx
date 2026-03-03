@@ -1,4 +1,4 @@
-import { type KeyboardEvent } from "react";
+import { type KeyboardEvent, useRef, useEffect } from "react";
 
 interface CompassCheckboxProps {
   checked: boolean;
@@ -13,6 +13,12 @@ export function CompassCheckbox({
   className = "",
   "aria-label": ariaLabel = "Select",
 }: CompassCheckboxProps) {
+  const prevChecked = useRef(checked);
+
+  useEffect(() => {
+    prevChecked.current = checked;
+  }, [checked]);
+
   const handleClick = () => onChange?.(!checked);
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -21,6 +27,16 @@ export function CompassCheckbox({
       onChange?.(!checked);
     }
   };
+
+  const wasChecked = prevChecked.current;
+  let pathClass: string;
+  if (checked) {
+    pathClass = "compass-checkmark-draw";
+  } else if (wasChecked) {
+    pathClass = "compass-checkmark-erase";
+  } else {
+    pathClass = "compass-checkmark-hidden";
+  }
 
   return (
     <div
@@ -52,10 +68,9 @@ export function CompassCheckbox({
           strokeLinecap="round"
           strokeLinejoin="round"
           fill="none"
-          className={checked ? "compass-checkmark-draw" : "compass-checkmark-hidden"}
+          className={pathClass}
         />
       </svg>
-
     </div>
   );
 }
