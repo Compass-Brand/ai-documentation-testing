@@ -69,12 +69,31 @@ agent-evals --model openrouter/anthropic/claude-sonnet-4.5 --dry-run
 ### Key CLI flags
 
 ```bash
-# New ease-of-use flags
+# Ease-of-use flags
 agent-evals --verbose              # Debug-level logging
 agent-evals --quiet                # Warnings only
 agent-evals --continue-on-error    # Skip failed trials
 agent-evals --output-format both   # json, csv, or both
 agent-evals --display plain        # Progress: rich, plain, none
+
+# Taguchi DOE mode
+agent-evals --mode taguchi                     # Run Taguchi screening (L50 OA)
+agent-evals --mode taguchi --pipeline auto     # Full pipeline: screening -> confirmation -> refinement
+agent-evals --mode taguchi --pipeline auto --top-k 3  # Top 3 factors for refinement
+
+# Multi-model evaluation
+agent-evals --mode taguchi --models "model1,model2"   # Model as Taguchi factor
+
+# Observability
+agent-evals --store-traces                     # Store prompt/response text in observatory DB
+
+# Resume crashed runs
+agent-evals --resume <run_id>                  # Resume a single run
+agent-evals --resume-pipeline <pipeline_id>    # Resume a DOE pipeline
+
+# Observatory dashboard
+agent-evals dashboard                          # Start web UI on port 8080
+agent-evals dashboard --port 9000              # Custom port
 ```
 
 ---

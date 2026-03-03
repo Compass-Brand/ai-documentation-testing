@@ -169,3 +169,195 @@ sequenceDiagram
 **Variant registration** is fully automatic: placing a file in `agent-evals/src/agent_evals/variants/` and applying `@register_variant` is sufficient. The `load_all()` function walks the package with `pkgutil.iter_modules` and imports every module.
 
 **Task registration** follows the same auto-discovery pattern: `load_all_task_types()` in `tasks/base.py` walks the `tasks/` package with `pkgutil.iter_modules` and imports every module. Each module calls `register_task_type()` at module level, overriding the `GenericTask` default in the `TASK_TYPES` dict. The `tasks/__init__.py` simply calls `load_all_task_types()` to trigger discovery on package import.
+
+---
+
+## 5. Taguchi DOE pipeline
+
+The Taguchi mode replaces the full Cartesian product (all variants × all tasks × repetitions) with a statistically efficient orthogonal array (OA) design. This reduces trial count from hundreds of thousands to thousands while still identifying significant factors.
+
+```mermaid
+flowchart LR
+    A[TaguchiDesign<br/>L50 OA, 10 factors] --> B[TaguchiRunner]
+    B --> C["OA Rows × Tasks × Reps"]
+    C --> D[CompositeVariant<br/>per row]
+    D --> E[LLM Evaluation]
+    E --> F[TrialResult with<br/>oa_row_id in metrics]
+    F --> G[ANOVA / Factor Analysis]
+```
+
+**Key concepts:**
+
+- **Factors** correspond to the 10 format axes (structure, detail level, etc.) plus optionally the model. Each factor has 2–5 levels (variants for that axis).
+- **Orthogonal array** (L50) ensures balanced coverage of factor combinations in far fewer trials than full factorial.
+- **CompositeVariant** merges one variant per axis into a single index for evaluation. Built from `TaguchiExperimentRow.assignments`.
+- **Multi-model support** — when `model` is a factor in the design, the runner selects the appropriate `LLMClient` per row via `_select_client()`.
+
+### DOE pipeline phases
+
+The `DOEPipeline` orchestrates a multi-phase experiment:
+
+| Phase | Purpose | Input | Output |
+|-------|---------|-------|--------|
+| **Screening** | Identify significant factors from the full L50 OA | All 10 factors | Ranked factor list with p-values |
+| **Confirmation** | Validate top-K factors with increased repetitions | Top-K factors | Confirmed significant factors |
+| **Refinement** | Fine-tune levels of confirmed factors | Confirmed factors | Optimal configuration |
+
+Each phase creates its own `run_id` (linked by `pipeline_id`) and stores results in the observatory DB. The pipeline automatically transitions between phases, reconstructing `PhaseResult` objects from completed phases on resume.
+
+---
+
+## 6. Observatory
+
+The observatory subsystem provides real-time telemetry and persistent storage for all evaluation runs.
+
+### Database schema (`observatory.db`)
+
+```mermaid
+erDiagram
+    runs {
+        TEXT run_id PK
+        TEXT run_type
+        TEXT config_json
+        TEXT status
+        TEXT phase
+        TEXT pipeline_id
+        TEXT started_at
+        TEXT finished_at
+        TEXT heartbeat_at
+        TEXT error
+    }
+    trials {
+        INTEGER trial_id PK
+        TEXT run_id FK
+        TEXT task_id
+        TEXT task_type
+        TEXT variant_name
+        INTEGER repetition
+        REAL score
+        INTEGER prompt_tokens
+        INTEGER completion_tokens
+        INTEGER total_tokens
+        REAL cost
+        REAL latency_seconds
+        TEXT model
+        TEXT source
+        TEXT error
+        INTEGER oa_row_id
+        TEXT phase
+        TEXT created_at
+    }
+    trial_traces {
+        INTEGER trial_id PK
+        TEXT prompt_json
+        TEXT response_text
+        TEXT created_at
+    }
+    phase_results {
+        INTEGER id PK
+        TEXT pipeline_id
+        TEXT phase
+        TEXT result_json
+        TEXT created_at
+    }
+
+    runs ||--o{ trials : "has"
+    trials ||--o| trial_traces : "has"
+```
+
+### Components
+
+| Component | File | Role |
+|-----------|------|------|
+| **ObservatoryStore** | `observatory/store.py` | SQLite persistence — CRUD for runs, trials, traces, phases. WAL mode enabled. |
+| **EventTracker** | `observatory/tracker.py` | Bridges runner callbacks to store. Tracks per-model budgets, optionally stores traces. |
+| **Web dashboard** | `observatory/web/` | FastAPI app with SSE streaming, REST API, and static frontend. |
+| **Routes** | `observatory/web/routes.py` | API endpoints: runs list, run detail, trials, live SSE stream, trace retrieval. |
+
+### Event flow
+
+```mermaid
+sequenceDiagram
+    participant Runner as EvalRunner / TaguchiRunner
+    participant CB as progress_callback
+    participant Tracker as EventTracker
+    participant Store as ObservatoryStore
+    participant SSE as SSE Clients
+
+    Runner->>CB: trial complete (completed, total, TrialResult)
+    CB->>Tracker: record_trial(run_id, task_id, score, ...)
+    Tracker->>Store: record_trial() → trial_id
+    Tracker->>Store: record_trace() (if store_traces=True)
+    Tracker->>Tracker: update budget tracking
+    Tracker->>Tracker: emit TrackerEvent
+    Tracker-->>SSE: broadcast event to listeners
+```
+
+---
+
+## 7. Orchestrator
+
+`EvalOrchestrator` is the top-level coordinator that wires all subsystems together.
+
+```mermaid
+flowchart TD
+    Config[OrchestratorConfig] --> Orch[EvalOrchestrator]
+    Orch --> Store[ObservatoryStore]
+    Orch --> Tracker[EventTracker]
+    Orch --> Pool[LLMClientPool]
+    Orch --> Dashboard[Web Dashboard<br/>optional]
+
+    Orch -->|mode=full| EvalRunner
+    Orch -->|mode=taguchi| TaguchiRunner
+
+    EvalRunner --> CB[progress_callback]
+    TaguchiRunner --> CB
+    CB --> Tracker
+```
+
+**Responsibilities:**
+
+1. **Mode routing** — dispatches to `EvalRunner` (full sweep) or `TaguchiRunner` (Taguchi DOE) based on `config.mode`.
+2. **Telemetry wiring** — creates the `progress_callback` that bridges `TrialResult` events to `EventTracker.record_trial()`, forwarding prompt messages and response text when trace storage is enabled.
+3. **Client pool** — manages `LLMClientPool` for multi-model runs with per-model budget caps.
+4. **Dashboard lifecycle** — optionally starts the FastAPI web dashboard in a background thread via `launch_dashboard()`.
+5. **Run lifecycle** — creates run records in the store, marks runs as completed or failed (including graceful shutdown detection).
+6. **Report aggregation** — optionally generates `ReportData` via `aggregate()` after the run completes.
+
+---
+
+## 8. Trace storage
+
+Prompt/response observability is opt-in via `--store-traces`.
+
+- **Separate table** (`trial_traces`) keeps the `trials` table lean for aggregate queries. Traces can be 16–20k chars per prompt; a full Taguchi run could add ~3.5 GB.
+- **Prompt stored as JSON** (`list[dict]`) preserving the message structure (system, user, assistant roles) for future Langfuse or LangSmith import.
+- **Idempotent writes** — `INSERT OR IGNORE` prevents duplicate traces on resume.
+- **On-demand retrieval** — `GET /api/trials/{trial_id}/trace` returns a single trace (not bulk) to avoid memory pressure.
+
+**Data flow:** `TrialResult.prompt_messages` → `EventTracker.record_trial(prompt_messages=...)` → `ObservatoryStore.record_trace(trial_id, prompt_json, response_text)`.
+
+---
+
+## 9. Checkpointing and resume
+
+The observatory DB itself serves as the checkpoint — every completed trial is persisted immediately via the tracker. No separate checkpoint file is needed.
+
+### Resume modes
+
+| Flag | Scope | Behavior |
+|------|-------|----------|
+| `--resume <run_id>` | Single run | Reactivates the run (`status → active`), loads completed trial keys, filters work items |
+| `--resume-pipeline <pipeline_id>` | DOE pipeline | Skips completed phases, resumes the in-progress phase |
+
+### Trial key filtering
+
+On resume, `get_completed_trial_keys(run_id)` returns a `set[tuple[oa_row_id, task_id, variant_name, repetition]]` for all non-error trials. The runner filters its work item list against this set before submitting to the thread pool.
+
+### Graceful shutdown
+
+Both runners install `SIGINT`/`SIGTERM` handlers that set a `threading.Event`. The executor loop checks this event before submitting new futures. In-flight trials complete normally. The orchestrator marks the run as `failed` with `error="graceful_shutdown"`, making it resumable.
+
+### WAL checkpointing
+
+`ObservatoryStore.checkpoint_wal()` calls `PRAGMA wal_checkpoint(TRUNCATE)` to flush the write-ahead log to the main database file. The Taguchi runner calls this after each completed OA row to minimize data loss on crash.
