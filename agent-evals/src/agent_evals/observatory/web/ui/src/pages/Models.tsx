@@ -36,6 +36,8 @@ import { Button } from "../components/Button";
 import { StatusBadge } from "../components/StatusBadge";
 import { StatusDot } from "../components/StatusDot";
 import { FadeIn } from "../components/FadeIn";
+import { CompassRose } from "../components/CompassRose";
+import { CursorGlow } from "../components/CursorGlow";
 import { Skeleton } from "../components/Skeleton";
 import { Tooltip } from "../components/Tooltip";
 import { TabBar } from "../components/TabBar";
@@ -43,6 +45,7 @@ import { AnimatedNumber } from "../components/AnimatedNumber";
 import { ComparisonTray } from "../components/ComparisonTray";
 import { cn } from "../lib/utils";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { AmbientBackground } from "../components/AmbientBackground";
 
 type ViewMode = "table" | "cards";
 type PanelTab = "overview" | "providers" | "history";
@@ -427,6 +430,8 @@ export function Models() {
 
   return (
     <>
+      <AmbientBackground />
+      <CursorGlow />
       <AnimatePresence mode="wait">
         {isLoading ? (
           <motion.div
@@ -548,7 +553,10 @@ export function Models() {
 
             <div className="flex gap-sp-6">
               {/* Left sidebar -- 264px */}
-              <aside className="hidden lg:block w-[264px] shrink-0">
+              <aside className="hidden lg:block w-[264px] shrink-0 relative">
+                <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                  <CompassRose />
+                </div>
                 <FadeIn delay={1}>
                   <div className="relative">
                     <Input
