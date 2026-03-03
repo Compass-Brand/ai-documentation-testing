@@ -35,6 +35,78 @@ describe("FilterSection", () => {
     expect(heading.className).toContain("text-body-sm");
     expect(heading.className).toContain("font-medium");
   });
+
+  it("should render as a button with aria-expanded", () => {
+    render(
+      <FilterSection label="Pricing">
+        <div>Content</div>
+      </FilterSection>,
+    );
+    const button = screen.getByRole("button", { name: /pricing/i });
+    expect(button).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("should default to open and show children", () => {
+    render(
+      <FilterSection label="Pricing">
+        <div>Visible content</div>
+      </FilterSection>,
+    );
+    expect(screen.getByText("Visible content")).toBeInTheDocument();
+  });
+
+  it("should hide children when defaultOpen is false", () => {
+    render(
+      <FilterSection label="Pricing" defaultOpen={false}>
+        <div>Hidden content</div>
+      </FilterSection>,
+    );
+    expect(screen.queryByText("Hidden content")).not.toBeInTheDocument();
+    const button = screen.getByRole("button", { name: /pricing/i });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("should toggle children visibility on click", () => {
+    render(
+      <FilterSection label="Pricing">
+        <div>Toggle content</div>
+      </FilterSection>,
+    );
+    const button = screen.getByRole("button", { name: /pricing/i });
+    expect(screen.getByText("Toggle content")).toBeInTheDocument();
+
+    fireEvent.click(button);
+    expect(screen.queryByText("Toggle content")).not.toBeInTheDocument();
+    expect(button).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(button);
+    expect(screen.getByText("Toggle content")).toBeInTheDocument();
+    expect(button).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("should render chevron icon that rotates when open", () => {
+    render(
+      <FilterSection label="Pricing">
+        <div>Content</div>
+      </FilterSection>,
+    );
+    const button = screen.getByRole("button", { name: /pricing/i });
+    const svg = button.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.className.baseVal || svg?.getAttribute("class") || "").toContain("rotate-180");
+  });
+
+  it("should not rotate chevron when collapsed", () => {
+    render(
+      <FilterSection label="Pricing" defaultOpen={false}>
+        <div>Content</div>
+      </FilterSection>,
+    );
+    const button = screen.getByRole("button", { name: /pricing/i });
+    const svg = button.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    expect(svg?.className.baseVal || svg?.getAttribute("class") || "").not.toContain("rotate-180");
+  });
 });
 
 describe("FilterCheckbox", () => {

@@ -1,20 +1,31 @@
 import * as Checkbox from "@radix-ui/react-checkbox";
-import { Check } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 interface FilterSectionProps {
   label: string;
   children: ReactNode;
+  defaultOpen?: boolean;
 }
 
-export function FilterSection({ label, children }: FilterSectionProps) {
+export function FilterSection({ label, children, defaultOpen = true }: FilterSectionProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
   return (
     <div className="mb-sp-6">
-      <h4 className="mb-sp-3 text-body-sm font-medium text-brand-charcoal">
+      <button
+        className="flex items-center justify-between w-full mb-sp-3 text-body-sm font-medium text-brand-charcoal hover:text-brand-goldenrod transition-colors duration-micro"
+        onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+      >
         {label}
-      </h4>
-      {children}
+        <ChevronDown className={cn(
+          "h-4 w-4 transition-transform duration-micro",
+          isOpen && "rotate-180"
+        )} />
+      </button>
+      {isOpen && children}
     </div>
   );
 }
