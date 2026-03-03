@@ -386,6 +386,76 @@ class TestOrchestratorResume:
         summary = store.get_run_summary("run-resume")
         assert summary.status == "completed"  # finished after run
 
+    def test_resume_merges_prior_trials_into_result(
+        self, tmp_path: Path,
+    ) -> None:
+        """Resumed run includes prior + new trials in OrchestratorResult."""
+        store = _make_store(tmp_path)
+        store.create_run("run-merge", "full", {})
+        # Record a prior trial (simulating a previous session).
+        store.record_trial(**_trial_kwargs(
+            run_id="run-merge", task_id="t1", variant_name="v1",
+            repetition=1, score=0.9,
+        ))
+        store.fail_run("run-merge", error="crashed")
+
+        from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+        from agent_evals.runner import EvalRunConfig, EvalRunResult, TrialResult
+
+        config = OrchestratorConfig(
+            models=["mock"],
+            api_key="test",
+            store=store,
+            resume_run_id="run-merge",
+        )
+        orch = EvalOrchestrator(config)
+
+        # Fake runner returns one NEW trial (t2).
+        new_trial = TrialResult(
+            task_id="t2",
+            task_type="retrieval",
+            variant_name="v1",
+            repetition=1,
+            score=0.75,
+            metrics={},
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=0.001,
+            latency_seconds=1.0,
+            response="answer",
+            cached=False,
+            source="gold_standard",
+        )
+
+        def fake_run_full(
+            tasks, variants, doc_tree, eval_config,
+            progress_callback, source, completed_keys=None,
+        ):
+            return EvalRunResult(
+                config=eval_config,
+                trials=[new_trial],
+                total_cost=0.001,
+                total_tokens=150,
+                elapsed_seconds=1.0,
+            )
+
+        orch._run_full = fake_run_full  # type: ignore[assignment]
+
+        result = orch.run(
+            tasks=[_mock_task()],
+            variants=[_mock_variant("v1")],
+            doc_tree=_mock_doc_tree(),
+        )
+
+        # Result should contain BOTH the prior trial (t1) and the new one (t2).
+        assert len(result.trials) == 2
+        task_ids = {t.task_id for t in result.trials}
+        assert task_ids == {"t1", "t2"}
+        # Totals should reflect all trials.
+        assert result.total_cost == pytest.approx(0.002)
+        assert result.total_tokens == 300
+
 
 # ---------------------------------------------------------------------------
 # RunSummary.phase field

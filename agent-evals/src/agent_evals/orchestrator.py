@@ -300,28 +300,78 @@ class EvalOrchestrator:
         else:
             self.store.finish_run(run_id)
 
+        # On resume, combine previously-completed trials with newly-run
+        # trials so that reports reflect the full run.
+        all_trials = raw_result.trials
+        total_cost = raw_result.total_cost
+        total_tokens = raw_result.total_tokens
+        if completed_keys:
+            prior_records = self.store.get_trials(run_id)
+            # Convert TrialRecords from prior sessions to TrialResults.
+            # Only include trials NOT in the current batch (avoid dupes).
+            current_keys = {
+                (t.task_id, t.variant_name, t.repetition)
+                for t in raw_result.trials
+            }
+            prior_trials = [
+                TrialResult(
+                    task_id=r.task_id,
+                    task_type=r.task_type,
+                    variant_name=r.variant_name,
+                    repetition=r.repetition,
+                    score=r.score,
+                    metrics={"oa_row_id": float(r.oa_row_id)}
+                    if r.oa_row_id is not None
+                    else {},
+                    prompt_tokens=r.prompt_tokens,
+                    completion_tokens=r.completion_tokens,
+                    total_tokens=r.total_tokens,
+                    cost=r.cost,
+                    latency_seconds=r.latency_seconds,
+                    response="",
+                    cached=False,
+                    error=r.error,
+                    source=r.source,
+                )
+                for r in prior_records
+                if (r.task_id, r.variant_name, r.repetition)
+                not in current_keys
+            ]
+            all_trials = prior_trials + raw_result.trials
+            total_cost = sum(
+                t.cost for t in all_trials if t.cost is not None
+            )
+            total_tokens = sum(t.total_tokens for t in all_trials)
+            logger.info(
+                "Merged %d prior + %d new = %d total trials for run %s",
+                len(prior_trials),
+                len(raw_result.trials),
+                len(all_trials),
+                run_id,
+            )
+
         # Aggregate report if configured.
         report: ReportData | None = None
         if self.config.report_format is not None:
             report = aggregate(
-                raw_result.trials,
+                all_trials,
                 config=eval_config,
             )
 
         logger.info(
             "Run %s completed: %d trials, %.4f cost, %.1fs elapsed",
             run_id,
-            len(raw_result.trials),
-            raw_result.total_cost,
+            len(all_trials),
+            total_cost,
             raw_result.elapsed_seconds,
         )
 
         return OrchestratorResult(
             run_id=run_id,
             mode=effective_mode,
-            trials=raw_result.trials,
-            total_cost=raw_result.total_cost,
-            total_tokens=raw_result.total_tokens,
+            trials=all_trials,
+            total_cost=total_cost,
+            total_tokens=total_tokens,
             elapsed_seconds=raw_result.elapsed_seconds,
             report=report,
             raw_result=raw_result,
