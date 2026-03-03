@@ -2,9 +2,11 @@ import { Slot } from "@radix-ui/react-slot";
 import { cva, type VariantProps } from "class-variance-authority";
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "../lib/utils";
+import { useRipple } from "./Ripple";
 
 const buttonVariants = cva(
   [
+    "relative overflow-hidden",
     "inline-flex items-center justify-center font-medium",
     "transition-all duration-micro ease-out",
     "focus-visible:outline-none focus-visible:ring-2",
@@ -49,14 +51,35 @@ interface ButtonProps
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button";
+  ({ className, variant, size, asChild = false, onPointerDown, ...props }, ref) => {
+    const { onPointerDown: ripplePointerDown, RippleContainer } = useRipple();
+
+    if (asChild) {
+      return (
+        <Slot
+          className={cn(buttonVariants({ variant, size, className }))}
+          ref={ref}
+          onPointerDown={onPointerDown}
+          {...props}
+        />
+      );
+    }
+
+    const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+      ripplePointerDown(e);
+      onPointerDown?.(e);
+    };
+
     return (
-      <Comp
+      <button
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
+        onPointerDown={handlePointerDown}
         {...props}
-      />
+      >
+        {props.children}
+        <RippleContainer />
+      </button>
     );
   },
 );

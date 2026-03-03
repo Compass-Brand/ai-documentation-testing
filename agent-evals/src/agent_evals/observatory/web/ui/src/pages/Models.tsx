@@ -76,21 +76,41 @@ function CopyModelIdButton({ modelId }: { modelId: string }) {
     const orId = modelId.startsWith("openrouter/") ? modelId : `openrouter/${modelId}`;
     navigator.clipboard.writeText(orId);
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <Tooltip content="Copy OpenRouter model ID">
+    <Tooltip content={copied ? "Copied!" : "Copy OpenRouter model ID"}>
       <button
         className="text-brand-slate hover:text-brand-charcoal transition-colors duration-micro ml-sp-2"
         onClick={handleCopy}
         aria-label="Copy model ID"
       >
-        {copied ? (
-          <Check className="h-3.5 w-3.5 text-brand-sage" />
-        ) : (
-          <Copy className="h-3.5 w-3.5" />
-        )}
+        <AnimatePresence mode="wait">
+          {copied ? (
+            <motion.span
+              key="check"
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.5 }}
+              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              className="block"
+            >
+              <Check className="h-3.5 w-3.5 text-brand-sage" />
+            </motion.span>
+          ) : (
+            <motion.span
+              key="copy"
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.5 }}
+              transition={{ type: "spring", stiffness: 500, damping: 30 }}
+              className="block"
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </motion.span>
+          )}
+        </AnimatePresence>
       </button>
     </Tooltip>
   );
@@ -225,6 +245,7 @@ export function Models() {
 
   const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [showHint, setShowHint] = useState(true);
 
   const models = modelsData?.models ?? [];
   const total = modelsData?.total ?? 0;
@@ -261,6 +282,7 @@ export function Models() {
   // Keyboard shortcuts: "/" focuses search, Escape clears selection
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (showHint) setShowHint(false);
       if (e.key === "/" && document.activeElement?.tagName !== "INPUT") {
         e.preventDefault();
         searchRef.current?.focus();
@@ -271,7 +293,7 @@ export function Models() {
     };
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [clearSelection]);
+  }, [clearSelection, showHint]);
 
   const handleRowClick = (model: Model) => {
     setSelectedModelIds((prev) => {
@@ -527,12 +549,27 @@ export function Models() {
               {/* Left sidebar -- 264px */}
               <aside className="hidden lg:block w-[264px] shrink-0">
                 <FadeIn delay={1}>
-                  <Input
-                    ref={searchRef}
-                    placeholder="Search models..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+                  <div className="relative">
+                    <Input
+                      ref={searchRef}
+                      placeholder="Search models..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                    <AnimatePresence>
+                      {showHint && (
+                        <motion.kbd
+                          initial={{ opacity: 1, scale: 1 }}
+                          animate={{ scale: [1, 1.1, 1] }}
+                          exit={{ opacity: 0 }}
+                          transition={{ duration: 0.6, delay: 1 }}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 bg-brand-mist text-brand-slate text-xs font-mono px-1.5 py-0.5 rounded"
+                        >
+                          /
+                        </motion.kbd>
+                      )}
+                    </AnimatePresence>
+                  </div>
 
                   <div className="mt-sp-6">
                     {filterContent}

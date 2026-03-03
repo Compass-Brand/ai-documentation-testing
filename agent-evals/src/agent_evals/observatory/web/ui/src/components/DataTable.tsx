@@ -9,7 +9,7 @@ import {
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { motion } from "framer-motion";
-import { ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
+import { ArrowUpDown, ChevronUp } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { CompassCheckbox } from "./CompassCheckbox";
@@ -175,10 +175,15 @@ export function DataTable<T>({
                 header.getContext(),
               )}
               {header.column.getCanSort() &&
-                (header.column.getIsSorted() === "asc" ? (
-                  <ChevronUp className="h-4 w-4 text-brand-goldenrod" />
-                ) : header.column.getIsSorted() === "desc" ? (
-                  <ChevronDown className="h-4 w-4 text-brand-goldenrod" />
+                (header.column.getIsSorted() ? (
+                  <motion.div
+                    animate={{
+                      rotate: header.column.getIsSorted() === "desc" ? 180 : 0,
+                    }}
+                    transition={{ type: "spring", stiffness: 500, damping: 25 }}
+                  >
+                    <ChevronUp className="h-4 w-4 text-brand-goldenrod" />
+                  </motion.div>
                 ) : (
                   <ArrowUpDown className="h-4 w-4 text-brand-slate/50" />
                 ))}
