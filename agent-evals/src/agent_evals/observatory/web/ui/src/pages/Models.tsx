@@ -258,7 +258,11 @@ export function Models() {
       cell: ({ getValue }) => `${(getValue<number>() / 1000).toFixed(0)}k`,
     },
     { accessorKey: "modality", header: "Modality" },
-    { accessorKey: "tokenizer", header: "Tokenizer" },
+    {
+      accessorKey: "tokenizer",
+      header: "Tokenizer",
+      cell: ({ getValue }) => getValue<string>() || "\u2014",
+    },
     {
       accessorKey: "created",
       header: "Deployed",

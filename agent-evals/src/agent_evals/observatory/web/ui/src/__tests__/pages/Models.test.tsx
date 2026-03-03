@@ -358,6 +358,27 @@ describe("Models page — Multi-select (Change 4)", () => {
   });
 });
 
+describe("Models page — Tokenizer column (Bug Fix)", () => {
+  it("should show em-dash for empty tokenizer", () => {
+    vi.mocked(useModels).mockReturnValue({
+      data: {
+        models: [{ ...mockModels[0], tokenizer: "" }],
+        total: 1,
+      },
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useModels>);
+    render(<Models />, { wrapper: createWrapper() });
+    // Find the em-dash in the tokenizer column
+    expect(screen.getByText("\u2014")).toBeInTheDocument();
+  });
+
+  it("should show tokenizer value when present", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByText("o200k_base")).toBeInTheDocument();
+  });
+});
+
 describe("Models page — History tab dates (Bug Fix)", () => {
   it("should display first_seen and last_seen as valid dates", () => {
     vi.mocked(useModelDetail).mockReturnValue({
