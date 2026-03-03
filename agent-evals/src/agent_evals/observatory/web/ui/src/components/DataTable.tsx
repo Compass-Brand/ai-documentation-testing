@@ -57,7 +57,7 @@ export function DataTable<T>({
 
   const colSpan = columns.length + (selectedRowIds ? 1 : 0);
 
-  const renderRow = (row: Row<T>) => {
+  const renderRow = (row: Row<T>, rowIndex: number) => {
     const rowId = getRowId?.(row.original) ?? row.id;
     const isSelected = selectedRowIds?.has(rowId) ?? false;
 
@@ -67,6 +67,7 @@ export function DataTable<T>({
         className={cn(
           "border-t border-brand-mist transition-colors duration-micro",
           "hover:bg-brand-cream/50",
+          rowIndex % 2 === 1 ? "bg-brand-cream/20" : "bg-white",
           onRowClick &&
             "cursor-pointer focus-visible:ring-2 focus-visible:ring-brand-goldenrod",
           isSelected && "bg-brand-goldenrod/10",
@@ -84,7 +85,10 @@ export function DataTable<T>({
         {row.getVisibleCells().map((cell) => (
           <td
             key={cell.id}
-            className="px-sp-4 py-sp-3 text-brand-charcoal"
+            className={cn(
+              "px-sp-4 py-sp-3 text-brand-charcoal",
+              (cell.column.columnDef.meta as { align?: string })?.align === "right" && "text-right tabular-nums",
+            )}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </td>
@@ -119,6 +123,7 @@ export function DataTable<T>({
               "border-l-2 border-transparent",
               header.column.getCanSort() &&
                 "cursor-pointer select-none hover:border-l-2 hover:border-brand-goldenrod",
+              (header.column.columnDef.meta as { align?: string })?.align === "right" && "text-right",
             )}
             onClick={header.column.getToggleSortingHandler()}
           >
@@ -159,7 +164,7 @@ export function DataTable<T>({
         )}
         {virtualItems.map((virtualRow) => {
           const row = rows[virtualRow.index];
-          return renderRow(row);
+          return renderRow(row, virtualRow.index);
         })}
         {bottomPad > 0 && (
           <tr>
@@ -191,7 +196,7 @@ export function DataTable<T>({
         <tbody>
           {useVirtual
             ? renderVirtualBody()
-            : rows.map((row) => renderRow(row))}
+            : rows.map((row, index) => renderRow(row, index))}
         </tbody>
       </table>
     </div>

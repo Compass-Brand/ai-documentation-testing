@@ -102,4 +102,47 @@ describe("DataTable", () => {
     const scrollContainer = container.querySelector("[data-virtual-scroller]");
     expect(scrollContainer).not.toBeInTheDocument();
   });
+
+  it("should apply alternating row backgrounds", () => {
+    render(<DataTable columns={columns} data={data} />);
+    const rows = screen.getAllByRole("row").slice(1); // skip header row
+    expect(rows[0].className).toContain("bg-white");
+    expect(rows[1].className).toContain("bg-brand-cream/20");
+    expect(rows[2].className).toContain("bg-white");
+  });
+
+  it("should right-align cells when column meta has align right", () => {
+    const alignedColumns: ColumnDef<TestRow>[] = [
+      { accessorKey: "name", header: "Name" },
+      { accessorKey: "score", header: "Score", meta: { align: "right" } },
+    ];
+    render(<DataTable columns={alignedColumns} data={data} />);
+    // Find a score cell (the value "90" rendered in a <td>)
+    const scoreCell = screen.getByText("90").closest("td");
+    expect(scoreCell?.className).toContain("text-right");
+    expect(scoreCell?.className).toContain("tabular-nums");
+  });
+
+  it("should not right-align cells without align meta", () => {
+    render(<DataTable columns={columns} data={data} />);
+    const nameCell = screen.getByText("Alpha").closest("td");
+    expect(nameCell?.className).not.toContain("text-right");
+    expect(nameCell?.className).not.toContain("tabular-nums");
+  });
+
+  it("should right-align header when column meta has align right", () => {
+    const alignedColumns: ColumnDef<TestRow>[] = [
+      { accessorKey: "name", header: "Name" },
+      { accessorKey: "score", header: "Score", meta: { align: "right" } },
+    ];
+    render(<DataTable columns={alignedColumns} data={data} />);
+    const scoreHeader = screen.getByText("Score").closest("th");
+    expect(scoreHeader?.className).toContain("text-right");
+  });
+
+  it("should not right-align header without align meta", () => {
+    render(<DataTable columns={columns} data={data} />);
+    const nameHeader = screen.getByText("Name").closest("th");
+    expect(nameHeader?.className).not.toContain("text-right");
+  });
 });
