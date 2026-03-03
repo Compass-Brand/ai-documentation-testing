@@ -49,8 +49,8 @@ const mockModels = [
     modality: "text+image->text",
     tokenizer: "o200k_base",
     created: 1700000000,
-    first_seen: 1700000000,
-    last_seen: 1700100000,
+    first_seen: "2023-11-14T22:13:20Z",
+    last_seen: "2023-11-15T10:00:00Z",
     removed_at: null,
   },
   {
@@ -62,8 +62,8 @@ const mockModels = [
     modality: "text+image->text",
     tokenizer: "claude",
     created: 1695000000,
-    first_seen: 1700000000,
-    last_seen: 1700100000,
+    first_seen: "2023-11-14T22:13:20Z",
+    last_seen: "2023-11-15T10:00:00Z",
     removed_at: null,
   },
 ];
@@ -355,5 +355,25 @@ describe("Models page — Multi-select (Change 4)", () => {
     expect(screen.getByText("1 selected")).toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
+  });
+});
+
+describe("Models page — History tab dates (Bug Fix)", () => {
+  it("should display first_seen and last_seen as valid dates", () => {
+    vi.mocked(useModelDetail).mockReturnValue({
+      data: {
+        ...mockModels[0],
+        supported_params: [],
+        first_seen: "2023-11-14T22:13:20Z",
+        last_seen: "2023-11-15T10:00:00Z",
+      },
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useModelDetail>);
+
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByText("GPT-4o"));
+    fireEvent.click(screen.getByText("History"));
+    expect(screen.queryByText("Invalid Date")).not.toBeInTheDocument();
   });
 });

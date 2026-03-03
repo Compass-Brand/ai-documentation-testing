@@ -580,15 +580,21 @@ export function Models() {
         {panelTab === "history" && modelDetail && (
           <div className="space-y-sp-4">
             <div className="flex justify-between text-body-sm">
+              <span className="text-brand-slate">Created</span>
+              <span className="text-brand-charcoal">
+                {formatDeployed(modelDetail.created)}
+              </span>
+            </div>
+            <div className="flex justify-between text-body-sm">
               <span className="text-brand-slate">First Seen</span>
               <span className="text-brand-charcoal">
-                {new Date(modelDetail.first_seen * 1000).toLocaleDateString()}
+                {new Date(modelDetail.first_seen).toLocaleDateString()}
               </span>
             </div>
             <div className="flex justify-between text-body-sm">
               <span className="text-brand-slate">Last Seen</span>
               <span className="text-brand-charcoal">
-                {new Date(modelDetail.last_seen * 1000).toLocaleDateString()}
+                {new Date(modelDetail.last_seen).toLocaleDateString()}
               </span>
             </div>
             <div className="flex justify-between text-body-sm">

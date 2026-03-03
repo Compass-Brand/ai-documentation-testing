@@ -98,9 +98,9 @@ export interface Model {
   modality: string;
   tokenizer: string;
   created: number;
-  first_seen: number;
-  last_seen: number;
-  removed_at: number | null;
+  first_seen: string;
+  last_seen: string;
+  removed_at: string | null;
 }
 
 export interface ModelDetail extends Model {
