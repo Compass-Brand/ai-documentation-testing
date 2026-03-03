@@ -8,12 +8,15 @@ import {
   type Row,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { motion } from "framer-motion";
 import { ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
 import { useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { CompassCheckbox } from "./CompassCheckbox";
 
 const VIRTUAL_THRESHOLD = 50;
+
+const ROW_SPRING = { type: "spring" as const, stiffness: 400, damping: 30 };
 
 interface DataTableProps<T> {
   columns: ColumnDef<T>[];
@@ -62,24 +65,40 @@ export function DataTable<T>({
     const isSelected = selectedRowIds?.has(rowId) ?? false;
 
     return (
-      <tr
+      <motion.tr
         key={row.id}
+        layout
         className={cn(
           "border-t border-brand-mist transition-colors duration-micro",
-          "hover:bg-brand-cream/50",
           rowIndex % 2 === 1 ? "bg-brand-cream/20" : "bg-white",
           onRowClick &&
             "cursor-pointer focus-visible:ring-2 focus-visible:ring-brand-goldenrod",
           isSelected && "bg-brand-goldenrod/10",
         )}
+        style={{
+          borderLeft: isSelected ? "3px solid #C2A676" : "3px solid transparent",
+        }}
+        whileHover={{ y: -1, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
+        transition={ROW_SPRING}
         onClick={() => onRowClick?.(row.original)}
       >
         {selectedRowIds && (
-          <td className="px-sp-2 py-sp-3 w-10">
-            <CompassCheckbox
-              checked={isSelected}
-              aria-label="Select row"
-            />
+          <td className="py-sp-3 overflow-hidden">
+            <motion.div
+              initial={false}
+              animate={{
+                width: isSelected ? 40 : 0,
+                opacity: isSelected ? 1 : 0,
+                x: isSelected ? 0 : -20,
+              }}
+              transition={ROW_SPRING}
+              className="flex items-center justify-center overflow-hidden"
+            >
+              <CompassCheckbox
+                checked={isSelected}
+                aria-label="Select row"
+              />
+            </motion.div>
           </td>
         )}
         {row.getVisibleCells().map((cell) => (
@@ -93,7 +112,7 @@ export function DataTable<T>({
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </td>
         ))}
-      </tr>
+      </motion.tr>
     );
   };
 

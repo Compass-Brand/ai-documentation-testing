@@ -167,3 +167,98 @@ input[type="range"]::-moz-range-thumb {
   border: 2px solid theme("colors.brand.bone");
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
+
+/* ── Dual-range slider ── */
+
+/* Hide the native track on overlapping inputs */
+.dual-range-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 100%;
+  margin: 0;
+  min-height: 0;
+}
+
+.dual-range-thumb::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 4px;
+}
+
+.dual-range-thumb::-moz-range-track {
+  background: transparent;
+  height: 4px;
+}
+
+/* Thumb re-enable pointer events so each thumb is draggable */
+.dual-range-thumb::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  pointer-events: auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: theme("colors.brand.goldenrod");
+  border: 2px solid theme("colors.brand.bone");
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: transform 150ms ease-out, box-shadow 150ms ease-out;
+  position: relative;
+  z-index: 1;
+}
+
+.dual-range-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: theme("colors.brand.goldenrod");
+  border: 2px solid theme("colors.brand.bone");
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: transform 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+/* Hover scale */
+.dual-range-thumb::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+.dual-range-thumb::-moz-range-thumb:hover {
+  transform: scale(1.15);
+}
+
+/* Glow pulse while actively grabbing */
+.dual-range-thumb:active::-webkit-slider-thumb {
+  animation: thumb-glow-pulse 1s ease-in-out infinite;
+}
+
+.dual-range-thumb:active::-moz-range-thumb {
+  animation: thumb-glow-pulse 1s ease-in-out infinite;
+}
+
+@keyframes thumb-glow-pulse {
+  0%, 100% {
+    box-shadow:
+      0 1px 3px rgba(0, 0, 0, 0.15),
+      0 0 0 0 rgba(194, 166, 118, 0.4);
+  }
+  50% {
+    box-shadow:
+      0 1px 3px rgba(0, 0, 0, 0.15),
+      0 0 0 6px rgba(194, 166, 118, 0);
+  }
+}
+
+/* Focus ring for keyboard navigation */
+.dual-range-thumb:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid theme("colors.brand.goldenrod");
+  outline-offset: 2px;
+}
+
+.dual-range-thumb:focus-visible::-moz-range-thumb {
+  outline: 2px solid theme("colors.brand.goldenrod");
+  outline-offset: 2px;
+}
