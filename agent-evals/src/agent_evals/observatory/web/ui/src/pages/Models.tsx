@@ -524,6 +524,34 @@ export function Models() {
                 })()}
               </div>
             )}
+
+            {/* Empty state */}
+            {models.length === 0 && !isLoading && (
+              <div className="text-center py-sp-16">
+                <Cpu className="h-12 w-12 text-brand-mist mx-auto mb-sp-4" />
+                <p className="text-h5 text-brand-charcoal mb-sp-2">No models match your filters</p>
+                <p className="text-body-sm text-brand-slate mb-sp-6">
+                  Try adjusting your search or filter criteria.
+                </p>
+                {hasActiveFilters && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setFilters({
+                        search: undefined,
+                        free: undefined,
+                        maxPrice: undefined,
+                        minContext: undefined,
+                        modality: undefined,
+                      });
+                      setSearchTerm("");
+                    }}
+                  >
+                    Reset all filters
+                  </Button>
+                )}
+              </div>
+            )}
           </FadeIn>
         </div>
       </div>

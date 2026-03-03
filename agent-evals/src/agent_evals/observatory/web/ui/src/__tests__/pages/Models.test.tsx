@@ -505,6 +505,71 @@ describe("Models page — Search improvements", () => {
   });
 });
 
+describe("Models page — Right-aligned numeric columns (Task 9)", () => {
+  it("should right-align price cells", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const priceCells = screen.getAllByText("$5.00/M");
+    // Prompt price cell
+    const promptCell = priceCells[0].closest("td");
+    expect(promptCell?.className).toContain("text-right");
+    expect(promptCell?.className).toContain("tabular-nums");
+  });
+
+  it("should right-align context length cells", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const contextCell = screen.getByText("128k").closest("td");
+    expect(contextCell?.className).toContain("text-right");
+    expect(contextCell?.className).toContain("tabular-nums");
+  });
+
+  it("should apply alternating row backgrounds to model rows", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const rows = screen.getAllByRole("row").slice(1); // skip header
+    expect(rows[0].className).toContain("bg-white");
+    expect(rows[1].className).toContain("bg-brand-cream/20");
+  });
+});
+
+describe("Models page — Empty state", () => {
+  it("should show empty state when no models match filters", () => {
+    vi.mocked(useModels).mockReturnValue({
+      data: { models: [], total: 0 },
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useModels>);
+    vi.mocked(useFilterParams).mockReturnValue([
+      { free: true },
+      mockSetFilters,
+    ]);
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByText(/no models match/i)).toBeInTheDocument();
+  });
+
+  it("should show reset button in empty state when filters active", () => {
+    vi.mocked(useModels).mockReturnValue({
+      data: { models: [], total: 0 },
+      isLoading: false,
+      error: null,
+    } as ReturnType<typeof useModels>);
+    vi.mocked(useFilterParams).mockReturnValue([
+      { free: true },
+      mockSetFilters,
+    ]);
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByText(/reset all filters/i)).toBeInTheDocument();
+  });
+
+  it("should not show empty state when loading", () => {
+    vi.mocked(useModels).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      error: null,
+    } as ReturnType<typeof useModels>);
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.queryByText(/no models match/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("Models page — History tab dates (Bug Fix)", () => {
   it("should display first_seen and last_seen as valid dates", () => {
     vi.mocked(useModelDetail).mockReturnValue({
