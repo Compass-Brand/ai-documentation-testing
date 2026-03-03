@@ -23,8 +23,14 @@ vi.mock("../../hooks/useFilterParams", () => ({
 
 // Mock CompassCheckbox
 vi.mock("../../components/CompassCheckbox", () => ({
-  CompassCheckbox: ({ checked }: { checked: boolean }) => (
-    <div data-testid="compass-checkbox" data-checked={checked} />
+  CompassCheckbox: ({ checked, onChange, "aria-label": ariaLabel }: { checked: boolean; onChange?: (checked: boolean) => void; "aria-label"?: string }) => (
+    <div
+      data-testid="compass-checkbox"
+      data-checked={checked}
+      aria-label={ariaLabel}
+      role="checkbox"
+      onClick={() => onChange?.(!checked)}
+    />
   ),
 }));
 
@@ -289,16 +295,27 @@ describe("Models page — Deployed column (Change 3)", () => {
 });
 
 describe("Models page — Multi-select (Change 4)", () => {
-  it("should not show checkboxes by default", () => {
+  it("should show checkboxes in all rows by default (unchecked)", () => {
     render(<Models />, { wrapper: createWrapper() });
-    expect(screen.queryByTestId("compass-checkbox")).not.toBeInTheDocument();
+    const checkboxes = screen.getAllByTestId("compass-checkbox");
+    // 1 select-all + 2 row checkboxes = 3 total
+    expect(checkboxes.length).toBe(3);
+    // All row checkboxes should be unchecked
+    const rowCheckboxes = screen.getAllByLabelText(/select row/i);
+    rowCheckboxes.forEach((cb) => {
+      expect(cb).toHaveAttribute("data-checked", "false");
+    });
   });
 
-  it("should select a row on click and show checkbox", () => {
+  it("should check row checkbox on click", () => {
     render(<Models />, { wrapper: createWrapper() });
     const row = screen.getByText("$5.00/M").closest("tr")!;
     fireEvent.click(row);
-    expect(screen.getByTestId("compass-checkbox")).toBeInTheDocument();
+    const rowCheckboxes = screen.getAllByLabelText(/select row/i);
+    const checkedBoxes = rowCheckboxes.filter(
+      (cb) => cb.getAttribute("data-checked") === "true",
+    );
+    expect(checkedBoxes.length).toBe(1);
   });
 
   it("should highlight selected row with goldenrod background", () => {
@@ -344,7 +361,11 @@ describe("Models page — Multi-select (Change 4)", () => {
     const row = screen.getByText("$5.00/M").closest("tr")!;
     fireEvent.click(row);
     fireEvent.click(screen.getByText("Clear"));
-    expect(screen.queryByTestId("compass-checkbox")).not.toBeInTheDocument();
+    // All row checkboxes should be unchecked after clearing
+    const rowCheckboxes = screen.getAllByLabelText(/select row/i);
+    rowCheckboxes.forEach((cb) => {
+      expect(cb).toHaveAttribute("data-checked", "false");
+    });
     expect(screen.queryByText("1 selected")).not.toBeInTheDocument();
   });
 
@@ -399,6 +420,88 @@ describe("Models page — Card view (Bug Fix)", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/table view/i));
     expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+});
+
+describe("Models page — Select All (Change 6)", () => {
+  it("should render a select-all checkbox in the table header", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByLabelText(/select all/i)).toBeInTheDocument();
+  });
+
+  it("should select all models when select-all is clicked", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByLabelText(/select all/i));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+  });
+
+  it("should deselect all when select-all is clicked again", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByLabelText(/select all/i));
+    expect(screen.getByText("2 selected")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/select all/i));
+    expect(screen.queryByText("2 selected")).not.toBeInTheDocument();
+  });
+
+  it("should show row checkboxes for all rows when any are selected", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByLabelText(/select all/i));
+    const checkboxes = screen.getAllByTestId("compass-checkbox");
+    // 1 select-all + 2 row checkboxes = 3 total
+    expect(checkboxes.length).toBe(3);
+  });
+});
+
+describe("Models page — Reset filters", () => {
+  it("should show 'Clear all' when filters are active", () => {
+    vi.mocked(useFilterParams).mockReturnValue([
+      { free: true },
+      mockSetFilters,
+    ]);
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByText(/clear all/i)).toBeInTheDocument();
+  });
+
+  it("should not show 'Clear all' when no filters active", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.queryByText(/clear all/i)).not.toBeInTheDocument();
+  });
+
+  it("should call setFilters to clear all filters when clicked", () => {
+    vi.mocked(useFilterParams).mockReturnValue([
+      { free: true },
+      mockSetFilters,
+    ]);
+    render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByText(/clear all/i));
+    expect(mockSetFilters).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: undefined,
+        free: undefined,
+        maxPrice: undefined,
+        minContext: undefined,
+        modality: undefined,
+      })
+    );
+  });
+});
+
+describe("Models page — Search improvements", () => {
+  it("should focus search on '/' key press", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const searchInput = screen.getByPlaceholderText(/search/i);
+    fireEvent.keyDown(document, { key: "/" });
+    expect(document.activeElement).toBe(searchInput);
+  });
+
+  it("should not focus search when already in an input", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    const searchInput = screen.getByPlaceholderText(/search/i);
+    searchInput.focus();
+    // Simulate typing "/" while already focused
+    fireEvent.keyDown(searchInput, { key: "/" });
+    // Should still be focused (not error out)
+    expect(document.activeElement).toBe(searchInput);
   });
 });
 

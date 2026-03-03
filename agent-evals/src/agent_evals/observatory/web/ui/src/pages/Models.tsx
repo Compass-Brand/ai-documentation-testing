@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Cpu,
   LayoutGrid,
@@ -194,6 +194,11 @@ export function Models() {
 
   const selectedModels = models.filter((m) => selectedModelIds.has(m.id));
 
+  const hasActiveFilters = Boolean(
+    filters.search || filters.free || filters.maxPrice != null ||
+    filters.minContext != null || filters.modality
+  );
+
   const clearSelection = useCallback(() => {
     setSelectedModelIds(new Set());
   }, []);
@@ -219,6 +224,14 @@ export function Models() {
       }
       return next;
     });
+  };
+
+  const handleSelectAll = (ids: string[]) => {
+    if (ids.length === 0) {
+      setSelectedModelIds(new Set());
+    } else {
+      setSelectedModelIds(new Set(ids));
+    }
   };
 
   const handleNameClick = (model: Model) => {
@@ -348,6 +361,22 @@ export function Models() {
 
               <p className="text-caption text-brand-slate mt-sp-4">
                 {total} models found
+                {hasActiveFilters && (
+                  <button
+                    className="ml-sp-2 text-brand-goldenrod hover:underline"
+                    onClick={() => {
+                      setFilters({
+                        search: undefined,
+                        free: undefined,
+                        maxPrice: undefined,
+                        minContext: undefined,
+                        modality: undefined,
+                      });
+                    }}
+                  >
+                    Clear all
+                  </button>
+                )}
               </p>
             </div>
           </FadeIn>
@@ -435,6 +464,7 @@ export function Models() {
                 selectedRowIds={selectedModelIds}
                 getRowId={(model) => model.id}
                 onRowClick={handleRowClick}
+                onSelectAll={handleSelectAll}
               />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-sp-4">
