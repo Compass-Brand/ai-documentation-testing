@@ -637,33 +637,50 @@ export function Models() {
                   </div>
 
                   {/* Table / Card grid */}
-                  {viewMode === "table" ? (
-                    <DataTable
-                      columns={columns}
-                      data={filteredModels}
-                      selectedRowIds={selectedModelIds}
-                      getRowId={(model) => model.id}
-                      onRowClick={handleRowClick}
-                      onSelectAll={handleSelectAll}
-                    />
-                  ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-sp-4">
-                      {(() => {
-                        const maxCtx = Math.max(...filteredModels.map((m) => m.context_length), 1);
-                        return filteredModels.map((model) => (
-                          <ModelCard
-                            key={model.id}
-                            model={model}
-                            maxContext={maxCtx}
-                            onClick={() => {
-                              setSelectedModelId(model.id);
-                              setPanelTab("overview");
-                            }}
-                          />
-                        ));
-                      })()}
-                    </div>
-                  )}
+                  <AnimatePresence mode="wait">
+                    {viewMode === "table" ? (
+                      <motion.div
+                        key="table"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <DataTable
+                          columns={columns}
+                          data={filteredModels}
+                          selectedRowIds={selectedModelIds}
+                          getRowId={(model) => model.id}
+                          onRowClick={handleRowClick}
+                          onSelectAll={handleSelectAll}
+                        />
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="cards"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-sp-4"
+                      >
+                        {(() => {
+                          const maxCtx = Math.max(...filteredModels.map((m) => m.context_length), 1);
+                          return filteredModels.map((model) => (
+                            <ModelCard
+                              key={model.id}
+                              model={model}
+                              maxContext={maxCtx}
+                              onClick={() => {
+                                setSelectedModelId(model.id);
+                                setPanelTab("overview");
+                              }}
+                            />
+                          ));
+                        })()}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   {/* Empty state */}
                   {filteredModels.length === 0 && !isLoading && (

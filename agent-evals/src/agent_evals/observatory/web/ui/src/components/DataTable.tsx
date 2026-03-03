@@ -38,6 +38,7 @@ export function DataTable<T>({
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const hasEntered = useRef(new Set<string>());
 
   const table = useReactTable({
     data,
@@ -74,11 +75,19 @@ export function DataTable<T>({
   const renderRow = (row: Row<T>, rowIndex: number) => {
     const rowId = getRowId?.(row.original) ?? row.id;
     const isSelected = selectedRowIds?.has(rowId) ?? false;
+    const isFirstEnter = !hasEntered.current.has(rowId);
+    const shouldAnimate = isFirstEnter && rowIndex < 20;
+
+    if (isFirstEnter) {
+      hasEntered.current.add(rowId);
+    }
 
     return (
       <motion.tr
         key={row.id}
         layout
+        initial={shouldAnimate ? { opacity: 0, y: 8 } : false}
+        animate={{ opacity: 1, y: 0 }}
         className={cn(
           "border-t border-brand-mist transition-colors duration-micro",
           rowIndex % 2 === 1 ? "bg-brand-cream/20" : "bg-white",
@@ -90,7 +99,10 @@ export function DataTable<T>({
           borderLeft: isSelected ? "3px solid #C2A676" : "3px solid transparent",
         }}
         whileHover={{ y: -1, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
-        transition={ROW_SPRING}
+        transition={{
+          ...ROW_SPRING,
+          ...(shouldAnimate ? { delay: Math.min(rowIndex, 20) * 0.02 } : {}),
+        }}
         onClick={() => onRowClick?.(row.original)}
       >
         {selectedRowIds && (
