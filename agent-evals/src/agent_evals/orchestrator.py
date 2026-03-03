@@ -293,8 +293,12 @@ class EvalOrchestrator:
                 completed_keys=completed_keys,
             )
 
-        # Mark run as completed.
-        self.store.finish_run(run_id)
+        # Mark run based on outcome.
+        was_shutdown = getattr(raw_result, "graceful_shutdown", False)
+        if was_shutdown:
+            self.store.fail_run(run_id, error="graceful_shutdown")
+        else:
+            self.store.finish_run(run_id)
 
         # Aggregate report if configured.
         report: ReportData | None = None
@@ -428,6 +432,7 @@ class EvalOrchestrator:
             config=eval_config,
             design=design,
             variant_lookup=variant_lookup,
+            store=self.store,
         )
         return runner.run(
             tasks=tasks,

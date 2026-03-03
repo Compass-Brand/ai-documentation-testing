@@ -9,11 +9,13 @@ evaluation.
 from __future__ import annotations
 
 import logging
+import signal
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from agent_evals.runner import EvalRunConfig, TrialResult
 from agent_evals.taguchi.factors import TaguchiDesign, TaguchiExperimentRow
@@ -41,6 +43,7 @@ class TaguchiRunResult:
     total_cost: float
     total_tokens: int
     elapsed_seconds: float
+    graceful_shutdown: bool = False
 
 
 class TaguchiRunner:
@@ -59,12 +62,14 @@ class TaguchiRunner:
         config: EvalRunConfig,
         design: TaguchiDesign,
         variant_lookup: dict[str, IndexVariant],
+        store: Any | None = None,
     ) -> None:
         self._clients = clients
         self._config = config
         self._design = design
         self._variant_lookup = variant_lookup
         self._default_client_name = next(iter(clients))
+        self._store = store
 
     def run(
         self,
@@ -88,6 +93,21 @@ class TaguchiRunner:
             TaguchiRunResult with all trials and aggregated metrics.
         """
         run_start = time.monotonic()
+        shutdown_requested = threading.Event()
+
+        # Install signal handlers for graceful shutdown (main thread only).
+        old_sigint = None
+        old_sigterm = None
+        try:
+            def _shutdown_handler(signum: int, frame: object) -> None:
+                logger.info("Shutdown signal received (signal %d)", signum)
+                shutdown_requested.set()
+
+            old_sigint = signal.signal(signal.SIGINT, _shutdown_handler)
+            old_sigterm = signal.signal(signal.SIGTERM, _shutdown_handler)
+        except ValueError:
+            # Not in main thread — skip signal registration.
+            pass
 
         # Build work items: (row, task, repetition)
         work_items: list[tuple[TaguchiExperimentRow, EvalTask, int]] = []
@@ -117,23 +137,87 @@ class TaguchiRunner:
         total = len(work_items)
         all_trials: list[TrialResult] = []
         completed = 0
+        error_count = 0
+        was_shutdown = False
 
-        if total > 0:
-            with ThreadPoolExecutor(
-                max_workers=self._config.max_connections,
-            ) as executor:
-                future_to_item = {
-                    executor.submit(
-                        self._run_trial, row, task, doc_tree, rep, source, phase
-                    ): (row, task, rep)
-                    for row, task, rep in work_items
-                }
-                for future in as_completed(future_to_item):
-                    trial = future.result()
-                    all_trials.append(trial)
-                    completed += 1
-                    if progress_callback is not None:
-                        progress_callback(completed, total, trial)
+        # Track per-row completion for logging and WAL checkpoints.
+        total_rows = len(self._design.rows)
+        trials_per_row = len(tasks) * self._config.repetitions
+        row_completed_counts: dict[int, int] = {
+            row.run_id: 0 for row in self._design.rows
+        }
+
+        try:
+            if total > 0:
+                with ThreadPoolExecutor(
+                    max_workers=self._config.max_connections,
+                ) as executor:
+                    # Submit work in batches, checking for shutdown between.
+                    futures = {}
+                    for row, task, rep in work_items:
+                        if shutdown_requested.is_set():
+                            break
+                        future = executor.submit(
+                            self._run_trial, row, task, doc_tree, rep, source, phase
+                        )
+                        futures[future] = (row, task, rep)
+
+                    for future in as_completed(futures):
+                        trial = future.result()
+                        all_trials.append(trial)
+                        completed += 1
+                        if trial.error:
+                            error_count += 1
+
+                        # Track per-row progress.
+                        oa_row_id = trial.metrics.get("oa_row_id")
+                        if oa_row_id is not None:
+                            row_id = int(oa_row_id)
+                            row_completed_counts[row_id] = (
+                                row_completed_counts.get(row_id, 0) + 1
+                            )
+                            if row_completed_counts[row_id] == trials_per_row:
+                                completed_rows = sum(
+                                    1 for c in row_completed_counts.values()
+                                    if c >= trials_per_row
+                                )
+                                logger.info(
+                                    "Row %d/%d complete: %d/%d trials (%.1f%%), %d errors",
+                                    completed_rows,
+                                    total_rows,
+                                    completed,
+                                    total,
+                                    100.0 * completed / total,
+                                    error_count,
+                                )
+                                # Flush WAL to disk after each row.
+                                if self._store is not None:
+                                    try:
+                                        self._store.checkpoint_wal()
+                                    except Exception:
+                                        logger.debug(
+                                            "WAL checkpoint failed",
+                                            exc_info=True,
+                                        )
+
+                        if progress_callback is not None:
+                            progress_callback(completed, total, trial)
+
+                    if shutdown_requested.is_set():
+                        was_shutdown = True
+                        logger.info(
+                            "Graceful shutdown: %d/%d trials saved",
+                            completed, total,
+                        )
+        finally:
+            # Restore original signal handlers.
+            try:
+                if old_sigint is not None:
+                    signal.signal(signal.SIGINT, old_sigint)
+                if old_sigterm is not None:
+                    signal.signal(signal.SIGTERM, old_sigterm)
+            except ValueError:
+                pass
 
         elapsed = time.monotonic() - run_start
         total_cost = sum(t.cost for t in all_trials if t.cost is not None)
@@ -146,6 +230,7 @@ class TaguchiRunner:
             total_cost=total_cost,
             total_tokens=total_tokens,
             elapsed_seconds=elapsed,
+            graceful_shutdown=was_shutdown,
         )
 
     def _run_trial(

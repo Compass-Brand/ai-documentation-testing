@@ -13,6 +13,8 @@ import csv
 import io
 import json
 import logging
+import signal
+import threading
 import time
 from collections import defaultdict
 from collections.abc import Callable
@@ -218,6 +220,21 @@ class EvalRunner:
             Aggregated results from all trials.
         """
         run_start = time.monotonic()
+        shutdown_requested = threading.Event()
+
+        # Install signal handlers for graceful shutdown (main thread only).
+        old_sigint = None
+        old_sigterm = None
+        try:
+            def _shutdown_handler(signum: int, frame: object) -> None:
+                logger.info("Shutdown signal received (signal %d)", signum)
+                shutdown_requested.set()
+
+            old_sigint = signal.signal(signal.SIGINT, _shutdown_handler)
+            old_sigterm = signal.signal(signal.SIGTERM, _shutdown_handler)
+        except ValueError:
+            # Not in main thread — skip signal registration.
+            pass
 
         # Setup all variants
         for variant in variants:
@@ -254,6 +271,8 @@ class EvalRunner:
                 ) as executor:
                     future_to_item = {}
                     for idx, (task, variant, rep) in enumerate(work_items, 1):
+                        if shutdown_requested.is_set():
+                            break
                         future = executor.submit(
                             self._run_trial, task, variant, doc_tree, rep, source, trial_index=idx
                         )
@@ -294,10 +313,24 @@ class EvalRunner:
                         completed += 1
                         if progress_callback is not None:
                             progress_callback(completed, total, trial)
+
+                    if shutdown_requested.is_set():
+                        logger.info(
+                            "Graceful shutdown: %d/%d trials saved",
+                            completed, total,
+                        )
         finally:
             # Teardown all variants even if an exception occurred
             for variant in variants:
                 variant.teardown()
+            # Restore original signal handlers.
+            try:
+                if old_sigint is not None:
+                    signal.signal(signal.SIGINT, old_sigint)
+                if old_sigterm is not None:
+                    signal.signal(signal.SIGTERM, old_sigterm)
+            except ValueError:
+                pass
 
         elapsed = time.monotonic() - run_start
         total_cost = sum(t.cost for t in trials if t.cost is not None)

@@ -84,6 +84,22 @@ class TestResumeRun:
             store.resume_run("nonexistent")
 
 
+class TestCheckpointWal:
+    """checkpoint_wal() runs without error."""
+
+    def test_checkpoint_wal_succeeds(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        store.create_run("run-1", "test", {})
+        store.record_trial(**_trial_kwargs())
+        # Should not raise.
+        store.checkpoint_wal()
+
+    def test_checkpoint_wal_on_empty_db(self, tmp_path: Path) -> None:
+        store = _make_store(tmp_path)
+        # Should not raise even with no data.
+        store.checkpoint_wal()
+
+
 class TestGetCompletedTrialKeys:
     """get_completed_trial_keys() returns completed trial identifiers."""
 
