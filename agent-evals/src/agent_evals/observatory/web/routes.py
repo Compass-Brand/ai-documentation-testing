@@ -356,6 +356,42 @@ def create_router(
         result = model_sync.run_sync()
         return asdict(result)
 
+    @router.get("/api/models/{model_id:path}/endpoints")
+    async def get_model_endpoints(model_id: str) -> dict[str, Any]:
+        """Proxy provider endpoint data from OpenRouter."""
+        try:
+            import httpx
+
+            parts = model_id.split("/", 1)
+            if len(parts) < 2:
+                return {"endpoints": []}
+            resp = httpx.get(
+                f"https://openrouter.ai/api/v1/models/{model_id}/endpoints",
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_endpoints = data.get("data", {}).get("endpoints", [])
+                endpoints = []
+                for ep in raw_endpoints:
+                    endpoints.append({
+                        "provider": ep.get(
+                            "provider_name", ep.get("name", "Unknown")
+                        ),
+                        "latency_ms": ep.get("latency_ms", 0),
+                        "uptime_pct": ep.get("uptime", 0) * 100
+                        if ep.get("uptime", 0) <= 1
+                        else ep.get("uptime", 0),
+                        "pricing_diff": 0,
+                        "quantization": ep.get("quantization", ""),
+                        "supported_params": [],
+                        "zero_downtime_routing": ep.get("is_zdr", False),
+                    })
+                return {"endpoints": endpoints}
+            return {"endpoints": []}
+        except Exception:
+            return {"endpoints": []}
+
     @router.get("/api/models/{model_id:path}")
     async def get_model(model_id: str) -> dict[str, Any]:
         if catalog is None:

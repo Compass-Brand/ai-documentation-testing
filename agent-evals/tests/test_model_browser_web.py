@@ -200,6 +200,88 @@ class TestModelBrowserHTML:
         assert "view-toggle" in response.text
 
 
+class TestModelEndpointsAPI:
+    """Provider endpoints proxy route."""
+
+    def test_get_endpoints_returns_200_with_endpoints_key(
+        self, client: TestClient
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {
+                "endpoints": [
+                    {
+                        "provider_name": "Anthropic",
+                        "latency_ms": 450,
+                        "uptime": 0.998,
+                        "quantization": "",
+                        "is_zdr": True,
+                    },
+                    {
+                        "name": "AWS Bedrock",
+                        "latency_ms": 600,
+                        "uptime": 0.95,
+                        "quantization": "fp16",
+                        "is_zdr": False,
+                    },
+                ]
+            }
+        }
+        with patch("httpx.get", return_value=mock_response) as mock_get:
+            response = client.get(
+                "/api/models/anthropic/claude-sonnet-4/endpoints"
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert "endpoints" in data
+        assert len(data["endpoints"]) == 2
+
+        ep0 = data["endpoints"][0]
+        assert ep0["provider"] == "Anthropic"
+        assert ep0["latency_ms"] == 450
+        assert ep0["uptime_pct"] == pytest.approx(99.8)
+        assert ep0["zero_downtime_routing"] is True
+
+        ep1 = data["endpoints"][1]
+        assert ep1["provider"] == "AWS Bedrock"
+        assert ep1["quantization"] == "fp16"
+
+        mock_get.assert_called_once_with(
+            "https://openrouter.ai/api/v1/models/anthropic/claude-sonnet-4/endpoints",
+            timeout=10,
+        )
+
+    def test_get_endpoints_single_segment_model_returns_empty(
+        self, client: TestClient
+    ) -> None:
+        response = client.get("/api/models/singlename/endpoints")
+        assert response.status_code == 200
+        assert response.json() == {"endpoints": []}
+
+    def test_get_endpoints_openrouter_failure_returns_empty(
+        self, client: TestClient
+    ) -> None:
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        with patch("httpx.get", return_value=mock_response):
+            response = client.get(
+                "/api/models/anthropic/claude-sonnet-4/endpoints"
+            )
+        assert response.status_code == 200
+        assert response.json() == {"endpoints": []}
+
+    def test_get_endpoints_network_error_returns_empty(
+        self, client: TestClient
+    ) -> None:
+        with patch("httpx.get", side_effect=Exception("Connection refused")):
+            response = client.get(
+                "/api/models/anthropic/claude-sonnet-4/endpoints"
+            )
+        assert response.status_code == 200
+        assert response.json() == {"endpoints": []}
+
+
 class TestStartupSync:
     """ModelSync.run_sync() is called during server startup lifespan."""
 
