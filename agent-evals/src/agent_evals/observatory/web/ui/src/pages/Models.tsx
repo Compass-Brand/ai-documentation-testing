@@ -40,6 +40,7 @@ import { Skeleton } from "../components/Skeleton";
 import { Tooltip } from "../components/Tooltip";
 import { TabBar } from "../components/TabBar";
 import { AnimatedNumber } from "../components/AnimatedNumber";
+import { ComparisonTray } from "../components/ComparisonTray";
 import { cn } from "../lib/utils";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
@@ -957,6 +958,16 @@ export function Models() {
           </Button>
         )}
       </SlideOutPanel>
+
+      {/* Comparison tray */}
+      <AnimatePresence>
+        {selectedModels.length >= 2 && selectedModels.length <= 3 && (
+          <ComparisonTray
+            models={selectedModels}
+            onClose={clearSelection}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

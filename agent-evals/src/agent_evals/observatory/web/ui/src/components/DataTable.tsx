@@ -8,9 +8,9 @@ import {
   type Row,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUpDown, ChevronUp } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { CompassCheckbox } from "./CompassCheckbox";
 import { CustomScrollbar } from "./CustomScrollbar";
@@ -37,6 +37,9 @@ export function DataTable<T>({
   onSelectAll,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [scrolled, setScrolled] = useState(false);
+  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasEntered = useRef(new Set<string>());
 
@@ -62,6 +65,20 @@ export function DataTable<T>({
 
   const colSpan = columns.length + (selectedRowIds ? 1 : 0);
 
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || !useVirtual) return;
+
+    const handleScroll = () => {
+      setScrolled(el.scrollTop > 0);
+    };
+
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", handleScroll);
+    };
+  }, [useVirtual]);
+
   const selectedPositions = useMemo(() => {
     if (!selectedRowIds || !getRowId || rows.length === 0) return [];
     return rows.reduce<number[]>((acc, row, index) => {
@@ -83,59 +100,88 @@ export function DataTable<T>({
     }
 
     return (
-      <motion.tr
-        key={row.id}
-        layout
-        initial={shouldAnimate ? { opacity: 0, y: 8 } : false}
-        animate={{ opacity: 1, y: 0 }}
-        className={cn(
-          "border-t border-brand-mist transition-colors duration-micro",
-          rowIndex % 2 === 1 ? "bg-brand-cream/20" : "bg-white",
-          onRowClick &&
-            "cursor-pointer focus-visible:ring-2 focus-visible:ring-brand-goldenrod",
-          isSelected && "bg-brand-goldenrod/10",
-        )}
-        style={{
-          borderLeft: isSelected ? "3px solid #C2A676" : "3px solid transparent",
-        }}
-        whileHover={{ y: -1, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
-        transition={{
-          ...ROW_SPRING,
-          ...(shouldAnimate ? { delay: Math.min(rowIndex, 20) * 0.02 } : {}),
-        }}
-        onClick={() => onRowClick?.(row.original)}
-      >
-        {selectedRowIds && (
-          <td className="py-sp-3 overflow-hidden">
-            <motion.div
-              initial={false}
-              animate={{
-                width: isSelected ? 40 : 0,
-                opacity: isSelected ? 1 : 0,
-                x: isSelected ? 0 : -20,
-              }}
-              transition={ROW_SPRING}
-              className="flex items-center justify-center overflow-hidden"
+      <>
+        <motion.tr
+          key={row.id}
+          layout
+          initial={shouldAnimate ? { opacity: 0, y: 8 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          className={cn(
+            "border-t border-brand-mist transition-colors duration-micro",
+            rowIndex % 2 === 1 ? "bg-brand-cream/20" : "bg-white",
+            onRowClick &&
+              "cursor-pointer focus-visible:ring-2 focus-visible:ring-brand-goldenrod",
+            isSelected && "bg-brand-goldenrod/10",
+          )}
+          style={{
+            borderLeft: isSelected ? "3px solid #C2A676" : "3px solid transparent",
+          }}
+          whileHover={{ y: -1, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
+          transition={{
+            ...ROW_SPRING,
+            ...(shouldAnimate ? { delay: Math.min(rowIndex, 20) * 0.02 } : {}),
+          }}
+          onClick={() => onRowClick?.(row.original)}
+          onMouseEnter={() => {
+            hoverTimeoutRef.current = setTimeout(() => {
+              setHoveredRowId(rowId);
+            }, 500);
+          }}
+          onMouseLeave={() => {
+            clearTimeout(hoverTimeoutRef.current);
+            setHoveredRowId(null);
+          }}
+        >
+          {selectedRowIds && (
+            <td className="py-sp-3 overflow-hidden">
+              <motion.div
+                initial={false}
+                animate={{
+                  width: isSelected ? 40 : 0,
+                  opacity: isSelected ? 1 : 0,
+                  x: isSelected ? 0 : -20,
+                }}
+                transition={ROW_SPRING}
+                className="flex items-center justify-center overflow-hidden"
+              >
+                <CompassCheckbox
+                  checked={isSelected}
+                  aria-label="Select row"
+                />
+              </motion.div>
+            </td>
+          )}
+          {row.getVisibleCells().map((cell) => (
+            <td
+              key={cell.id}
+              className={cn(
+                "px-sp-4 py-sp-3 text-brand-charcoal",
+                (cell.column.columnDef.meta as { align?: string })?.align === "right" && "text-right tabular-nums",
+              )}
             >
-              <CompassCheckbox
-                checked={isSelected}
-                aria-label="Select row"
-              />
-            </motion.div>
-          </td>
-        )}
-        {row.getVisibleCells().map((cell) => (
-          <td
-            key={cell.id}
-            className={cn(
-              "px-sp-4 py-sp-3 text-brand-charcoal",
-              (cell.column.columnDef.meta as { align?: string })?.align === "right" && "text-right tabular-nums",
-            )}
-          >
-            {flexRender(cell.column.columnDef.cell, cell.getContext())}
-          </td>
-        ))}
-      </motion.tr>
+              {flexRender(cell.column.columnDef.cell, cell.getContext())}
+            </td>
+          ))}
+        </motion.tr>
+        <AnimatePresence>
+          {hoveredRowId === rowId && (
+            <motion.tr
+              key={`${rowId}-expand`}
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={ROW_SPRING}
+              className="bg-brand-cream/30 overflow-hidden"
+            >
+              <td colSpan={colSpan} className="px-sp-4 py-sp-3">
+                <div className="flex items-center gap-sp-6 text-caption text-brand-slate">
+                  <span>Quick preview — click row name for full details</span>
+                </div>
+              </td>
+            </motion.tr>
+          )}
+        </AnimatePresence>
+      </>
     );
   };
 
@@ -234,8 +280,10 @@ export function DataTable<T>({
       <table className="w-full text-body-sm">
         <thead
           className={cn(
-            "bg-brand-cream",
             useVirtual && "sticky top-0 z-10",
+            useVirtual && scrolled
+              ? "backdrop-blur-md bg-white/80 border-b border-brand-mist/60"
+              : "bg-brand-cream",
           )}
         >
           {renderHeader()}
