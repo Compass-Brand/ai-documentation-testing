@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Cpu,
   LayoutGrid,
@@ -29,6 +30,7 @@ import {
   FilterCheckbox,
   FilterRange,
 } from "../components/FilterPanel";
+import { ProviderCombobox } from "../components/ProviderCombobox";
 import { Input } from "../components/Input";
 import { Button } from "../components/Button";
 import { StatusBadge } from "../components/StatusBadge";
@@ -391,230 +393,312 @@ export function Models() {
       </FilterSection>
 
       <FilterSection label="Provider">
-        {providers.slice(0, 10).map((p) => (
-          <FilterCheckbox
-            key={p.name}
-            label={`${p.name} (${p.count})`}
-            checked={selectedProviders.has(p.name.toLowerCase())}
-            onCheckedChange={(checked) => {
-              setSelectedProviders((prev) => {
-                const next = new Set(prev);
-                if (checked) next.add(p.name.toLowerCase());
-                else next.delete(p.name.toLowerCase());
-                return next;
-              });
-            }}
-          />
-        ))}
+        <ProviderCombobox
+          providers={providers}
+          selected={selectedProviders}
+          onSelectionChange={setSelectedProviders}
+        />
       </FilterSection>
     </>
   );
 
-  if (isLoading) {
-    return (
-      <div className="px-sp-6 py-sp-8">
-        <div className="space-y-sp-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} variant="text" className="h-10" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="px-sp-6 py-sp-8 max-w-[1800px] mx-auto">
-      <FadeIn>
-        <h1 className="text-h2 text-brand-charcoal inline-flex items-center gap-sp-3 mb-sp-8">
-          <Cpu className="h-8 w-8 text-brand-goldenrod" />
-          Models
-        </h1>
-      </FadeIn>
-
-      {/* Mobile filter bar */}
-      <div className="lg:hidden mb-sp-4 flex items-center gap-sp-3">
-        <Button variant="secondary" size="sm" onClick={() => setShowMobileFilters(true)}>
-          <Filter className="h-4 w-4 mr-sp-1" />
-          Filters
-          {hasActiveFilters && (
-            <span className="ml-sp-1 bg-brand-goldenrod text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">!</span>
-          )}
-        </Button>
-      </div>
-
-      <div className="flex gap-sp-6">
-        {/* Left sidebar -- 264px */}
-        <aside className="hidden lg:block w-[264px] shrink-0">
-          <FadeIn delay={1}>
-            <Input
-              ref={searchRef}
-              placeholder="Search models..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-
-            <div className="mt-sp-6">
-              {filterContent}
-
-              <p className="text-caption text-brand-slate mt-sp-4">
-                <AnimatedNumber value={total} format={(n) => `${Math.round(n)}`} /> models found
-                {hasActiveFilters && (
-                  <button
-                    className="ml-sp-2 text-brand-goldenrod hover:underline"
-                    onClick={() => {
-                      setFilters({
-                        search: undefined,
-                        free: undefined,
-                        maxPrice: undefined,
-                        minContext: undefined,
-                        modality: undefined,
-                      });
-                      setSearchTerm("");
-                      setSelectedProviders(new Set());
-                    }}
-                  >
-                    Clear all
-                  </button>
-                )}
-              </p>
+    <>
+      <AnimatePresence mode="wait">
+        {isLoading ? (
+          <motion.div
+            key="skeleton"
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="px-sp-6 py-sp-8 max-w-[1800px] mx-auto"
+          >
+            {/* Page title skeleton */}
+            <div className="flex items-center gap-sp-3 mb-sp-8">
+              <Skeleton variant="circle" className="h-8 w-8" />
+              <Skeleton variant="text" className="h-8 w-32" />
             </div>
-          </FadeIn>
-        </aside>
 
-        {/* Main content */}
-        <div className="flex-1 min-w-0">
-          <FadeIn delay={2}>
-            {/* Toolbar */}
-            <div className="flex items-center justify-between mb-sp-6">
-              <div className="flex items-center gap-sp-3">
-                {selectedModels.length > 0 && (
-                  <>
-                    <span className="text-body-sm text-brand-slate">
-                      <AnimatedNumber value={selectedModels.length} format={(n) => `${Math.round(n)}`} /> selected
-                    </span>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={clearSelection}
+            <div className="flex gap-sp-6">
+              {/* Sidebar skeleton -- 264px */}
+              <div className="hidden lg:block w-[264px] shrink-0 space-y-sp-6">
+                {/* Search input placeholder */}
+                <Skeleton variant="text" className="h-10 w-full rounded-card" />
+
+                {/* Filter section 1: Pricing */}
+                <div className="space-y-sp-2">
+                  <Skeleton variant="text" className="h-5 w-20" />
+                  <Skeleton variant="text" className="h-4 w-36" />
+                  <Skeleton variant="text" className="h-4 w-full" />
+                  <Skeleton variant="text" className="h-4 w-44" />
+                </div>
+
+                {/* Filter section 2: Context Length */}
+                <div className="space-y-sp-2">
+                  <Skeleton variant="text" className="h-5 w-28" />
+                  <Skeleton variant="text" className="h-4 w-full" />
+                  <Skeleton variant="text" className="h-4 w-32" />
+                </div>
+
+                {/* Filter section 3: Modality */}
+                <div className="space-y-sp-2">
+                  <Skeleton variant="text" className="h-5 w-20" />
+                  <Skeleton variant="text" className="h-4 w-28" />
+                  <Skeleton variant="text" className="h-4 w-36" />
+                  <Skeleton variant="text" className="h-4 w-32" />
+                </div>
+
+                {/* Models count placeholder */}
+                <Skeleton variant="text" className="h-4 w-24 mt-sp-4" />
+              </div>
+
+              {/* Table skeleton */}
+              <div className="flex-1 min-w-0">
+                {/* Toolbar row */}
+                <div className="flex items-center justify-between mb-sp-6">
+                  <div className="flex items-center gap-sp-3">
+                    <Skeleton variant="text" className="h-9 w-28 rounded-card" />
+                    <Skeleton variant="text" className="h-9 w-32 rounded-card" />
+                  </div>
+                  <div className="flex items-center gap-sp-1">
+                    <Skeleton variant="text" className="h-9 w-9 rounded-card" />
+                    <Skeleton variant="text" className="h-9 w-9 rounded-card" />
+                  </div>
+                </div>
+
+                {/* Table header */}
+                <div className="flex items-center gap-sp-3 border-b border-brand-mist pb-sp-3 mb-sp-2">
+                  <Skeleton variant="text" className="h-4 w-[40%]" />
+                  <Skeleton variant="text" className="h-4 w-[15%]" />
+                  <Skeleton variant="text" className="h-4 w-[15%]" />
+                  <Skeleton variant="text" className="h-4 w-[10%]" />
+                  <Skeleton variant="text" className="h-4 w-[10%]" />
+                  <Skeleton variant="text" className="h-4 w-[10%]" />
+                </div>
+
+                {/* Table body rows -- 8 rows with staggered animation */}
+                <div className="space-y-sp-1">
+                  {Array.from({ length: 8 }).map((_, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="flex items-center gap-sp-3 py-sp-3 border-b border-brand-mist/50"
                     >
-                      <X className="h-4 w-4 mr-sp-1" />
-                      Clear
-                    </Button>
-                  </>
-                )}
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={selectedModels.length === 0}
-                >
-                  <Play className="h-4 w-4 mr-sp-2" />
-                  Run Selected
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={selectedModels.length === 0}
-                  onClick={() => {
-                    if (selectedModels.length > 0) {
-                      createGroup.mutate({
-                        name: `Group ${Date.now()}`,
-                        description: `${selectedModels.length} models`,
-                      });
-                    }
-                  }}
-                >
-                  <Save className="h-4 w-4 mr-sp-2" />
-                  Save as Group
-                </Button>
-              </div>
-              <div className="flex items-center gap-sp-1">
-                <button
-                  aria-label="Table view"
-                  className={cn(
-                    "rounded-card p-sp-2 transition-colors duration-micro",
-                    viewMode === "table"
-                      ? "bg-brand-goldenrod/10 text-brand-goldenrod"
-                      : "text-brand-slate hover:text-brand-charcoal",
-                  )}
-                  onClick={() => setViewMode("table")}
-                >
-                  <LayoutList className="h-5 w-5" />
-                </button>
-                <button
-                  aria-label="Card view"
-                  className={cn(
-                    "rounded-card p-sp-2 transition-colors duration-micro",
-                    viewMode === "cards"
-                      ? "bg-brand-goldenrod/10 text-brand-goldenrod"
-                      : "text-brand-slate hover:text-brand-charcoal",
-                  )}
-                  onClick={() => setViewMode("cards")}
-                >
-                  <LayoutGrid className="h-5 w-5" />
-                </button>
+                      <Skeleton variant="text" className="h-5 w-[40%]" />
+                      <Skeleton variant="text" className="h-5 w-[15%]" />
+                      <Skeleton variant="text" className="h-5 w-[15%]" />
+                      <Skeleton variant="text" className="h-5 w-[10%]" />
+                      <Skeleton variant="text" className="h-5 w-[10%]" />
+                      <Skeleton variant="text" className="h-5 w-[10%]" />
+                    </motion.div>
+                  ))}
+                </div>
               </div>
             </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="content"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.3 }}
+            className="px-sp-6 py-sp-8 max-w-[1800px] mx-auto"
+          >
+            <FadeIn>
+              <h1 className="text-h2 text-brand-charcoal inline-flex items-center gap-sp-3 mb-sp-8">
+                <Cpu className="h-8 w-8 text-brand-goldenrod" />
+                Models
+              </h1>
+            </FadeIn>
 
-            {/* Table / Card grid */}
-            {viewMode === "table" ? (
-              <DataTable
-                columns={columns}
-                data={filteredModels}
-                selectedRowIds={selectedModelIds}
-                getRowId={(model) => model.id}
-                onRowClick={handleRowClick}
-                onSelectAll={handleSelectAll}
-              />
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-sp-4">
-                {(() => {
-                  const maxCtx = Math.max(...filteredModels.map((m) => m.context_length), 1);
-                  return filteredModels.map((model) => (
-                    <ModelCard
-                      key={model.id}
-                      model={model}
-                      maxContext={maxCtx}
-                      onClick={() => {
-                        setSelectedModelId(model.id);
-                        setPanelTab("overview");
-                      }}
-                    />
-                  ));
-                })()}
-              </div>
-            )}
-
-            {/* Empty state */}
-            {filteredModels.length === 0 && !isLoading && (
-              <div className="text-center py-sp-16">
-                <Cpu className="h-12 w-12 text-brand-mist mx-auto mb-sp-4" />
-                <p className="text-h5 text-brand-charcoal mb-sp-2">No models match your filters</p>
-                <p className="text-body-sm text-brand-slate mb-sp-6">
-                  Try adjusting your search or filter criteria.
-                </p>
+            {/* Mobile filter bar */}
+            <div className="lg:hidden mb-sp-4 flex items-center gap-sp-3">
+              <Button variant="secondary" size="sm" onClick={() => setShowMobileFilters(true)}>
+                <Filter className="h-4 w-4 mr-sp-1" />
+                Filters
                 {hasActiveFilters && (
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      setFilters({
-                        search: undefined,
-                        free: undefined,
-                        maxPrice: undefined,
-                        minContext: undefined,
-                        modality: undefined,
-                      });
-                      setSearchTerm("");
-                      setSelectedProviders(new Set());
-                    }}
-                  >
-                    Reset all filters
-                  </Button>
+                  <span className="ml-sp-1 bg-brand-goldenrod text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">!</span>
                 )}
+              </Button>
+            </div>
+
+            <div className="flex gap-sp-6">
+              {/* Left sidebar -- 264px */}
+              <aside className="hidden lg:block w-[264px] shrink-0">
+                <FadeIn delay={1}>
+                  <Input
+                    ref={searchRef}
+                    placeholder="Search models..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+
+                  <div className="mt-sp-6">
+                    {filterContent}
+
+                    <p className="text-caption text-brand-slate mt-sp-4">
+                      <AnimatedNumber value={total} format={(n) => `${Math.round(n)}`} /> models found
+                      {hasActiveFilters && (
+                        <button
+                          className="ml-sp-2 text-brand-goldenrod hover:underline"
+                          onClick={() => {
+                            setFilters({
+                              search: undefined,
+                              free: undefined,
+                              maxPrice: undefined,
+                              minContext: undefined,
+                              modality: undefined,
+                            });
+                            setSearchTerm("");
+                            setSelectedProviders(new Set());
+                          }}
+                        >
+                          Clear all
+                        </button>
+                      )}
+                    </p>
+                  </div>
+                </FadeIn>
+              </aside>
+
+              {/* Main content */}
+              <div className="flex-1 min-w-0">
+                <FadeIn delay={2}>
+                  {/* Toolbar */}
+                  <div className="flex items-center justify-between mb-sp-6">
+                    <div className="flex items-center gap-sp-3">
+                      {selectedModels.length > 0 && (
+                        <>
+                          <span className="text-body-sm text-brand-slate">
+                            <AnimatedNumber value={selectedModels.length} format={(n) => `${Math.round(n)}`} /> selected
+                          </span>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={clearSelection}
+                          >
+                            <X className="h-4 w-4 mr-sp-1" />
+                            Clear
+                          </Button>
+                        </>
+                      )}
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={selectedModels.length === 0}
+                      >
+                        <Play className="h-4 w-4 mr-sp-2" />
+                        Run Selected
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={selectedModels.length === 0}
+                        onClick={() => {
+                          if (selectedModels.length > 0) {
+                            createGroup.mutate({
+                              name: `Group ${Date.now()}`,
+                              description: `${selectedModels.length} models`,
+                            });
+                          }
+                        }}
+                      >
+                        <Save className="h-4 w-4 mr-sp-2" />
+                        Save as Group
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-sp-1">
+                      <button
+                        aria-label="Table view"
+                        className={cn(
+                          "rounded-card p-sp-2 transition-colors duration-micro",
+                          viewMode === "table"
+                            ? "bg-brand-goldenrod/10 text-brand-goldenrod"
+                            : "text-brand-slate hover:text-brand-charcoal",
+                        )}
+                        onClick={() => setViewMode("table")}
+                      >
+                        <LayoutList className="h-5 w-5" />
+                      </button>
+                      <button
+                        aria-label="Card view"
+                        className={cn(
+                          "rounded-card p-sp-2 transition-colors duration-micro",
+                          viewMode === "cards"
+                            ? "bg-brand-goldenrod/10 text-brand-goldenrod"
+                            : "text-brand-slate hover:text-brand-charcoal",
+                        )}
+                        onClick={() => setViewMode("cards")}
+                      >
+                        <LayoutGrid className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Table / Card grid */}
+                  {viewMode === "table" ? (
+                    <DataTable
+                      columns={columns}
+                      data={filteredModels}
+                      selectedRowIds={selectedModelIds}
+                      getRowId={(model) => model.id}
+                      onRowClick={handleRowClick}
+                      onSelectAll={handleSelectAll}
+                    />
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-sp-4">
+                      {(() => {
+                        const maxCtx = Math.max(...filteredModels.map((m) => m.context_length), 1);
+                        return filteredModels.map((model) => (
+                          <ModelCard
+                            key={model.id}
+                            model={model}
+                            maxContext={maxCtx}
+                            onClick={() => {
+                              setSelectedModelId(model.id);
+                              setPanelTab("overview");
+                            }}
+                          />
+                        ));
+                      })()}
+                    </div>
+                  )}
+
+                  {/* Empty state */}
+                  {filteredModels.length === 0 && !isLoading && (
+                    <div className="text-center py-sp-16">
+                      <Cpu className="h-12 w-12 text-brand-mist mx-auto mb-sp-4" />
+                      <p className="text-h5 text-brand-charcoal mb-sp-2">No models match your filters</p>
+                      <p className="text-body-sm text-brand-slate mb-sp-6">
+                        Try adjusting your search or filter criteria.
+                      </p>
+                      {hasActiveFilters && (
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setFilters({
+                              search: undefined,
+                              free: undefined,
+                              maxPrice: undefined,
+                              minContext: undefined,
+                              modality: undefined,
+                            });
+                            setSearchTerm("");
+                            setSelectedProviders(new Set());
+                          }}
+                        >
+                          Reset all filters
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </FadeIn>
               </div>
-            )}
-          </FadeIn>
-        </div>
-      </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* SlideOutPanel -- model detail */}
       <SlideOutPanel
@@ -819,6 +903,6 @@ export function Models() {
           </Button>
         )}
       </SlideOutPanel>
-    </div>
+    </>
   );
 }

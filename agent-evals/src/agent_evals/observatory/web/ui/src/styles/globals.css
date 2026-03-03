@@ -69,6 +69,14 @@
   }
 }
 
+/* Hide native scrollbar on virtual-scroller containers (replaced by CustomScrollbar) */
+[data-virtual-scroller]::-webkit-scrollbar {
+  display: none;
+}
+[data-virtual-scroller] {
+  scrollbar-width: none;
+}
+
 /* Skeleton shimmer animation */
 @keyframes shimmer {
   0% {

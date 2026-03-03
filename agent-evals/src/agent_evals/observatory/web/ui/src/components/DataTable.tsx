@@ -10,9 +10,10 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { motion } from "framer-motion";
 import { ArrowUpDown, ChevronUp, ChevronDown } from "lucide-react";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { CompassCheckbox } from "./CompassCheckbox";
+import { CustomScrollbar } from "./CustomScrollbar";
 
 const VIRTUAL_THRESHOLD = 50;
 
@@ -59,6 +60,16 @@ export function DataTable<T>({
   });
 
   const colSpan = columns.length + (selectedRowIds ? 1 : 0);
+
+  const selectedPositions = useMemo(() => {
+    if (!selectedRowIds || !getRowId || rows.length === 0) return [];
+    return rows.reduce<number[]>((acc, row, index) => {
+      if (selectedRowIds.has(getRowId(row.original))) {
+        acc.push(index / rows.length);
+      }
+      return acc;
+    }, []);
+  }, [selectedRowIds, getRowId, rows]);
 
   const renderRow = (row: Row<T>, rowIndex: number) => {
     const rowId = getRowId?.(row.original) ?? row.id;
@@ -194,7 +205,7 @@ export function DataTable<T>({
     );
   };
 
-  return (
+  const tableContent = (
     <div
       ref={useVirtual ? scrollContainerRef : undefined}
       className={cn(
@@ -220,4 +231,17 @@ export function DataTable<T>({
       </table>
     </div>
   );
+
+  if (useVirtual) {
+    return (
+      <CustomScrollbar
+        scrollRef={scrollContainerRef as React.RefObject<HTMLDivElement>}
+        selectedPositions={selectedPositions}
+      >
+        {tableContent}
+      </CustomScrollbar>
+    );
+  }
+
+  return tableContent;
 }
