@@ -92,7 +92,8 @@ agent-evals --resume <run_id>                  # Resume a single run
 agent-evals --resume-pipeline <pipeline_id>    # Resume a DOE pipeline
 
 # Observatory dashboard
-agent-evals dashboard                          # Start web UI on port 8080
+agent-evals --dashboard                        # Enable live dashboard during a run
+agent-evals dashboard                          # Start standalone web UI on port 8080
 agent-evals dashboard --port 9000              # Custom port
 ```
 

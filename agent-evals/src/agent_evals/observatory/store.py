@@ -52,6 +52,7 @@ class RunSummary:
     heartbeat_at: str | None = None
     config: dict = field(default_factory=dict)
     pipeline_id: str | None = None
+    phase: str | None = None
 
 
 _SCHEMA = """\
@@ -176,6 +177,7 @@ class ObservatoryStore:
             heartbeat_at=r["heartbeat_at"],
             config=json.loads(r["config"] or "{}"),
             pipeline_id=r["pipeline_id"],
+            phase=r["phase"],
         )
 
     def create_run(
@@ -377,6 +379,7 @@ class ObservatoryStore:
         query = (
             "SELECT r.run_id, r.run_type, r.status, r.created_at, "
             "r.finished_at, r.config, r.pipeline_id, r.heartbeat_at, "
+            "r.phase, "
             "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
             "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
             "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
@@ -397,6 +400,7 @@ class ObservatoryStore:
             row = conn.execute(
                 "SELECT r.run_id, r.run_type, r.status, r.created_at, "
                 "r.finished_at, r.config, r.pipeline_id, r.heartbeat_at, "
+                "r.phase, "
                 "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
                 "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
                 "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "
@@ -534,6 +538,7 @@ class ObservatoryStore:
             rows = conn.execute(
                 "SELECT r.run_id, r.run_type, r.status, r.created_at, "
                 "r.finished_at, r.config, r.pipeline_id, r.heartbeat_at, "
+                "r.phase, "
                 "COALESCE(COUNT(t.trial_id), 0) AS total_trials, "
                 "COALESCE(SUM(t.cost), 0.0) AS total_cost, "
                 "COALESCE(AVG(t.latency_seconds), 0.0) AS avg_latency "

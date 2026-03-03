@@ -308,13 +308,8 @@ class DOEPipeline:
         if self._store:
             existing_runs = self._store.get_pipeline_runs(self._pipeline_id)
             for run in existing_runs:
-                if run.status == "completed":
-                    phase_name = run.config.get("phase") or ""
-                    if not phase_name:
-                        # Try to infer phase from run config
-                        cfg = run.config
-                        phase_name = cfg.get("phase", "")
-                    completed_phases[phase_name] = run.run_id
+                if run.status == "completed" and run.phase:
+                    completed_phases[run.phase] = run.run_id
 
         # Phase 1: Screening
         if "screening" in completed_phases:

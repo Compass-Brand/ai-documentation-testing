@@ -134,6 +134,7 @@ class EvalRunResult:
     total_cost: float
     total_tokens: int
     elapsed_seconds: float
+    graceful_shutdown: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -314,11 +315,6 @@ class EvalRunner:
                         if progress_callback is not None:
                             progress_callback(completed, total, trial)
 
-                    if shutdown_requested.is_set():
-                        logger.info(
-                            "Graceful shutdown: %d/%d trials saved",
-                            completed, total,
-                        )
         finally:
             # Teardown all variants even if an exception occurred
             for variant in variants:
@@ -336,12 +332,20 @@ class EvalRunner:
         total_cost = sum(t.cost for t in trials if t.cost is not None)
         total_tokens = sum(t.total_tokens for t in trials)
 
+        was_shutdown = shutdown_requested.is_set()
+        if was_shutdown:
+            logger.info(
+                "Graceful shutdown complete: %d/%d trials saved",
+                completed, total,
+            )
+
         result = EvalRunResult(
             config=self._config,
             trials=trials,
             total_cost=total_cost,
             total_tokens=total_tokens,
             elapsed_seconds=elapsed,
+            graceful_shutdown=was_shutdown,
         )
 
         if self._config.output_dir:
