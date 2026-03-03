@@ -536,7 +536,7 @@ describe("Models page — Empty state", () => {
       data: { models: [], total: 0 },
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useModels>);
+    } as unknown as ReturnType<typeof useModels>);
     vi.mocked(useFilterParams).mockReturnValue([
       { free: true },
       mockSetFilters,
@@ -550,7 +550,7 @@ describe("Models page — Empty state", () => {
       data: { models: [], total: 0 },
       isLoading: false,
       error: null,
-    } as ReturnType<typeof useModels>);
+    } as unknown as ReturnType<typeof useModels>);
     vi.mocked(useFilterParams).mockReturnValue([
       { free: true },
       mockSetFilters,
