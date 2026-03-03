@@ -604,3 +604,55 @@ class TestPhaseMetadata:
         for trial in result.trials:
             assert trial.error is not None
             assert trial.metrics["phase"] == "confirmation"
+
+
+class TestParallelExecution:
+    """TaguchiRunner must use ThreadPoolExecutor to run trials concurrently."""
+
+    def test_trials_run_in_parallel(self):
+        """With max_connections=4 and 4 tasks, total time ≈ 1 trial (not 4x)."""
+        import time
+
+        SLEEP = 0.12  # seconds per fake API call
+        TOLERANCE = 0.5  # max ratio: elapsed / SLEEP (should be ~1x not ~4x)
+
+        axes = {1: ["flat"]}
+        design = _make_simple_design(n_rows=1, axes=axes)
+        variants = _make_variant_lookup(axes)
+
+        client = MagicMock()
+        client.model = "mock-model"
+        gen = MagicMock()
+        gen.content = "response"
+        gen.prompt_tokens = 10
+        gen.completion_tokens = 5
+        gen.total_tokens = 15
+        gen.cost = 0.001
+
+        def slow_complete(*args, **kwargs):
+            time.sleep(SLEEP)
+            return gen
+
+        client.complete.side_effect = slow_complete
+
+        config = EvalRunConfig(repetitions=1, max_connections=4)
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [_make_mock_task(f"retrieval_{i:03d}") for i in range(4)]
+        doc_tree = MagicMock()
+
+        start = time.monotonic()
+        result = runner.run(tasks, doc_tree)
+        elapsed = time.monotonic() - start
+
+        assert len(result.trials) == 4
+        # Sequential would take 4 * SLEEP; parallel should take ~1 * SLEEP
+        assert elapsed < SLEEP * (1 + TOLERANCE), (
+            f"Trials appear sequential: {elapsed:.3f}s >= {SLEEP * (1 + TOLERANCE):.3f}s. "
+            "TaguchiRunner must use ThreadPoolExecutor."
+        )

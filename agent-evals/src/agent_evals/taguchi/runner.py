@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -86,7 +87,6 @@ class TaguchiRunner:
             TaguchiRunResult with all trials and aggregated metrics.
         """
         run_start = time.monotonic()
-        all_trials: list[TrialResult] = []
 
         # Build work items: (row, task, repetition)
         work_items: list[tuple[TaguchiExperimentRow, EvalTask, int]] = []
@@ -96,14 +96,25 @@ class TaguchiRunner:
                     work_items.append((row, task, rep))
 
         total = len(work_items)
+        all_trials: list[TrialResult] = []
         completed = 0
 
-        for row, task, rep in work_items:
-            trial = self._run_trial(row, task, doc_tree, rep, source, phase)
-            all_trials.append(trial)
-            completed += 1
-            if progress_callback is not None:
-                progress_callback(completed, total, trial)
+        if total > 0:
+            with ThreadPoolExecutor(
+                max_workers=self._config.max_connections,
+            ) as executor:
+                future_to_item = {
+                    executor.submit(
+                        self._run_trial, row, task, doc_tree, rep, source, phase
+                    ): (row, task, rep)
+                    for row, task, rep in work_items
+                }
+                for future in as_completed(future_to_item):
+                    trial = future.result()
+                    all_trials.append(trial)
+                    completed += 1
+                    if progress_callback is not None:
+                        progress_callback(completed, total, trial)
 
         elapsed = time.monotonic() - run_start
         total_cost = sum(t.cost for t in all_trials if t.cost is not None)
