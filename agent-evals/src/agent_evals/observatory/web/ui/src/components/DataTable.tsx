@@ -75,9 +75,10 @@ export function DataTable<T>({
       >
         {selectedRowIds && (
           <td className="px-sp-2 py-sp-3 w-10">
-            {isSelected && (
-              <CompassCheckbox checked aria-label="Selected" />
-            )}
+            <CompassCheckbox
+              checked={isSelected}
+              aria-label="Select row"
+            />
           </td>
         )}
         {row.getVisibleCells().map((cell) => (
@@ -95,7 +96,21 @@ export function DataTable<T>({
   const renderHeader = () =>
     table.getHeaderGroups().map((hg) => (
       <tr key={hg.id}>
-        {selectedRowIds && <th className="w-10" />}
+        {selectedRowIds && (
+          <th className="w-10 px-sp-2">
+            <CompassCheckbox
+              checked={selectedRowIds.size > 0 && selectedRowIds.size === data.length}
+              onChange={(checked) => {
+                if (checked && getRowId) {
+                  onSelectAll?.(data.map(getRowId));
+                } else {
+                  onSelectAll?.([]);
+                }
+              }}
+              aria-label="Select all"
+            />
+          </th>
+        )}
         {hg.headers.map((header) => (
           <th
             key={header.id}
