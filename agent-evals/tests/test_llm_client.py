@@ -704,3 +704,41 @@ class TestRetryLogging:
         with caplog.at_level(logging.WARNING, logger="agent_evals"):
             result = client.complete([{"role": "user", "content": "test"}])
         assert "empty content" in caplog.text.lower() or "rate limit" in caplog.text.lower()
+
+
+class TestRequestTimeout:
+    """LLMClient must pass a request timeout to litellm to prevent hung threads."""
+
+    @patch("agent_evals.llm.client.litellm")
+    def test_timeout_passed_to_litellm(self, mock_litellm: MagicMock) -> None:
+        """litellm.completion must receive a 'timeout' kwarg on every call."""
+        mock_litellm.completion.return_value = _mock_litellm_response()
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="test/model", api_key="key")
+        client.complete([{"role": "user", "content": "hi"}])
+
+        call_kwargs = mock_litellm.completion.call_args.kwargs
+        assert "timeout" in call_kwargs, (
+            "No timeout passed to litellm.completion — hung connections will block threads forever"
+        )
+        assert isinstance(call_kwargs["timeout"], (int, float))
+        assert call_kwargs["timeout"] > 0
+
+    @patch("agent_evals.llm.client.litellm")
+    def test_default_timeout_is_reasonable(self, mock_litellm: MagicMock) -> None:
+        """Default timeout should be at least 30s but no more than 5 minutes."""
+        mock_litellm.completion.return_value = _mock_litellm_response()
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="test/model", api_key="key")
+        client.complete([{"role": "user", "content": "hi"}])
+
+        timeout = mock_litellm.completion.call_args.kwargs["timeout"]
+        assert 30 <= timeout <= 300, f"Timeout {timeout}s is outside reasonable range [30, 300]"

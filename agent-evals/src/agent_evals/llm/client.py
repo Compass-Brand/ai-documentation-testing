@@ -10,6 +10,8 @@ from typing import Any
 
 import litellm
 
+litellm.suppress_debug_info = True
+
 logger = logging.getLogger(__name__)
 
 # Typed exception classes for retry decisions.  Using these instead of
@@ -49,6 +51,7 @@ class LLMClient:
 
     MAX_RETRIES: int = 3
     RETRY_BASE_DELAY: float = 5.0
+    REQUEST_TIMEOUT: float = 120.0  # seconds; prevents hung connections blocking threads
 
     def __init__(
         self,
@@ -89,6 +92,7 @@ class LLMClient:
             "model": self.model,
             "messages": messages,
             "temperature": self.temperature,
+            "timeout": self.REQUEST_TIMEOUT,
             **kwargs,
         }
 
