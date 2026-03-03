@@ -192,6 +192,18 @@ function ModelCard({
   );
 }
 
+function extractProviders(models: Model[]): Array<{ name: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const m of models) {
+    const provider = m.id.split("/")[0];
+    const display = provider.charAt(0).toUpperCase() + provider.slice(1);
+    counts.set(display, (counts.get(display) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
 export function Models() {
   useDocumentTitle("Models");
   const [filters, setFilters] = useFilterParams();
@@ -207,18 +219,26 @@ export function Models() {
   useTriggerSync();
   const createGroup = useCreateGroup();
 
+  const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
+
   const models = modelsData?.models ?? [];
   const total = modelsData?.total ?? 0;
   const endpoints = endpointsData?.endpoints ?? [];
+  const providers = extractProviders(models);
 
-  const selectedModels = models.filter((m) => selectedModelIds.has(m.id));
+  // Client-side provider filter
+  const filteredModels = selectedProviders.size > 0
+    ? models.filter((m) => selectedProviders.has(m.id.split("/")[0]))
+    : models;
+
+  const selectedModels = filteredModels.filter((m) => selectedModelIds.has(m.id));
 
   const searchRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState(filters.search ?? "");
 
   const hasActiveFilters = Boolean(
     filters.search || filters.free || filters.maxPrice != null ||
-    filters.minContext != null || filters.modality
+    filters.minContext != null || filters.modality || selectedProviders.size > 0
   );
 
   const clearSelection = useCallback(() => {
@@ -398,6 +418,24 @@ export function Models() {
                 ))}
               </FilterSection>
 
+              <FilterSection label="Provider">
+                {providers.slice(0, 10).map((p) => (
+                  <FilterCheckbox
+                    key={p.name}
+                    label={`${p.name} (${p.count})`}
+                    checked={selectedProviders.has(p.name.toLowerCase())}
+                    onCheckedChange={(checked) => {
+                      setSelectedProviders((prev) => {
+                        const next = new Set(prev);
+                        if (checked) next.add(p.name.toLowerCase());
+                        else next.delete(p.name.toLowerCase());
+                        return next;
+                      });
+                    }}
+                  />
+                ))}
+              </FilterSection>
+
               <p className="text-caption text-brand-slate mt-sp-4">
                 {total} models found
                 {hasActiveFilters && (
@@ -412,6 +450,7 @@ export function Models() {
                         modality: undefined,
                       });
                       setSearchTerm("");
+                      setSelectedProviders(new Set());
                     }}
                   >
                     Clear all
@@ -500,7 +539,7 @@ export function Models() {
             {viewMode === "table" ? (
               <DataTable
                 columns={columns}
-                data={models}
+                data={filteredModels}
                 selectedRowIds={selectedModelIds}
                 getRowId={(model) => model.id}
                 onRowClick={handleRowClick}
@@ -509,8 +548,8 @@ export function Models() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-sp-4">
                 {(() => {
-                  const maxCtx = Math.max(...models.map((m) => m.context_length), 1);
-                  return models.map((model) => (
+                  const maxCtx = Math.max(...filteredModels.map((m) => m.context_length), 1);
+                  return filteredModels.map((model) => (
                     <ModelCard
                       key={model.id}
                       model={model}
@@ -526,7 +565,7 @@ export function Models() {
             )}
 
             {/* Empty state */}
-            {models.length === 0 && !isLoading && (
+            {filteredModels.length === 0 && !isLoading && (
               <div className="text-center py-sp-16">
                 <Cpu className="h-12 w-12 text-brand-mist mx-auto mb-sp-4" />
                 <p className="text-h5 text-brand-charcoal mb-sp-2">No models match your filters</p>
@@ -545,6 +584,7 @@ export function Models() {
                         modality: undefined,
                       });
                       setSearchTerm("");
+                      setSelectedProviders(new Set());
                     }}
                   >
                     Reset all filters

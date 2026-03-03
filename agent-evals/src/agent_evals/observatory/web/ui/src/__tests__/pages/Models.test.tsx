@@ -570,6 +570,19 @@ describe("Models page — Empty state", () => {
   });
 });
 
+describe("Models page — Provider filter", () => {
+  it("should render Provider filter section in sidebar", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByText("Provider")).toBeInTheDocument();
+  });
+
+  it("should show provider names with counts", () => {
+    render(<Models />, { wrapper: createWrapper() });
+    expect(screen.getByText(/Openai \(1\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Anthropic \(1\)/i)).toBeInTheDocument();
+  });
+});
+
 describe("Models page — History tab dates (Bug Fix)", () => {
   it("should display first_seen and last_seen as valid dates", () => {
     vi.mocked(useModelDetail).mockReturnValue({
