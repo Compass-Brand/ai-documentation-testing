@@ -145,29 +145,48 @@ function ProviderCard({ endpoint }: { endpoint: ProviderEndpoint }) {
 function ModelCard({
   model,
   onClick,
+  maxContext,
 }: {
   model: Model;
   onClick: () => void;
+  maxContext: number;
 }) {
+  const provider = model.id.split("/")[0];
+  const contextPct = maxContext > 0 ? (model.context_length / maxContext) * 100 : 0;
+
   return (
-    <Card
-      variant="interactive"
-      onClick={onClick}
-    >
+    <Card variant="interactive" onClick={onClick}>
       <CardHeader>
-        <CardTitle>{model.name}</CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="truncate">{model.name}</CardTitle>
+          <CopyModelIdButton modelId={model.id} />
+        </div>
+        <span className="text-caption text-brand-slate capitalize">{provider}</span>
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap gap-sp-2 mb-sp-3">
           <StatusBadge
             status={model.prompt_price === 0 ? "new" : "neutral"}
-            label={model.prompt_price === 0 ? "Free" : formatPrice(model.prompt_price)}
+            label={model.prompt_price === 0 ? "Free" : `${formatPrice(model.prompt_price)} in`}
           />
+          {model.completion_price > 0 && (
+            <StatusBadge status="neutral" label={`${formatPrice(model.completion_price)} out`} />
+          )}
           <StatusBadge status="neutral" label={model.modality} />
         </div>
-        <p className="text-caption text-brand-slate">
-          {(model.context_length / 1000).toFixed(0)}k context
-        </p>
+        {/* Context length bar */}
+        <div className="mt-sp-3">
+          <div className="flex justify-between text-caption text-brand-slate mb-sp-1">
+            <span>Context</span>
+            <span>{(model.context_length / 1000).toFixed(0)}k</span>
+          </div>
+          <div className="h-1.5 bg-brand-mist rounded-full overflow-hidden">
+            <div
+              className="h-full bg-brand-goldenrod rounded-full transition-all duration-state"
+              style={{ width: `${Math.max(contextPct, 2)}%` }}
+            />
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
@@ -270,6 +289,7 @@ export function Models() {
         </Tooltip>
       ),
       cell: ({ getValue }) => formatPrice(getValue<number>()),
+      meta: { align: "right" },
     },
     {
       accessorKey: "completion_price",
@@ -279,11 +299,13 @@ export function Models() {
         </Tooltip>
       ),
       cell: ({ getValue }) => formatPrice(getValue<number>()),
+      meta: { align: "right" },
     },
     {
       accessorKey: "context_length",
       header: "Context",
       cell: ({ getValue }) => `${(getValue<number>() / 1000).toFixed(0)}k`,
+      meta: { align: "right" },
     },
     { accessorKey: "modality", header: "Modality" },
     {
@@ -295,6 +317,7 @@ export function Models() {
       accessorKey: "created",
       header: "Deployed",
       cell: ({ getValue }) => formatDeployed(getValue<number>()),
+      meta: { align: "right" },
     },
   ];
 
@@ -484,17 +507,21 @@ export function Models() {
                 onSelectAll={handleSelectAll}
               />
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-sp-4">
-                {models.map((model) => (
-                  <ModelCard
-                    key={model.id}
-                    model={model}
-                    onClick={() => {
-                      setSelectedModelId(model.id);
-                      setPanelTab("overview");
-                    }}
-                  />
-                ))}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-sp-4">
+                {(() => {
+                  const maxCtx = Math.max(...models.map((m) => m.context_length), 1);
+                  return models.map((model) => (
+                    <ModelCard
+                      key={model.id}
+                      model={model}
+                      maxContext={maxCtx}
+                      onClick={() => {
+                        setSelectedModelId(model.id);
+                        setPanelTab("overview");
+                      }}
+                    />
+                  ));
+                })()}
               </div>
             )}
           </FadeIn>
@@ -513,7 +540,7 @@ export function Models() {
           <TabBar
             tabs={[
               { key: "overview", label: "Overview" },
-              { key: "providers", label: "Providers" },
+              { key: "providers", label: `Providers${endpoints.length > 0 ? ` (${endpoints.length})` : ""}` },
               { key: "history", label: "History" },
             ]}
             activeKey={panelTab}
@@ -543,6 +570,9 @@ export function Models() {
                 </p>
               </div>
             </div>
+            <p className="text-caption text-brand-slate text-center mt-sp-2">
+              ~${((modelDetail.prompt_price + modelDetail.completion_price) * 1_000_000).toFixed(2)}/M tokens (in + out)
+            </p>
 
             {/* Info grid */}
             <div className="space-y-sp-3">
@@ -571,6 +601,14 @@ export function Models() {
                   label={modelDetail.removed_at ? "Deprecated" : "Active"}
                 />
               </div>
+              {modelDetail.created > 0 && (
+                <div className="flex justify-between text-body-sm">
+                  <span className="text-brand-slate">Created</span>
+                  <span className="text-brand-charcoal font-medium">
+                    {formatDeployed(modelDetail.created)}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Capabilities */}
