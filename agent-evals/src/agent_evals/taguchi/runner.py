@@ -73,6 +73,7 @@ class TaguchiRunner:
         progress_callback: ProgressCallback | None = None,
         source: str = "gold_standard",
         phase: str | None = None,
+        completed_keys: set[tuple[int | None, str, str, int]] | None = None,
     ) -> TaguchiRunResult:
         """Execute trials for all OA rows x tasks x repetitions.
 
@@ -94,6 +95,24 @@ class TaguchiRunner:
             for task in tasks:
                 for rep in range(1, self._config.repetitions + 1):
                     work_items.append((row, task, rep))
+
+        # Filter out already-completed trials for resume.
+        if completed_keys:
+            # Pre-compute variant name per row to avoid rebuilding composites.
+            row_variant_names: dict[int, str] = {}
+            for row in self._design.rows:
+                composite = self._build_composite(row)
+                row_variant_names[row.run_id] = composite.metadata().name
+            work_items = [
+                (row, task, rep)
+                for row, task, rep in work_items
+                if (
+                    row.run_id,
+                    task.definition.task_id,
+                    row_variant_names[row.run_id],
+                    rep,
+                ) not in completed_keys
+            ]
 
         total = len(work_items)
         all_trials: list[TrialResult] = []

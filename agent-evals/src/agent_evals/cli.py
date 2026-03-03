@@ -242,6 +242,18 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         help="Store prompt/response text in observatory DB",
     )
     parser.add_argument(
+        "--resume",
+        type=str,
+        default=None,
+        help="Resume a crashed/stopped run by run_id",
+    )
+    parser.add_argument(
+        "--resume-pipeline",
+        type=str,
+        default=None,
+        help="Resume a crashed/stopped pipeline by pipeline_id",
+    )
+    parser.add_argument(
         "--dashboard",
         action="store_true",
         default=False,
@@ -427,6 +439,8 @@ _CONFIG_KEYS: dict[str, type] = {
     "budget": float,
     "model_budgets": str,
     "store_traces": bool,
+    "resume": str,
+    "resume_pipeline": str,
     "dashboard": bool,
     "model_group": str,
     "sync_interval": float,
@@ -850,6 +864,7 @@ def _run_taguchi(
         dashboard=resolved.get("dashboard", False),
         dashboard_port=int(resolved.get("dashboard_port", 8501)),
         store_traces=resolved.get("store_traces", False),
+        resume_run_id=resolved.get("resume"),
     )
     orchestrator = EvalOrchestrator(orch_config)
 
@@ -941,7 +956,12 @@ def _run_pipeline(
         model_budgets=model_budgets,
     )
 
-    pipeline = DOEPipeline(config=pipeline_config, orchestrator=orchestrator)
+    resume_pipeline_id = resolved.get("resume_pipeline")
+    pipeline = DOEPipeline(
+        config=pipeline_config,
+        orchestrator=orchestrator,
+        pipeline_id=resume_pipeline_id,
+    )
 
     orchestrator.start_dashboard()
     try:

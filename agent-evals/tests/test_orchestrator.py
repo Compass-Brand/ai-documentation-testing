@@ -229,7 +229,8 @@ class TestTelemetryWiring:
         eval_result = _make_eval_run_result(trials)
 
         def fake_run_full(
-            tasks, variants, doc_tree, eval_config, progress_callback, source
+            tasks, variants, doc_tree, eval_config, progress_callback, source,
+            **kwargs,
         ):
             for i, trial in enumerate(trials):
                 progress_callback(i + 1, len(trials), trial)
@@ -257,7 +258,8 @@ class TestTelemetryWiring:
         eval_result = _make_eval_run_result(trials)
 
         def fake_run_full(
-            tasks, variants, doc_tree, eval_config, progress_callback, source
+            tasks, variants, doc_tree, eval_config, progress_callback, source,
+            **kwargs,
         ):
             for i, trial in enumerate(trials):
                 progress_callback(i + 1, len(trials), trial)
@@ -286,7 +288,8 @@ class TestTelemetryWiring:
         eval_result = _make_eval_run_result(trials)
 
         def fake_run_full(
-            tasks, variants, doc_tree, eval_config, progress_callback, source
+            tasks, variants, doc_tree, eval_config, progress_callback, source,
+            **kwargs,
         ):
             for i, trial in enumerate(trials):
                 progress_callback(i + 1, len(trials), trial)
@@ -862,7 +865,8 @@ class TestPhaseRouting:
              patch.object(orch, "_run_full") as mock_full:
 
             def fake_run_full(
-                tasks, variants, doc_tree, eval_config, progress_callback, source
+                tasks, variants, doc_tree, eval_config, progress_callback, source,
+                **kwargs,
             ):
                 for i, t in enumerate(trials):
                     progress_callback(i + 1, len(trials), t)

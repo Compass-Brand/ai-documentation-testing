@@ -196,6 +196,7 @@ class EvalRunner:
         doc_tree: DocTree,
         progress_callback: ProgressCallback | None = None,
         source: str = "gold_standard",
+        completed_keys: set[tuple[int | None, str, str, int]] | None = None,
     ) -> EvalRunResult:
         """Execute a full evaluation run.
 
@@ -228,6 +229,19 @@ class EvalRunner:
             for task in tasks:
                 for rep in range(1, self._config.repetitions + 1):
                     work_items.append((task, variant, rep))
+
+        # Filter out already-completed trials for resume.
+        if completed_keys:
+            work_items = [
+                (task, variant, rep)
+                for task, variant, rep in work_items
+                if (
+                    None,
+                    task.definition.task_id,
+                    variant.metadata().name,
+                    rep,
+                ) not in completed_keys
+            ]
 
         total = len(work_items)
         trials: list[TrialResult] = []

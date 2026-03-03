@@ -544,6 +544,54 @@ class ObservatoryStore:
             ).fetchall()
         return [self._row_to_summary(r) for r in rows]
 
+    def resume_run(self, run_id: str) -> None:
+        """Reactivate a failed/completed run for resumption.
+
+        Sets status back to 'active' and updates heartbeat.
+
+        Raises:
+            ValueError: If run_id does not exist.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            existing = conn.execute(
+                "SELECT 1 FROM runs WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            if existing is None:
+                raise ValueError(f"Run '{run_id}' not found")
+            conn.execute(
+                "UPDATE runs SET status = 'active', heartbeat_at = ?, "
+                "finished_at = NULL WHERE run_id = ?",
+                (now, run_id),
+            )
+
+    def get_completed_trial_keys(
+        self, run_id: str
+    ) -> set[tuple[int | None, str, str, int]]:
+        """Return identifiers for all successfully completed trials in a run.
+
+        Each key is ``(oa_row_id, task_id, variant_name, repetition)``.
+        Error trials (error IS NOT NULL) are excluded so they can be retried.
+
+        Returns:
+            Empty set if the run doesn't exist or has no completed trials.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT oa_row_id, task_id, variant_name, repetition "
+                "FROM trials WHERE run_id = ? AND error IS NULL",
+                (run_id,),
+            ).fetchall()
+        return {
+            (r["oa_row_id"], r["task_id"], r["variant_name"], r["repetition"])
+            for r in rows
+        }
+
+    def checkpoint_wal(self) -> None:
+        """Force a WAL checkpoint to flush writes to the main database file."""
+        with self._connect() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
     def list_pipelines(self) -> list[dict]:
         """Return all distinct pipelines with aggregated run statistics."""
         with self._connect() as conn:

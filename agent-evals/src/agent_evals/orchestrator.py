@@ -64,6 +64,7 @@ class OrchestratorConfig:
     tracker: EventTracker | None = None
     run_id: str | None = None
     store_traces: bool = False
+    resume_run_id: str | None = None
 
 
 @dataclass
@@ -202,22 +203,42 @@ class EvalOrchestrator:
         # creates an independent row in the store (linked by pipeline_id).
         # Reusing self.config.run_id would cause create_run() to raise
         # ValueError on the second phase call.
-        run_id = (
-            uuid.uuid4().hex[:12]
-            if pipeline_id
-            else (self.config.run_id or uuid.uuid4().hex[:12])
-        )
         eval_config = self.config.eval_config or EvalRunConfig()
         effective_mode = mode or self.config.mode
+        completed_keys: set[tuple[int | None, str, str, int]] | None = None
 
-        # Create run record in the observatory store.
-        self.store.create_run(
-            run_id=run_id,
-            run_type=effective_mode,
-            config={"mode": effective_mode, "models": self.config.models},
-            phase=phase,
-            pipeline_id=pipeline_id,
-        )
+        if self.config.resume_run_id and not pipeline_id:
+            # Resume an existing run instead of creating a new one.
+            run_id = self.config.resume_run_id
+            self.store.resume_run(run_id)
+            completed_keys = self.store.get_completed_trial_keys(run_id)
+            logger.info(
+                "Resuming run %s with %d completed trials",
+                run_id,
+                len(completed_keys),
+            )
+        else:
+            run_id = (
+                uuid.uuid4().hex[:12]
+                if pipeline_id
+                else (self.config.run_id or uuid.uuid4().hex[:12])
+            )
+            # Create run record in the observatory store.
+            self.store.create_run(
+                run_id=run_id,
+                run_type=effective_mode,
+                config={
+                    "mode": effective_mode,
+                    "models": self.config.models,
+                    "repetitions": eval_config.repetitions,
+                    "max_connections": eval_config.max_connections,
+                    "temperature": eval_config.temperature,
+                    "max_tokens": eval_config.max_tokens,
+                    "store_traces": self.config.store_traces,
+                },
+                phase=phase,
+                pipeline_id=pipeline_id,
+            )
 
         # Wire up telemetry: bridge trial progress to the EventTracker.
         model_name = self.config.models[0] if self.config.models else "unknown"
@@ -259,6 +280,7 @@ class EvalOrchestrator:
                 progress_callback=_on_trial_progress,
                 source=source,
                 phase=phase,
+                completed_keys=completed_keys,
             )
         else:
             raw_result = self._run_full(
@@ -268,6 +290,7 @@ class EvalOrchestrator:
                 eval_config=eval_config,
                 progress_callback=_on_trial_progress,
                 source=source,
+                completed_keys=completed_keys,
             )
 
         # Mark run as completed.
@@ -357,6 +380,7 @@ class EvalOrchestrator:
         eval_config: EvalRunConfig,
         progress_callback: Any,
         source: str,
+        completed_keys: set | None = None,
     ) -> EvalRunResult:
         """Run a full-sweep evaluation via EvalRunner."""
         model_name = self.config.models[0] if self.config.models else "unknown"
@@ -369,6 +393,7 @@ class EvalOrchestrator:
             doc_tree=doc_tree,
             progress_callback=progress_callback,
             source=source,
+            completed_keys=completed_keys,
         )
 
     def _run_taguchi(
@@ -381,6 +406,7 @@ class EvalOrchestrator:
         progress_callback: Any,
         source: str,
         phase: str | None = None,
+        completed_keys: set | None = None,
     ) -> Any:
         """Run a Taguchi-design evaluation via TaguchiRunner."""
         if design is None:
@@ -409,4 +435,5 @@ class EvalOrchestrator:
             progress_callback=progress_callback,
             source=source,
             phase=phase,
+            completed_keys=completed_keys,
         )

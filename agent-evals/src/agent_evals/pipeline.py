@@ -85,10 +85,12 @@ class DOEPipeline:
         self,
         config: PipelineConfig,
         orchestrator: EvalOrchestrator,
+        pipeline_id: str | None = None,
     ) -> None:
         self.config = config
         self._orchestrator = orchestrator
-        self._pipeline_id = uuid4().hex[:12]
+        self._pipeline_id = pipeline_id or uuid4().hex[:12]
+        self._store = orchestrator.store
 
     def run_screening(
         self,
@@ -297,9 +299,39 @@ class DOEPipeline:
 
         In auto mode, runs all phases sequentially. In semi mode, calls
         phase_callback after each phase. If callback returns False, stops.
+
+        When resuming (pipeline_id passed to __init__), completed phases
+        are skipped and in-progress phases are resumed from their checkpoint.
         """
+        # Check for completed phases when resuming an existing pipeline.
+        completed_phases: dict[str, str] = {}  # phase -> run_id
+        if self._store:
+            existing_runs = self._store.get_pipeline_runs(self._pipeline_id)
+            for run in existing_runs:
+                if run.status == "completed":
+                    phase_name = run.config.get("phase") or ""
+                    if not phase_name:
+                        # Try to infer phase from run config
+                        cfg = run.config
+                        phase_name = cfg.get("phase", "")
+                    completed_phases[phase_name] = run.run_id
+
         # Phase 1: Screening
-        screening = self.run_screening(tasks, variants, doc_tree)
+        if "screening" in completed_phases:
+            # Reconstruct PhaseResult from DB.
+            screen_run_id = completed_phases["screening"]
+            phase_results = self._store.get_phase_results(screen_run_id)
+            screening = PhaseResult(
+                run_id=screen_run_id,
+                phase="screening",
+                trials=[],  # Don't reload all trials for skipped phases
+                main_effects=phase_results.get("main_effects") if phase_results else None,
+                anova=phase_results.get("anova") if phase_results else None,
+                optimal=phase_results.get("optimal") if phase_results else None,
+                significant_factors=phase_results.get("significant_factors", []) if phase_results else [],
+            )
+        else:
+            screening = self.run_screening(tasks, variants, doc_tree)
 
         # Semi mode: check callback after screening
         if self.config.mode == "semi" and phase_callback is not None:
