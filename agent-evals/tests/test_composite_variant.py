@@ -183,6 +183,83 @@ class TestCompositeVariantRender:
         pos_seven = output.index("SEVEN")
         assert pos_two < pos_five < pos_seven
 
+    def test_deduplicates_identical_h1_headers(
+        self, doc_tree: MagicMock
+    ) -> None:
+        """Duplicate H1 headers across components should be collapsed."""
+        v1 = StubVariant(
+            name="pos", axis=1,
+            output="# Documentation Index\n\n- file_a.md",
+        )
+        v3 = StubVariant(
+            name="fmt", axis=3,
+            output="# Documentation Index\n\n| Path |\n|------|\n| file_a.md |",
+        )
+        composite = CompositeVariant(components={1: v1, 3: v3})
+        output = composite.render(doc_tree)
+        assert output.count("# Documentation Index") == 1
+
+    def test_preserves_distinct_h1_headers(
+        self, doc_tree: MagicMock
+    ) -> None:
+        """Different H1 headers should all be kept."""
+        v1 = StubVariant(
+            name="pos", axis=1,
+            output="# Documentation Index\n\ncontent a",
+        )
+        v3 = StubVariant(
+            name="fmt", axis=3,
+            output="# API Reference\n\ncontent b",
+        )
+        composite = CompositeVariant(components={1: v1, 3: v3})
+        output = composite.render(doc_tree)
+        assert "# Documentation Index" in output
+        assert "# API Reference" in output
+
+    def test_dedup_keeps_body_content_intact(
+        self, doc_tree: MagicMock
+    ) -> None:
+        """Body content from both components must survive dedup."""
+        v1 = StubVariant(
+            name="pos", axis=1,
+            output="# Documentation Index\n\nBODY_ONE",
+        )
+        v3 = StubVariant(
+            name="fmt", axis=3,
+            output="# Documentation Index\n\nBODY_TWO",
+        )
+        composite = CompositeVariant(components={1: v1, 3: v3})
+        output = composite.render(doc_tree)
+        assert "BODY_ONE" in output
+        assert "BODY_TWO" in output
+
+    def test_dedup_handles_triple_duplicate(
+        self, doc_tree: MagicMock
+    ) -> None:
+        """Three components with same header should produce only one."""
+        v1 = StubVariant(name="a", axis=1, output="# Documentation Index\n\nA")
+        v2 = StubVariant(name="b", axis=2, output="# Documentation Index\n\nB")
+        v3 = StubVariant(name="c", axis=3, output="# Documentation Index\n\nC")
+        composite = CompositeVariant(
+            components={1: v1, 2: v2, 3: v3}
+        )
+        output = composite.render(doc_tree)
+        assert output.count("# Documentation Index") == 1
+        assert "A" in output
+        assert "B" in output
+        assert "C" in output
+
+    def test_no_header_parts_unchanged(
+        self, doc_tree: MagicMock
+    ) -> None:
+        """Parts without H1 headers should pass through unchanged."""
+        v1 = StubVariant(name="a", axis=1, output="files:\n  - path: a.md")
+        v2 = StubVariant(name="b", axis=2, output="no header here")
+        composite = CompositeVariant(components={1: v1, 2: v2})
+        output = composite.render(doc_tree)
+        assert "files:\n  - path: a.md" in output
+        assert "no header here" in output
+
 
 # ---------------------------------------------------------------------------
 # TestCompositeVariantLifecycle
