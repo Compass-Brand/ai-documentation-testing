@@ -11,6 +11,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "pytest-cov>=6.0",
     "ruff>=0.4",
     "mypy>=1.10",
     "types-PyYAML>=6.0",
@@ -41,3 +42,19 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["agent-index/tests", "agent-evals/tests"]
 addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source_pkgs = ["agent_evals", "agent_index"]
+omit = [
+    "*/tests/*",
+    "*/observatory/web/*",
+    "*/__main__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
