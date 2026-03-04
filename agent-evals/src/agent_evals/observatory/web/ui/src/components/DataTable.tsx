@@ -53,6 +53,14 @@ export function DataTable<T>({
   const rows = table.getRowModel().rows;
   const useVirtual = rows.length > VIRTUAL_THRESHOLD;
 
+  // Clean up stale entries from hasEntered when rows change
+  useEffect(() => {
+    const currentIds = new Set(rows.map(row => (getRowId?.(row.original) ?? row.id)));
+    hasEntered.current.forEach(id => {
+      if (!currentIds.has(id)) hasEntered.current.delete(id);
+    });
+  }, [rows, getRowId]);
+
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollContainerRef.current,
@@ -100,11 +108,10 @@ export function DataTable<T>({
     return (
       <React.Fragment key={row.id}>
         <motion.tr
-          layout
           initial={shouldAnimate ? { opacity: 0, y: 8 } : false}
           animate={{ opacity: 1, y: 0 }}
           className={cn(
-            "border-t border-brand-mist transition-colors duration-micro",
+            "border-t border-brand-mist transition-all duration-micro hover:-translate-y-px hover:shadow-md",
             rowIndex % 2 === 1 ? "bg-brand-cream/50" : "bg-white",
             onRowClick &&
               "cursor-pointer focus-visible:ring-2 focus-visible:ring-brand-goldenrod",
@@ -113,10 +120,10 @@ export function DataTable<T>({
           style={{
             borderLeft: isSelected ? "3px solid #C2A676" : "3px solid transparent",
           }}
-          whileHover={{ y: -1, boxShadow: "0 4px 12px rgba(0,0,0,0.08)" }}
           transition={{
-            ...ROW_SPRING,
-            ...(shouldAnimate ? { delay: Math.min(rowIndex, 20) * 0.02 } : {}),
+            duration: 0.15,
+            ease: "easeOut",
+            ...(shouldAnimate ? { delay: Math.min(rowIndex, 10) * 0.015 } : {}),
           }}
           onClick={() => onRowClick?.(row.original)}
         >
@@ -125,11 +132,11 @@ export function DataTable<T>({
               <motion.div
                 initial={false}
                 animate={{
-                  width: isSelected ? 40 : 0,
+                  scaleX: isSelected ? 1 : 0,
                   opacity: isSelected ? 1 : 0,
-                  x: isSelected ? 0 : -20,
                 }}
                 transition={ROW_SPRING}
+                style={{ width: 40, transformOrigin: 'left' }}
                 className="flex items-center justify-center overflow-hidden"
               >
                 <CompassCheckbox

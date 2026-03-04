@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, X, Search } from "lucide-react";
@@ -73,9 +73,16 @@ export function ProviderCombobox({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const flashTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  const filteredProviders = providers.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase()),
+  // Clean up flash timer on unmount
+  useEffect(() => {
+    return () => clearTimeout(flashTimer.current);
+  }, []);
+
+  const filteredProviders = useMemo(
+    () => providers.filter((p) => p.name.toLowerCase().includes(search.toLowerCase())),
+    [providers, search],
   );
 
   // Reset highlight and search when dropdown opens/closes
@@ -110,8 +117,9 @@ export function ProviderCombobox({
       onSelectionChange(next);
 
       // Flash highlight
+      clearTimeout(flashTimer.current);
       setFlashedProvider(key);
-      setTimeout(() => setFlashedProvider(null), 400);
+      flashTimer.current = setTimeout(() => setFlashedProvider(null), 400);
     },
     [selected, onSelectionChange],
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Cpu,
@@ -17,8 +17,6 @@ import {
   useModelDetail,
   useModelEndpoints,
   useCreateGroup,
-  useSyncStatus,
-  useTriggerSync,
 } from "../api/hooks";
 import { useFilterParams } from "../hooks/useFilterParams";
 import type { Model, ProviderEndpoint } from "../api/client";
@@ -86,35 +84,16 @@ function CopyModelIdButton({ modelId }: { modelId: string }) {
   return (
     <Tooltip content={copied ? "Copied!" : "Copy OpenRouter model ID"}>
       <button
-        className="text-brand-slate hover:text-brand-charcoal transition-colors duration-micro ml-sp-2"
+        className="relative h-3.5 w-3.5 text-brand-slate hover:text-brand-charcoal transition-colors duration-micro ml-sp-2"
         onClick={handleCopy}
         aria-label="Copy model ID"
       >
-        <AnimatePresence mode="wait">
-          {copied ? (
-            <motion.span
-              key="check"
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.5 }}
-              transition={{ type: "spring", stiffness: 500, damping: 30 }}
-              className="block"
-            >
-              <Check className="h-3.5 w-3.5 text-brand-sage" />
-            </motion.span>
-          ) : (
-            <motion.span
-              key="copy"
-              initial={{ opacity: 0, scale: 0.5 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.5 }}
-              transition={{ type: "spring", stiffness: 500, damping: 30 }}
-              className="block"
-            >
-              <Copy className="h-3.5 w-3.5" />
-            </motion.span>
-          )}
-        </AnimatePresence>
+        <span className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ${copied ? 'opacity-0' : 'opacity-100'}`}>
+          <Copy className="h-3.5 w-3.5" />
+        </span>
+        <span className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ${copied ? 'opacity-100' : 'opacity-0'}`}>
+          <Check className="h-3.5 w-3.5 text-brand-sage" />
+        </span>
       </button>
     </Tooltip>
   );
@@ -243,8 +222,6 @@ export function Models() {
 
   const { data: modelDetail } = useModelDetail(selectedModelId);
   const { data: endpointsData } = useModelEndpoints(selectedModelId);
-  useSyncStatus();
-  useTriggerSync();
   const createGroup = useCreateGroup();
 
   const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
@@ -254,21 +231,30 @@ export function Models() {
   const models = modelsData?.models ?? [];
   const total = modelsData?.total ?? 0;
   const endpoints = endpointsData?.endpoints ?? [];
-  const providers = extractProviders(models);
+  const providers = useMemo(() => extractProviders(models), [models]);
 
   // Client-side provider filter
-  const filteredModels = selectedProviders.size > 0
-    ? models.filter((m) => selectedProviders.has(m.id.split("/")[0]))
-    : models;
+  const filteredModels = useMemo(
+    () => selectedProviders.size > 0
+      ? models.filter((m) => selectedProviders.has(m.id.split("/")[0]))
+      : models,
+    [models, selectedProviders],
+  );
 
-  const selectedModels = filteredModels.filter((m) => selectedModelIds.has(m.id));
+  const selectedModels = useMemo(
+    () => filteredModels.filter((m) => selectedModelIds.has(m.id)),
+    [filteredModels, selectedModelIds],
+  );
 
   const searchRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState(filters.search ?? "");
 
-  const hasActiveFilters = Boolean(
-    filters.search || filters.free || filters.maxPrice != null ||
-    filters.minContext != null || filters.modality || selectedProviders.size > 0
+  const hasActiveFilters = useMemo(
+    () => Boolean(
+      filters.search || filters.free || filters.maxPrice != null ||
+      filters.minContext != null || filters.modality || selectedProviders.size > 0
+    ),
+    [filters, selectedProviders],
   );
 
   const clearSelection = useCallback(() => {
@@ -299,7 +285,7 @@ export function Models() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [clearSelection, showHint]);
 
-  const handleRowClick = (model: Model) => {
+  const handleRowClick = useCallback((model: Model) => {
     setSelectedModelIds((prev) => {
       const next = new Set(prev);
       if (next.has(model.id)) {
@@ -309,22 +295,34 @@ export function Models() {
       }
       return next;
     });
-  };
+  }, []);
 
-  const handleSelectAll = (ids: string[]) => {
+  const handleSelectAll = useCallback((ids: string[]) => {
     if (ids.length === 0) {
       setSelectedModelIds(new Set());
     } else {
       setSelectedModelIds(new Set(ids));
     }
-  };
+  }, []);
 
-  const handleNameClick = (model: Model) => {
+  const handleNameClick = useCallback((model: Model) => {
     setSelectedModelId(model.id);
     setPanelTab("overview");
-  };
+  }, []);
 
-  const columns: ColumnDef<Model>[] = [
+  const clearAllFilters = useCallback(() => {
+    setFilters({
+      search: undefined,
+      free: undefined,
+      maxPrice: undefined,
+      minContext: undefined,
+      modality: undefined,
+    });
+    setSearchTerm("");
+    setSelectedProviders(new Set());
+  }, [setFilters]);
+
+  const columns: ColumnDef<Model>[] = useMemo(() => [
     {
       accessorKey: "name",
       header: "Name",
@@ -370,7 +368,12 @@ export function Models() {
       cell: ({ getValue }) => formatDeployed(getValue<number>()),
       meta: { align: "right" },
     },
-  ];
+  ], [handleNameClick]);
+
+  const maxCtx = useMemo(
+    () => filteredModels.reduce((max, m) => Math.max(max, m.context_length), 1),
+    [filteredModels],
+  );
 
   const filterContent = (
     <>
@@ -588,17 +591,7 @@ export function Models() {
                       {hasActiveFilters && (
                         <button
                           className="ml-sp-2 text-brand-goldenrod hover:underline"
-                          onClick={() => {
-                            setFilters({
-                              search: undefined,
-                              free: undefined,
-                              maxPrice: undefined,
-                              minContext: undefined,
-                              modality: undefined,
-                            });
-                            setSearchTerm("");
-                            setSelectedProviders(new Set());
-                          }}
+                          onClick={clearAllFilters}
                         >
                           Clear all
                         </button>
@@ -710,20 +703,17 @@ export function Models() {
                         transition={{ duration: 0.2 }}
                         className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-sp-4"
                       >
-                        {(() => {
-                          const maxCtx = Math.max(...filteredModels.map((m) => m.context_length), 1);
-                          return filteredModels.map((model) => (
-                            <ModelCard
-                              key={model.id}
-                              model={model}
-                              maxContext={maxCtx}
-                              onClick={() => {
-                                setSelectedModelId(model.id);
-                                setPanelTab("overview");
-                              }}
-                            />
-                          ));
-                        })()}
+                        {filteredModels.map((model) => (
+                          <ModelCard
+                            key={model.id}
+                            model={model}
+                            maxContext={maxCtx}
+                            onClick={() => {
+                              setSelectedModelId(model.id);
+                              setPanelTab("overview");
+                            }}
+                          />
+                        ))}
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -739,17 +729,7 @@ export function Models() {
                       {hasActiveFilters && (
                         <Button
                           variant="secondary"
-                          onClick={() => {
-                            setFilters({
-                              search: undefined,
-                              free: undefined,
-                              maxPrice: undefined,
-                              minContext: undefined,
-                              modality: undefined,
-                            });
-                            setSearchTerm("");
-                            setSelectedProviders(new Set());
-                          }}
+                          onClick={clearAllFilters}
                         >
                           Reset all filters
                         </Button>
@@ -764,6 +744,7 @@ export function Models() {
       </AnimatePresence>
 
       {/* SlideOutPanel -- model detail */}
+      {selectedModelId !== null && (
       <SlideOutPanel
         open={selectedModelId !== null}
         onClose={() => setSelectedModelId(null)}
@@ -935,6 +916,7 @@ export function Models() {
           <p className="text-body-sm text-brand-slate">Loading details...</p>
         )}
       </SlideOutPanel>
+      )}
 
       {/* Mobile filter panel */}
       <SlideOutPanel
@@ -950,15 +932,7 @@ export function Models() {
             size="sm"
             className="mt-sp-4 w-full"
             onClick={() => {
-              setFilters({
-                search: undefined,
-                free: undefined,
-                maxPrice: undefined,
-                minContext: undefined,
-                modality: undefined,
-              });
-              setSearchTerm("");
-              setSelectedProviders(new Set());
+              clearAllFilters();
               setShowMobileFilters(false);
             }}
           >

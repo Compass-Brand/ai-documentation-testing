@@ -76,6 +76,9 @@ export function AmbientBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mouseRef = useRef({ x: -9999, y: -9999 });
   const animRef = useRef(0);
+  const lastFrameTime = useRef(0);
+  const compassRectRef = useRef<DOMRect | null>(null);
+  const mousePending = useRef(false);
 
   /* Gradient mesh spring values */
   const mouseX = useMotionValue(0.3);
@@ -103,10 +106,26 @@ export function AmbientBackground() {
     let compassEl: Element | null = null;
     const findCompass = () => {
       compassEl = document.querySelector("[data-compass-rose]");
+      if (compassEl) {
+        compassRectRef.current = compassEl.getBoundingClientRect();
+      }
     };
     findCompass();
     /* Re-query after a short delay in case the DOM hasn't rendered yet */
     const retryTimer = setTimeout(findCompass, 500);
+
+    /* Update cached compass bounding rect */
+    const updateCompassRect = () => {
+      if (compassEl) {
+        compassRectRef.current = compassEl.getBoundingClientRect();
+      }
+    };
+
+    let resizeScrollTimer: ReturnType<typeof setTimeout> | undefined;
+    const throttledRectUpdate = () => {
+      clearTimeout(resizeScrollTimer);
+      resizeScrollTimer = setTimeout(updateCompassRect, 100);
+    };
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -115,28 +134,44 @@ export function AmbientBackground() {
       canvas.style.width = `${window.innerWidth}px`;
       canvas.style.height = `${window.innerHeight}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      updateCompassRect();
     };
     resize();
 
     const onMouse = (e: MouseEvent) => {
       mouseRef.current = { x: e.clientX, y: e.clientY };
-      mouseX.set(e.clientX / window.innerWidth);
-      mouseY.set(e.clientY / window.innerHeight);
+      if (!mousePending.current) {
+        mousePending.current = true;
+        requestAnimationFrame(() => {
+          mouseX.set(mouseRef.current.x / window.innerWidth);
+          mouseY.set(mouseRef.current.y / window.innerHeight);
+          mousePending.current = false;
+        });
+      }
     };
 
     window.addEventListener("resize", resize);
+    window.addEventListener("scroll", throttledRectUpdate, { passive: true });
     window.addEventListener("mousemove", onMouse, { passive: true });
 
     const draw = () => {
+      /* Throttle to ~30fps */
+      const now = performance.now();
+      if (now - lastFrameTime.current < 33) {
+        animRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastFrameTime.current = now;
+
       t += 0.012;
       const w = window.innerWidth;
       const h = window.innerHeight;
 
-      /* Track compass center via DOM — scroll-aware */
+      /* Track compass center via cached rect — scroll-aware */
       let cx = Math.min(156, w * 0.12);
       let cy = h * 0.5;
-      if (compassEl) {
-        const rect = compassEl.getBoundingClientRect();
+      const rect = compassRectRef.current;
+      if (rect) {
         cx = rect.left + rect.width / 2;
         cy = rect.top + rect.height / 2;
       }
@@ -208,11 +243,25 @@ export function AmbientBackground() {
 
     animRef.current = requestAnimationFrame(draw);
 
+    /* Pause animation when tab is not visible */
+    const handleVisibility = () => {
+      if (document.hidden) {
+        cancelAnimationFrame(animRef.current);
+      } else {
+        lastFrameTime.current = 0;
+        animRef.current = requestAnimationFrame(draw);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
       cancelAnimationFrame(animRef.current);
       clearTimeout(retryTimer);
+      clearTimeout(resizeScrollTimer);
       window.removeEventListener("resize", resize);
+      window.removeEventListener("scroll", throttledRectUpdate);
       window.removeEventListener("mousemove", onMouse);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [mouseX, mouseY]);
 
@@ -229,7 +278,7 @@ export function AmbientBackground() {
       <canvas
         ref={canvasRef}
         className="fixed inset-0 pointer-events-none"
-        style={{ zIndex: 0 }}
+        style={{ zIndex: 0, willChange: 'transform' }}
         aria-hidden="true"
       />
 
@@ -254,6 +303,7 @@ export function AmbientBackground() {
                 opacity: 0.2,
                 animation: `float-${i % 3} ${18 + ((seed * 29) % 22)}s ease-in-out infinite`,
                 animationDelay: `${(seed * 31) % 10}s`,
+                willChange: 'transform',
               }}
             />
           );

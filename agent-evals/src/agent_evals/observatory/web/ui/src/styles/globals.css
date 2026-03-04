@@ -272,11 +272,6 @@ input[type="range"]::-moz-range-thumb {
 }
 
 /* Ambient background animations */
-@keyframes drift {
-  from { transform: translateX(0); }
-  to { transform: translateX(-200px); }
-}
-
 @keyframes float-0 {
   0%, 100% { transform: translate(0, 0); }
   50% { transform: translate(20px, -30px); }

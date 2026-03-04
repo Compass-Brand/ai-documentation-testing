@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { FlaskConical, BarChart3 } from "lucide-react";
 import {
@@ -135,11 +136,11 @@ export function FactorAnalysis() {
   }
 
   const factors = Object.keys(analysis.main_effects);
-  const allLevels = Array.from(
+  const allLevels = useMemo(() => Array.from(
     new Set(factors.flatMap((f) => Object.keys(analysis.main_effects[f]))),
-  );
+  ), [analysis, factors]);
 
-  const barData = {
+  const barData = useMemo(() => ({
     labels: factors,
     datasets: allLevels.map((level, i) => ({
       label: level,
@@ -147,9 +148,9 @@ export function FactorAnalysis() {
       backgroundColor: LEVEL_COLORS[i % LEVEL_COLORS.length],
       borderRadius: 4,
     })),
-  };
+  }), [factors, allLevels, analysis]);
 
-  const barOptions = {
+  const barOptions = useMemo(() => ({
     responsive: true,
     plugins: {
       legend: { display: true },
@@ -159,7 +160,7 @@ export function FactorAnalysis() {
         title: { display: true, text: "S/N Ratio (dB)" },
       },
     },
-  };
+  }), []);
 
   const anovaRows: AnovaRow[] = Object.entries(analysis.anova).map(
     ([factor, stats]) => ({

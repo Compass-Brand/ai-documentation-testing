@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { BarChart3 } from "lucide-react";
 import {
@@ -100,15 +100,15 @@ export function ResultsExplorer() {
   const { data: summary, isLoading } = useRun(runId ?? null);
   const { data: analysis } = useRunAnalysis(runId ?? null);
 
-  const variantRows: VariantRow[] = summary
+  const variantRows: VariantRow[] = useMemo(() => summary
     ? Object.entries(summary.by_variant ?? {}).map(([name, v]) => ({
         name,
         mean_score: v.mean_score,
         trial_count: v.trial_count,
       }))
-    : [];
+    : [], [summary]);
 
-  const barData = {
+  const barData = useMemo(() => ({
     labels: variantRows.map((r) => r.name),
     datasets: [
       {
@@ -118,22 +118,22 @@ export function ResultsExplorer() {
         borderRadius: 4,
       },
     ],
-  };
+  }), [variantRows]);
 
-  const barOptions = {
+  const barOptions = useMemo(() => ({
     indexAxis: "y" as const,
     responsive: true,
     plugins: { legend: { display: false } },
     scales: {
       x: { min: 0, max: 1, title: { display: true, text: "Score" } },
     },
-  };
+  }), []);
 
   const modelEntries = summary?.by_model
     ? Object.entries(summary.by_model ?? {})
     : [];
 
-  const radarData = {
+  const radarData = useMemo(() => ({
     labels: ["Score", "Trials", "Cost"],
     datasets: modelEntries.map(([model, data], i) => ({
       label: model,
@@ -142,7 +142,11 @@ export function ResultsExplorer() {
       backgroundColor:
         i === 0 ? `${CHART_COLORS.primary}26` : `${CHART_COLORS.secondary}26`,
     })),
-  };
+  }), [modelEntries]);
+
+  const formatTrials = useCallback((n: number) => String(Math.round(n)), []);
+  const formatScore = useCallback((n: number) => n.toFixed(2), []);
+  const formatCost = useCallback((n: number) => `$${n.toFixed(2)}`, []);
 
   return (
     <div className="mx-auto max-w-wide px-sp-6 py-sp-8">
@@ -218,7 +222,7 @@ export function ResultsExplorer() {
                     </CardHeader>
                     <CardContent>
                       <span className="text-h2 text-brand-charcoal">
-                        <AnimatedNumber value={summary.total_trials} format={(n) => String(Math.round(n))} />
+                        <AnimatedNumber value={summary.total_trials} format={formatTrials} />
                       </span>
                     </CardContent>
                   </Card>
@@ -228,7 +232,7 @@ export function ResultsExplorer() {
                     </CardHeader>
                     <CardContent>
                       <span className="text-h2 text-brand-charcoal">
-                        <AnimatedNumber value={summary.mean_score ?? 0} format={(n) => n.toFixed(2)} />
+                        <AnimatedNumber value={summary.mean_score ?? 0} format={formatScore} />
                       </span>
                     </CardContent>
                   </Card>
@@ -238,7 +242,7 @@ export function ResultsExplorer() {
                     </CardHeader>
                     <CardContent>
                       <span className="text-h2 text-brand-charcoal">
-                        <AnimatedNumber value={summary.total_cost} format={(n) => `$${n.toFixed(2)}`} />
+                        <AnimatedNumber value={summary.total_cost} format={formatCost} />
                       </span>
                     </CardContent>
                   </Card>

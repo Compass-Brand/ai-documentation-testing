@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { Suspense, useState } from "react";
 import { Routes, Route, NavLink, useLocation } from "react-router-dom";
 import {
   Play,
@@ -14,14 +14,15 @@ import { cn } from "./lib/utils";
 import { ScrollThread } from "./components/ScrollThread";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { ShortcutHelp } from "./components/ShortcutHelp";
-import RunConfig from "./pages/RunConfig";
-import LiveMonitor from "./pages/LiveMonitor";
-import { ResultsExplorer } from "./pages/ResultsExplorer";
-import { Observatory } from "./pages/Observatory";
-import { History as HistoryPage } from "./pages/History";
-import { Models } from "./pages/Models";
-import { FactorAnalysis } from "./pages/FactorAnalysis";
-import { PipelineView } from "./pages/PipelineView";
+
+const RunConfig = React.lazy(() => import("./pages/RunConfig"));
+const LiveMonitor = React.lazy(() => import("./pages/LiveMonitor"));
+const ResultsExplorer = React.lazy(() => import("./pages/ResultsExplorer").then(m => ({ default: m.ResultsExplorer })));
+const Observatory = React.lazy(() => import("./pages/Observatory").then(m => ({ default: m.Observatory })));
+const HistoryPage = React.lazy(() => import("./pages/History").then(m => ({ default: m.History })));
+const Models = React.lazy(() => import("./pages/Models").then(m => ({ default: m.Models })));
+const FactorAnalysis = React.lazy(() => import("./pages/FactorAnalysis").then(m => ({ default: m.FactorAnalysis })));
+const PipelineView = React.lazy(() => import("./pages/PipelineView").then(m => ({ default: m.PipelineView })));
 
 const navItems = [
   { to: "/", label: "Run Config", icon: Play },
@@ -72,31 +73,39 @@ export default function App() {
       </nav>
 
       <main>
-        <div key={location.pathname} className="animate-fade-in-up">
-          <Routes>
-            <Route path="/" element={<RunConfig />} />
-            <Route path="/live/:runId?" element={<LiveMonitor />} />
-            <Route path="/results/:runId?" element={<ResultsExplorer />} />
-            <Route path="/observatory" element={<Observatory />} />
-            <Route path="/history" element={<HistoryPage />} />
-            <Route path="/models" element={<Models />} />
-            <Route path="/analysis/:runId" element={<FactorAnalysis />} />
-            <Route path="/pipeline/:pipelineId?" element={<PipelineView />} />
-            <Route
-              path="*"
-              element={
-                <div className="flex flex-col items-center justify-center py-sp-16 text-center">
-                  <h1 className="text-h2 text-brand-charcoal mb-sp-4">
-                    Page Not Found
-                  </h1>
-                  <p className="text-body text-brand-slate">
-                    The page you're looking for doesn't exist.
-                  </p>
-                </div>
-              }
-            />
-          </Routes>
-        </div>
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-pulse text-brand-charcoal/40">Loading...</div>
+            </div>
+          }
+        >
+          <div key={location.pathname} className="animate-fade-in-up">
+            <Routes>
+              <Route path="/" element={<RunConfig />} />
+              <Route path="/live/:runId?" element={<LiveMonitor />} />
+              <Route path="/results/:runId?" element={<ResultsExplorer />} />
+              <Route path="/observatory" element={<Observatory />} />
+              <Route path="/history" element={<HistoryPage />} />
+              <Route path="/models" element={<Models />} />
+              <Route path="/analysis/:runId" element={<FactorAnalysis />} />
+              <Route path="/pipeline/:pipelineId?" element={<PipelineView />} />
+              <Route
+                path="*"
+                element={
+                  <div className="flex flex-col items-center justify-center py-sp-16 text-center">
+                    <h1 className="text-h2 text-brand-charcoal mb-sp-4">
+                      Page Not Found
+                    </h1>
+                    <p className="text-body text-brand-slate">
+                      The page you're looking for doesn't exist.
+                    </p>
+                  </div>
+                }
+              />
+            </Routes>
+          </div>
+        </Suspense>
       </main>
     </div>
   );

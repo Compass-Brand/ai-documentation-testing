@@ -1,4 +1,4 @@
-import { Component, useMemo, type ErrorInfo, type ReactNode } from "react";
+import React, { Component, useMemo, useCallback, type ErrorInfo, type ReactNode } from "react";
 import {
   Activity,
   DollarSign,
@@ -101,7 +101,7 @@ function LiveMonitorContent() {
     [state.scores],
   );
 
-  const chartOptions = {
+  const chartOptions = useMemo(() => ({
     responsive: true,
     maintainAspectRatio: false,
     scales: {
@@ -109,7 +109,13 @@ function LiveMonitorContent() {
       x: { grid: { display: false } },
     },
     plugins: { legend: { display: false } },
-  } as const;
+  } as const), []);
+
+  const formatScore = useCallback((n: number) => n.toFixed(2), []);
+  const formatCost = useCallback((n: number) => "$" + n.toFixed(2), []);
+  const formatRate = useCallback((n: number) => n.toFixed(1), []);
+  const formatLatency = useCallback((n: number) => n.toFixed(1) + "s", []);
+  const formatErrors = useCallback((n: number) => String(n), []);
 
   if (state.isLoading) {
     return (
@@ -203,21 +209,21 @@ function LiveMonitorContent() {
             label="Score"
             tooltip="Average score across all completed trials"
             value={state.meanScore}
-            format={(n) => n.toFixed(2)}
+            format={formatScore}
           />
           <StatCard
             icon={<DollarSign className="h-5 w-5" />}
             label="Cost"
             tooltip="Total API cost for this evaluation run"
             value={state.totalCost}
-            format={(n) => "$" + n.toFixed(2)}
+            format={formatCost}
           />
           <StatCard
             icon={<Zap className="h-5 w-5" />}
             label="T/min"
             tooltip="Current throughput in trials per minute"
             value={state.trialsPerMin}
-            format={(n) => n.toFixed(1)}
+            format={formatRate}
           />
           <StatCard
             icon={<Hash className="h-5 w-5" />}
@@ -231,14 +237,14 @@ function LiveMonitorContent() {
             label="Latency"
             tooltip="Average response time per trial"
             value={state.avgLatency}
-            format={(n) => n.toFixed(1) + "s"}
+            format={formatLatency}
           />
           <StatCard
             icon={<AlertCircle className="h-5 w-5" />}
             label="Errors"
             tooltip="Number of trials that returned errors"
             value={state.errorCount}
-            format={(n) => String(n)}
+            format={formatErrors}
             variant={state.errorCount > 0 ? "error" : "default"}
           />
         </div>
@@ -297,7 +303,7 @@ function LiveMonitorContent() {
   );
 }
 
-function StatCard({
+const StatCard = React.memo(function StatCard({
   icon,
   label,
   tooltip,
@@ -338,7 +344,7 @@ function StatCard({
       </div>
     </Tooltip>
   );
-}
+});
 
 function formatTokens(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + "M";

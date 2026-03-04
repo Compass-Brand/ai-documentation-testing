@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Play, Loader2, CheckCircle } from "lucide-react";
 import { Button } from "../components/Button";
@@ -31,6 +31,12 @@ export default function RunConfig() {
   const datasets = useDatasets();
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(false);
+  const cooldownTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // Clean up cooldown timer on unmount
+  useEffect(() => {
+    return () => clearTimeout(cooldownTimer.current);
+  }, []);
 
   const activeCount = activeRuns.data?.count ?? 0;
   const isSubmitting = startRun.isPending;
@@ -67,7 +73,8 @@ export default function RunConfig() {
       onError: (err) => {
         setError(err.message || "Failed to start evaluation");
         setCooldown(true);
-        setTimeout(() => setCooldown(false), 1500);
+        clearTimeout(cooldownTimer.current);
+        cooldownTimer.current = setTimeout(() => setCooldown(false), 1500);
       },
     });
   }

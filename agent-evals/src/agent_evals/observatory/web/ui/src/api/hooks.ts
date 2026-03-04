@@ -194,7 +194,10 @@ export function useActiveRuns() {
   return useQuery({
     queryKey: ["active-runs"],
     queryFn: api.getActiveRuns,
-    refetchInterval: 5000,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data && data.runs.length > 0 ? 5000 : 30000;
+    },
     staleTime: STALE_SHORT,
     gcTime: GC_TIME,
   });

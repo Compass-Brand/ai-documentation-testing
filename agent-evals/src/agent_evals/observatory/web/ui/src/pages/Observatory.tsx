@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Eye } from "lucide-react";
 import {
   Chart,
@@ -65,7 +65,7 @@ export function Observatory() {
 
   // Cost trend chart data
   const trendRuns = (costTrend as { runs?: { run_id: string; cost: number; created_at: string }[] })?.runs ?? [];
-  const lineData = {
+  const lineData = useMemo(() => ({
     labels: trendRuns.map((r) =>
       new Date(r.created_at).toLocaleDateString(),
     ),
@@ -85,18 +85,18 @@ export function Observatory() {
         pointRadius: 0,
       },
     ],
-  };
+  }), [trendRuns]);
 
-  const lineOptions = {
+  const lineOptions = useMemo(() => ({
     responsive: true,
     plugins: { legend: { display: false } },
     scales: {
       y: { title: { display: true, text: "Cost ($)" } },
     },
-  };
+  }), []);
 
   // Doughnut chart data
-  const doughnutData = {
+  const doughnutData = useMemo(() => ({
     labels: modelEntries.map(([name]) => name),
     datasets: [
       {
@@ -107,13 +107,19 @@ export function Observatory() {
         borderWidth: 0,
       },
     ],
-  };
+  }), [modelEntries]);
 
-  const formatCurrency = (n: number) =>
-    `$${n.toFixed(2)}`;
+  const formatCurrency = useCallback((n: number) =>
+    `$${n.toFixed(2)}`, []);
 
-  const formatTokens = (n: number) =>
-    n.toLocaleString();
+  const formatTokens = useCallback((n: number) =>
+    n.toLocaleString(), []);
+
+  const selectOptions = useMemo(() =>
+    runs?.map((r) => ({
+      value: r.run_id,
+      label: formatRunLabel(r),
+    })) ?? [], [runs]);
 
   return (
     <div className="mx-auto max-w-wide px-sp-6 py-sp-8">
@@ -131,12 +137,7 @@ export function Observatory() {
                 value={activeRunId ?? ""}
                 onValueChange={(v) => setSelectedRunId(v || null)}
                 placeholder="Select a run..."
-                options={
-                  runs?.map((r) => ({
-                    value: r.run_id,
-                    label: formatRunLabel(r),
-                  })) ?? []
-                }
+                options={selectOptions}
               />
             </div>
           </div>

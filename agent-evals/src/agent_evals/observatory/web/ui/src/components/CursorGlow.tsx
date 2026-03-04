@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { motion, useMotionValue, useSpring } from "framer-motion";
 
 const SPRING_CONFIG = { stiffness: 500, damping: 35 };
@@ -9,11 +9,20 @@ export function CursorGlow() {
   const mouseY = useMotionValue(-GLOW_SIZE);
   const springX = useSpring(mouseX, SPRING_CONFIG);
   const springY = useSpring(mouseY, SPRING_CONFIG);
+  const pending = useRef(false);
+  const latestEvent = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      mouseX.set(e.clientX - GLOW_SIZE / 2);
-      mouseY.set(e.clientY - GLOW_SIZE / 2);
+      latestEvent.current = { x: e.clientX - GLOW_SIZE / 2, y: e.clientY - GLOW_SIZE / 2 };
+      if (!pending.current) {
+        pending.current = true;
+        requestAnimationFrame(() => {
+          mouseX.set(latestEvent.current.x);
+          mouseY.set(latestEvent.current.y);
+          pending.current = false;
+        });
+      }
     };
 
     window.addEventListener("mousemove", handleMouseMove, { passive: true });

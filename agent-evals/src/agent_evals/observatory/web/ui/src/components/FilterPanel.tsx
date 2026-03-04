@@ -1,8 +1,7 @@
 import * as Checkbox from "@radix-ui/react-checkbox";
-import { motion } from "framer-motion";
 import { Check, ChevronDown } from "lucide-react";
 import { cn } from "../lib/utils";
-import { type ReactNode, useCallback, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 interface FilterSectionProps {
   label: string;
@@ -74,8 +73,6 @@ interface FilterRangeProps {
   format?: (n: number) => string;
 }
 
-const FILL_SPRING = { type: "spring", stiffness: 300, damping: 30 } as const;
-
 export function FilterRange({
   label,
   min,
@@ -87,25 +84,41 @@ export function FilterRange({
   const fmt = format ?? String;
   const baseId = `filter-range-${label.toLowerCase().replace(/\s+/g, "-")}`;
   const trackRef = useRef<HTMLDivElement>(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // Local state for instant visual feedback; debounce parent callback
+  const [localValue, setLocalValue] = useState(value);
+  useEffect(() => { setLocalValue(value); }, [value]);
+
+  // Clean up debounce timer on unmount
+  useEffect(() => {
+    return () => clearTimeout(debounceTimer.current);
+  }, []);
 
   const range = max - min || 1;
-  const lowPct = ((value[0] - min) / range) * 100;
-  const highPct = ((value[1] - min) / range) * 100;
+  const lowPct = ((localValue[0] - min) / range) * 100;
+  const highPct = ((localValue[1] - min) / range) * 100;
 
   const handleLow = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const next = parseInt(e.target.value);
-      onChange([Math.min(next, value[1]), value[1]]);
+      const newVal: [number, number] = [Math.min(next, localValue[1]), localValue[1]];
+      setLocalValue(newVal);
+      clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(() => onChange(newVal), 150);
     },
-    [onChange, value],
+    [localValue, onChange],
   );
 
   const handleHigh = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const next = parseInt(e.target.value);
-      onChange([value[0], Math.max(next, value[0])]);
+      const newVal: [number, number] = [localValue[0], Math.max(next, localValue[0])];
+      setLocalValue(newVal);
+      clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(() => onChange(newVal), 150);
     },
-    [onChange, value],
+    [localValue, onChange],
   );
 
   return (
@@ -117,8 +130,8 @@ export function FilterRange({
         {label}
       </label>
       <div className="flex justify-between text-caption text-brand-slate mb-sp-2">
-        <span>{fmt(value[0])}</span>
-        <span>{fmt(value[1])}</span>
+        <span>{fmt(localValue[0])}</span>
+        <span>{fmt(localValue[1])}</span>
       </div>
 
       {/* Dual-range track container */}
@@ -126,12 +139,10 @@ export function FilterRange({
         {/* Background track */}
         <div className="absolute top-1/2 h-1 w-full -translate-y-1/2 rounded-full bg-brand-mist" />
 
-        {/* Animated fill bar */}
-        <motion.div
-          className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-brand-goldenrod"
-          style={{ left: `${lowPct}%` }}
-          animate={{ width: `${highPct - lowPct}%` }}
-          transition={FILL_SPRING}
+        {/* Fill bar */}
+        <div
+          className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-brand-goldenrod transition-all duration-150"
+          style={{ left: `${lowPct}%`, width: `${highPct - lowPct}%` }}
         />
 
         {/* Low thumb */}
@@ -140,7 +151,7 @@ export function FilterRange({
           type="range"
           min={min}
           max={max}
-          value={value[0]}
+          value={localValue[0]}
           onChange={handleLow}
           className="dual-range-thumb pointer-events-none absolute inset-0 w-full"
           aria-label={`${label} minimum`}
@@ -152,7 +163,7 @@ export function FilterRange({
           type="range"
           min={min}
           max={max}
-          value={value[1]}
+          value={localValue[1]}
           onChange={handleHigh}
           className="dual-range-thumb pointer-events-none absolute inset-0 w-full"
           aria-label={`${label} maximum`}

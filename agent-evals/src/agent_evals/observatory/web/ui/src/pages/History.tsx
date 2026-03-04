@@ -98,7 +98,7 @@ export function History() {
 
   // Cost trend chart data
   const trendData = Array.isArray(costTrend) ? costTrend : [];
-  const lineData = {
+  const lineData = useMemo(() => ({
     labels: trendData.map((r: { created_at: string }) =>
       formatRunDate(r.created_at),
     ),
@@ -114,15 +114,15 @@ export function History() {
         pointRadius: 3,
       },
     ],
-  };
+  }), [trendData]);
 
-  const lineOptions = {
+  const lineOptions = useMemo(() => ({
     responsive: true,
     plugins: { legend: { display: false } },
     scales: {
       y: { title: { display: true, text: "Cost ($)" } },
     },
-  };
+  }), []);
 
   if (runsLoading) {
     return (

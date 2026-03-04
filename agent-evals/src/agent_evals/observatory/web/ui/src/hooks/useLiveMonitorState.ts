@@ -76,11 +76,14 @@ export function useLiveMonitorState(totalTasksOverride?: number): LiveMonitorSta
 
   const onTrialComplete = useCallback((trial: Trial) => {
     setRecentTrials((prev) => [trial, ...prev].slice(0, MAX_RECENT_TRIALS));
-    setScores((prev) =>
-      prev.length >= MAX_SCORES
-        ? [...prev.slice(1), trial.score]
-        : [...prev, trial.score],
-    );
+    setScores((prev) => {
+      if (prev.length >= MAX_SCORES) {
+        const next = prev.slice(1);
+        next.push(trial.score);
+        return next;
+      }
+      return [...prev, trial.score];
+    });
     setLastUpdated(new Date());
     setIsConnected(true);
     trialTimestamps.current.push(Date.now());
@@ -132,7 +135,7 @@ export function useLiveMonitorState(totalTasksOverride?: number): LiveMonitorSta
     const windowMs = timestamps[timestamps.length - 1] - timestamps[0];
     if (windowMs === 0) return 0;
     return ((timestamps.length - 1) / windowMs) * 60000;
-  }, [summary, trialsCompleted, recentTrials]);
+  }, [summary, trialsCompleted]);
 
   const estimatedRemainingMinutes = useMemo(() => {
     if (trialsPerMin <= 0 || trialsCompleted >= trialsTotal) return null;

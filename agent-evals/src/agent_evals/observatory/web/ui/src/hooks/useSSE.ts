@@ -27,7 +27,20 @@ export function useSSE({
   const sourceRef = useRef<EventSource | null>(null);
   const reconnectCountRef = useRef(0);
   const lastEventIdRef = useRef(0);
+  const lastInvalidation = useRef(0);
+  const lastEventTime = useRef(Date.now());
   const qc = useQueryClient();
+
+  // Stable refs for callbacks to avoid tearing down EventSource on callback identity changes
+  const onTrialCompleteRef = useRef(onTrialComplete);
+  const onRunCompleteRef = useRef(onRunComplete);
+  const onErrorRef = useRef(onError);
+  const onAlertRef = useRef(onAlert);
+
+  useEffect(() => { onTrialCompleteRef.current = onTrialComplete; }, [onTrialComplete]);
+  useEffect(() => { onRunCompleteRef.current = onRunComplete; }, [onRunComplete]);
+  useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  useEffect(() => { onAlertRef.current = onAlert; }, [onAlert]);
 
   const disconnect = useCallback(() => {
     if (sourceRef.current) {
@@ -53,10 +66,16 @@ export function useSSE({
       lastEventIdRef.current = eventId;
 
       reconnectCountRef.current = 0;
+      lastEventTime.current = Date.now();
       try {
         const trial: Trial = JSON.parse(e.data);
-        onTrialComplete?.(trial);
-        qc.invalidateQueries({ queryKey: ["run", runId] });
+        onTrialCompleteRef.current?.(trial);
+        // Throttle query invalidation to at most once per 5 seconds
+        const now = Date.now();
+        if (now - lastInvalidation.current > 5000) {
+          lastInvalidation.current = now;
+          qc.invalidateQueries({ queryKey: ["run", runId] });
+        }
       } catch (err) {
         console.error("[useSSE] malformed JSON in trial_completed event, skipping:", err);
       }
@@ -71,7 +90,7 @@ export function useSSE({
       source.addEventListener(alertType, (e: MessageEvent) => {
         try {
           const data: Record<string, unknown> = JSON.parse(e.data);
-          onAlert?.({ type: alertType, data });
+          onAlertRef.current?.({ type: alertType, data });
         } catch (err) {
           console.error(`[useSSE] malformed JSON in ${alertType} event, skipping:`, err);
         }
@@ -80,7 +99,9 @@ export function useSSE({
 
     // Backend does not emit a run_complete event.
     // Poll the run summary to detect completion instead.
+    // Skip poll when SSE is healthy (received an event within the last 10 seconds).
     const pollInterval = setInterval(async () => {
+      if (Date.now() - lastEventTime.current < 10000) return;
       try {
         const res = await fetch(
           `${baseUrl}/api/runs/${runId}`,
@@ -91,7 +112,7 @@ export function useSSE({
             summary?.status === "completed" ||
             summary?.status === "failed"
           ) {
-            onRunComplete?.();
+            onRunCompleteRef.current?.();
             qc.invalidateQueries({ queryKey: ["run", runId] });
             qc.invalidateQueries({ queryKey: ["trials", runId] });
             clearInterval(pollInterval);
@@ -108,9 +129,9 @@ export function useSSE({
       if (reconnectCountRef.current >= MAX_RECONNECTS) {
         clearInterval(pollInterval);
         disconnect();
-        onError?.("SSE connection failed after maximum reconnection attempts.");
+        onErrorRef.current?.("SSE connection failed after maximum reconnection attempts.");
       } else {
-        onError?.("SSE connection lost. Reconnecting...");
+        onErrorRef.current?.("SSE connection lost. Reconnecting...");
       }
     });
 
@@ -118,7 +139,7 @@ export function useSSE({
       clearInterval(pollInterval);
       disconnect();
     };
-  }, [runId, onTrialComplete, onRunComplete, onError, onAlert, qc, disconnect]);
+  }, [runId, qc, disconnect]);
 
   return { disconnect };
 }
