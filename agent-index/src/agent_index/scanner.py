@@ -489,11 +489,12 @@ def _get_cached_content(
     Returns:
         File content as string, or None if fetch fails.
     """
-    # Build cache file path
+    # Build cache file path (use SHA-256 hash of path to avoid collisions
+    # from slash-to-underscore replacement, e.g. docs/api/auth.md vs docs/api_auth.md)
     safe_repo = repo.replace("/", "_")
-    safe_path = path.replace("/", "_")
-    cache_file = cache_dir / safe_repo / branch / f"{safe_path}.cache"
-    meta_file = cache_dir / safe_repo / branch / f"{safe_path}.meta"
+    path_hash = hashlib.sha256(path.encode()).hexdigest()
+    cache_file = cache_dir / safe_repo / branch / f"{path_hash}.cache"
+    meta_file = cache_dir / safe_repo / branch / f"{path_hash}.meta"
 
     # Check cache
     if cache_file.exists() and meta_file.exists():

@@ -524,3 +524,87 @@ class TestScanLocalFileSizeLimits:
         assert "small.md" in result.files
         assert "medium.md" in result.files
         assert "big.md" not in result.files
+
+
+# ---------------------------------------------------------------------------
+# GitHub cache path collision
+# ---------------------------------------------------------------------------
+
+
+class TestGitHubCachePathCollision:
+    """Tests that GitHub cache paths don't collide for similar paths."""
+
+    def test_distinct_cache_paths_for_similar_files(self, tmp_path: Path) -> None:
+        """docs/api/auth.md and docs/api_auth.md must produce different cache files."""
+        from agent_index.scanner import _get_cached_content
+
+        # Cache one path
+        # We can't fetch from GitHub, but we can check that cache paths differ
+        # by examining the cache file structure
+        repo = "owner/repo"
+        branch = "main"
+
+        path_a = "docs/api/auth.md"
+        path_b = "docs/api_auth.md"
+
+        # Write a fake cache for path_a
+        _write_fake_cache(tmp_path, repo, branch, path_a, "sha_a", "content A")
+        _write_fake_cache(tmp_path, repo, branch, path_b, "sha_b", "content B")
+
+        # Retrieve each - they must return distinct content
+        result_a = _get_cached_content(repo, branch, path_a, "sha_a", tmp_path)
+        result_b = _get_cached_content(repo, branch, path_b, "sha_b", tmp_path)
+
+        assert result_a == "content A"
+        assert result_b == "content B"
+
+    def test_deeply_nested_path_cached_correctly(self, tmp_path: Path) -> None:
+        """Deeply nested paths should be cached without collision."""
+        from agent_index.scanner import _get_cached_content
+
+        repo = "owner/repo"
+        branch = "main"
+        path = "a/b/c/d/e.md"
+
+        _write_fake_cache(tmp_path, repo, branch, path, "sha1", "deep content")
+
+        result = _get_cached_content(repo, branch, path, "sha1", tmp_path)
+        assert result == "deep content"
+
+    def test_cache_invalidation_by_sha(self, tmp_path: Path) -> None:
+        """Cache returns None (triggers re-fetch) when SHA changes."""
+        from agent_index.scanner import _get_cached_content
+
+        repo = "owner/repo"
+        branch = "main"
+        path = "docs/readme.md"
+
+        _write_fake_cache(tmp_path, repo, branch, path, "old_sha", "old content")
+
+        # Request with new SHA - cache should miss, triggering fetch (which returns None without network)
+        result = _get_cached_content(repo, branch, path, "new_sha", tmp_path)
+        assert result is None
+
+
+def _write_fake_cache(
+    cache_dir: Path,
+    repo: str,
+    branch: str,
+    path: str,
+    sha: str,
+    content: str,
+) -> None:
+    """Write a fake cache entry matching _get_cached_content's expected layout."""
+    import hashlib
+    import json
+
+    # Must match the cache path scheme in _get_cached_content
+    safe_repo = repo.replace("/", "_")
+    # Use SHA-256 hash of path for collision-free cache file names
+    path_hash = hashlib.sha256(path.encode()).hexdigest()
+    cache_file = cache_dir / safe_repo / branch / f"{path_hash}.cache"
+    meta_file = cache_dir / safe_repo / branch / f"{path_hash}.meta"
+
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(content, encoding="utf-8")
+    meta_file.write_text(json.dumps({"sha": sha}), encoding="utf-8")
