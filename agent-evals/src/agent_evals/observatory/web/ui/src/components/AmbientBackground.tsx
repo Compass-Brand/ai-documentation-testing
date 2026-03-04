@@ -2,10 +2,10 @@ import { useEffect, useRef } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 
 const SPRING = { stiffness: 40, damping: 20 };
-const NUM_RINGS = 14;
+const NUM_RINGS = 18;
 const PTS = 64;
-const RING_GAP = 50;
-const RING_GROWTH = 0.12;
+const RING_GAP = 45;
+const RING_GROWTH = 0.10;
 const COLOR = [154, 123, 79]; // #9A7B4F
 
 /* ── Compact 2D Perlin noise (no deps) ─────────────────────────── */
@@ -128,7 +128,7 @@ export function AmbientBackground() {
     window.addEventListener("mousemove", onMouse, { passive: true });
 
     const draw = () => {
-      t += 0.005;
+      t += 0.012;
       const w = window.innerWidth;
       const h = window.innerHeight;
 
@@ -149,8 +149,8 @@ export function AmbientBackground() {
 
       for (let ring = 0; ring < NUM_RINGS; ring++) {
         const baseR = (ring + 1) * RING_GAP * (1 + ring * RING_GROWTH);
-        const alpha = Math.max(0.03, 0.16 - ring * 0.009);
-        const lw = Math.max(0.5, 1.5 - ring * 0.06);
+        const alpha = Math.max(0.08, 0.22 - ring * 0.008);
+        const lw = Math.max(0.7, 1.8 - ring * 0.05);
 
         const pts: [number, number][] = [];
 
@@ -160,22 +160,22 @@ export function AmbientBackground() {
 
           /* Multi-octave noise → organic shape */
           const n1 = noise(
-            Math.cos(coupled) * 1.5 + t * 0.6 + ring * 0.5,
-            Math.sin(coupled) * 1.5 + t * 0.4 + ring * 0.5,
+            Math.cos(coupled) * 1.5 + t * 0.8 + ring * 0.5,
+            Math.sin(coupled) * 1.5 + t * 0.6 + ring * 0.5,
           );
           const n2 = noise(
-            Math.cos(coupled) * 3 + t * 0.3 + ring * 1.2,
-            Math.sin(coupled) * 3 - t * 0.2 + ring * 1.2,
+            Math.cos(coupled) * 3 + t * 0.5 + ring * 1.2,
+            Math.sin(coupled) * 3 - t * 0.3 + ring * 1.2,
           );
-          const organic = (n1 * 15 + n2 * 6) * (1 + ring * 0.12);
+          const organic = (n1 * 20 + n2 * 10) * (1 + ring * 0.15);
 
           /* Traveling waves along contour (flowing-water feel) */
           const wave =
-            Math.sin(angle * 3 + t * 2) * 8 * (1 + ring * 0.1) +
-            Math.sin(angle * 5 - t * 1.2) * 4;
+            Math.sin(angle * 3 + t * 2.5) * 12 * (1 + ring * 0.12) +
+            Math.sin(angle * 5 - t * 1.5) * 6;
 
-          /* Compass pulse: outward-propagating ripple from center */
-          const pulse = Math.sin(baseR * 0.012 - t * 2.5) * 8;
+          /* Compass pulse: outward-propagating ripple, scales with ring */
+          const pulse = Math.sin(baseR * 0.01 - t * 3) * (10 + ring * 2);
 
           const r = baseR + organic + wave + pulse;
           let px = cx + Math.cos(angle) * r;
@@ -225,11 +225,11 @@ export function AmbientBackground() {
         aria-hidden="true"
       />
 
-      {/* Layer 2: Canvas topo contour lines */}
+      {/* Layer 2: Canvas topo contour lines — multiply blend overlays content subtly */}
       <canvas
         ref={canvasRef}
         className="fixed inset-0 pointer-events-none"
-        style={{ zIndex: 0 }}
+        style={{ zIndex: 50, mixBlendMode: "multiply" }}
         aria-hidden="true"
       />
 
