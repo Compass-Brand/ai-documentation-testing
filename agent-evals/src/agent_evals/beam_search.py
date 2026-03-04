@@ -186,7 +186,23 @@ def select_beam(
             retained.append(candidate)
 
     if pairwise_tests:
-        pairwise_tests = holm_bonferroni(pairwise_tests)
+        pairwise_tests = holm_bonferroni(pairwise_tests, alpha=parity_alpha)
+
+        # Update within_parity flags based on corrected significance
+        corrected_by_variant: dict[str, bool] = {}
+        for pw in pairwise_tests:
+            corrected_by_variant[pw.variant_b] = not pw.significant
+
+        for candidate in candidates:
+            if candidate.variant_name in corrected_by_variant:
+                candidate.within_parity = corrected_by_variant[candidate.variant_name]
+
+        # Re-check retained list: add candidates that became within parity
+        retained_names = {c.variant_name for c in retained}
+        for candidate in candidates[1 : beam_width * 2]:
+            if candidate.variant_name not in retained_names and candidate.within_parity:
+                retained.append(candidate)
+                retained_names.add(candidate.variant_name)
 
     return BeamAxisResult(
         axis=0,  # Set by caller
