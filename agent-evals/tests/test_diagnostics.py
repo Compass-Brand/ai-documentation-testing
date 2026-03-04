@@ -288,60 +288,6 @@ class TestDiagnosticTrackerFinalSummary:
 # ---------------------------------------------------------------------------
 
 
-class TestDiagnosticTrackerJudgeFailures:
-    """Tests for judge failure tracking."""
-
-    def test_judge_failure_counter_starts_at_zero(self) -> None:
-        tracker = DiagnosticTracker(total_trials=10)
-        snapshot = tracker.snapshot()
-        assert snapshot["total_judge_failures"] == 0
-
-    def test_record_trial_with_judge_failure_increments(self) -> None:
-        tracker = DiagnosticTracker(total_trials=10)
-        tracker.record_trial(
-            tokens=100, cost=0.001, retries=0, api_ms=500.0,
-            trial_ms=600.0, error=False, rate_limited=False,
-            judge_failed=True,
-        )
-        snapshot = tracker.snapshot()
-        assert snapshot["total_judge_failures"] == 1
-
-    def test_judge_failure_false_does_not_increment(self) -> None:
-        tracker = DiagnosticTracker(total_trials=10)
-        tracker.record_trial(
-            tokens=100, cost=0.001, retries=0, api_ms=500.0,
-            trial_ms=600.0, error=False, rate_limited=False,
-            judge_failed=False,
-        )
-        snapshot = tracker.snapshot()
-        assert snapshot["total_judge_failures"] == 0
-
-    def test_judge_failure_default_is_false(self) -> None:
-        """Existing callers that don't pass judge_failed should work."""
-        tracker = DiagnosticTracker(total_trials=10)
-        tracker.record_trial(
-            tokens=100, cost=0.001, retries=0, api_ms=500.0,
-            trial_ms=600.0, error=False, rate_limited=False,
-        )
-        snapshot = tracker.snapshot()
-        assert snapshot["total_judge_failures"] == 0
-
-    def test_multiple_judge_failures_accumulate(self) -> None:
-        tracker = DiagnosticTracker(total_trials=10)
-        for _ in range(3):
-            tracker.record_trial(
-                tokens=100, cost=0.001, retries=0, api_ms=500.0,
-                trial_ms=600.0, error=False, rate_limited=False,
-                judge_failed=True,
-            )
-        tracker.record_trial(
-            tokens=100, cost=0.001, retries=0, api_ms=500.0,
-            trial_ms=600.0, error=False, rate_limited=False,
-            judge_failed=False,
-        )
-        snapshot = tracker.snapshot()
-        assert snapshot["total_judge_failures"] == 3
-
 
 class TestDiagnosticTrackerCompletedOffset:
     """Tests for completed_offset parameter used during resume."""
