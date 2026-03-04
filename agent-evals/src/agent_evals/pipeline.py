@@ -97,6 +97,8 @@ class DOEPipeline:
         tasks: list[Any],
         variants: list[Any],
         doc_tree: Any,
+        *,
+        resume_run_id: str | None = None,
     ) -> PhaseResult:
         """Execute Phase 1: screening experiment.
 
@@ -128,6 +130,7 @@ class DOEPipeline:
             variant_lookup=variant_lookup,
             phase="screening",
             pipeline_id=self._pipeline_id,
+            resume_run_id=resume_run_id,
         )
 
         # 5. Group trial scores by OA row
@@ -170,6 +173,8 @@ class DOEPipeline:
         tasks: list[Any],
         variants: list[Any],
         doc_tree: Any,
+        *,
+        resume_run_id: str | None = None,
     ) -> PhaseResult:
         """Execute Phase 2: confirmation experiment.
 
@@ -189,6 +194,7 @@ class DOEPipeline:
             phase="confirmation",
             pipeline_id=self._pipeline_id,
             mode="full",
+            resume_run_id=resume_run_id,
         )
 
         # Gather observed scores
@@ -229,6 +235,8 @@ class DOEPipeline:
         tasks: list[Any],
         variants: list[Any],
         doc_tree: Any,
+        *,
+        resume_run_id: str | None = None,
     ) -> PhaseResult:
         """Execute Phase 3: full factorial refinement on top K factors.
 
@@ -266,6 +274,7 @@ class DOEPipeline:
                 phase="refinement",
                 pipeline_id=self._pipeline_id,
                 mode="full",
+                resume_run_id=resume_run_id,
             )
         else:
             result = self._orchestrator.run(
@@ -276,6 +285,7 @@ class DOEPipeline:
                 phase="refinement",
                 pipeline_id=self._pipeline_id,
                 mode="full",
+                resume_run_id=resume_run_id,
             )
 
         return PhaseResult(
@@ -303,13 +313,16 @@ class DOEPipeline:
         When resuming (pipeline_id passed to __init__), completed phases
         are skipped and in-progress phases are resumed from their checkpoint.
         """
-        # Check for completed phases when resuming an existing pipeline.
+        # Check for completed and in-progress phases when resuming.
         completed_phases: dict[str, str] = {}  # phase -> run_id
+        in_progress_phases: dict[str, str] = {}  # phase -> run_id
         if self._store:
             existing_runs = self._store.get_pipeline_runs(self._pipeline_id)
             for run in existing_runs:
                 if run.status == "completed" and run.phase:
                     completed_phases[run.phase] = run.run_id
+                elif run.status in ("active", "failed") and run.phase:
+                    in_progress_phases[run.phase] = run.run_id
 
         # Phase 1: Screening
         if "screening" in completed_phases:
@@ -324,6 +337,11 @@ class DOEPipeline:
                 anova=phase_results.get("anova") if phase_results else None,
                 optimal=phase_results.get("optimal") if phase_results else None,
                 significant_factors=phase_results.get("significant_factors", []) if phase_results else [],
+            )
+        elif "screening" in in_progress_phases:
+            screening = self.run_screening(
+                tasks, variants, doc_tree,
+                resume_run_id=in_progress_phases["screening"],
             )
         else:
             screening = self.run_screening(tasks, variants, doc_tree)
@@ -340,9 +358,22 @@ class DOEPipeline:
                 )
 
         # Phase 2: Confirmation
-        confirmation = self.run_confirmation(
-            screening, tasks, variants, doc_tree
-        )
+        if "confirmation" in completed_phases:
+            conf_run_id = completed_phases["confirmation"]
+            confirmation = PhaseResult(
+                run_id=conf_run_id,
+                phase="confirmation",
+                trials=[],
+            )
+        elif "confirmation" in in_progress_phases:
+            confirmation = self.run_confirmation(
+                screening, tasks, variants, doc_tree,
+                resume_run_id=in_progress_phases["confirmation"],
+            )
+        else:
+            confirmation = self.run_confirmation(
+                screening, tasks, variants, doc_tree,
+            )
 
         # Semi mode: check callback after confirmation
         if self.config.mode == "semi" and phase_callback is not None:
@@ -357,9 +388,22 @@ class DOEPipeline:
                 )
 
         # Phase 3: Refinement
-        refinement = self.run_refinement(
-            screening, tasks, variants, doc_tree
-        )
+        if "refinement" in completed_phases:
+            ref_run_id = completed_phases["refinement"]
+            refinement = PhaseResult(
+                run_id=ref_run_id,
+                phase="refinement",
+                trials=[],
+            )
+        elif "refinement" in in_progress_phases:
+            refinement = self.run_refinement(
+                screening, tasks, variants, doc_tree,
+                resume_run_id=in_progress_phases["refinement"],
+            )
+        else:
+            refinement = self.run_refinement(
+                screening, tasks, variants, doc_tree,
+            )
 
         # Aggregate final results
         final_optimal = refinement.optimal or screening.optimal or {}

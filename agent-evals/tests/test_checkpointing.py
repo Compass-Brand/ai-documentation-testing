@@ -490,3 +490,146 @@ class TestRunSummaryPhase:
         store.create_run("run-1", "full", {})
         summary = store.get_run_summary("run-1")
         assert summary.phase is None
+
+
+# ---------------------------------------------------------------------------
+# Pipeline resume: incomplete phases
+# ---------------------------------------------------------------------------
+
+
+class TestPipelineResumeIncompletePhases:
+    """DOEPipeline.run() should resume active/failed phases."""
+
+    def _make_phase_result(self, phase: str, run_id: str = "r1"):
+        """Create a minimal PhaseResult for testing."""
+        from agent_evals.pipeline import PhaseResult
+
+        return PhaseResult(
+            run_id=run_id,
+            phase=phase,
+            trials=[],
+            significant_factors=["axis_1"],
+        )
+
+    def test_pipeline_resumes_active_screening(
+        self, tmp_path: Path,
+    ) -> None:
+        """Pipeline with an 'active' screening run should resume it."""
+        from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+        store = _make_store(tmp_path)
+        store.create_run(
+            "screen-crash", "taguchi", {},
+            phase="screening", pipeline_id="pipe-1",
+        )
+
+        orch = MagicMock()
+        orch.store = store
+        pipeline = DOEPipeline(
+            config=PipelineConfig(models=["mock"]),
+            orchestrator=orch,
+            pipeline_id="pipe-1",
+        )
+
+        # Patch phase methods to capture resume_run_id
+        captured: dict[str, str | None] = {}
+        pipeline.run_screening = MagicMock(
+            side_effect=lambda *a, **kw: (
+                captured.update(screening=kw.get("resume_run_id")),
+                self._make_phase_result("screening", "screen-crash"),
+            )[1],
+        )
+        pipeline.run_confirmation = MagicMock(
+            return_value=self._make_phase_result("confirmation"),
+        )
+        pipeline.run_refinement = MagicMock(
+            return_value=self._make_phase_result("refinement"),
+        )
+
+        pipeline.run(
+            tasks=[_mock_task()],
+            variants=[_mock_variant("v1")],
+            doc_tree=_mock_doc_tree(),
+        )
+
+        assert captured.get("screening") == "screen-crash"
+
+    def test_pipeline_resumes_failed_screening(
+        self, tmp_path: Path,
+    ) -> None:
+        """Pipeline with a 'failed' screening run should resume it."""
+        from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+        store = _make_store(tmp_path)
+        store.create_run(
+            "screen-fail", "taguchi", {},
+            phase="screening", pipeline_id="pipe-2",
+        )
+        store.fail_run("screen-fail", error="crashed")
+
+        orch = MagicMock()
+        orch.store = store
+        pipeline = DOEPipeline(
+            config=PipelineConfig(models=["mock"]),
+            orchestrator=orch,
+            pipeline_id="pipe-2",
+        )
+
+        captured: dict[str, str | None] = {}
+        pipeline.run_screening = MagicMock(
+            side_effect=lambda *a, **kw: (
+                captured.update(screening=kw.get("resume_run_id")),
+                self._make_phase_result("screening", "screen-fail"),
+            )[1],
+        )
+        pipeline.run_confirmation = MagicMock(
+            return_value=self._make_phase_result("confirmation"),
+        )
+        pipeline.run_refinement = MagicMock(
+            return_value=self._make_phase_result("refinement"),
+        )
+
+        pipeline.run(
+            tasks=[_mock_task()],
+            variants=[_mock_variant("v1")],
+            doc_tree=_mock_doc_tree(),
+        )
+
+        assert captured.get("screening") == "screen-fail"
+
+    def test_pipeline_fresh_when_no_existing_runs(
+        self, tmp_path: Path,
+    ) -> None:
+        """No existing runs → no resume_run_id passed to phase methods."""
+        from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+        store = _make_store(tmp_path)
+        orch = MagicMock()
+        orch.store = store
+        pipeline = DOEPipeline(
+            config=PipelineConfig(models=["mock"]),
+            orchestrator=orch,
+            pipeline_id="pipe-3",
+        )
+
+        captured: dict[str, str | None] = {}
+        pipeline.run_screening = MagicMock(
+            side_effect=lambda *a, **kw: (
+                captured.update(screening=kw.get("resume_run_id")),
+                self._make_phase_result("screening"),
+            )[1],
+        )
+        pipeline.run_confirmation = MagicMock(
+            return_value=self._make_phase_result("confirmation"),
+        )
+        pipeline.run_refinement = MagicMock(
+            return_value=self._make_phase_result("refinement"),
+        )
+
+        pipeline.run(
+            tasks=[_mock_task()],
+            variants=[_mock_variant("v1")],
+            doc_tree=_mock_doc_tree(),
+        )
+
+        assert captured.get("screening") is None

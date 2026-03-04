@@ -161,6 +161,7 @@ class EvalOrchestrator:
         phase: str | None = None,
         pipeline_id: str | None = None,
         mode: str | None = None,
+        resume_run_id: str | None = None,
     ) -> OrchestratorResult:
         """Execute a full evaluation run with telemetry and reporting.
 
@@ -207,9 +208,13 @@ class EvalOrchestrator:
         effective_mode = mode or self.config.mode
         completed_keys: set[tuple[int | None, str, str, int]] | None = None
 
-        if self.config.resume_run_id and not pipeline_id:
+        # Determine if we're resuming: explicit param (from pipeline) or config.
+        effective_resume_id = resume_run_id or (
+            self.config.resume_run_id if not pipeline_id else None
+        )
+        if effective_resume_id:
             # Resume an existing run instead of creating a new one.
-            run_id = self.config.resume_run_id
+            run_id = effective_resume_id
             self.store.resume_run(run_id)
             completed_keys = self.store.get_completed_trial_keys(run_id)
             logger.info(

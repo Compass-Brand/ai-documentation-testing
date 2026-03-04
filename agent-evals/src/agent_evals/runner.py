@@ -263,10 +263,14 @@ class EvalRunner:
                 ) not in completed_keys
             ]
 
-        total = len(work_items)
+        remaining = len(work_items)
+        offset = len(completed_keys) if completed_keys else 0
+        total = remaining
         trials: list[TrialResult] = []
         completed = 0
-        tracker = DiagnosticTracker(total_trials=total)
+        tracker = DiagnosticTracker(
+            total_trials=remaining + offset, completed_offset=offset,
+        )
         tracker.start()
 
         try:

@@ -281,3 +281,74 @@ class TestDiagnosticTrackerFinalSummary:
             tracker.stop()
 
         assert "RUN COMPLETE" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Completed offset (resume support)
+# ---------------------------------------------------------------------------
+
+
+class TestDiagnosticTrackerCompletedOffset:
+    """Tests for completed_offset parameter used during resume."""
+
+    def test_completed_offset_sets_initial_completed(self) -> None:
+        """Tracker with offset should start with completed = offset."""
+        tracker = DiagnosticTracker(total_trials=500, completed_offset=100)
+        snapshot = tracker.snapshot()
+        assert snapshot["completed"] == 100
+        assert snapshot["total_trials"] == 500
+
+    def test_completed_offset_accumulates_with_new_trials(self) -> None:
+        """Recording trials should add to the offset."""
+        tracker = DiagnosticTracker(total_trials=500, completed_offset=100)
+        tracker.record_trial(
+            tokens=50, cost=0.001, retries=0, api_ms=100.0,
+            trial_ms=200.0, error=False, rate_limited=False,
+        )
+        snapshot = tracker.snapshot()
+        assert snapshot["completed"] == 101
+
+    def test_completed_offset_progress_percentage(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Heartbeat should show correct % including offset."""
+        tracker = DiagnosticTracker(
+            total_trials=100, completed_offset=99, heartbeat_interval=0.1,
+        )
+        tracker.record_trial(
+            tokens=50, cost=0.001, retries=0, api_ms=100.0,
+            trial_ms=200.0, error=False, rate_limited=False,
+        )
+
+        with caplog.at_level(logging.INFO, logger="agent_evals.diagnostics"):
+            tracker.start()
+            time.sleep(0.3)
+            tracker.stop()
+
+        # Should show 100/100 (100.0%)
+        assert "100/100" in caplog.text
+
+    def test_completed_offset_default_zero(self) -> None:
+        """Default offset is 0 — backward compatible."""
+        tracker = DiagnosticTracker(total_trials=10)
+        snapshot = tracker.snapshot()
+        assert snapshot["completed"] == 0
+
+    def test_completed_offset_in_summary(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Final summary should reflect offset in completed count."""
+        tracker = DiagnosticTracker(
+            total_trials=200, completed_offset=150, heartbeat_interval=60,
+        )
+        tracker.record_trial(
+            tokens=50, cost=0.001, retries=0, api_ms=100.0,
+            trial_ms=200.0, error=False, rate_limited=False,
+        )
+
+        with caplog.at_level(logging.INFO, logger="agent_evals.diagnostics"):
+            tracker.start()
+            tracker.stop()
+
+        assert "RUN COMPLETE" in caplog.text
+        assert "151/200" in caplog.text

@@ -32,6 +32,7 @@ class DiagnosticTracker:
         total_trials: int,
         heartbeat_interval: float = 60.0,
         stall_threshold: float = 300.0,
+        completed_offset: int = 0,
     ) -> None:
         self._total = total_trials
         self._heartbeat_interval = heartbeat_interval
@@ -39,7 +40,7 @@ class DiagnosticTracker:
 
         # Counters (protected by _lock)
         self._lock = threading.Lock()
-        self._completed = 0
+        self._completed = completed_offset
         self._total_tokens = 0
         self._total_cost = 0.0
         self._total_retries = 0
