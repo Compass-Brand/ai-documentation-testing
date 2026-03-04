@@ -225,11 +225,11 @@ export function AmbientBackground() {
         aria-hidden="true"
       />
 
-      {/* Layer 2: Canvas topo contour lines — multiply blend overlays content subtly */}
+      {/* Layer 2: Canvas topo contour lines — behind content */}
       <canvas
         ref={canvasRef}
         className="fixed inset-0 pointer-events-none"
-        style={{ zIndex: 50, mixBlendMode: "multiply" }}
+        style={{ zIndex: 0 }}
         aria-hidden="true"
       />
 
