@@ -12,4 +12,4 @@ metadata:
   expected_answer: The StructuredLogger supports correlation IDs for tracking requests
     across the system, configured via LogConfig.
   perturbation_details: Replaced 'correlation IDs' with 'request tracking identifiers'
-  base_task_id: ''
+  base_task_id: retrieval_015

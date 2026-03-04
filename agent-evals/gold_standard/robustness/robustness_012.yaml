@@ -14,4 +14,4 @@ metadata:
     required. REDIS_URL is optional, and APP_ENV is a configuration variable.
   perturbation_details: Negated 'optional' to test if the model correctly identifies
     DATABASE_URL as the required (non-optional) variable
-  base_task_id: ''
+  base_task_id: compositional_006

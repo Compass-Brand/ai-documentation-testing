@@ -12,4 +12,4 @@ metadata:
   expected_answer: The JWT expiry (token lifespan) is 3600 seconds (1 hour), configured
     via expiry_seconds.
   perturbation_details: Replaced 'JWT expiry' with 'token lifespan'
-  base_task_id: ''
+  base_task_id: fact_extraction_005

@@ -708,11 +708,63 @@ class TestGoldStandardDirectoryStructure:
         assert (GOLD_STANDARD_DIR / "schema.yaml").is_file()
 
 
-# Task 29 robustness base_task_id test
-def test_all_robustness_tasks_have_base_task_id():
-    from pathlib import Path
-    from agent_evals.tasks.loader import load_tasks
-    robustness_dir = Path("agent-evals/gold_standard/robustness/")
-    tasks = load_tasks(robustness_dir)
-    missing = [t.definition.task_id for t in tasks if "base_task_id" not in (t.definition.metadata or {})]
-    assert not missing, f"Missing base_task_id in {len(missing)} tasks: {missing[:5]}"
+# ---------------------------------------------------------------------------
+# Robustness base_task_id validation tests
+# ---------------------------------------------------------------------------
+
+ROBUSTNESS_DIR = GOLD_STANDARD_DIR / "robustness"
+
+
+class TestRobustnessBaseTaskId:
+    """Tests that robustness tasks have valid, non-empty base_task_id metadata."""
+
+    def _load_robustness_yamls(self) -> list[tuple[str, dict[str, Any]]]:
+        """Load all robustness YAML files and return (filename, data) pairs."""
+        results = []
+        for f in sorted(ROBUSTNESS_DIR.glob("robustness_*.yaml")):
+            data = yaml.safe_load(f.read_text(encoding="utf-8"))
+            results.append((f.name, data))
+        return results
+
+    def test_all_robustness_tasks_have_base_task_id_key(self) -> None:
+        """Every robustness task YAML has base_task_id in metadata."""
+        yamls = self._load_robustness_yamls()
+        assert len(yamls) == 30, f"Expected 30 robustness tasks, found {len(yamls)}"
+        missing = [
+            name for name, data in yamls
+            if "base_task_id" not in data.get("metadata", {})
+        ]
+        assert not missing, f"Missing base_task_id key in: {missing}"
+
+    def test_all_robustness_tasks_have_non_empty_base_task_id(self) -> None:
+        """Every robustness task has a non-empty base_task_id value."""
+        yamls = self._load_robustness_yamls()
+        empty = [
+            name for name, data in yamls
+            if not data.get("metadata", {}).get("base_task_id")
+        ]
+        assert not empty, (
+            f"{len(empty)} robustness tasks have empty base_task_id: {empty}"
+        )
+
+    def test_base_task_ids_reference_existing_tasks(self) -> None:
+        """Every base_task_id references an actual task YAML file."""
+        yamls = self._load_robustness_yamls()
+        broken = []
+        for name, data in yamls:
+            base_id = data.get("metadata", {}).get("base_task_id", "")
+            if not base_id:
+                continue
+            # Derive the directory and filename from the task_id
+            # e.g. "fact_extraction_001" -> "fact_extraction/fact_extraction_001.yaml"
+            parts = base_id.rsplit("_", 1)
+            if len(parts) != 2:
+                broken.append((name, base_id, "invalid task_id format"))
+                continue
+            task_type_dir = base_id[:len(base_id) - len(parts[-1]) - 1]
+            expected_path = GOLD_STANDARD_DIR / task_type_dir / f"{base_id}.yaml"
+            if not expected_path.is_file():
+                broken.append((name, base_id, str(expected_path)))
+        assert not broken, (
+            f"{len(broken)} base_task_id refs point to non-existent tasks: {broken}"
+        )

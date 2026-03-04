@@ -16,4 +16,4 @@ metadata:
     mock_auth fixture for mocking authentication in tests.
   perturbation_details: Question formatted as a code comment / TODO note rather than
     a direct question
-  base_task_id: ''
+  base_task_id: retrieval_005

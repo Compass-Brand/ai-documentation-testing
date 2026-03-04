@@ -15,4 +15,4 @@ metadata:
     CacheConfig TTL.
   perturbation_details: Replaced '@cached decorator' with 'result-storing wrapper
     to avoid recomputation'
-  base_task_id: ''
+  base_task_id: fact_extraction_012

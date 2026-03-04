@@ -12,4 +12,4 @@ metadata:
   expected_answer: 'The project uses a 3-layer architecture: API layer, Service layer,
     and Data layer, with dependency injection.'
   perturbation_details: Replaced 'architectural layers' with 'software design tiers'
-  base_task_id: ''
+  base_task_id: compositional_002

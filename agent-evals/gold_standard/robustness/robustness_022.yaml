@@ -15,4 +15,4 @@ metadata:
     layer described in the architecture docs.
   perturbation_details: False premise claiming a 4-layer architecture with a non-existent
     Messaging layer
-  base_task_id: ''
+  base_task_id: compositional_002

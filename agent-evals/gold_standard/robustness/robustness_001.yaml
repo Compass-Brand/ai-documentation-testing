@@ -11,4 +11,4 @@ metadata:
   original_question: What is the default TTL for the cache configuration?
   expected_answer: The default TTL for CacheConfig is 300 seconds.
   perturbation_details: Misspelled 'cache' as 'cahce'
-  base_task_id: ''
+  base_task_id: fact_extraction_001

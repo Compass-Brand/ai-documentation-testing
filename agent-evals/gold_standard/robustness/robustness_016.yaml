@@ -15,4 +15,4 @@ metadata:
     through CacheConfig with a default TTL of 300 seconds.
   perturbation_details: Prepended irrelevant information about Python GIL, async performance,
     and Celery before the actual question
-  base_task_id: ''
+  base_task_id: retrieval_002
