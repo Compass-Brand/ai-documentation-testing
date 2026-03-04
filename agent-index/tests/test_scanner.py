@@ -460,6 +460,21 @@ class TestScanLocalEdgeCases:
 
         assert ".hidden.md" in result.files
 
+    def test_size_bytes_matches_content_encoded_length(self, tmp_path: Path) -> None:
+        """size_bytes must equal len(content.encode('utf-8')), not stat.st_size.
+
+        This ensures consistency with the GitHub scanner and correct behavior
+        on Windows where read_text converts CRLF to LF.
+        """
+        # Multi-byte UTF-8: each emoji is 4 bytes, each CJK char is 3 bytes
+        content = "# Café résumé\n\nHello 世界 🌍\n"
+        (tmp_path / "unicode.md").write_text(content, encoding="utf-8")
+
+        result = scan_local(tmp_path)
+
+        doc = result.files["unicode.md"]
+        assert doc.size_bytes == len(content.encode("utf-8"))
+
 
 # ---------------------------------------------------------------------------
 # File size limits

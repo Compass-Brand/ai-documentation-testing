@@ -250,7 +250,7 @@ def _create_docfile(
         return DocFile(
             rel_path=rel_path,
             content=content,
-            size_bytes=stat.st_size,
+            size_bytes=len(content.encode("utf-8")),
             tier="",  # Assigned later by tier system
             section="",  # Assigned later by tier system
             content_hash=content_hash,
