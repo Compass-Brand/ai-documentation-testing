@@ -17,6 +17,7 @@ Tests cover:
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import patch
 
 from agent_evals.tasks.base import TASK_TYPES, TaskDefinition
 from agent_evals.tasks.efficiency import EfficiencyTask
@@ -205,3 +206,39 @@ class TestEfficiencyTaskScoring:
         ]:
             score = task.score_response(resp)
             assert 0.0 <= score <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Token counting accuracy
+# ---------------------------------------------------------------------------
+
+
+class TestEfficiencyTokenCounting:
+    """Tests that efficiency scoring uses a real tokenizer, not word split."""
+
+    def test_score_uses_count_tokens_not_word_split(self) -> None:
+        """score_response calls count_tokens for accurate token counting."""
+        task = _efficiency_task(token_budget=10)
+        response = "The asyncio event loop handles it."
+        with patch(
+            "agent_evals.tasks.efficiency.count_tokens",
+            return_value=20,
+        ) as mock_ct:
+            score = task.score_response(response)
+        # count_tokens was called with the response text
+        mock_ct.assert_called_once_with(response)
+        # With budget=10, tokens=20: base_score * (10/20) = 0.5
+        assert score == 0.5
+
+    def test_hyphenated_words_counted_as_multiple_tokens(self) -> None:
+        """Hyphenated words get real token counts, not word-split counts."""
+        task = _efficiency_task(token_budget=5)
+        # "well-known event-driven asyncio event loop" is 5 words but ~8 tokens
+        response = "well-known event-driven asyncio event loop"
+        with patch(
+            "agent_evals.tasks.efficiency.count_tokens",
+            return_value=8,
+        ):
+            score = task.score_response(response)
+        # base=1.0 * (5/8) = 0.625
+        assert score == 0.625

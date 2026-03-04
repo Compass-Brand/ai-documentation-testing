@@ -2,11 +2,12 @@
 
 Scores responses on correctness (exact/alias/keyword match) and then
 applies a length penalty when the response exceeds the token budget.
-Token count is approximated by word count.
+Token count uses LiteLLM's tokenizer via count_tokens().
 """
 
 from __future__ import annotations
 
+from agent_evals.llm.token_counter import count_tokens
 from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
@@ -98,7 +99,7 @@ class EfficiencyTask(EvalTask):
 
         # Apply length penalty
         if self.token_budget > 0:
-            actual_tokens = len(response.split())
+            actual_tokens = count_tokens(response)
             if actual_tokens > self.token_budget:
                 base_score = base_score * (self.token_budget / actual_tokens)
 
