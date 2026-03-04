@@ -105,7 +105,7 @@ export function DataTable<T>({
           animate={{ opacity: 1, y: 0 }}
           className={cn(
             "border-t border-brand-mist transition-colors duration-micro",
-            rowIndex % 2 === 1 ? "bg-brand-cream/20" : "bg-white",
+            rowIndex % 2 === 1 ? "bg-brand-cream/50" : "bg-white",
             onRowClick &&
               "cursor-pointer focus-visible:ring-2 focus-visible:ring-brand-goldenrod",
             isSelected && "bg-brand-goldenrod/10",
