@@ -6,6 +6,7 @@ scores, plus reproducibility metadata (config, model versions).
 
 from __future__ import annotations
 
+import statistics
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,6 +22,10 @@ class VariantSummary:
     count: int
     mean_score: float
     total_cost: float
+    std_dev: float = 0.0
+    median: float = 0.0
+    ci_lower: float | None = None
+    ci_upper: float | None = None
 
 
 @dataclass
@@ -52,10 +57,27 @@ def _summarize(trials: list[TrialResult]) -> VariantSummary:
     count = len(trials)
     mean_score = sum(t.score for t in trials) / count if count else 0.0
     total_cost = sum(t.cost for t in trials if t.cost is not None)
+
+    scores = [t.score for t in trials]
+    std_dev = statistics.stdev(scores) if count >= 2 else 0.0
+    median = statistics.median(scores) if count >= 1 else 0.0
+
+    if count >= 2:
+        se = std_dev / (count ** 0.5)
+        ci_lower = mean_score - 1.96 * se
+        ci_upper = mean_score + 1.96 * se
+    else:
+        ci_lower = None
+        ci_upper = None
+
     return VariantSummary(
         count=count,
         mean_score=mean_score,
         total_cost=total_cost,
+        std_dev=std_dev,
+        median=median,
+        ci_lower=ci_lower,
+        ci_upper=ci_upper,
     )
 
 

@@ -258,3 +258,63 @@ class TestEmptyInput:
     def test_empty_trials_phase_results_none(self) -> None:
         report = aggregate([], config=_config())
         assert report.phase_results is None
+
+
+# ---------------------------------------------------------------------------
+# TestVariabilityEstimates
+# ---------------------------------------------------------------------------
+
+
+class TestVariabilityEstimates:
+    """VariantSummary includes SD, median, and CI."""
+
+    def test_should_compute_std_dev_when_multiple_trials(self) -> None:
+        trials = [
+            _trial(variant_name="flat", score=0.8),
+            _trial(variant_name="flat", score=0.9),
+            _trial(variant_name="flat", score=0.7),
+        ]
+        report = aggregate(trials, config=_config())
+        summary = report.by_variant["flat"]
+        assert summary.std_dev is not None
+        assert summary.std_dev == pytest.approx(0.1, abs=0.01)
+
+    def test_should_compute_median(self) -> None:
+        trials = [
+            _trial(variant_name="flat", score=0.7),
+            _trial(variant_name="flat", score=0.9),
+            _trial(variant_name="flat", score=0.8),
+        ]
+        report = aggregate(trials, config=_config())
+        assert report.by_variant["flat"].median == pytest.approx(0.8)
+
+    def test_should_compute_ci_bounds(self) -> None:
+        trials = [
+            _trial(variant_name="flat", score=s)
+            for s in [0.7, 0.8, 0.9, 0.75, 0.85]
+        ]
+        report = aggregate(trials, config=_config())
+        summary = report.by_variant["flat"]
+        assert summary.ci_lower is not None
+        assert summary.ci_upper is not None
+        assert summary.ci_lower <= summary.mean_score <= summary.ci_upper
+
+    def test_should_return_none_ci_when_single_trial(self) -> None:
+        trials = [_trial(variant_name="flat", score=0.8)]
+        report = aggregate(trials, config=_config())
+        summary = report.by_variant["flat"]
+        assert summary.ci_lower is None
+        assert summary.ci_upper is None
+
+    def test_should_return_zero_std_dev_when_single_trial(self) -> None:
+        trials = [_trial(variant_name="flat", score=0.8)]
+        report = aggregate(trials, config=_config())
+        assert report.by_variant["flat"].std_dev == 0.0
+
+    def test_should_compute_median_when_even_count(self) -> None:
+        trials = [
+            _trial(variant_name="flat", score=0.7),
+            _trial(variant_name="flat", score=0.9),
+        ]
+        report = aggregate(trials, config=_config())
+        assert report.by_variant["flat"].median == pytest.approx(0.8)
