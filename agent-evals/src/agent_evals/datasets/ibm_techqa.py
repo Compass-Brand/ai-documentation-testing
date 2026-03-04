@@ -55,10 +55,11 @@ class IBMTechQAAdapter(DatasetAdapter):
         try:
             ds = load_hf_dataset(self.hf_dataset_id(), split="train")
             return list(ds)
-        except Exception:
+        except Exception as exc:
             logger.warning(
                 "Could not load TechQA from HuggingFace; "
-                "dataset may require manual download."
+                "dataset may require manual download: %s",
+                exc,
             )
             return []
 
@@ -77,7 +78,11 @@ class IBMTechQAAdapter(DatasetAdapter):
                         "text": record["text"],
                     }
             return technotes
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Could not load TechQA technotes from HuggingFace: %s",
+                exc,
+            )
             return {}
 
     def convert_tasks(self, output_dir: Path, limit: int | None = None) -> int:
