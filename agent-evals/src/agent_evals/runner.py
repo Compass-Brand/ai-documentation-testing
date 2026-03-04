@@ -208,9 +208,6 @@ class EvalRunner:
     ) -> None:
         self._client = client
         self._config = config or EvalRunConfig()
-        # Per-variant lock for thread-safe setup+render of stateful baselines
-        # (OracleBaseline, LengthMatchedRandomBaseline).
-        self._variant_locks: dict[int, threading.Lock] = {}
 
         if cache is not None:
             self._cache = cache
@@ -624,17 +621,24 @@ class EvalRunner:
         variant: IndexVariant,
         task: EvalTask,
         doc_tree: DocTree,
-    ) -> None:
+    ) -> IndexVariant:
         """Configure task-specific variant parameters before rendering.
 
         For baseline variants that require per-task setup (oracle and
-        length-matched-random), this method extracts the relevant
-        information from task metadata and calls the appropriate setter.
+        length-matched-random), this method creates a shallow copy to
+        avoid mutating the shared instance from concurrent threads,
+        then sets the task-specific state on the copy.
+
+        Returns the (possibly copied) variant to use for rendering.
         """
+        import copy
+
         if isinstance(variant, OracleBaseline):
+            variant = copy.copy(variant)
             relevant = self._extract_relevant_docs(task, doc_tree)
             variant.set_relevant_docs(relevant)
         elif isinstance(variant, LengthMatchedRandomBaseline):
+            variant = copy.copy(variant)
             relevant = self._extract_relevant_docs(task, doc_tree)
             oracle_tokens = sum(
                 (doc_tree.files[p].token_count or 0)
@@ -643,6 +647,7 @@ class EvalRunner:
                 and doc_tree.files[p].token_count is not None
             )
             variant.set_target_tokens(oracle_tokens)
+        return variant
 
     def _call_judge(self, task_type: str, question: str, response: str) -> "JudgeScore":
         """Call LLM judge to score one trial response."""
@@ -702,17 +707,11 @@ class EvalRunner:
         """
         trial_start = time.monotonic()
 
-        # Serialize setup+render for stateful baseline variants (oracle, LMR)
-        # to prevent concurrent threads from overwriting each other's state.
-        variant_id = id(variant)
-        if variant_id not in self._variant_locks:
-            self._variant_locks[variant_id] = threading.Lock()
-        lock = self._variant_locks[variant_id]
+        # Get a thread-safe variant (copied for stateful baselines).
+        variant = self._setup_variant_for_task(variant, task, doc_tree)
 
-        with lock:
-            self._setup_variant_for_task(variant, task, doc_tree)
-            prompt_build_start = time.monotonic()
-            index_content = variant.render(doc_tree)
+        prompt_build_start = time.monotonic()
+        index_content = variant.render(doc_tree)
 
         messages = task.build_prompt(index_content)
         prompt_build_ms = (time.monotonic() - prompt_build_start) * 1000
