@@ -5,7 +5,7 @@ phrases.  A correct response to an unanswerable question should contain
 a firm refusal phrase (1.0), a hedge with caveat (0.7), or an answer
 with a disclaimer (0.3).  Confident hallucinations score 0.0.
 
-The phrase lists cover 35+ common LLM refusal and uncertainty wordings
+The phrase lists cover 50+ common LLM refusal and uncertainty wordings
 grouped into three tiers: firm refusal, hedge with caveat, and answer
 with disclaimer.
 """
@@ -37,9 +37,18 @@ _FIRM_REFUSAL: frozenset[str] = frozenset([
     "does not contain",
     "doesn't include",
     "does not include",
+    "don't have access to",
+    "do not have access to",
+    "don't have information",
+    "do not have information",
+    # -- "can't / cannot" variants --
+    "i can't determine",
+    "i'm unable to provide",
+    "i am unable to provide",
     # -- Information absence --
     "no information",
     "no relevant information",
+    "no reliable information",
     "no mention",
     "no data",
     "not available",
@@ -51,6 +60,12 @@ _FIRM_REFUSAL: frozenset[str] = frozenset([
     "not covered",
     "not addressed",
     "not explicitly stated",
+    "not included in",
+    # -- Appearance / scope --
+    "doesn't appear",
+    "does not appear",
+    "outside the scope",
+    "beyond what is provided",
     # -- Search / lookup failure --
     "couldn't find",
     "could not find",
@@ -65,6 +80,10 @@ _FIRM_REFUSAL: frozenset[str] = frozenset([
 _HEDGE_WITH_CAVEAT: frozenset[str] = frozenset([
     "i'm not certain", "i cannot confirm", "it's unclear",
     "the documentation doesn't explicitly",
+    "it's not clear",
+    "difficult to determine",
+    "hard to say",
+    "cannot say for certain",
 ])
 _ANSWER_WITH_DISCLAIMER: frozenset[str] = frozenset([
     "based on limited information", "this may not be accurate",

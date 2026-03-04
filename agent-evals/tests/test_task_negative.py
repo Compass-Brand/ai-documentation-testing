@@ -270,6 +270,91 @@ class TestNegativeTaskMetadataFields:
         assert task.nearest_doc == ""
         assert task.nearest_content == ""
 
+    def test_firm_refusal_i_dont_have_access_to(self) -> None:
+        """Modern refusal 'I don't have access to' scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("I don't have access to that information.") == 1.0
+
+    def test_firm_refusal_i_do_not_have_access_to(self) -> None:
+        """Modern refusal 'I do not have access to' scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("I do not have access to those details.") == 1.0
+
+    def test_firm_refusal_im_unable_to_provide(self) -> None:
+        """Modern refusal \"I'm unable to provide\" scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("I'm unable to provide that answer.") == 1.0
+
+    def test_firm_refusal_i_am_unable_to_provide(self) -> None:
+        """Modern refusal 'I am unable to provide' scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("I am unable to provide a definitive answer.") == 1.0
+
+    def test_firm_refusal_i_cant_determine(self) -> None:
+        """Modern refusal \"I can't determine\" scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("I can't determine the answer from the docs.") == 1.0
+
+    def test_firm_refusal_no_reliable_information(self) -> None:
+        """Modern refusal 'no reliable information' scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("There is no reliable information on this.") == 1.0
+
+    def test_firm_refusal_doesnt_appear(self) -> None:
+        """Modern refusal \"doesn't appear\" scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("This doesn't appear in the documentation.") == 1.0
+
+    def test_firm_refusal_does_not_appear(self) -> None:
+        """Modern refusal 'does not appear' scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("This information does not appear in the docs.") == 1.0
+
+    def test_firm_refusal_not_included_in(self) -> None:
+        """Modern refusal 'not included in' scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("That detail is not included in the docs.") == 1.0
+
+    def test_firm_refusal_outside_the_scope(self) -> None:
+        """Modern refusal 'outside the scope' scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("This is outside the scope of the provided docs.") == 1.0
+
+    def test_firm_refusal_beyond_what_is_provided(self) -> None:
+        """Modern refusal 'beyond what is provided' scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("That's beyond what is provided in the docs.") == 1.0
+
+    def test_firm_refusal_i_dont_have_information(self) -> None:
+        """Modern refusal \"I don't have information\" scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("I don't have information about that topic.") == 1.0
+
+    def test_firm_refusal_i_do_not_have_information(self) -> None:
+        """Modern refusal 'I do not have information' scores 1.0."""
+        task = _negative_task()
+        assert task.score_response("I do not have information on that.") == 1.0
+
+    def test_hedge_its_not_clear(self) -> None:
+        """Modern hedge \"it's not clear\" scores 0.7."""
+        task = _negative_task()
+        assert task.score_response("It's not clear whether this is supported.") == 0.7
+
+    def test_hedge_difficult_to_determine(self) -> None:
+        """Modern hedge 'difficult to determine' scores 0.7."""
+        task = _negative_task()
+        assert task.score_response("It is difficult to determine from the docs.") == 0.7
+
+    def test_hedge_hard_to_say(self) -> None:
+        """Modern hedge 'hard to say' scores 0.7."""
+        task = _negative_task()
+        assert task.score_response("It's hard to say based on the available docs.") == 0.7
+
+    def test_hedge_cannot_say_for_certain(self) -> None:
+        """Modern hedge 'cannot say for certain' scores 0.7."""
+        task = _negative_task()
+        assert task.score_response("I cannot say for certain from these docs.") == 0.7
+
     def test_backward_compat_answerable_still_works(self) -> None:
         """NegativeTask still supports legacy answerable/distractor_files fields."""
         meta = {
