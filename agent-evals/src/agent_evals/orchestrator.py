@@ -314,15 +314,24 @@ class EvalOrchestrator:
             prior_records = self.store.get_trials(run_id)
             # Convert TrialRecords from prior sessions to TrialResults.
             # Only include trials NOT in the current batch (avoid dupes).
-            current_keys = {
-                (
-                    t.metrics.get("oa_row_id") if t.metrics else None,
-                    t.task_id,
-                    t.variant_name,
-                    t.repetition,
-                )
-                for t in raw_result.trials
-            }
+            # Build dedup keys from current batch.  For Taguchi runs
+            # (oa_row_id present) use (oa_row_id, task_id, rep) to avoid
+            # variant-name mismatches between sessions.  For full-sweep
+            # runs use (None, task_id, variant_name, rep).
+            current_oa_keys: set[tuple[float | None, str, int]] = set()
+            current_full_keys: set[tuple[None, str, str, int]] = set()
+            for t in raw_result.trials:
+                oa = t.metrics.get("oa_row_id") if t.metrics else None
+                if oa is not None:
+                    current_oa_keys.add((oa, t.task_id, t.repetition))
+                else:
+                    current_full_keys.add((None, t.task_id, t.variant_name, t.repetition))
+
+            def _is_duplicate(r: Any) -> bool:
+                if r.oa_row_id is not None:
+                    return (float(r.oa_row_id), r.task_id, r.repetition) in current_oa_keys
+                return (None, r.task_id, r.variant_name, r.repetition) in current_full_keys
+
             prior_trials = [
                 TrialResult(
                     task_id=r.task_id,
@@ -345,13 +354,7 @@ class EvalOrchestrator:
                     model=r.model,
                 )
                 for r in prior_records
-                if (
-                    float(r.oa_row_id) if r.oa_row_id is not None else None,
-                    r.task_id,
-                    r.variant_name,
-                    r.repetition,
-                )
-                not in current_keys
+                if not _is_duplicate(r)
             ]
             all_trials = prior_trials + raw_result.trials
             total_cost = sum(

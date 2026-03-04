@@ -277,6 +277,29 @@ class TestTaguchiRunnerCompletedKeys:
         result = runner.run(tasks, _mock_doc_tree(), completed_keys=completed)
         assert len(result.trials) == 0
 
+    def test_completed_keys_matches_despite_variant_name_mismatch(self) -> None:
+        """Taguchi resume should match on (oa_row_id, task_id, rep) ignoring variant_name.
+
+        This handles the case where the DB stores a variant name that includes
+        axis 0 (e.g. 'no-index+A') but the runner's _build_composite produces
+        a name without axis 0 (e.g. 'A').
+        """
+        design, lookup = self._make_design()
+        tasks = [_mock_task("t1")]
+        runner = TaguchiRunner(
+            clients={"m": _mock_client()},
+            config=EvalRunConfig(repetitions=1),
+            design=design,
+            variant_lookup=lookup,
+        )
+
+        # DB has variant name with axis 0 prefix that differs from runner's composite
+        completed = {(1, "t1", "no-index+A", 1)}
+        result = runner.run(tasks, _mock_doc_tree(), completed_keys=completed)
+        # Should still skip row 1 + t1 despite variant name mismatch
+        # 2 rows x 1 task x 1 rep = 2, minus 1 skipped = 1
+        assert len(result.trials) == 1
+
 
 # ---------------------------------------------------------------------------
 # Step 10: EvalRunner completed_keys filtering

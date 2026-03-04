@@ -121,20 +121,18 @@ class TaguchiRunner:
 
         # Filter out already-completed trials for resume.
         if completed_keys:
-            # Pre-compute variant name per row to avoid rebuilding composites.
-            row_variant_names: dict[int, str] = {}
-            for row in self._design.rows:
-                composite = self._build_composite(row)
-                row_variant_names[row.run_id] = composite.metadata().name
+            # Match on (oa_row_id, task_id, repetition) only -- variant_name
+            # is ignored because it may differ between runs (e.g. axis 0
+            # included in the original run but excluded on resume).
+            completed_oa_keys: set[tuple[int | None, str, int]] = {
+                (oa_row_id, task_id, rep)
+                for oa_row_id, task_id, _variant, rep in completed_keys
+            }
             work_items = [
                 (row, task, rep)
                 for row, task, rep in work_items
-                if (
-                    row.run_id,
-                    task.definition.task_id,
-                    row_variant_names[row.run_id],
-                    rep,
-                ) not in completed_keys
+                if (row.run_id, task.definition.task_id, rep)
+                not in completed_oa_keys
             ]
 
         remaining = len(work_items)
