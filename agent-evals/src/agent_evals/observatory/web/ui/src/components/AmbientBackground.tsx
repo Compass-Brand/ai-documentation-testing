@@ -15,7 +15,7 @@ function generateParticles(count: number): Particle[] {
     const seed = (i + 1) * 7919;
     const x = ((seed * 13) % 100);
     const y = ((seed * 17) % 100);
-    const size = 2 + ((seed * 23) % 4);
+    const size = 3 + ((seed * 23) % 5);
     const duration = 15 + ((seed * 29) % 25);
     const delay = ((seed * 31) % 10);
     particles.push({ x, y, size, duration, delay });
@@ -37,14 +37,14 @@ export function AmbientBackground() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse at 30% 20%, rgba(194, 166, 118, 0.12) 0%, transparent 70%)",
+            "radial-gradient(ellipse at 30% 20%, rgba(163, 133, 82, 0.35) 0%, transparent 70%)",
         }}
       />
 
       {/* Topographic contour lines */}
       <svg
         className="absolute inset-0 w-full h-full"
-        style={{ opacity: 0.08 }}
+        style={{ opacity: 0.3 }}
       >
         <g className="animate-[drift_60s_linear_infinite]">
           <path
@@ -56,13 +56,13 @@ export function AmbientBackground() {
           <path
             d="M-100,300 Q200,200 400,300 T800,300 T1200,300 T1600,300"
             stroke="#C2A676"
-            strokeWidth="0.5"
+            strokeWidth="1"
             fill="none"
           />
           <path
             d="M-100,400 Q150,300 350,400 T750,400 T1150,400 T1550,400"
             stroke="#C2A676"
-            strokeWidth="0.5"
+            strokeWidth="1"
             fill="none"
           />
           <path
@@ -84,8 +84,8 @@ export function AmbientBackground() {
             height: p.size,
             left: `${p.x}%`,
             top: `${p.y}%`,
-            backgroundColor: "#C2A676",
-            opacity: 0.12,
+            backgroundColor: "#A38552",
+            opacity: 0.45,
             animation: `float-${i % 3} ${p.duration}s ease-in-out infinite`,
             animationDelay: `${p.delay}s`,
           }}

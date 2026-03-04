@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 import { motion, useMotionValue, useSpring } from "framer-motion";
 
-const SPRING_CONFIG = { stiffness: 150, damping: 25 };
-const GLOW_SIZE = 200;
+const SPRING_CONFIG = { stiffness: 300, damping: 30 };
+const GLOW_SIZE = 250;
 
 export function CursorGlow() {
   const mouseX = useMotionValue(-GLOW_SIZE);
@@ -29,8 +29,7 @@ export function CursorGlow() {
         width: GLOW_SIZE,
         height: GLOW_SIZE,
         background:
-          "radial-gradient(circle, rgba(194, 166, 118, 0.15) 0%, transparent 70%)",
-        mixBlendMode: "soft-light",
+          "radial-gradient(circle, rgba(194, 166, 118, 0.2) 0%, transparent 70%)",
         zIndex: 9999,
       }}
       aria-hidden="true"

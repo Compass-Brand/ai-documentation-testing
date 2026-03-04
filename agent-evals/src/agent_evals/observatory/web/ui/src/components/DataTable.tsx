@@ -26,6 +26,7 @@ interface DataTableProps<T> {
   selectedRowIds?: Set<string>;
   getRowId?: (row: T) => string;
   onSelectAll?: (allIds: string[]) => void;
+  renderExpandedRow?: (row: T) => React.ReactNode;
 }
 
 export function DataTable<T>({
@@ -35,6 +36,7 @@ export function DataTable<T>({
   selectedRowIds,
   getRowId,
   onSelectAll,
+  renderExpandedRow,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [scrolled, setScrolled] = useState(false);
@@ -173,9 +175,13 @@ export function DataTable<T>({
               className="bg-brand-cream/30 overflow-hidden"
             >
               <td colSpan={colSpan} className="px-sp-4 py-sp-3">
-                <div className="flex items-center gap-sp-6 text-caption text-brand-slate">
-                  <span>Quick preview — click row name for full details</span>
-                </div>
+                {renderExpandedRow ? (
+                  renderExpandedRow(row.original)
+                ) : (
+                  <div className="text-caption text-brand-slate">
+                    Click row name for full details
+                  </div>
+                )}
               </td>
             </motion.tr>
           )}
