@@ -1616,3 +1616,92 @@ class TestJudgeSampling:
             if r.levelno == logging.WARNING and "judge" in r.message.lower()
         ]
         assert len(warning_records) >= 1, "Judge failure should log at WARNING, not DEBUG"
+
+
+# ---------------------------------------------------------------------------
+# Thread safety tests for baseline variant setup
+# ---------------------------------------------------------------------------
+
+
+class TestBaselineVariantThreadSafety:
+    """Tests that OracleBaseline and LMR setup+render are thread-safe.
+
+    Uses concurrent _run_trial calls through the runner to verify that
+    the lock serializes setup+render for stateful baseline variants.
+    """
+
+    def test_oracle_concurrent_run_trial_renders_correct_docs(self) -> None:
+        """Concurrent _run_trial calls each render their own task's docs."""
+        import threading
+
+        doc_tree = DocTree(
+            files={
+                "guides/auth.md": DocFile(
+                    rel_path="guides/auth.md",
+                    content="# Authentication\nAuth content.",
+                    size_bytes=35,
+                    token_count=8,
+                    tier="required",
+                    section="Guides",
+                ),
+                "api/caching.md": DocFile(
+                    rel_path="api/caching.md",
+                    content="# Caching\nCache content.",
+                    size_bytes=30,
+                    token_count=7,
+                    tier="recommended",
+                    section="API",
+                ),
+            },
+            scanned_at=datetime(2024, 1, 1, tzinfo=UTC),
+            source="/tmp/docs",
+            total_tokens=15,
+        )
+
+        task_auth = _make_mock_task_with_metadata(
+            task_id="retrieval_001",
+            metadata={"expected_files": ["guides/auth.md"]},
+        )
+        task_cache = _make_mock_task_with_metadata(
+            task_id="retrieval_002",
+            metadata={"expected_files": ["api/caching.md"]},
+        )
+
+        variant = OracleBaseline()
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False, max_connections=4)
+        runner = EvalRunner(client, config=config)
+
+        # Run many concurrent trials to stress-test the locking
+        results: dict[str, list[str]] = {"auth": [], "cache": []}
+        barrier = threading.Barrier(10)
+
+        def run_auth() -> None:
+            barrier.wait()
+            runner._run_trial(task_auth, variant, doc_tree, 1)
+            results["auth"].append(task_auth.build_prompt.call_args[0][0])
+
+        def run_cache() -> None:
+            barrier.wait()
+            runner._run_trial(task_cache, variant, doc_tree, 1)
+            results["cache"].append(task_cache.build_prompt.call_args[0][0])
+
+        threads = []
+        for _ in range(5):
+            threads.append(threading.Thread(target=run_auth))
+            threads.append(threading.Thread(target=run_cache))
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=15)
+
+        # Every auth trial must contain auth content, never cache content
+        for content in results["auth"]:
+            assert "Authentication" in content, (
+                f"Auth trial rendered wrong content: {content[:80]}"
+            )
+        # Every cache trial must contain cache content
+        for content in results["cache"]:
+            assert "Caching" in content, (
+                f"Cache trial rendered wrong content: {content[:80]}"
+            )

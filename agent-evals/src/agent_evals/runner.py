@@ -208,6 +208,9 @@ class EvalRunner:
     ) -> None:
         self._client = client
         self._config = config or EvalRunConfig()
+        # Per-variant lock for thread-safe setup+render of stateful baselines
+        # (OracleBaseline, LengthMatchedRandomBaseline).
+        self._variant_locks: dict[int, threading.Lock] = {}
 
         if cache is not None:
             self._cache = cache
@@ -699,12 +702,18 @@ class EvalRunner:
         """
         trial_start = time.monotonic()
 
-        # Configure task-specific variant parameters (oracle, LMR)
-        self._setup_variant_for_task(variant, task, doc_tree)
+        # Serialize setup+render for stateful baseline variants (oracle, LMR)
+        # to prevent concurrent threads from overwriting each other's state.
+        variant_id = id(variant)
+        if variant_id not in self._variant_locks:
+            self._variant_locks[variant_id] = threading.Lock()
+        lock = self._variant_locks[variant_id]
 
-        # Render and build prompt
-        prompt_build_start = time.monotonic()
-        index_content = variant.render(doc_tree)
+        with lock:
+            self._setup_variant_for_task(variant, task, doc_tree)
+            prompt_build_start = time.monotonic()
+            index_content = variant.render(doc_tree)
+
         messages = task.build_prompt(index_content)
         prompt_build_ms = (time.monotonic() - prompt_build_start) * 1000
 
