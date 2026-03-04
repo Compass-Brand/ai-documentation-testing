@@ -41,8 +41,11 @@ def algorithmic_compress(content: str) -> str:
     - Normalize markdown headings (ensure space after #)
     - Strip leading/trailing whitespace from the entire file
     """
-    # Remove HTML comments (including multiline)
-    content = re.sub(r"<!--.*?-->", "", content, flags=re.DOTALL)
+    # Remove HTML comments (including multiline), but preserve injection
+    # markers like <!-- DOCS:START --> and <!-- INDEX:END -->
+    content = re.sub(
+        r"<!--(?!\s*\w+:(?:START|END)\s*-->).*?-->", "", content, flags=re.DOTALL
+    )
 
     # Collapse consecutive blank lines to a single blank line
     content = re.sub(r"\n{3,}", "\n\n", content)

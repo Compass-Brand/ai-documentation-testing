@@ -129,6 +129,36 @@ class TestAlgorithmicCompress:
         assert not result.endswith("\n")
         assert not result.endswith(" ")
 
+    def test_preserves_injection_markers(self) -> None:
+        """Injection markers (<!-- ID:START/END -->) are preserved."""
+        content = "<!-- DOCS:START -->\nGenerated\n<!-- DOCS:END -->"
+        result = algorithmic_compress(content)
+        assert "<!-- DOCS:START -->" in result
+        assert "<!-- DOCS:END -->" in result
+        assert "Generated" in result
+
+    def test_preserves_custom_injection_markers(self) -> None:
+        """Custom marker IDs like INDEX:START are also preserved."""
+        content = "Before\n<!-- INDEX:START -->\ncontent\n<!-- INDEX:END -->\nAfter"
+        result = algorithmic_compress(content)
+        assert "<!-- INDEX:START -->" in result
+        assert "<!-- INDEX:END -->" in result
+
+    def test_removes_regular_comments_but_keeps_markers(self) -> None:
+        """Regular HTML comments are removed while injection markers survive."""
+        content = (
+            "<!-- regular comment -->\n"
+            "<!-- DOCS:START -->\n"
+            "content\n"
+            "<!-- DOCS:END -->\n"
+            "<!-- another comment -->"
+        )
+        result = algorithmic_compress(content)
+        assert "regular comment" not in result
+        assert "another comment" not in result
+        assert "<!-- DOCS:START -->" in result
+        assert "<!-- DOCS:END -->" in result
+
 
 class TestLlmPlaceholders:
     """Tests for LLM placeholder strategies."""
