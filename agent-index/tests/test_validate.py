@@ -135,6 +135,48 @@ class TestValidateIndex:
         assert result.stale_entries == []
 
 
+class TestCustomExtensionsAndIgnores:
+    """Tests for configurable file_extensions and ignore_patterns."""
+
+    def test_custom_extension_detected_as_extra(self, tmp_path: Path) -> None:
+        """An .adoc file on disk should be detected when file_extensions includes .adoc."""
+        (tmp_path / "guide.adoc").write_text("= AsciiDoc Guide")
+
+        doc_tree = DocTree(
+            files={},
+            scanned_at=datetime.now(UTC),
+            source=str(tmp_path),
+        )
+
+        result = validate_index(
+            doc_tree, "", tmp_path,
+            file_extensions={".adoc"},
+        )
+
+        assert result.valid is False
+        assert "guide.adoc" in result.extra_files
+
+    def test_custom_ignore_pattern_excludes_directory(self, tmp_path: Path) -> None:
+        """Files in a custom ignore dir should not appear as extra."""
+        vendor = tmp_path / "vendor"
+        vendor.mkdir()
+        (vendor / "lib.md").write_text("# Vendored")
+
+        doc_tree = DocTree(
+            files={},
+            scanned_at=datetime.now(UTC),
+            source=str(tmp_path),
+        )
+
+        result = validate_index(
+            doc_tree, "", tmp_path,
+            ignore_patterns=["vendor"],
+        )
+
+        assert result.valid is True
+        assert result.extra_files == []
+
+
 class TestValidationResult:
     """Tests for the ValidationResult dataclass."""
 

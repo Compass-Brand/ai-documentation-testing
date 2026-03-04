@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from agent_index.models import DocTree
+from agent_index.scanner import DEFAULT_FILE_EXTENSIONS, DEFAULT_IGNORE_PATTERNS
 
 
 @dataclass
@@ -34,6 +35,9 @@ def validate_index(
     doc_tree: DocTree,
     index_content: str,
     root_path: Path,
+    *,
+    file_extensions: set[str] | None = None,
+    ignore_patterns: list[str] | None = None,
 ) -> ValidationResult:
     """Compare generated index against actual docs on disk.
 
@@ -57,7 +61,11 @@ def validate_index(
     indexed_paths = set(doc_tree.files.keys())
 
     # Get the set of actual doc files on disk
-    disk_paths = _collect_disk_files(root)
+    disk_paths = _collect_disk_files(
+        root,
+        file_extensions=file_extensions,
+        ignore_patterns=ignore_patterns,
+    )
 
     # Check for missing files (in index but not on disk)
     for rel_path in sorted(indexed_paths):
@@ -88,17 +96,24 @@ def validate_index(
     return result
 
 
-def _collect_disk_files(root: Path) -> set[str]:
+def _collect_disk_files(
+    root: Path,
+    *,
+    file_extensions: set[str] | None = None,
+    ignore_patterns: list[str] | None = None,
+) -> set[str]:
     """Collect relative paths of doc files currently on disk.
 
     Args:
         root: Root directory to scan.
+        file_extensions: File extensions to include. Defaults to DEFAULT_FILE_EXTENSIONS.
+        ignore_patterns: Directory names to skip. Defaults to DEFAULT_IGNORE_PATTERNS.
 
     Returns:
         Set of relative paths (forward slashes).
     """
-    extensions = {".md", ".mdx", ".rst", ".txt"}
-    ignore_dirs = {"node_modules", "__pycache__", ".git", ".venv"}
+    extensions = file_extensions if file_extensions is not None else DEFAULT_FILE_EXTENSIONS
+    ignore_dirs = set(ignore_patterns) if ignore_patterns is not None else set(DEFAULT_IGNORE_PATTERNS)
     results: set[str] = set()
 
     if not root.exists() or not root.is_dir():
