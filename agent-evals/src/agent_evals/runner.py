@@ -382,7 +382,7 @@ class EvalRunner:
             tracker.stop()
             # Teardown all variants even if an exception occurred.
             # Protect individual teardowns so one failure doesn't skip the rest.
-            for variant in variants:
+            for variant in setup_variants:
                 try:
                     variant.teardown()
                 except Exception:
