@@ -238,7 +238,13 @@ class TaguchiRunner:
             tracker.stop()
             # Teardown all pre-built composites once per row.
             for composite in row_composites.values():
-                composite.teardown()
+                try:
+                    composite.teardown()
+                except Exception:
+                    logger.warning(
+                        "Teardown failed for composite row",
+                        exc_info=True,
+                    )
             # Restore original signal handlers.
             try:
                 if old_sigint is not None:
