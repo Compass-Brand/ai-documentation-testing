@@ -7,11 +7,14 @@ results, with support for filtering, aggregation, and concurrent writes.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -524,11 +527,23 @@ class ObservatoryStore:
             ).fetchone()
         if row is None:
             return None
+
+        def _safe_json(column: str) -> object:
+            try:
+                return json.loads(row[column])
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "Corrupted JSON in phase_results.%s for run %s",
+                    column,
+                    run_id,
+                )
+                return None
+
         return {
-            "main_effects": json.loads(row["main_effects"]),
-            "anova": json.loads(row["anova"]),
-            "optimal": json.loads(row["optimal"]),
-            "significant_factors": json.loads(row["significant_factors"]),
+            "main_effects": _safe_json("main_effects"),
+            "anova": _safe_json("anova"),
+            "optimal": _safe_json("optimal"),
+            "significant_factors": _safe_json("significant_factors"),
             "quality_type": row["quality_type"],
         }
 

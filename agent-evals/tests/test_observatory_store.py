@@ -459,6 +459,40 @@ class TestPhaseAndPipeline:
         result = store.get_phase_results("nonexistent")
         assert result is None
 
+    def test_get_phase_results_corrupted_json(self, tmp_path: Path) -> None:
+        """Corrupted JSON columns return None with a warning instead of crashing."""
+        db_path = tmp_path / "test.db"
+        store = ObservatoryStore(db_path)
+        store.create_run("run-1", "taguchi", {})
+        # Save valid data first
+        store.save_phase_results(
+            run_id="run-1",
+            main_effects={"a": 1},
+            anova={"a": {"p": 0.05}},
+            optimal={"a": "b"},
+            significant_factors=["a"],
+            quality_type="larger_is_better",
+        )
+        # Corrupt the main_effects column directly
+        import sqlite3
+
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE phase_results SET main_effects = '{invalid json' "
+            "WHERE run_id = 'run-1'"
+        )
+        conn.commit()
+        conn.close()
+
+        result = store.get_phase_results("run-1")
+        assert result is not None
+        # Corrupted field should be None, valid fields should still parse
+        assert result["main_effects"] is None
+        assert result["anova"] == {"a": {"p": 0.05}}
+        assert result["optimal"] == {"a": "b"}
+        assert result["significant_factors"] == ["a"]
+        assert result["quality_type"] == "larger_is_better"
+
     def test_get_pipeline_runs(self, tmp_path: Path) -> None:
         """Lists all runs in a pipeline ordered by creation."""
         store = ObservatoryStore(tmp_path / "test.db")
