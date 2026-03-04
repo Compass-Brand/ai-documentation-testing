@@ -118,6 +118,27 @@ class EvalRunConfig:
     continue_on_error: bool = False
     store_traces: bool = False
 
+    _VALID_OUTPUT_FORMATS = frozenset({"json", "csv", "both"})
+
+    def __post_init__(self) -> None:
+        if self.repetitions < 1:
+            raise ValueError(f"repetitions must be >= 1, got {self.repetitions}")
+        if self.max_connections < 1:
+            raise ValueError(
+                f"max_connections must be >= 1, got {self.max_connections}"
+            )
+        if self.max_tokens < 1:
+            raise ValueError(f"max_tokens must be >= 1, got {self.max_tokens}")
+        if not 0.0 <= self.temperature <= 2.0:
+            raise ValueError(
+                f"temperature must be between 0.0 and 2.0, got {self.temperature}"
+            )
+        if self.output_format not in self._VALID_OUTPUT_FORMATS:
+            raise ValueError(
+                f"output_format must be one of {sorted(self._VALID_OUTPUT_FORMATS)}, "
+                f"got {self.output_format!r}"
+            )
+
 
 @dataclass
 class EvalRunResult:
