@@ -438,7 +438,7 @@ export function Models() {
             key="skeleton"
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="px-sp-6 py-sp-8 max-w-[1800px] mx-auto"
+            className="px-sp-6 py-sp-8 max-w-[1800px] mx-auto relative z-[1]"
           >
             {/* Page title skeleton */}
             <div className="flex items-center gap-sp-3 mb-sp-8">
@@ -531,7 +531,7 @@ export function Models() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
-            className="px-sp-6 py-sp-8 max-w-[1800px] mx-auto"
+            className="px-sp-6 py-sp-8 max-w-[1800px] mx-auto relative z-[1]"
           >
             <FadeIn>
               <h1 className="text-h2 text-brand-charcoal inline-flex items-center gap-sp-3 mb-sp-8">
@@ -699,46 +699,6 @@ export function Models() {
                           getRowId={(model) => model.id}
                           onRowClick={handleRowClick}
                           onSelectAll={handleSelectAll}
-                          renderExpandedRow={(model) => {
-                            const maxCtx = Math.max(...filteredModels.map((m) => m.context_length), 1);
-                            const ctxPct = Math.round((model.context_length / maxCtx) * 100);
-                            return (
-                              <div className="flex items-center gap-sp-8 text-caption">
-                                <div className="flex items-center gap-sp-4">
-                                  <span className="text-brand-slate">Prompt</span>
-                                  <span className="font-medium text-brand-charcoal">{formatPrice(model.prompt_price)}</span>
-                                  <span className="text-brand-mist">|</span>
-                                  <span className="text-brand-slate">Completion</span>
-                                  <span className="font-medium text-brand-charcoal">{formatPrice(model.completion_price)}</span>
-                                </div>
-                                <div className="flex items-center gap-sp-2 min-w-[200px]">
-                                  <span className="text-brand-slate">Context</span>
-                                  <div className="flex-1 h-2 rounded-full bg-brand-mist/30 overflow-hidden">
-                                    <div
-                                      className="h-full rounded-full bg-brand-goldenrod/60"
-                                      style={{ width: `${ctxPct}%` }}
-                                    />
-                                  </div>
-                                  <span className="font-medium text-brand-charcoal tabular-nums">
-                                    {(model.context_length / 1000).toFixed(0)}k
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-sp-2">
-                                  <span className="inline-flex items-center px-sp-2 py-0.5 rounded-full text-[11px] bg-brand-goldenrod/10 text-brand-goldenrod">
-                                    {model.modality}
-                                  </span>
-                                  {model.tokenizer && (
-                                    <span className="inline-flex items-center px-sp-2 py-0.5 rounded-full text-[11px] bg-brand-mist/40 text-brand-slate">
-                                      {model.tokenizer}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-brand-slate ml-auto">
-                                  Click name for full details
-                                </span>
-                              </div>
-                            );
-                          }}
                         />
                       </motion.div>
                     ) : (

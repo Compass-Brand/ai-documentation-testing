@@ -8,7 +8,7 @@ import {
   type Row,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { ArrowUpDown, ChevronUp } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
@@ -26,7 +26,6 @@ interface DataTableProps<T> {
   selectedRowIds?: Set<string>;
   getRowId?: (row: T) => string;
   onSelectAll?: (allIds: string[]) => void;
-  renderExpandedRow?: (row: T) => React.ReactNode;
 }
 
 export function DataTable<T>({
@@ -36,12 +35,9 @@ export function DataTable<T>({
   selectedRowIds,
   getRowId,
   onSelectAll,
-  renderExpandedRow,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [scrolled, setScrolled] = useState(false);
-  const [hoveredRowId, setHoveredRowId] = useState<string | null>(null);
-  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasEntered = useRef(new Set<string>());
 
@@ -123,15 +119,6 @@ export function DataTable<T>({
             ...(shouldAnimate ? { delay: Math.min(rowIndex, 20) * 0.02 } : {}),
           }}
           onClick={() => onRowClick?.(row.original)}
-          onMouseEnter={() => {
-            hoverTimeoutRef.current = setTimeout(() => {
-              setHoveredRowId(rowId);
-            }, 500);
-          }}
-          onMouseLeave={() => {
-            clearTimeout(hoverTimeoutRef.current);
-            setHoveredRowId(null);
-          }}
         >
           {selectedRowIds && (
             <td className="py-sp-3 overflow-hidden">
@@ -164,28 +151,6 @@ export function DataTable<T>({
             </td>
           ))}
         </motion.tr>
-        <AnimatePresence>
-          {hoveredRowId === rowId && (
-            <motion.tr
-              key={`${rowId}-expand`}
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={ROW_SPRING}
-              className="bg-brand-cream/30 overflow-hidden"
-            >
-              <td colSpan={colSpan} className="px-sp-4 py-sp-3">
-                {renderExpandedRow ? (
-                  renderExpandedRow(row.original)
-                ) : (
-                  <div className="text-caption text-brand-slate">
-                    Click row name for full details
-                  </div>
-                )}
-              </td>
-            </motion.tr>
-          )}
-        </AnimatePresence>
       </React.Fragment>
     );
   };

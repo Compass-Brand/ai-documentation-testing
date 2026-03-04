@@ -1,157 +1,248 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useRef } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 
-interface Particle {
-  x: number;
-  y: number;
-  size: number;
-  duration: number;
-  delay: number;
-}
-
-function generateParticles(count: number): Particle[] {
-  const particles: Particle[] = [];
-  for (let i = 0; i < count; i++) {
-    const seed = (i + 1) * 7919;
-    const x = (seed * 13) % 100;
-    const y = (seed * 17) % 100;
-    const size = 3 + ((seed * 23) % 5);
-    const duration = 15 + ((seed * 29) % 25);
-    const delay = (seed * 31) % 10;
-    particles.push({ x, y, size, duration, delay });
-  }
-  return particles;
-}
-
 const SPRING = { stiffness: 40, damping: 20 };
+const NUM_RINGS = 9;
+const PTS = 64;
+const RING_GAP = 60;
+const COLOR = [154, 123, 79]; // #9A7B4F
 
+/* ── Compact 2D Perlin noise (no deps) ─────────────────────────── */
+function createNoise(seed = 42) {
+  const p = new Uint8Array(512);
+  for (let i = 0; i < 256; i++) p[i] = i;
+  let s = seed;
+  for (let i = 255; i > 0; i--) {
+    s = (s * 16807 + 1) & 0x7fffffff;
+    const j = s % (i + 1);
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+  for (let i = 0; i < 256; i++) p[i + 256] = p[i];
+
+  const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
+  const lerp = (a: number, b: number, t: number) => a + t * (b - a);
+  const grad = (h: number, x: number, y: number) => {
+    const k = h & 3;
+    return ((k & 1) ? -x : x) + ((k & 2) ? -y : y);
+  };
+
+  return (x: number, y: number) => {
+    const X = Math.floor(x) & 255;
+    const Y = Math.floor(y) & 255;
+    const xf = x - Math.floor(x);
+    const yf = y - Math.floor(y);
+    const u = fade(xf);
+    const v = fade(yf);
+    return lerp(
+      lerp(grad(p[p[X] + Y], xf, yf), grad(p[p[X + 1] + Y], xf - 1, yf), u),
+      lerp(
+        grad(p[p[X] + Y + 1], xf, yf - 1),
+        grad(p[p[X + 1] + Y + 1], xf - 1, yf - 1),
+        u,
+      ),
+      v,
+    );
+  };
+}
+
+/* ── Smooth closed curve via quadratic-bezier midpoint technique ── */
+function drawSmooth(ctx: CanvasRenderingContext2D, pts: [number, number][]) {
+  if (pts.length < 3) return;
+  const mid = (a: [number, number], b: [number, number]): [number, number] =>
+    [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const start = mid(pts[pts.length - 1], pts[0]);
+  ctx.moveTo(start[0], start[1]);
+  for (let i = 0; i < pts.length; i++) {
+    const m = mid(pts[i], pts[(i + 1) % pts.length]);
+    ctx.quadraticCurveTo(pts[i][0], pts[i][1], m[0], m[1]);
+  }
+  ctx.closePath();
+}
+
+/**
+ * Ambient background with three layers:
+ * 1. Mouse-reactive gradient mesh (z-index: -1)
+ * 2. Canvas topo contours — organic, cursor-ripple, compass-coupled (z-index: 0)
+ * 3. Floating particles (z-index: 0)
+ *
+ * Content wrappers need `relative z-[1]` to sit above the topo layer.
+ */
 export function AmbientBackground() {
-  const particles = useMemo(() => generateParticles(18), []);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const mouseRef = useRef({ x: -9999, y: -9999 });
+  const animRef = useRef(0);
 
-  const mouseX = useMotionValue(0);
-  const mouseY = useMotionValue(0);
+  /* Gradient mesh spring values */
+  const mouseX = useMotionValue(0.3);
+  const mouseY = useMotionValue(0.2);
   const springX = useSpring(mouseX, SPRING);
   const springY = useSpring(mouseY, SPRING);
-
-  // Parallax transforms — lines shift opposite to mouse for depth
-  const lineX = useTransform(springX, [0, 1], [0, -30]);
-  const lineY = useTransform(springY, [0, 1], [0, -15]);
-
-  // Gradient follows mouse subtly
-  const gradX = useTransform(springX, [0, 1], [20, 40]);
-  const gradY = useTransform(springY, [0, 1], [10, 30]);
   const gradBg = useTransform(
-    [gradX, gradY],
+    [springX, springY],
     ([x, y]: number[]) =>
-      `radial-gradient(ellipse at ${x}% ${y}%, rgba(163, 133, 82, 0.3) 0%, transparent 70%)`,
+      `radial-gradient(ellipse at ${(x as number) * 100}% ${(y as number) * 100}%, rgba(163,133,82,0.20) 0%, transparent 60%)`,
   );
 
   useEffect(() => {
-    const handleMouse = (e: MouseEvent) => {
+    /* Respect reduced-motion preference */
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const noise = createNoise();
+    let t = 0;
+
+    const resize = () => {
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+
+    const onMouse = (e: MouseEvent) => {
+      mouseRef.current = { x: e.clientX, y: e.clientY };
       mouseX.set(e.clientX / window.innerWidth);
       mouseY.set(e.clientY / window.innerHeight);
     };
-    window.addEventListener("mousemove", handleMouse, { passive: true });
-    return () => window.removeEventListener("mousemove", handleMouse);
+
+    window.addEventListener("resize", resize);
+    window.addEventListener("mousemove", onMouse, { passive: true });
+
+    const draw = () => {
+      t += 0.004;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+
+      /* Compass center: sidebar 264px, page padding ~24px → center ≈ 156px */
+      const cx = Math.min(156, w * 0.12);
+      const cy = h * 0.5;
+      const mx = mouseRef.current.x;
+      const my = mouseRef.current.y;
+
+      /* Compass rotation coupling (120s CSS period → ~0.22 rad/unit-t) */
+      const compassRot = t * 0.22;
+
+      ctx.clearRect(0, 0, w, h);
+
+      for (let ring = 0; ring < NUM_RINGS; ring++) {
+        /* Non-linear spacing: inner rings tighter, outer wider (ripple feel) */
+        const baseR = (ring + 1) * RING_GAP * (1 + ring * 0.15);
+        const alpha = Math.max(0.04, 0.18 - ring * 0.015);
+        const lw = Math.max(0.6, 1.6 - ring * 0.08);
+
+        const pts: [number, number][] = [];
+
+        for (let i = 0; i < PTS; i++) {
+          const angle = (i / PTS) * Math.PI * 2;
+
+          /* Compass coupling: inner rings rotate more with compass */
+          const coupled = angle + compassRot * 0.05 / (ring + 1);
+
+          /* Multi-octave noise → organic shape */
+          const n1 = noise(
+            Math.cos(coupled) * 1.5 + t * 0.6 + ring * 0.5,
+            Math.sin(coupled) * 1.5 + t * 0.4 + ring * 0.5,
+          );
+          const n2 = noise(
+            Math.cos(coupled) * 3 + t * 0.3 + ring * 1.2,
+            Math.sin(coupled) * 3 - t * 0.2 + ring * 1.2,
+          );
+          const organic = (n1 * 15 + n2 * 6) * (1 + ring * 0.12);
+
+          /* Traveling waves along contour (flowing-water feel) */
+          const wave =
+            Math.sin(angle * 3 + t * 2) * 8 * (1 + ring * 0.1) +
+            Math.sin(angle * 5 - t * 1.2) * 4;
+
+          /* Compass pulse: outward-propagating ripple from center */
+          const pulse = Math.sin(baseR * 0.012 - t * 2.5) * 8;
+
+          const r = baseR + organic + wave + pulse;
+          let px = cx + Math.cos(angle) * r;
+          let py = cy + Math.sin(angle) * r;
+
+          /* Cursor ripple: sinusoidal wave radiating from mouse (pond effect) */
+          const dx = px - mx;
+          const dy = py - my;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const maxInfl = 350;
+          if (dist < maxInfl && dist > 1) {
+            const falloff = (1 - dist / maxInfl) ** 2;
+            const ripple = Math.sin(dist * 0.035 - t * 5) * 30 * falloff;
+            px += (dx / dist) * ripple;
+            py += (dy / dist) * ripple;
+          }
+
+          pts.push([px, py]);
+        }
+
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(${COLOR[0]},${COLOR[1]},${COLOR[2]},${alpha})`;
+        ctx.lineWidth = lw;
+        drawSmooth(ctx, pts);
+        ctx.stroke();
+      }
+
+      animRef.current = requestAnimationFrame(draw);
+    };
+
+    animRef.current = requestAnimationFrame(draw);
+
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", onMouse);
+    };
   }, [mouseX, mouseY]);
 
   return (
     <>
-      {/* Gradient mesh — follows mouse, behind content */}
+      {/* Layer 1: Mouse-reactive gradient mesh */}
       <motion.div
         className="fixed inset-0 pointer-events-none"
         style={{ zIndex: -1, background: gradBg }}
         aria-hidden="true"
       />
 
-      {/* Topo contour lines — ABOVE backgrounds, pointer-events-none */}
-      <motion.svg
-        className="fixed inset-0 w-full h-full pointer-events-none"
-        style={{ zIndex: 1, x: lineX, y: lineY }}
+      {/* Layer 2: Canvas topo contour lines */}
+      <canvas
+        ref={canvasRef}
+        className="fixed inset-0 pointer-events-none"
+        style={{ zIndex: 0 }}
         aria-hidden="true"
-        preserveAspectRatio="none"
-        viewBox="0 0 1600 900"
-      >
-        <g className="animate-[drift_60s_linear_infinite]" opacity="0.12">
-          <path
-            d="M-200,60 Q50,20 250,70 T650,50 T1050,70 T1450,50 T1850,70"
-            stroke="#9A7B4F"
-            strokeWidth="1.5"
-            fill="none"
-          />
-          <path
-            d="M-200,160 Q100,110 300,170 T700,150 T1100,170 T1500,150 T1900,170"
-            stroke="#9A7B4F"
-            strokeWidth="2"
-            fill="none"
-          />
-          <path
-            d="M-200,280 Q80,230 280,290 T680,270 T1080,290 T1480,270 T1880,290"
-            stroke="#9A7B4F"
-            strokeWidth="1.5"
-            fill="none"
-          />
-          <path
-            d="M-200,380 Q150,320 350,390 T750,370 T1150,390 T1550,370 T1950,390"
-            stroke="#9A7B4F"
-            strokeWidth="2"
-            fill="none"
-          />
-          <path
-            d="M-200,480 Q100,430 300,490 T700,470 T1100,490 T1500,470 T1900,490"
-            stroke="#9A7B4F"
-            strokeWidth="1.5"
-            fill="none"
-          />
-          <path
-            d="M-200,580 Q200,520 400,590 T800,570 T1200,590 T1600,570 T2000,590"
-            stroke="#9A7B4F"
-            strokeWidth="2"
-            fill="none"
-          />
-          <path
-            d="M-200,680 Q120,630 320,690 T720,670 T1120,690 T1520,670 T1920,690"
-            stroke="#9A7B4F"
-            strokeWidth="1.5"
-            fill="none"
-          />
-          <path
-            d="M-200,770 Q180,720 380,780 T780,760 T1180,780 T1580,760 T1980,780"
-            stroke="#9A7B4F"
-            strokeWidth="2"
-            fill="none"
-          />
-          <path
-            d="M-200,850 Q60,810 260,860 T660,840 T1060,860 T1460,840 T1860,860"
-            stroke="#9A7B4F"
-            strokeWidth="1.5"
-            fill="none"
-          />
-        </g>
-      </motion.svg>
+      />
 
-      {/* Floating particles — above backgrounds */}
+      {/* Layer 3: Floating particles */}
       <div
         className="fixed inset-0 pointer-events-none overflow-hidden"
-        style={{ zIndex: 1 }}
+        style={{ zIndex: 0 }}
         aria-hidden="true"
       >
-        {particles.map((p, i) => (
-          <div
-            key={i}
-            className="absolute rounded-full"
-            style={{
-              width: p.size,
-              height: p.size,
-              left: `${p.x}%`,
-              top: `${p.y}%`,
-              backgroundColor: "#9A7B4F",
-              opacity: 0.25,
-              animation: `float-${i % 3} ${p.duration}s ease-in-out infinite`,
-              animationDelay: `${p.delay}s`,
-            }}
-          />
-        ))}
+        {Array.from({ length: 12 }, (_, i) => {
+          const seed = (i + 1) * 7919;
+          return (
+            <div
+              key={i}
+              className="absolute rounded-full"
+              style={{
+                width: 3 + ((seed * 23) % 4),
+                height: 3 + ((seed * 23) % 4),
+                left: `${(seed * 13) % 100}%`,
+                top: `${(seed * 17) % 100}%`,
+                backgroundColor: "#9A7B4F",
+                opacity: 0.2,
+                animation: `float-${i % 3} ${18 + ((seed * 29) % 22)}s ease-in-out infinite`,
+                animationDelay: `${(seed * 31) % 10}s`,
+              }}
+            />
+          );
+        })}
       </div>
     </>
   );
