@@ -242,7 +242,7 @@ export function DataTable<T>({
     <div
       ref={useVirtual ? scrollContainerRef : undefined}
       className={cn(
-        "overflow-x-auto rounded-card border border-brand-mist bg-white/90 backdrop-blur-sm",
+        "overflow-x-auto rounded-card border border-brand-mist bg-white backdrop-blur-sm",
         useVirtual && "max-h-[600px] overflow-y-auto",
       )}
       {...(useVirtual ? { "data-virtual-scroller": "" } : {})}
