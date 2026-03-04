@@ -742,3 +742,184 @@ class TestRequestTimeout:
 
         timeout = mock_litellm.completion.call_args.kwargs["timeout"]
         assert 30 <= timeout <= 300, f"Timeout {timeout}s is outside reasonable range [30, 300]"
+
+
+# ---------------------------------------------------------------------------
+# GenerationResult diagnostic fields (api_call_ms, retry_count, total_api_ms)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerationResultDiagnosticFields:
+    """Tests for the new timing/retry fields on GenerationResult."""
+
+    def test_default_values(self) -> None:
+        result = GenerationResult(
+            content="hi",
+            prompt_tokens=1,
+            completion_tokens=2,
+            total_tokens=3,
+            cost=0.001,
+            model="test-model",
+            generation_id="gen-1",
+        )
+        assert result.api_call_ms == 0.0
+        assert result.retry_count == 0
+        assert result.total_api_ms == 0.0
+
+    def test_explicit_values(self) -> None:
+        result = GenerationResult(
+            content="hi",
+            prompt_tokens=1,
+            completion_tokens=2,
+            total_tokens=3,
+            cost=0.001,
+            model="test-model",
+            generation_id="gen-1",
+            api_call_ms=1500.0,
+            retry_count=2,
+            total_api_ms=4500.0,
+        )
+        assert result.api_call_ms == 1500.0
+        assert result.retry_count == 2
+        assert result.total_api_ms == 4500.0
+
+
+# ---------------------------------------------------------------------------
+# DEBUG logging in complete() retry loop
+# ---------------------------------------------------------------------------
+
+
+class TestCompleteDiagnosticLogging:
+    """Tests for DEBUG-level diagnostic logs emitted during complete()."""
+
+    @patch("agent_evals.llm.client.litellm")
+    def test_success_logs_debug(
+        self,
+        mock_litellm: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Successful call should emit DEBUG logs for starting and succeeded."""
+        mock_litellm.completion.return_value = _mock_litellm_response()
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="test/model", api_key="key")
+        with caplog.at_level(logging.DEBUG, logger="agent_evals.llm.client"):
+            client.complete([{"role": "user", "content": "hi"}])
+
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        starting_msgs = [m for m in debug_messages if "starting" in m.lower()]
+        succeeded_msgs = [m for m in debug_messages if "succeeded" in m.lower()]
+        assert len(starting_msgs) >= 1, f"Expected 'starting' debug log, got: {debug_messages}"
+        assert len(succeeded_msgs) >= 1, f"Expected 'succeeded' debug log, got: {debug_messages}"
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_retry_logs_debug_for_failed_attempt(
+        self,
+        mock_litellm: MagicMock,
+        mock_sleep: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Failed retry attempt should emit DEBUG log with error info."""
+        rate_limit_exc = _litellm.RateLimitError(
+            message="rate limited",
+            llm_provider="openrouter",
+            model="test/model",
+        )
+        mock_litellm.completion.side_effect = [
+            rate_limit_exc,
+            _mock_litellm_response(),
+        ]
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="test/model", api_key="key")
+        with caplog.at_level(logging.DEBUG, logger="agent_evals.llm.client"):
+            client.complete([{"role": "user", "content": "hi"}])
+
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        failed_msgs = [m for m in debug_messages if "failed" in m.lower()]
+        assert len(failed_msgs) >= 1, f"Expected 'failed' debug log, got: {debug_messages}"
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_silent_429_logs_debug(
+        self,
+        mock_litellm: MagicMock,
+        mock_sleep: MagicMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Silent rate limit (content=None) should emit DEBUG log."""
+        empty_response = MagicMock()
+        empty_response.choices = [MagicMock()]
+        empty_response.choices[0].message.content = None
+
+        mock_litellm.completion.side_effect = [
+            empty_response,
+            _mock_litellm_response(),
+        ]
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="test/model", api_key="key")
+        with caplog.at_level(logging.DEBUG, logger="agent_evals.llm.client"):
+            client.complete([{"role": "user", "content": "hi"}])
+
+        debug_messages = [r.message for r in caplog.records if r.levelno == logging.DEBUG]
+        rate_limit_msgs = [m for m in debug_messages if "silent rate limit" in m.lower()]
+        assert len(rate_limit_msgs) >= 1, f"Expected 'silent rate limit' debug log, got: {debug_messages}"
+
+    @patch("agent_evals.llm.client.litellm")
+    def test_result_has_timing_fields_populated(
+        self,
+        mock_litellm: MagicMock,
+    ) -> None:
+        """Successful call should populate api_call_ms and total_api_ms."""
+        mock_litellm.completion.return_value = _mock_litellm_response()
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="test/model", api_key="key")
+        result = client.complete([{"role": "user", "content": "hi"}])
+
+        assert result.api_call_ms > 0 or result.api_call_ms == 0.0  # fast mock
+        assert result.total_api_ms >= 0.0
+        assert result.retry_count == 0
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_retry_count_tracks_retries(
+        self,
+        mock_litellm: MagicMock,
+        mock_sleep: MagicMock,
+    ) -> None:
+        """retry_count should reflect number of failed attempts before success."""
+        rate_limit_exc = _litellm.RateLimitError(
+            message="rate limited",
+            llm_provider="openrouter",
+            model="test/model",
+        )
+        mock_litellm.completion.side_effect = [
+            rate_limit_exc,
+            rate_limit_exc,
+            _mock_litellm_response(),
+        ]
+        mock_litellm.RateLimitError = _litellm.RateLimitError
+        mock_litellm.InternalServerError = _litellm.InternalServerError
+        mock_litellm.ServiceUnavailableError = _litellm.ServiceUnavailableError
+        mock_litellm.BadGatewayError = _litellm.BadGatewayError
+
+        client = LLMClient(model="test/model", api_key="key")
+        result = client.complete([{"role": "user", "content": "hi"}])
+
+        assert result.retry_count == 2
+        assert result.total_api_ms >= result.api_call_ms

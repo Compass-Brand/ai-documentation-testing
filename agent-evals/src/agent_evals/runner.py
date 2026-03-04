@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
+from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.llm.cache import ResponseCache
 from agent_evals.llm.client import GenerationResult, LLMClient
 from agent_evals.variants.baselines import (
@@ -265,6 +266,8 @@ class EvalRunner:
         total = len(work_items)
         trials: list[TrialResult] = []
         completed = 0
+        tracker = DiagnosticTracker(total_trials=total)
+        tracker.start()
 
         try:
             if total > 0:
@@ -313,10 +316,20 @@ class EvalRunner:
                             )
                         trials.append(trial)
                         completed += 1
+                        tracker.record_trial(
+                            tokens=trial.total_tokens,
+                            cost=trial.cost,
+                            retries=int(trial.metrics.get("retry_count", 0)),
+                            api_ms=trial.metrics.get("api_call_ms", 0.0),
+                            trial_ms=trial.latency_seconds * 1000,
+                            error=trial.error is not None,
+                            rate_limited=False,
+                        )
                         if progress_callback is not None:
                             progress_callback(completed, total, trial)
 
         finally:
+            tracker.stop()
             # Teardown all variants even if an exception occurred
             for variant in variants:
                 variant.teardown()
@@ -711,6 +724,9 @@ class EvalRunner:
         metrics: dict[str, float] = {
             "scoring_ms": round(scoring_ms, 2),
             "prompt_build_ms": round(prompt_build_ms, 2),
+            "api_call_ms": round(generation.api_call_ms, 1),
+            "total_api_ms": round(generation.total_api_ms, 1),
+            "retry_count": float(generation.retry_count),
         }
         # LLM-as-judge sampling: evaluate 2% of trials
         if trial_index > 0 and trial_index % JUDGE_SAMPLE_RATE == 0:

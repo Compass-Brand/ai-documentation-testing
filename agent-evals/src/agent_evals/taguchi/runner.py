@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.runner import EvalRunConfig, TrialResult
 from agent_evals.taguchi.factors import TaguchiDesign, TaguchiExperimentRow
 from agent_evals.variants.composite import CompositeVariant
@@ -139,6 +140,8 @@ class TaguchiRunner:
         completed = 0
         error_count = 0
         was_shutdown = False
+        tracker = DiagnosticTracker(total_trials=total)
+        tracker.start()
 
         # Track per-row completion for logging and WAL checkpoints.
         total_rows = len(self._design.rows)
@@ -168,6 +171,15 @@ class TaguchiRunner:
                         completed += 1
                         if trial.error:
                             error_count += 1
+                        tracker.record_trial(
+                            tokens=trial.total_tokens,
+                            cost=trial.cost,
+                            retries=int(trial.metrics.get("retry_count", 0)),
+                            api_ms=trial.metrics.get("api_call_ms", 0.0),
+                            trial_ms=trial.latency_seconds * 1000,
+                            error=trial.error is not None,
+                            rate_limited=False,
+                        )
 
                         # Track per-row progress.
                         oa_row_id = trial.metrics.get("oa_row_id")
@@ -210,6 +222,7 @@ class TaguchiRunner:
                             completed, total,
                         )
         finally:
+            tracker.stop()
             # Restore original signal handlers.
             try:
                 if old_sigint is not None:
@@ -273,6 +286,10 @@ class TaguchiRunner:
             # Score
             score = task.score_response(generation.content)
             latency = time.monotonic() - trial_start
+
+            metrics["api_call_ms"] = round(generation.api_call_ms, 1)
+            metrics["total_api_ms"] = round(generation.total_api_ms, 1)
+            metrics["retry_count"] = float(generation.retry_count)
 
             return TrialResult(
                 task_id=task.definition.task_id,
