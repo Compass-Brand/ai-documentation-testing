@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
+import pytest
 import yaml
-from agent_index.autodetect import auto_detect, generate_config_yaml
+from agent_index.autodetect import _detect_project_name, auto_detect, generate_config_yaml
 from agent_index.config import load_config
 from agent_index.models import IndexConfig
 
@@ -151,3 +153,43 @@ class TestGenerateConfigYaml:
         assert "required" in tier_names
         assert "recommended" in tier_names
         assert "reference" in tier_names
+
+
+# ---------------------------------------------------------------------------
+# _detect_project_name exception handling
+# ---------------------------------------------------------------------------
+
+
+class TestDetectProjectNameExceptions:
+    """Tests that _detect_project_name catches only expected exceptions."""
+
+    def test_catches_toml_decode_error(self, tmp_path: Path) -> None:
+        """Malformed pyproject.toml falls back to directory name."""
+        (tmp_path / "pyproject.toml").write_text("not valid [toml", encoding="utf-8")
+        result = _detect_project_name(tmp_path)
+        assert result == tmp_path.name
+
+    def test_catches_os_error(self, tmp_path: Path) -> None:
+        """Unreadable pyproject.toml falls back to directory name."""
+        pyproject = tmp_path / "pyproject.toml"
+        pyproject.write_text("[project]\nname = 'ok'", encoding="utf-8")
+        with patch.object(Path, "read_text", side_effect=OSError("permission denied")):
+            result = _detect_project_name(tmp_path)
+        assert result == tmp_path.name
+
+    def test_catches_key_error(self, tmp_path: Path) -> None:
+        """Missing 'project' key falls back to directory name."""
+        (tmp_path / "pyproject.toml").write_text(
+            "[tool]\nname = 'not-project'", encoding="utf-8",
+        )
+        result = _detect_project_name(tmp_path)
+        assert result == tmp_path.name
+
+    def test_unexpected_error_propagates(self, tmp_path: Path) -> None:
+        """Unexpected exceptions (e.g. AttributeError) must NOT be swallowed."""
+        (tmp_path / "pyproject.toml").write_text(
+            "[project]\nname = 'my-proj'", encoding="utf-8",
+        )
+        with patch("tomllib.loads", side_effect=AttributeError("bug")):
+            with pytest.raises(AttributeError, match="bug"):
+                _detect_project_name(tmp_path)

@@ -155,16 +155,16 @@ def _detect_project_name(root: Path) -> str:
             pass
 
     # Try pyproject.toml
+    import tomllib
+
     pyproject = root / "pyproject.toml"
     if pyproject.exists():
         try:
-            import tomllib
-
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
             name = data.get("project", {}).get("name")
             if name and isinstance(name, str):
                 return name
-        except (OSError, Exception):
+        except (OSError, tomllib.TOMLDecodeError, KeyError):
             pass
 
     # Fall back to directory name
