@@ -33,7 +33,6 @@ class ValidationResult:
 
 def validate_index(
     doc_tree: DocTree,
-    index_content: str,
     root_path: Path,
     *,
     file_extensions: set[str] | None = None,
@@ -48,8 +47,9 @@ def validate_index(
 
     Args:
         doc_tree: The DocTree from a previous scan.
-        index_content: The rendered index content (used to extract referenced paths).
         root_path: The root directory where docs should exist on disk.
+        file_extensions: File extensions to include. Defaults to DEFAULT_FILE_EXTENSIONS.
+        ignore_patterns: Directory names to skip. Defaults to DEFAULT_IGNORE_PATTERNS.
 
     Returns:
         ValidationResult with lists of any detected issues.

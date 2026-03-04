@@ -43,7 +43,7 @@ class TestValidateIndex:
             "guide.md": "# Guide",
         })
 
-        result = validate_index(doc_tree, "some index content", tmp_path)
+        result = validate_index(doc_tree, tmp_path)
 
         assert result.valid is True
         assert result.missing_files == []
@@ -60,7 +60,7 @@ class TestValidateIndex:
             "guide.md": "# Guide",
         })
 
-        result = validate_index(doc_tree, "some index content", tmp_path)
+        result = validate_index(doc_tree, tmp_path)
 
         assert result.valid is False
         assert "guide.md" in result.missing_files
@@ -74,7 +74,7 @@ class TestValidateIndex:
             "readme.md": "# Hello",
         })
 
-        result = validate_index(doc_tree, "some index content", tmp_path)
+        result = validate_index(doc_tree, tmp_path)
 
         assert result.valid is False
         assert "extra.md" in result.extra_files
@@ -88,7 +88,7 @@ class TestValidateIndex:
             "readme.md": "# Original content",
         })
 
-        result = validate_index(doc_tree, "some index content", tmp_path)
+        result = validate_index(doc_tree, tmp_path)
 
         assert result.valid is False
         assert "readme.md" in result.stale_entries
@@ -100,7 +100,7 @@ class TestValidateIndex:
             "missing.md": "# Missing",
         })
 
-        result = validate_index(doc_tree, "some index content", tmp_path)
+        result = validate_index(doc_tree, tmp_path)
 
         assert result.valid is False
 
@@ -114,7 +114,7 @@ class TestValidateIndex:
             source=str(tmp_path),
         )
 
-        result = validate_index(doc_tree, "", tmp_path)
+        result = validate_index(doc_tree, tmp_path)
 
         assert result.valid is False
         assert "readme.md" in result.extra_files
@@ -127,7 +127,7 @@ class TestValidateIndex:
             source=str(tmp_path),
         )
 
-        result = validate_index(doc_tree, "", tmp_path)
+        result = validate_index(doc_tree, tmp_path)
 
         assert result.valid is True
         assert result.missing_files == []
@@ -149,7 +149,7 @@ class TestCustomExtensionsAndIgnores:
         )
 
         result = validate_index(
-            doc_tree, "", tmp_path,
+            doc_tree, tmp_path,
             file_extensions={".adoc"},
         )
 
@@ -169,7 +169,7 @@ class TestCustomExtensionsAndIgnores:
         )
 
         result = validate_index(
-            doc_tree, "", tmp_path,
+            doc_tree, tmp_path,
             ignore_patterns=["vendor"],
         )
 

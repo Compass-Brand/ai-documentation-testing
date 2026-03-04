@@ -190,7 +190,7 @@ def run(args: Namespace) -> int:
             instruction=config.instruction,
         )
 
-        result = validate_index(doc_tree, index_content, scan_path)
+        result = validate_index(doc_tree, scan_path)
         if result.valid:
             print("Validation passed: index matches docs on disk.")
             return 0
