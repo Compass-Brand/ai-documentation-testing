@@ -94,7 +94,12 @@ def compute_sn_ratios(
         Dict mapping row_id to S/N ratio (in dB).
     """
     result: dict[int, float] = {}
-    eps = 1e-10  # guard against division by zero and log(0)
+    # Floor for scores in the 1/y^2 term.  Using 0.01 bounds zero-scores
+    # to S/N ≈ -40 dB instead of the degenerate -100 dB from eps=1e-10.
+    # This is appropriate for bounded [0,1] LLM evaluation scores where
+    # y=0 means total failure, not an infinitesimally small signal.
+    score_floor = 0.01
+    eps = 1e-10  # guard for log(0) in smaller_is_better
 
     for row_id, scores in row_scores.items():
         n = len(scores)
@@ -104,7 +109,10 @@ def compute_sn_ratios(
             )
         if quality_type == "larger_is_better":
             # S/N = -10 * log10(mean(1/y^2))
-            mean_inv_sq = sum(1.0 / (y * y + eps) for y in scores) / n
+            # Clamp y to score_floor to prevent degenerate values from y≈0
+            mean_inv_sq = (
+                sum(1.0 / (max(y, score_floor) ** 2) for y in scores) / n
+            )
             result[row_id] = -10.0 * math.log10(mean_inv_sq)
 
         elif quality_type == "smaller_is_better":

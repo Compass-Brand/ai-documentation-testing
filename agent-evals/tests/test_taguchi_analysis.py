@@ -135,6 +135,38 @@ class TestComputeSNRatios:
         assert isinstance(sn[1], float)
         assert math.isfinite(sn[1])
 
+    def test_larger_is_better_zero_scores_bounded(self):
+        """Zero scores should produce bounded S/N, not extreme ~-100 dB values.
+
+        With y=0 in larger_is_better, the 1/y^2 term should be clamped
+        so the S/N ratio stays within a reasonable range (> -50 dB).
+        """
+        scores = {
+            1: [0.0, 0.0, 0.0],
+            2: [0.8, 0.9, 0.7],
+        }
+        sn = compute_sn_ratios(scores, quality_type="larger_is_better")
+        # Zero row should not produce extreme values like -100 dB
+        assert sn[1] > -50.0, (
+            f"S/N for all-zero scores is {sn[1]} dB, too extreme. "
+            "Score floor should prevent degenerate values."
+        )
+
+    def test_larger_is_better_bimodal_scores_reasonable_spread(self):
+        """Bimodal [0,1] scores should produce S/N values with reasonable spread.
+
+        A row of all-0s vs all-1s should differ, but not by 100+ dB.
+        """
+        scores = {
+            1: [0.0, 0.0, 1.0, 1.0],  # bimodal
+            2: [1.0, 1.0, 1.0, 1.0],  # all-ones
+        }
+        sn = compute_sn_ratios(scores, quality_type="larger_is_better")
+        spread = abs(sn[2] - sn[1])
+        assert spread < 50.0, (
+            f"S/N spread between bimodal and all-1 is {spread} dB, too extreme."
+        )
+
     def test_returns_dict_of_floats(self):
         scores = {1: [0.8], 2: [0.5], 3: [0.7]}
         sn = compute_sn_ratios(scores)
@@ -408,6 +440,61 @@ class TestPredictOptimal:
         low, high = prediction.prediction_interval
         assert low < high
         assert low <= prediction.predicted_sn <= high
+
+    def test_additivity_r_squared_computed_with_design(self):
+        """When design is provided, additivity R-squared should be computed."""
+        design = _make_design_2factor()
+        # Purely additive S/N: axis_1 effect + axis_2 effect
+        sn_ratios = {
+            1: 1.0, 2: 3.0, 3: 2.0,  # flat + path/summary/tokens
+            4: 3.0, 5: 5.0, 6: 4.0,  # 2tier + ...
+            7: 5.0, 8: 7.0, 9: 6.0,  # 3tier + ...
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        prediction = predict_optimal(effects, sn_ratios=sn_ratios, design=design)
+
+        assert prediction.additivity_r_squared is not None
+        assert prediction.additivity_r_squared > 0.99
+
+    def test_additivity_r_squared_none_without_design(self):
+        """Without design, additivity R-squared should be None."""
+        effects = {
+            "axis_1": {"flat": 1.0, "2tier": 3.0, "3tier": 5.0},
+            "axis_2": {"path": 2.0, "summary": 4.0, "tokens": 3.0},
+        }
+        prediction = predict_optimal(effects)
+        assert prediction.additivity_r_squared is None
+        assert prediction.additivity_warning is None
+
+    def test_additivity_warning_when_r_squared_low(self):
+        """Should warn when R-squared is below threshold."""
+        design = _make_design_2factor()
+        # Strong interactions: diagonal dominance (non-additive)
+        sn_ratios = {
+            1: 10.0, 2: 1.0, 3: 1.0,
+            4: 1.0,  5: 10.0, 6: 1.0,
+            7: 1.0,  8: 1.0, 9: 10.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        prediction = predict_optimal(effects, sn_ratios=sn_ratios, design=design)
+
+        assert prediction.additivity_r_squared is not None
+        assert prediction.additivity_r_squared < 0.8
+        assert prediction.additivity_warning is not None
+        assert "interaction" in prediction.additivity_warning.lower()
+
+    def test_additivity_no_warning_when_good_fit(self):
+        """No warning when additive model fits well."""
+        design = _make_design_2factor()
+        sn_ratios = {
+            1: 1.0, 2: 3.0, 3: 2.0,
+            4: 3.0, 5: 5.0, 6: 4.0,
+            7: 5.0, 8: 7.0, 9: 6.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        prediction = predict_optimal(effects, sn_ratios=sn_ratios, design=design)
+
+        assert prediction.additivity_warning is None
 
 
 # ---------------------------------------------------------------------------
