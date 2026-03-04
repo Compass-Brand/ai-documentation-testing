@@ -83,6 +83,7 @@ class TrialResult:
     cached: bool
     error: str | None = None
     source: str = "gold_standard"
+    model: str = ""
     prompt_messages: list[dict] | None = None
 
 
@@ -742,5 +743,6 @@ class EvalRunner:
             response=generation.content,
             cached=cached,
             source=source,
+            model=self._client.model,
             prompt_messages=messages,
         )

@@ -254,10 +254,11 @@ class TaguchiRunner:
         if phase is not None:
             metrics["phase"] = phase
 
-        try:
-            # Select client
-            client = self._select_client(row)
+        # Select client before try block so model name is available in error path.
+        client = self._select_client(row)
+        model_name = getattr(client, "model", self._default_client_name)
 
+        try:
             # Render and build prompt
             index_content = composite.render(doc_tree)
             messages = task.build_prompt(index_content)
@@ -288,6 +289,7 @@ class TaguchiRunner:
                 response=generation.content,
                 cached=False,
                 source=source,
+                model=model_name,
                 prompt_messages=messages,
             )
         except Exception as exc:
@@ -315,6 +317,7 @@ class TaguchiRunner:
                 cached=False,
                 error=str(exc),
                 source=source,
+                model=model_name,
             )
         finally:
             composite.teardown()

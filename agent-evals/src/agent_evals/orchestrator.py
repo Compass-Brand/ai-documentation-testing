@@ -310,7 +310,12 @@ class EvalOrchestrator:
             # Convert TrialRecords from prior sessions to TrialResults.
             # Only include trials NOT in the current batch (avoid dupes).
             current_keys = {
-                (t.task_id, t.variant_name, t.repetition)
+                (
+                    t.metrics.get("oa_row_id") if t.metrics else None,
+                    t.task_id,
+                    t.variant_name,
+                    t.repetition,
+                )
                 for t in raw_result.trials
             }
             prior_trials = [
@@ -332,9 +337,15 @@ class EvalOrchestrator:
                     cached=False,
                     error=r.error,
                     source=r.source,
+                    model=r.model,
                 )
                 for r in prior_records
-                if (r.task_id, r.variant_name, r.repetition)
+                if (
+                    float(r.oa_row_id) if r.oa_row_id is not None else None,
+                    r.task_id,
+                    r.variant_name,
+                    r.repetition,
+                )
                 not in current_keys
             ]
             all_trials = prior_trials + raw_result.trials
