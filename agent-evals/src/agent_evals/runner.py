@@ -239,9 +239,24 @@ class EvalRunner:
             # Not in main thread — skip signal registration.
             pass
 
-        # Setup all variants
+        # Setup all variants (track which succeeded for teardown safety)
+        setup_variants: list[IndexVariant] = []
         for variant in variants:
-            variant.setup(doc_tree)
+            try:
+                variant.setup(doc_tree)
+                setup_variants.append(variant)
+            except Exception:
+                # Teardown variants that were already set up before re-raising
+                for v in setup_variants:
+                    try:
+                        v.teardown()
+                    except Exception:
+                        logger.warning(
+                            "Teardown failed for variant %s during setup cleanup",
+                            v.metadata().name,
+                            exc_info=True,
+                        )
+                raise
 
         # Build the list of (task, variant, repetition) triples
         work_items: list[tuple[EvalTask, IndexVariant, int]] = []
@@ -336,9 +351,17 @@ class EvalRunner:
 
         finally:
             tracker.stop()
-            # Teardown all variants even if an exception occurred
+            # Teardown all variants even if an exception occurred.
+            # Protect individual teardowns so one failure doesn't skip the rest.
             for variant in variants:
-                variant.teardown()
+                try:
+                    variant.teardown()
+                except Exception:
+                    logger.warning(
+                        "Teardown failed for variant %s",
+                        variant.metadata().name,
+                        exc_info=True,
+                    )
             # Restore original signal handlers.
             try:
                 if old_sigint is not None:

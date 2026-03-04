@@ -220,6 +220,52 @@ class TestEvalRunConfig:
         assert config.output_dir == "reports"
         assert config.display_mode == "rich"
 
+    def test_rejects_zero_repetitions(self) -> None:
+        """repetitions=0 should raise ValueError."""
+        with pytest.raises(ValueError, match="repetitions"):
+            EvalRunConfig(repetitions=0)
+
+    def test_rejects_negative_repetitions(self) -> None:
+        """repetitions=-1 should raise ValueError."""
+        with pytest.raises(ValueError, match="repetitions"):
+            EvalRunConfig(repetitions=-1)
+
+    def test_rejects_zero_max_connections(self) -> None:
+        """max_connections=0 should raise ValueError."""
+        with pytest.raises(ValueError, match="max_connections"):
+            EvalRunConfig(max_connections=0)
+
+    def test_rejects_negative_max_connections(self) -> None:
+        """max_connections=-1 should raise ValueError."""
+        with pytest.raises(ValueError, match="max_connections"):
+            EvalRunConfig(max_connections=-1)
+
+    def test_rejects_negative_temperature(self) -> None:
+        """temperature=-0.5 should raise ValueError."""
+        with pytest.raises(ValueError, match="temperature"):
+            EvalRunConfig(temperature=-0.5)
+
+    def test_rejects_temperature_above_2(self) -> None:
+        """temperature=2.5 should raise ValueError."""
+        with pytest.raises(ValueError, match="temperature"):
+            EvalRunConfig(temperature=2.5)
+
+    def test_rejects_invalid_output_format(self) -> None:
+        """output_format='invalid' should raise ValueError."""
+        with pytest.raises(ValueError, match="output_format"):
+            EvalRunConfig(output_format="invalid")
+
+    def test_accepts_valid_output_formats(self) -> None:
+        """json, csv, and both are valid output_format values."""
+        for fmt in ("json", "csv", "both"):
+            config = EvalRunConfig(output_format=fmt)
+            assert config.output_format == fmt
+
+    def test_rejects_zero_max_tokens(self) -> None:
+        """max_tokens=0 should raise ValueError."""
+        with pytest.raises(ValueError, match="max_tokens"):
+            EvalRunConfig(max_tokens=0)
+
     def test_custom_values(self) -> None:
         config = EvalRunConfig(
             repetitions=5,
@@ -569,6 +615,45 @@ class TestRunMethod:
         v1.setup.assert_called_once_with(doc_tree)
         v1.teardown.assert_called_once()
         v2.setup.assert_called_once_with(doc_tree)
+        v2.teardown.assert_called_once()
+
+    def test_teardown_called_when_later_setup_fails(self) -> None:
+        """If setup() fails for one variant, already-set-up variants still get teardown."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False, max_connections=1)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        v1 = _make_mock_variant(name="v1")
+        v2 = _make_mock_variant(name="v2")
+        doc_tree = _make_sample_doc_tree()
+
+        # v1 setup succeeds, v2 setup raises
+        v2.setup.side_effect = RuntimeError("setup explosion")
+
+        with pytest.raises(RuntimeError, match="setup explosion"):
+            runner.run([task], [v1, v2], doc_tree)
+
+        # v1 was set up successfully so it MUST be torn down
+        v1.teardown.assert_called_once()
+
+    def test_teardown_failure_does_not_prevent_other_teardowns(self) -> None:
+        """If one variant's teardown() raises, remaining variants still get teardown."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False, max_connections=1)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        v1 = _make_mock_variant(name="v1")
+        v2 = _make_mock_variant(name="v2")
+        doc_tree = _make_sample_doc_tree()
+
+        # v1 teardown raises, v2 teardown should still be called
+        v1.teardown.side_effect = RuntimeError("teardown explosion")
+
+        runner.run([task], [v1, v2], doc_tree)
+
+        v1.teardown.assert_called_once()
         v2.teardown.assert_called_once()
 
     def test_progress_callback_called(self) -> None:
