@@ -131,7 +131,7 @@ class ObservatoryStore:
             conn.executescript(_SCHEMA)
 
     def _migrate_schema(self) -> None:
-        """Add new columns to existing tables (idempotent)."""
+        """Add new columns and indexes to existing tables (idempotent)."""
         migrations = [
             "ALTER TABLE runs ADD COLUMN parent_run_id TEXT",
             "ALTER TABLE runs ADD COLUMN phase TEXT",
@@ -139,6 +139,14 @@ class ObservatoryStore:
             "ALTER TABLE runs ADD COLUMN heartbeat_at TEXT",
             "ALTER TABLE trials ADD COLUMN oa_row_id INTEGER",
             "ALTER TABLE trials ADD COLUMN phase TEXT",
+        ]
+        indexes = [
+            "CREATE INDEX IF NOT EXISTS idx_trials_run_type_variant "
+            "ON trials (run_id, task_type, variant_name)",
+            "CREATE INDEX IF NOT EXISTS idx_trials_source_type "
+            "ON trials (source, task_type)",
+            "CREATE INDEX IF NOT EXISTS idx_trials_variant_rep "
+            "ON trials (variant_name, repetition)",
         ]
         with self._connect() as conn:
             for stmt in migrations:
@@ -149,6 +157,8 @@ class ObservatoryStore:
                     if "duplicate column" in msg or "already exists" in msg:
                         continue
                     raise
+            for stmt in indexes:
+                conn.execute(stmt)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path))

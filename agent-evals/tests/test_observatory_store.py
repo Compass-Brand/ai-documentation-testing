@@ -573,3 +573,49 @@ class TestPhaseAndPipeline:
         store2 = ObservatoryStore(tmp_path / "test.db")
         trials = store2.get_trials("old-run")
         assert len(trials) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestDatabaseIndexes
+# ---------------------------------------------------------------------------
+
+
+class TestDatabaseIndexes:
+    """Verify performance indexes exist on trials table."""
+
+    def _get_index_names(self, store: ObservatoryStore) -> set[str]:
+        """Return set of index names in the database."""
+        with store._connect() as conn:
+            rows = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            ).fetchall()
+        return {r["name"] for r in rows}
+
+    def test_should_have_run_id_composite_index(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Composite index on (run_id, task_type, variant_name) for filtered queries."""
+        indexes = self._get_index_names(store)
+        assert "idx_trials_run_type_variant" in indexes
+
+    def test_should_have_source_task_type_index(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Index on (source, task_type) for dashboard source filtering."""
+        indexes = self._get_index_names(store)
+        assert "idx_trials_source_type" in indexes
+
+    def test_should_have_variant_repetition_index(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Index on (variant_name, repetition) for variant analysis queries."""
+        indexes = self._get_index_names(store)
+        assert "idx_trials_variant_rep" in indexes
+
+    def test_indexes_created_idempotently(self, tmp_path: Path) -> None:
+        """Re-creating store on same DB does not fail on existing indexes."""
+        db_path = tmp_path / "test.db"
+        ObservatoryStore(db_path=db_path)
+        store2 = ObservatoryStore(db_path=db_path)
+        indexes = self._get_index_names(store2)
+        assert "idx_trials_run_type_variant" in indexes
