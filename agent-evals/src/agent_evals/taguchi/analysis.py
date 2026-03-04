@@ -10,6 +10,7 @@ Implements the statistical analysis pipeline for Taguchi DOE results:
 
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -18,6 +19,11 @@ from scipy import stats as sp_stats
 
 if TYPE_CHECKING:
     from agent_evals.taguchi.factors import TaguchiDesign
+
+logger = logging.getLogger(__name__)
+
+# Additive model R² threshold: below this, interactions are likely significant.
+_ADDITIVITY_R_SQUARED_THRESHOLD = 0.8
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +67,8 @@ class OptimalPrediction:
     predicted_sn: float
     prediction_interval: tuple[float, float] | None = None
     se_prediction: float | None = None
+    additivity_r_squared: float | None = None
+    additivity_warning: str | None = None
 
 
 @dataclass
@@ -335,15 +343,22 @@ def _apply_bh_correction(factors: list[ANOVAFactorResult]) -> None:
 def predict_optimal(
     main_effects: dict[str, dict[str, float]],
     sn_ratios: dict[int, float] | None = None,
+    design: TaguchiDesign | None = None,
 ) -> OptimalPrediction:
     """Predict the optimal configuration from main effects.
 
     Selects the level with the highest mean S/N for each factor and
     computes the predicted S/N using the additive model.
 
+    When *design* is provided alongside *sn_ratios*, an additivity check
+    is performed.  The R-squared of the additive model is computed by
+    comparing predicted vs observed S/N for every OA row.  If R-squared
+    falls below the threshold, ``additivity_warning`` is set.
+
     Args:
         main_effects: {factor_name: {level_name: mean_sn}}.
         sn_ratios: Optional S/N ratios for prediction interval computation.
+        design: Optional TaguchiDesign for additivity validation.
 
     Returns:
         OptimalPrediction with assignment, predicted S/N, and optional interval.
@@ -383,12 +398,84 @@ def predict_optimal(
             margin = t_val * se
             interval = (predicted - margin, predicted + margin)
 
+    # 4. Additivity check (if design provided)
+    r_squared: float | None = None
+    warning: str | None = None
+
+    if design is not None and sn_ratios is not None:
+        r_squared = _compute_additivity_r_squared(
+            design, main_effects, sn_ratios,
+        )
+        if r_squared < _ADDITIVITY_R_SQUARED_THRESHOLD:
+            warning = (
+                f"Additive model R²={r_squared:.3f} is below "
+                f"{_ADDITIVITY_R_SQUARED_THRESHOLD}. Factor interaction "
+                f"effects may be significant; predicted S/N may be "
+                f"inaccurate by 5-20%."
+            )
+            logger.warning(
+                "Additivity check: R²=%.3f < %.1f threshold. "
+                "Factor interactions likely present.",
+                r_squared,
+                _ADDITIVITY_R_SQUARED_THRESHOLD,
+            )
+
     return OptimalPrediction(
         optimal_assignment=optimal,
         predicted_sn=predicted,
         prediction_interval=interval,
         se_prediction=se,
+        additivity_r_squared=r_squared,
+        additivity_warning=warning,
     )
+
+
+def _compute_additivity_r_squared(
+    design: TaguchiDesign,
+    main_effects: dict[str, dict[str, float]],
+    sn_ratios: dict[int, float],
+) -> float:
+    """Compute R-squared of the additive model against observed S/N ratios.
+
+    For each OA row, the additive prediction is:
+        predicted_row = grand_mean + sum(level_effect_i - factor_mean_i)
+
+    R-squared = 1 - SS_residual / SS_total.
+    """
+    all_values = [v for d in main_effects.values() for v in d.values()]
+    grand_mean = sum(all_values) / len(all_values)
+
+    factor_means = {
+        name: sum(levels.values()) / len(levels)
+        for name, levels in main_effects.items()
+    }
+
+    observed: list[float] = []
+    predicted_vals: list[float] = []
+
+    for row in design.rows:
+        if row.run_id not in sn_ratios:
+            continue
+        obs = sn_ratios[row.run_id]
+        pred = grand_mean
+        for factor_name, levels in main_effects.items():
+            level_name = row.assignments[factor_name]
+            pred += levels[level_name] - factor_means[factor_name]
+        observed.append(obs)
+        predicted_vals.append(pred)
+
+    if len(observed) < 2:
+        return 1.0  # Not enough data to assess
+
+    obs_mean = sum(observed) / len(observed)
+    ss_total = sum((y - obs_mean) ** 2 for y in observed)
+    ss_residual = sum(
+        (y - yhat) ** 2 for y, yhat in zip(observed, predicted_vals)
+    )
+
+    if ss_total == 0:
+        return 1.0  # No variance in data
+    return 1.0 - ss_residual / ss_total
 
 
 # ---------------------------------------------------------------------------
