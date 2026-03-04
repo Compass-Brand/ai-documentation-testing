@@ -16,13 +16,22 @@ describe("FilterSection", () => {
     expect(screen.getByText("Pricing")).toBeInTheDocument();
   });
 
-  it("should render children", () => {
+  it("should render children when open", () => {
+    render(
+      <FilterSection label="Pricing" defaultOpen>
+        <div>Filter content</div>
+      </FilterSection>,
+    );
+    expect(screen.getByText("Filter content")).toBeInTheDocument();
+  });
+
+  it("should hide children by default", () => {
     render(
       <FilterSection label="Pricing">
         <div>Filter content</div>
       </FilterSection>,
     );
-    expect(screen.getByText("Filter content")).toBeInTheDocument();
+    expect(screen.queryByText("Filter content")).not.toBeInTheDocument();
   });
 
   it("should have body-sm font-medium heading", () => {
@@ -36,9 +45,19 @@ describe("FilterSection", () => {
     expect(heading.className).toContain("font-medium");
   });
 
-  it("should render as a button with aria-expanded", () => {
+  it("should render as a button with aria-expanded=false by default", () => {
     render(
       <FilterSection label="Pricing">
+        <div>Content</div>
+      </FilterSection>,
+    );
+    const button = screen.getByRole("button", { name: /pricing/i });
+    expect(button).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("should render as a button with aria-expanded=true when defaultOpen", () => {
+    render(
+      <FilterSection label="Pricing" defaultOpen>
         <div>Content</div>
       </FilterSection>,
     );
@@ -46,24 +65,13 @@ describe("FilterSection", () => {
     expect(button).toHaveAttribute("aria-expanded", "true");
   });
 
-  it("should default to open and show children", () => {
+  it("should show children when defaultOpen is true", () => {
     render(
-      <FilterSection label="Pricing">
+      <FilterSection label="Pricing" defaultOpen>
         <div>Visible content</div>
       </FilterSection>,
     );
     expect(screen.getByText("Visible content")).toBeInTheDocument();
-  });
-
-  it("should hide children when defaultOpen is false", () => {
-    render(
-      <FilterSection label="Pricing" defaultOpen={false}>
-        <div>Hidden content</div>
-      </FilterSection>,
-    );
-    expect(screen.queryByText("Hidden content")).not.toBeInTheDocument();
-    const button = screen.getByRole("button", { name: /pricing/i });
-    expect(button).toHaveAttribute("aria-expanded", "false");
   });
 
   it("should toggle children visibility on click", () => {
@@ -73,20 +81,20 @@ describe("FilterSection", () => {
       </FilterSection>,
     );
     const button = screen.getByRole("button", { name: /pricing/i });
-    expect(screen.getByText("Toggle content")).toBeInTheDocument();
-
-    fireEvent.click(button);
     expect(screen.queryByText("Toggle content")).not.toBeInTheDocument();
-    expect(button).toHaveAttribute("aria-expanded", "false");
 
     fireEvent.click(button);
     expect(screen.getByText("Toggle content")).toBeInTheDocument();
     expect(button).toHaveAttribute("aria-expanded", "true");
+
+    fireEvent.click(button);
+    expect(screen.queryByText("Toggle content")).not.toBeInTheDocument();
+    expect(button).toHaveAttribute("aria-expanded", "false");
   });
 
   it("should render chevron icon that rotates when open", () => {
     render(
-      <FilterSection label="Pricing">
+      <FilterSection label="Pricing" defaultOpen>
         <div>Content</div>
       </FilterSection>,
     );
@@ -144,7 +152,7 @@ describe("FilterCheckbox", () => {
 });
 
 describe("FilterRange", () => {
-  it("should render range input", () => {
+  it("should render two range inputs (low and high)", () => {
     render(
       <FilterRange
         label="Max Price"
@@ -154,7 +162,8 @@ describe("FilterRange", () => {
         onChange={() => {}}
       />,
     );
-    expect(screen.getByRole("slider")).toBeInTheDocument();
+    const sliders = screen.getAllByRole("slider");
+    expect(sliders).toHaveLength(2);
   });
 
   it("should show formatted values", () => {
@@ -172,7 +181,7 @@ describe("FilterRange", () => {
     expect(screen.getByText("$80")).toBeInTheDocument();
   });
 
-  it("should have accent-brand-goldenrod", () => {
+  it("should have dual-range-thumb class", () => {
     render(
       <FilterRange
         label="Price"
@@ -182,10 +191,13 @@ describe("FilterRange", () => {
         onChange={() => {}}
       />,
     );
-    expect(screen.getByRole("slider").className).toContain("accent-brand-goldenrod");
+    const sliders = screen.getAllByRole("slider");
+    sliders.forEach((slider) => {
+      expect(slider.className).toContain("dual-range-thumb");
+    });
   });
 
-  it("should have aria-label", () => {
+  it("should have aria-labels for min and max", () => {
     render(
       <FilterRange
         label="Max Price"
@@ -195,10 +207,12 @@ describe("FilterRange", () => {
         onChange={() => {}}
       />,
     );
-    expect(screen.getByRole("slider")).toHaveAttribute("aria-label", "Max Price");
+    expect(screen.getByRole("slider", { name: "Max Price minimum" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Max Price maximum" })).toBeInTheDocument();
   });
 
-  it("should call onChange when value changes", () => {
+  it("should call onChange when high value changes", () => {
+    vi.useFakeTimers();
     const onChange = vi.fn();
     render(
       <FilterRange
@@ -209,7 +223,9 @@ describe("FilterRange", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getByRole("slider"), { target: { value: "75" } });
+    fireEvent.change(screen.getByRole("slider", { name: "Price maximum" }), { target: { value: "75" } });
+    vi.advanceTimersByTime(200);
     expect(onChange).toHaveBeenCalledWith([0, 75]);
+    vi.useRealTimers();
   });
 });

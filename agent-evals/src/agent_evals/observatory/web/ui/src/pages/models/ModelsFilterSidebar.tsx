@@ -8,7 +8,6 @@ import {
 import { ProviderCombobox } from "../../components/ProviderCombobox";
 import { Input } from "../../components/Input";
 import { FadeIn } from "../../components/FadeIn";
-import { CompassRose } from "../../components/CompassRose";
 
 
 interface ModelsFilterSidebarProps {
@@ -108,15 +107,9 @@ export function ModelsFilterSidebar({
   onClearAll,
 }: ModelsFilterSidebarProps) {
   return (
-    <aside className="hidden lg:block w-[264px] shrink-0 relative">
-      <div
-        className="absolute inset-0 flex items-center justify-center overflow-hidden"
-        data-compass-rose
-      >
-        <CompassRose />
-      </div>
+    <aside className="hidden lg:block w-[264px] shrink-0">
       <FadeIn delay={1}>
-        <div className="relative bg-white/95 rounded-card p-sp-4 -m-sp-4">
+        <div className="relative">
           <Input
             ref={searchRef}
             placeholder="Search models..."
@@ -138,7 +131,7 @@ export function ModelsFilterSidebar({
           </AnimatePresence>
         </div>
 
-        <div className="mt-sp-6">
+        <div className="mt-sp-4 rounded-card border border-brand-mist bg-white p-sp-4">
           <FilterContent
             filters={filters}
             setFilters={setFilters}
@@ -147,7 +140,7 @@ export function ModelsFilterSidebar({
             onProviderChange={onProviderChange}
           />
 
-          <p className="text-caption text-brand-slate mt-sp-4">
+          <p className="text-caption text-brand-slate mt-sp-2">
             {total} models found
             {hasActiveFilters && (
               <button

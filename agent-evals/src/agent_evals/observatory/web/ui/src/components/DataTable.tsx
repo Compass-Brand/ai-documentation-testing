@@ -26,6 +26,8 @@ interface DataTableProps<T> {
   selectedRowIds?: Set<string>;
   getRowId?: (row: T) => string;
   onSelectAll?: (allIds: string[]) => void;
+  /** CSS class for the scroll container when virtualized (overrides default max-h) */
+  scrollClassName?: string;
 }
 
 export function DataTable<T>({
@@ -35,6 +37,7 @@ export function DataTable<T>({
   selectedRowIds,
   getRowId,
   onSelectAll,
+  scrollClassName,
 }: DataTableProps<T>) {
   "use no memo";
   const [sorting, setSorting] = useState<SortingState>([]);
@@ -167,7 +170,7 @@ export function DataTable<T>({
     table.getHeaderGroups().map((hg) => (
       <tr key={hg.id}>
         {selectedRowIds && (
-          <th className="w-10 px-sp-2">
+          <th className="w-10 px-sp-2" style={{ width: 40 }}>
             <CompassCheckbox
               checked={selectedRowIds.size > 0 && selectedRowIds.size === data.length}
               onChange={(checked) => {
@@ -181,7 +184,9 @@ export function DataTable<T>({
             />
           </th>
         )}
-        {hg.headers.map((header) => (
+        {hg.headers.map((header) => {
+          const meta = header.column.columnDef.meta as { align?: string; width?: number | string } | undefined;
+          return (
           <th
             key={header.id}
             className={cn(
@@ -189,8 +194,9 @@ export function DataTable<T>({
               "border-l-2 border-transparent",
               header.column.getCanSort() &&
                 "cursor-pointer select-none hover:border-l-2 hover:border-brand-goldenrod",
-              (header.column.columnDef.meta as { align?: string })?.align === "right" && "text-right",
+              meta?.align === "right" && "text-right",
             )}
+            style={meta?.width != null ? { width: meta.width } : undefined}
             onClick={header.column.getToggleSortingHandler()}
           >
             <span className="inline-flex items-center gap-sp-2">
@@ -213,7 +219,8 @@ export function DataTable<T>({
                 ))}
             </span>
           </th>
-        ))}
+          );
+        })}
       </tr>
     ));
 
@@ -251,17 +258,17 @@ export function DataTable<T>({
       ref={useVirtual ? scrollContainerRef : undefined}
       className={cn(
         "overflow-x-auto rounded-card border border-brand-mist bg-white",
-        useVirtual && "max-h-[600px] overflow-y-auto",
+        useVirtual && (scrollClassName ?? "max-h-[600px]"),
+        useVirtual && "overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
       )}
       {...(useVirtual ? { "data-virtual-scroller": "" } : {})}
     >
-      <table className="w-full text-body-sm">
+      <table className={cn("w-full text-body-sm", useVirtual && "table-fixed")}>
         <thead
           className={cn(
+            "bg-brand-cream",
             useVirtual && "sticky top-0 z-10",
-            useVirtual && scrolled
-              ? "bg-white border-b border-brand-mist/60"
-              : "bg-brand-cream",
+            useVirtual && scrolled && "shadow-[0_1px_3px_rgba(0,0,0,0.06)]",
           )}
         >
           {headerRows}

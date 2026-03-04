@@ -192,8 +192,9 @@ describe("Models page", () => {
     expect(container.querySelector("[aria-hidden='true'].shimmer")).toBeInTheDocument();
   });
 
-  it("should have free models checkbox", () => {
+  it("should have free models checkbox after expanding Pricing filter", () => {
     render(<Models />, { wrapper: createWrapper() });
+    fireEvent.click(screen.getByRole("button", { name: /pricing/i }));
     expect(screen.getByText(/free/i)).toBeInTheDocument();
   });
 

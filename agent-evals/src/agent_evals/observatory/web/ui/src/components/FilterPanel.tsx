@@ -9,7 +9,7 @@ interface FilterSectionProps {
   defaultOpen?: boolean;
 }
 
-export function FilterSection({ label, children, defaultOpen = true }: FilterSectionProps) {
+export function FilterSection({ label, children, defaultOpen = false }: FilterSectionProps) {
   const [isOpen, setIsOpen] = useState(() => defaultOpen);
 
   return (

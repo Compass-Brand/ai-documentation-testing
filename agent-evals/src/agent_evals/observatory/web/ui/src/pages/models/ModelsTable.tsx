@@ -54,10 +54,11 @@ function ModelNameCell({
   };
 
   return (
-    <span className="inline-flex items-center">
+    <span className="inline-flex items-center min-w-0 max-w-full">
       <button
-        className="text-brand-goldenrod cursor-pointer hover:underline font-medium"
+        className="text-brand-goldenrod cursor-pointer hover:underline font-medium truncate"
         onClick={handleClick}
+        title={model.name}
       >
         {model.name}
       </button>
@@ -72,6 +73,7 @@ interface ModelsTableProps {
   onRowClick: (model: Model) => void;
   onSelectAll: (ids: string[]) => void;
   onNameClick: (model: Model) => void;
+  scrollClassName?: string;
 }
 
 export function ModelsTable({
@@ -80,6 +82,7 @@ export function ModelsTable({
   onRowClick,
   onSelectAll,
   onNameClick,
+  scrollClassName,
 }: ModelsTableProps) {
   const columns: ColumnDef<Model>[] = useMemo(
     () => [
@@ -98,7 +101,7 @@ export function ModelsTable({
           </Tooltip>
         ),
         cell: ({ getValue }) => formatPrice(getValue<number>()),
-        meta: { align: "right" },
+        meta: { align: "right", width: "11%" },
       },
       {
         accessorKey: "completion_price",
@@ -108,26 +111,31 @@ export function ModelsTable({
           </Tooltip>
         ),
         cell: ({ getValue }) => formatPrice(getValue<number>()),
-        meta: { align: "right" },
+        meta: { align: "right", width: "13%" },
       },
       {
         accessorKey: "context_length",
         header: "Context",
         cell: ({ getValue }) =>
           `${(getValue<number>() / 1000).toFixed(0)}k`,
-        meta: { align: "right" },
+        meta: { align: "right", width: "9%" },
       },
-      { accessorKey: "modality", header: "Modality" },
+      {
+        accessorKey: "modality",
+        header: "Modality",
+        meta: { width: "9%" },
+      },
       {
         accessorKey: "tokenizer",
         header: "Tokenizer",
         cell: ({ getValue }) => getValue<string>() || "\u2014",
+        meta: { width: "10%" },
       },
       {
         accessorKey: "created",
         header: "Deployed",
         cell: ({ getValue }) => formatDeployed(getValue<number>()),
-        meta: { align: "right" },
+        meta: { align: "right", width: "11%" },
       },
     ],
     [onNameClick],
@@ -141,6 +149,7 @@ export function ModelsTable({
       getRowId={(model) => model.id}
       onRowClick={onRowClick}
       onSelectAll={onSelectAll}
+      scrollClassName={scrollClassName}
     />
   );
 }

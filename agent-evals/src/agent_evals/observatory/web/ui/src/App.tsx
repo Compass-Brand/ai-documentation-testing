@@ -45,7 +45,7 @@ export default function App() {
     <div className="min-h-screen bg-brand-cream">
       <ScrollThread />
       <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} />
-      <nav className="sticky top-0 z-40 border-b border-brand-mist backdrop-blur-md bg-brand-bone/90">
+      <nav className="sticky top-0 z-40 border-b border-brand-mist bg-brand-bone">
         <div className="mx-auto flex max-w-full items-center gap-sp-1 px-sp-6 py-sp-3 overflow-x-auto [-webkit-overflow-scrolling:touch]">
           <Compass className="mr-sp-2 h-5 w-5 text-brand-goldenrod" />
           <span className="mr-sp-6 font-display text-h5 text-brand-charcoal tracking-headline">

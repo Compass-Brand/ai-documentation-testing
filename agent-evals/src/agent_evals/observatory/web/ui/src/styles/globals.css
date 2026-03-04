@@ -215,6 +215,7 @@ input[type="range"]::-moz-range-thumb {
   transition: transform 150ms ease-out, box-shadow 150ms ease-out;
   position: relative;
   z-index: 1;
+  margin-top: -8px;
 }
 
 .dual-range-thumb::-moz-range-thumb {

@@ -6,13 +6,14 @@ export default defineConfig({
   plugins: [
     react({
       babel: {
-        plugins: [["babel-plugin-react-compiler", {}]],
+        plugins: [["babel-plugin-react-compiler", { runtimeModule: "react-compiler-runtime" }]],
       },
     }),
   ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "react/compiler-runtime": path.resolve(__dirname, "node_modules/react-compiler-runtime/dist/index.js"),
     },
   },
   build: {

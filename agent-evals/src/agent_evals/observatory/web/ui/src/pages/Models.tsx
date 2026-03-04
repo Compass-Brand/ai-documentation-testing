@@ -168,7 +168,7 @@ export function Models() {
               }
             />
 
-            <div className="flex gap-sp-6">
+            <div className="flex gap-sp-6 min-h-[calc(100svh-180px)]">
               <ModelsFilterSidebar
                 searchRef={searchRef}
                 searchTerm={state.searchTerm}
@@ -222,6 +222,7 @@ export function Models() {
                           onRowClick={handleRowClick}
                           onSelectAll={handleSelectAll}
                           onNameClick={handleNameClick}
+                          scrollClassName="max-h-[calc(100svh-260px)]"
                         />
                       </m.div>
                     ) : (
