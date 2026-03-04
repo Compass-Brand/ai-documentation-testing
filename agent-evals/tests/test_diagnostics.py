@@ -288,6 +288,61 @@ class TestDiagnosticTrackerFinalSummary:
 # ---------------------------------------------------------------------------
 
 
+class TestDiagnosticTrackerJudgeFailures:
+    """Tests for judge failure tracking."""
+
+    def test_judge_failure_counter_starts_at_zero(self) -> None:
+        tracker = DiagnosticTracker(total_trials=10)
+        snapshot = tracker.snapshot()
+        assert snapshot["total_judge_failures"] == 0
+
+    def test_record_trial_with_judge_failure_increments(self) -> None:
+        tracker = DiagnosticTracker(total_trials=10)
+        tracker.record_trial(
+            tokens=100, cost=0.001, retries=0, api_ms=500.0,
+            trial_ms=600.0, error=False, rate_limited=False,
+            judge_failed=True,
+        )
+        snapshot = tracker.snapshot()
+        assert snapshot["total_judge_failures"] == 1
+
+    def test_judge_failure_false_does_not_increment(self) -> None:
+        tracker = DiagnosticTracker(total_trials=10)
+        tracker.record_trial(
+            tokens=100, cost=0.001, retries=0, api_ms=500.0,
+            trial_ms=600.0, error=False, rate_limited=False,
+            judge_failed=False,
+        )
+        snapshot = tracker.snapshot()
+        assert snapshot["total_judge_failures"] == 0
+
+    def test_judge_failure_default_is_false(self) -> None:
+        """Existing callers that don't pass judge_failed should work."""
+        tracker = DiagnosticTracker(total_trials=10)
+        tracker.record_trial(
+            tokens=100, cost=0.001, retries=0, api_ms=500.0,
+            trial_ms=600.0, error=False, rate_limited=False,
+        )
+        snapshot = tracker.snapshot()
+        assert snapshot["total_judge_failures"] == 0
+
+    def test_multiple_judge_failures_accumulate(self) -> None:
+        tracker = DiagnosticTracker(total_trials=10)
+        for _ in range(3):
+            tracker.record_trial(
+                tokens=100, cost=0.001, retries=0, api_ms=500.0,
+                trial_ms=600.0, error=False, rate_limited=False,
+                judge_failed=True,
+            )
+        tracker.record_trial(
+            tokens=100, cost=0.001, retries=0, api_ms=500.0,
+            trial_ms=600.0, error=False, rate_limited=False,
+            judge_failed=False,
+        )
+        snapshot = tracker.snapshot()
+        assert snapshot["total_judge_failures"] == 3
+
+
 class TestDiagnosticTrackerCompletedOffset:
     """Tests for completed_offset parameter used during resume."""
 
@@ -352,3 +407,84 @@ class TestDiagnosticTrackerCompletedOffset:
 
         assert "RUN COMPLETE" in caplog.text
         assert "151/200" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# Judge failure tracking
+# ---------------------------------------------------------------------------
+
+
+class TestDiagnosticTrackerJudgeFailures:
+    """Tests for judge failure counter in DiagnosticTracker."""
+
+    def test_record_judge_failure_increments_counter(self) -> None:
+        """record_judge_failure should increment the judge failures count."""
+        tracker = DiagnosticTracker(total_trials=10)
+        tracker.record_judge_failure()
+        tracker.record_judge_failure()
+        snapshot = tracker.snapshot()
+        assert snapshot["total_judge_failures"] == 2
+
+    def test_judge_failures_starts_at_zero(self) -> None:
+        """Judge failure counter should start at zero."""
+        tracker = DiagnosticTracker(total_trials=10)
+        snapshot = tracker.snapshot()
+        assert snapshot["total_judge_failures"] == 0
+
+    def test_judge_failures_thread_safe(self) -> None:
+        """Multiple threads recording judge failures concurrently."""
+        tracker = DiagnosticTracker(total_trials=1000)
+        num_threads = 10
+        failures_per_thread = 50
+
+        def record_batch() -> None:
+            for _ in range(failures_per_thread):
+                tracker.record_judge_failure()
+
+        threads = [threading.Thread(target=record_batch) for _ in range(num_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        snapshot = tracker.snapshot()
+        assert snapshot["total_judge_failures"] == num_threads * failures_per_thread
+
+    def test_judge_failures_in_heartbeat(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Heartbeat log should include judge failure count."""
+        tracker = DiagnosticTracker(
+            total_trials=100, heartbeat_interval=0.1,
+        )
+        tracker.record_trial(
+            tokens=100, cost=0.001, retries=0, api_ms=100.0,
+            trial_ms=200.0, error=False, rate_limited=False,
+        )
+        tracker.record_judge_failure()
+        tracker.record_judge_failure()
+        tracker.record_judge_failure()
+
+        with caplog.at_level(logging.INFO, logger="agent_evals.diagnostics"):
+            tracker.start()
+            time.sleep(0.3)
+            tracker.stop()
+
+        assert "3 judge-fail" in caplog.text
+
+    def test_judge_failures_in_summary(
+        self, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Final summary log should include judge failure count."""
+        tracker = DiagnosticTracker(total_trials=10, heartbeat_interval=60)
+        tracker.record_trial(
+            tokens=100, cost=0.001, retries=0, api_ms=100.0,
+            trial_ms=200.0, error=False, rate_limited=False,
+        )
+        tracker.record_judge_failure()
+
+        with caplog.at_level(logging.INFO, logger="agent_evals.diagnostics"):
+            tracker.start()
+            tracker.stop()
+
+        assert "1 judge-fail" in caplog.text

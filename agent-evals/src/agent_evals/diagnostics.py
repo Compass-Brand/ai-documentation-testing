@@ -47,6 +47,7 @@ class DiagnosticTracker:
         self._total_retries = 0
         self._total_rate_limits = 0
         self._total_errors = 0
+        self._total_judge_failures = 0
         self._total_api_ms = 0.0
         self._total_trial_ms = 0.0
         self._last_trial_time: float = time.monotonic()
@@ -80,6 +81,11 @@ class DiagnosticTracker:
             self._total_trial_ms += trial_ms
             self._last_trial_time = time.monotonic()
 
+    def record_judge_failure(self) -> None:
+        """Record a judge call failure (thread-safe)."""
+        with self._lock:
+            self._total_judge_failures += 1
+
     def snapshot(self) -> dict[str, float | int]:
         """Return a point-in-time copy of all stats."""
         with self._lock:
@@ -94,6 +100,7 @@ class DiagnosticTracker:
                 "total_retries": self._total_retries,
                 "total_rate_limits": self._total_rate_limits,
                 "total_errors": self._total_errors,
+                "total_judge_failures": self._total_judge_failures,
                 "total_api_ms": total_api_ms,
                 "total_trial_ms": total_trial_ms,
                 "avg_api_ms": total_api_ms / completed if completed else 0.0,
@@ -136,7 +143,8 @@ class DiagnosticTracker:
             logger.info(
                 "HEARTBEAT %d/%d (%.1f%%) | %.1f trials/min | $%.4f spent | "
                 "%d tokens | %d retries | %d rate-limits | avg_api=%.0fms "
-                "avg_trial=%.0fms | %d errors | last_trial %.0fs ago",
+                "avg_trial=%.0fms | %d errors | %d judge-failures | "
+                "last_trial %.0fs ago",
                 snap["completed"],
                 self._total,
                 pct,
@@ -148,6 +156,7 @@ class DiagnosticTracker:
                 snap["avg_api_ms"],
                 snap["avg_trial_ms"],
                 snap["total_errors"],
+                snap["total_judge_failures"],
                 since_last,
             )
 
@@ -169,7 +178,7 @@ class DiagnosticTracker:
         logger.info(
             "RUN COMPLETE: %d/%d trials | %.1f trials/min | $%.4f spent | "
             "%d tokens | %d retries | %d rate-limits | %d errors | "
-            "%.1fs elapsed",
+            "%d judge-failures | %.1fs elapsed",
             snap["completed"],
             self._total,
             rate,
@@ -178,5 +187,6 @@ class DiagnosticTracker:
             snap["total_retries"],
             snap["total_rate_limits"],
             snap["total_errors"],
+            snap["total_judge_failures"],
             elapsed,
         )

@@ -1563,3 +1563,35 @@ class TestJudgeSampling:
         results = [runner._run_trial(task, variant, doc_tree, repetition=i, trial_index=i) for i in range(1, 55)]
         judged = [r for r in results if "judge_score" in r.metrics]
         assert len(judged) >= 1, "At least one trial must be judge-sampled"
+
+    def test_judge_failure_logs_warning_not_debug(
+        self, monkeypatch, caplog,
+    ) -> None:
+        """Judge failures must log at WARNING level, not DEBUG."""
+        import logging
+
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner._call_judge",
+            lambda self, task_type, question, response: (_ for _ in ()).throw(
+                RuntimeError("judge unavailable")
+            ),
+        )
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+        client = _make_mock_client()
+        config = EvalRunConfig(use_cache=False)
+        runner = EvalRunner(client, config=config)
+
+        with caplog.at_level(logging.WARNING, logger="agent_evals.runner"):
+            # trial_index=50 triggers the judge sampling (JUDGE_SAMPLE_RATE=50)
+            result = runner._run_trial(task, variant, doc_tree, repetition=1, trial_index=50)
+
+        # Should NOT have judge_score since the call failed
+        assert "judge_score" not in result.metrics
+        # Should log at WARNING level
+        warning_records = [
+            r for r in caplog.records
+            if r.levelno == logging.WARNING and "judge" in r.message.lower()
+        ]
+        assert len(warning_records) >= 1, "Judge failure should log at WARNING, not DEBUG"

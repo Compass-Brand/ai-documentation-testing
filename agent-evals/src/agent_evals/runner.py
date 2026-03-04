@@ -792,7 +792,7 @@ class EvalRunner:
                     abs(judge_result.score - score), 4,
                 )
             except Exception:
-                logger.debug("Judge call failed for trial %d", trial_index, exc_info=True)
+                logger.warning("Judge call failed for trial %d", trial_index, exc_info=True)
 
         return TrialResult(
             task_id=task.definition.task_id,
