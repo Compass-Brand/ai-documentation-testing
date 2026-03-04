@@ -293,6 +293,56 @@ class TestRunANOVA:
         assert "axis_1" in factor_names
         assert "axis_2" in factor_names
 
+    def test_corrected_p_values_exist(self):
+        """Each factor result should have a corrected_p_value field."""
+        design = _make_design_2factor()
+        sn = {
+            1: 1.0, 2: 1.5, 3: 1.2,
+            4: 3.0, 5: 3.5, 6: 3.2,
+            7: 5.0, 8: 5.5, 9: 5.2,
+        }
+        result = run_anova(design, sn)
+
+        for fr in result.factors:
+            assert hasattr(fr, "corrected_p_value"), (
+                f"{fr.factor_name} missing corrected_p_value"
+            )
+            assert 0 <= fr.corrected_p_value <= 1, (
+                f"{fr.factor_name} corrected_p_value out of range: {fr.corrected_p_value}"
+            )
+
+    def test_corrected_p_values_gte_raw(self):
+        """BH-corrected p-values must be >= raw p-values."""
+        design = _make_design_2factor()
+        sn = {
+            1: 1.0, 2: 1.5, 3: 1.2,
+            4: 3.0, 5: 3.5, 6: 3.2,
+            7: 5.0, 8: 5.5, 9: 5.2,
+        }
+        result = run_anova(design, sn)
+
+        for fr in result.factors:
+            assert fr.corrected_p_value >= fr.p_value - 1e-10, (
+                f"{fr.factor_name}: corrected {fr.corrected_p_value} < raw {fr.p_value}"
+            )
+
+    def test_corrected_p_values_monotone(self):
+        """BH correction ensures corrected p-values are monotone non-decreasing when sorted by raw."""
+        design = _make_design_2factor()
+        sn = {
+            1: 1.0, 2: 1.5, 3: 1.2,
+            4: 3.0, 5: 3.5, 6: 3.2,
+            7: 5.0, 8: 5.5, 9: 5.2,
+        }
+        result = run_anova(design, sn)
+
+        sorted_by_raw = sorted(result.factors, key=lambda f: f.p_value)
+        corrected = [f.corrected_p_value for f in sorted_by_raw]
+        for i in range(1, len(corrected)):
+            assert corrected[i] >= corrected[i - 1] - 1e-10, (
+                f"Corrected p-values not monotone: {corrected}"
+            )
+
 
 # ---------------------------------------------------------------------------
 # Optimal Prediction Tests

@@ -37,6 +37,7 @@ class ANOVAFactorResult:
     p_value: float
     eta_squared: float
     omega_squared: float
+    corrected_p_value: float = 1.0  # BH-corrected p-value
 
 
 @dataclass
@@ -269,6 +270,9 @@ def run_anova(
         else:
             fr.omega_squared = 0.0
 
+    # Benjamini-Hochberg FDR correction for multiple comparisons
+    _apply_bh_correction(factor_results)
+
     error_eta = ss_error / ss_total if ss_total > 1e-30 else 0.0
 
     return ANOVAResult(
@@ -280,6 +284,39 @@ def run_anova(
         error_eta_squared=error_eta,
         grand_mean=grand_mean,
     )
+
+
+def _apply_bh_correction(factors: list[ANOVAFactorResult]) -> None:
+    """Apply Benjamini-Hochberg FDR correction to factor p-values in-place.
+
+    Sets ``corrected_p_value`` on each factor. With m factors, the corrected
+    p-value for rank i (1-based, sorted ascending by raw p) is::
+
+        p_corrected[i] = min(p_raw[i] * m / i, 1.0)
+
+    A backward sweep ensures monotonicity.
+    """
+    m = len(factors)
+    if m == 0:
+        return
+
+    # Sort indices by raw p-value ascending
+    ranked = sorted(range(m), key=lambda i: factors[i].p_value)
+
+    # Forward pass: compute corrected values
+    corrected = [0.0] * m
+    for rank_pos, idx in enumerate(ranked):
+        rank = rank_pos + 1  # 1-based rank
+        corrected[idx] = min(factors[idx].p_value * m / rank, 1.0)
+
+    # Backward sweep for monotonicity: corrected[i] = min(corrected[i], corrected[i+1])
+    for rank_pos in range(m - 2, -1, -1):
+        idx = ranked[rank_pos]
+        next_idx = ranked[rank_pos + 1]
+        corrected[idx] = min(corrected[idx], corrected[next_idx])
+
+    for i in range(m):
+        factors[i].corrected_p_value = corrected[i]
 
 
 # ---------------------------------------------------------------------------

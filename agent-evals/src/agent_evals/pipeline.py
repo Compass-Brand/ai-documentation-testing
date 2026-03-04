@@ -158,9 +158,9 @@ class DOEPipeline:
         anova = run_anova(design, sn_ratios)
         optimal = predict_optimal(main_effects, sn_ratios)
 
-        # 10. Extract significant factors (p < alpha), sorted by omega_squared
+        # 10. Extract significant factors (BH-corrected p < alpha), sorted by omega_squared
         sig_factors = sorted(
-            (f for f in anova.factors if f.p_value < self.config.alpha),
+            (f for f in anova.factors if f.corrected_p_value < self.config.alpha),
             key=lambda f: f.omega_squared,
             reverse=True,
         )

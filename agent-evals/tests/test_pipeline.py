@@ -205,16 +205,19 @@ def test_pipeline_screening_identifies_significant_factors(
     sig_factor_1 = MagicMock()
     sig_factor_1.factor_name = "axis_1"
     sig_factor_1.p_value = 0.001
+    sig_factor_1.corrected_p_value = 0.003
     sig_factor_1.omega_squared = 0.4
 
     sig_factor_2 = MagicMock()
     sig_factor_2.factor_name = "axis_3"
     sig_factor_2.p_value = 0.02
+    sig_factor_2.corrected_p_value = 0.03
     sig_factor_2.omega_squared = 0.2
 
     nonsig_factor = MagicMock()
     nonsig_factor.factor_name = "axis_2"
     nonsig_factor.p_value = 0.15
+    nonsig_factor.corrected_p_value = 0.15
     nonsig_factor.omega_squared = 0.05
 
     mock_anova.return_value = MagicMock(
