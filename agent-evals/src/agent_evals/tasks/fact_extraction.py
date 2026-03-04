@@ -7,10 +7,22 @@ keyword fallback computes fraction of non-stopword keywords found.
 
 from __future__ import annotations
 
+import unicodedata
+
 from rapidfuzz import fuzz, utils as fuzz_utils
 
 from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
+
+
+def _strip_diacritics(text: str) -> str:
+    """Normalize Unicode text by removing combining diacritical marks.
+
+    Decomposes characters via NFD then strips combining marks, so that
+    'café' becomes 'cafe' and 'résumé' becomes 'resume'.
+    """
+    nfd = unicodedata.normalize("NFD", text)
+    return "".join(ch for ch in nfd if unicodedata.category(ch) != "Mn")
 
 
 class FactExtractionTask(EvalTask):
@@ -87,10 +99,15 @@ class FactExtractionTask(EvalTask):
             if alias.lower() in response_lower:
                 return 1.0
 
+        # Normalize diacritics for fuzzy and keyword layers so that
+        # 'café' matches 'cafe', 'résumé' matches 'resume', etc.
+        norm_expected = _strip_diacritics(self._expected_lower)
+        norm_response = _strip_diacritics(response_lower)
+
         # Layer 3: Fuzzy matching — catches paraphrases and abbreviations
         fuzzy_score = fuzz.token_set_ratio(
-            self._expected_lower,
-            response_lower,
+            norm_expected,
+            norm_response,
             processor=fuzz_utils.default_process,
         )
         if fuzzy_score >= 85.0:
@@ -103,7 +120,9 @@ class FactExtractionTask(EvalTask):
         if not keywords:
             return 0.0
 
-        matched = sum(1 for kw in keywords if kw.lower() in response_lower)
+        matched = sum(
+            1 for kw in keywords if _strip_diacritics(kw.lower()) in norm_response
+        )
         return max(0.0, min(1.0, matched / len(keywords)))
 
 

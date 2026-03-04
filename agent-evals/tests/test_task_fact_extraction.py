@@ -183,6 +183,30 @@ class TestFactExtractionTaskScoring:
             score = task.score_response(resp)
             assert 0.0 <= score <= 1.0
 
+    def test_diacritics_cafe_vs_cafe_scores_high(self) -> None:
+        """'cafe' vs 'café' should score >= 0.9 after diacritic normalization."""
+        task = _fact_task(expected_answer="café", answer_aliases=[])
+        score = task.score_response("The cafe serves espresso.")
+        assert score >= 0.9, f"Expected >= 0.9 for cafe/café, got {score}"
+
+    def test_diacritics_naive_vs_naive_scores_high(self) -> None:
+        """'naive' vs 'naïve' should score >= 0.9 after diacritic normalization."""
+        task = _fact_task(expected_answer="naïve", answer_aliases=[])
+        score = task.score_response("A naive implementation would be slow.")
+        assert score >= 0.9, f"Expected >= 0.9 for naive/naïve, got {score}"
+
+    def test_diacritics_resume_vs_resume_scores_high(self) -> None:
+        """'resume' vs 'résumé' should score >= 0.9 after diacritic normalization."""
+        task = _fact_task(expected_answer="résumé", answer_aliases=[])
+        score = task.score_response("Upload your resume to apply.")
+        assert score >= 0.9, f"Expected >= 0.9 for resume/résumé, got {score}"
+
+    def test_diacritics_exact_accented_still_matches(self) -> None:
+        """Exact accented match still scores 1.0."""
+        task = _fact_task(expected_answer="café", answer_aliases=[])
+        score = task.score_response("The café is open now.")
+        assert score == 1.0
+
     def test_fuzzy_paraphrase_scores_above_0_7(self) -> None:
         """Fuzzy match boosts score when keyword matching alone falls short."""
         defn = TaskDefinition(
