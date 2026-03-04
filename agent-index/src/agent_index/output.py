@@ -319,9 +319,10 @@ def inject_into_file(
     # Create parent directories if needed
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # If file doesn't exist, create with just content
+    # If file doesn't exist, create with markers for idempotent updates
     if not target_path.exists():
-        target_path.write_text(content, encoding="utf-8")
+        wrapped = f"{start_marker}\n{content}\n{end_marker}\n"
+        target_path.write_text(wrapped, encoding="utf-8")
         return
 
     # Read existing content

@@ -218,14 +218,17 @@ class TestInjectIntoFile:
     """Tests for inject_into_file function."""
 
     def test_creates_file_if_not_exists(self, tmp_path: Path) -> None:
-        """inject_into_file creates file if it doesn't exist."""
+        """inject_into_file creates file with markers if it doesn't exist."""
         target = tmp_path / "AGENTS.md"
         content = "# Generated content"
 
         inject_into_file(target, content)
 
         assert target.exists()
-        assert target.read_text() == content
+        result = target.read_text()
+        assert "<!-- DOCS:START -->" in result
+        assert "# Generated content" in result
+        assert "<!-- DOCS:END -->" in result
 
     def test_replaces_content_between_markers(self, tmp_path: Path) -> None:
         """inject_into_file replaces content between markers."""
@@ -313,7 +316,9 @@ Generated
         inject_into_file(target, "")
 
         assert target.exists()
-        assert target.read_text() == ""
+        result = target.read_text()
+        assert "<!-- DOCS:START -->" in result
+        assert "<!-- DOCS:END -->" in result
 
     def test_creates_parent_directories(self, tmp_path: Path) -> None:
         """inject_into_file creates parent directories if needed."""
@@ -323,7 +328,9 @@ Generated
         inject_into_file(target, content)
 
         assert target.exists()
-        assert target.read_text() == content
+        result = target.read_text()
+        assert "# Content" in result
+        assert "<!-- DOCS:START -->" in result
 
     def test_marker_content_includes_newlines(self, tmp_path: Path) -> None:
         """inject_into_file properly handles content with newlines."""
@@ -359,6 +366,51 @@ incomplete
         # Should append since markers are incomplete
         assert "# Header" in result
         assert "New content" in result
+
+    def test_new_file_includes_markers(self, tmp_path: Path) -> None:
+        """New file creation wraps content in START/END markers for idempotency."""
+        target = tmp_path / "NEW.md"
+        inject_into_file(target, "generated content")
+
+        result = target.read_text()
+        assert "<!-- DOCS:START -->" in result
+        assert "<!-- DOCS:END -->" in result
+        assert "generated content" in result
+
+    def test_new_file_idempotent_on_second_run(self, tmp_path: Path) -> None:
+        """Running inject twice on a new file replaces content, not duplicates."""
+        target = tmp_path / "NEW.md"
+
+        inject_into_file(target, "first version")
+        inject_into_file(target, "second version")
+
+        result = target.read_text()
+        assert result.count("second version") == 1
+        assert "first version" not in result
+
+    def test_new_file_custom_marker_id(self, tmp_path: Path) -> None:
+        """New file with custom marker_id uses correct markers."""
+        target = tmp_path / "NEW.md"
+        inject_into_file(target, "content", marker_id="INDEX")
+
+        result = target.read_text()
+        assert "<!-- INDEX:START -->" in result
+        assert "<!-- INDEX:END -->" in result
+        assert "content" in result
+
+    def test_new_file_markers_enable_replacement(self, tmp_path: Path) -> None:
+        """Markers written on file creation enable replacement on next call."""
+        target = tmp_path / "NEW.md"
+        inject_into_file(target, "original")
+
+        # Second call should find markers and replace
+        inject_into_file(target, "updated")
+
+        result = target.read_text()
+        assert "<!-- DOCS:START -->" in result
+        assert "<!-- DOCS:END -->" in result
+        assert "updated" in result
+        assert "original" not in result
 
 
 class TestIntegration:
