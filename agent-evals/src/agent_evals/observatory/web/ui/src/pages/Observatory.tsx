@@ -1,17 +1,6 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, Suspense } from "react";
 import { Eye } from "lucide-react";
-import {
-  Chart,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  ArcElement,
-  Filler,
-  Tooltip,
-  Legend,
-} from "chart.js";
-import { Line, Doughnut } from "react-chartjs-2";
+import { LazyLine, LazyDoughnut } from "../lib/lazy-charts";
 import { useRuns, useRun, useCostTrend } from "../api/hooks";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
@@ -24,16 +13,7 @@ import { formatRunLabel } from "../lib/utils";
 import { Select } from "../components/Select";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 
-Chart.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  ArcElement,
-  Filler,
-  Tooltip,
-  Legend,
-);
+
 
 const MODEL_COLORS = [
   CHART_COLORS.primary,
@@ -202,7 +182,9 @@ export function Observatory() {
                   label="Cumulative cost burn chart"
                   summary={`Line chart showing cumulative cost across ${trendRuns.length} runs`}
                 >
-                  <Line data={lineData} options={lineOptions} />
+                  <Suspense fallback={<div className="h-64 animate-pulse bg-brand-mist/30 rounded-card" />}>
+                    <LazyLine data={lineData} options={lineOptions} />
+                  </Suspense>
                 </AccessibleChart>
               </CardContent>
             </Card>
@@ -220,7 +202,9 @@ export function Observatory() {
                       label="Cost by model doughnut chart"
                       summary={`Doughnut chart showing cost distribution across ${modelEntries.length} models`}
                     >
-                      <Doughnut data={doughnutData} />
+                      <Suspense fallback={<div className="h-64 animate-pulse bg-brand-mist/30 rounded-card" />}>
+                        <LazyDoughnut data={doughnutData} />
+                      </Suspense>
                     </AccessibleChart>
                   </div>
                 </CardContent>

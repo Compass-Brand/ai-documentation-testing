@@ -1,4 +1,4 @@
-import React, { Component, useMemo, useCallback, type ErrorInfo, type ReactNode } from "react";
+import React, { Component, useMemo, useCallback, Suspense, type ErrorInfo, type ReactNode } from "react";
 import {
   Activity,
   DollarSign,
@@ -8,16 +8,7 @@ import {
   Hash,
   BarChart3,
 } from "lucide-react";
-import { Line } from "react-chartjs-2";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip as ChartTooltip,
-} from "chart.js";
+import { LazyLine } from "../lib/lazy-charts";
 import { useLiveMonitorState } from "../hooks/useLiveMonitorState";
 import { RunSelector } from "../components/RunSelector";
 import { ModelBreakdown } from "../components/ModelBreakdown";
@@ -34,14 +25,6 @@ import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { cn } from "../lib/utils";
 import { CHART_COLORS } from "../lib/chart-theme";
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  ChartTooltip,
-);
 
 class LiveMonitorErrorBoundary extends Component<
   { children: ReactNode },
@@ -258,7 +241,9 @@ function LiveMonitorContent() {
               <CardTitle className="mb-sp-4">Score Trend</CardTitle>
               <div className="h-[250px]">
                 {state.scores.length > 0 ? (
-                  <Line data={chartData} options={chartOptions} />
+                  <Suspense fallback={<div className="h-64 animate-pulse bg-brand-mist/30 rounded-card" />}>
+                    <LazyLine data={chartData} options={chartOptions} />
+                  </Suspense>
                 ) : (
                   <div className="flex h-full items-center justify-center text-body-sm text-brand-slate">
                     Waiting for trial results...

@@ -42,6 +42,6 @@ export const CHART_PROJECTION = {
 } as const;
 
 export const CHART_ANIMATION = {
-  duration: 800,
+  duration: 400,
   easing: "easeOutQuart" as const,
 } as const;

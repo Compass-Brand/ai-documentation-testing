@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { X } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -107,7 +107,7 @@ export function ComparisonTray({ models, onClose }: ComparisonTrayProps) {
   const gridCols = models.length === 2 ? "grid-cols-2" : "grid-cols-3";
 
   return (
-    <motion.div
+    <m.div
       initial={{ y: "100%" }}
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
@@ -138,6 +138,6 @@ export function ComparisonTray({ models, onClose }: ComparisonTrayProps) {
           ))}
         </div>
       </div>
-    </motion.div>
+    </m.div>
   );
 }

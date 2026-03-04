@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
-import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
+import { m, useMotionValue, useSpring, useTransform } from "framer-motion";
 
 const SPRING = { stiffness: 40, damping: 20 };
-const NUM_RINGS = 18;
-const PTS = 64;
-const RING_GAP = 45;
-const RING_GROWTH = 0.10;
+const NUM_RINGS = 12;
+const PTS = 40;
+const RING_GAP = 55;
+const RING_GROWTH = 0.14;
 const COLOR = [154, 123, 79]; // #9A7B4F
 
 /* ── Compact 2D Perlin noise (no deps) ─────────────────────────── */
@@ -268,7 +268,7 @@ export function AmbientBackground() {
   return (
     <>
       {/* Layer 1: Mouse-reactive gradient mesh */}
-      <motion.div
+      <m.div
         className="fixed inset-0 pointer-events-none"
         style={{ zIndex: -1, background: gradBg }}
         aria-hidden="true"
@@ -278,7 +278,7 @@ export function AmbientBackground() {
       <canvas
         ref={canvasRef}
         className="fixed inset-0 pointer-events-none"
-        style={{ zIndex: 0, willChange: 'transform' }}
+        style={{ zIndex: 0, contain: 'strict' }}
         aria-hidden="true"
       />
 
@@ -288,11 +288,11 @@ export function AmbientBackground() {
         style={{ zIndex: 0 }}
         aria-hidden="true"
       >
-        {Array.from({ length: 12 }, (_, i) => {
+        {Array.from({ length: 6 }, (_, i) => {
           const seed = (i + 1) * 7919;
           return (
             <div
-              key={i}
+              key={`particle-${seed}`}
               className="absolute rounded-full"
               style={{
                 width: 3 + ((seed * 23) % 4),
@@ -303,7 +303,6 @@ export function AmbientBackground() {
                 opacity: 0.2,
                 animation: `float-${i % 3} ${18 + ((seed * 29) % 22)}s ease-in-out infinite`,
                 animationDelay: `${(seed * 31) % 10}s`,
-                willChange: 'transform',
               }}
             />
           );

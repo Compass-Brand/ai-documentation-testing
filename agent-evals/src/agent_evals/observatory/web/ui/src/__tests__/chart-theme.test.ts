@@ -34,8 +34,8 @@ describe("chart-theme constants", () => {
     expect(CHART_PROJECTION.borderWidth).toBe(1);
   });
 
-  it("CHART_ANIMATION has duration 800 and easeOutQuart easing", () => {
-    expect(CHART_ANIMATION.duration).toBe(800);
+  it("CHART_ANIMATION has duration 400 and easeOutQuart easing", () => {
+    expect(CHART_ANIMATION.duration).toBe(400);
     expect(CHART_ANIMATION.easing).toBe("easeOutQuart");
   });
 });

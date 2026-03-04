@@ -1,19 +1,7 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, Suspense } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { BarChart3 } from "lucide-react";
-import {
-  Chart,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  RadialLinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip,
-  Legend,
-} from "chart.js";
-import { Bar, Radar } from "react-chartjs-2";
+import { LazyBar, LazyRadar } from "../lib/lazy-charts";
 import { useRuns, useRun, useRunAnalysis } from "../api/hooks";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
@@ -29,18 +17,6 @@ import { Select } from "../components/Select";
 import { TabBar } from "../components/TabBar";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import type { ColumnDef } from "@tanstack/react-table";
-
-Chart.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  RadialLinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip,
-  Legend,
-);
 
 interface VariantRow {
   name: string;
@@ -259,7 +235,9 @@ export function ResultsExplorer() {
                       label="Variant scores bar chart"
                       summary={`Bar chart showing scores for ${variantRows.length} variants`}
                     >
-                      <Bar data={barData} options={barOptions} />
+                      <Suspense fallback={<div className="h-64 animate-pulse bg-brand-mist/30 rounded-card" />}>
+                        <LazyBar data={barData} options={barOptions} />
+                      </Suspense>
                     </AccessibleChart>
                   </CardContent>
                 </Card>
@@ -276,7 +254,9 @@ export function ResultsExplorer() {
                         label="Model comparison radar chart"
                         summary={`Radar chart comparing ${modelEntries.length} models`}
                       >
-                        <Radar data={radarData} />
+                        <Suspense fallback={<div className="h-64 animate-pulse bg-brand-mist/30 rounded-card" />}>
+                          <LazyRadar data={radarData} />
+                        </Suspense>
                       </AccessibleChart>
                     </CardContent>
                   </Card>

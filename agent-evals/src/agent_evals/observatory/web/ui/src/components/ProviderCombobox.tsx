@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 import { Check, ChevronDown, X, Search } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -60,6 +60,133 @@ const checkVariants = {
   exit: { opacity: 0, scale: 0 },
 };
 
+interface ProviderPillProps {
+  providerKey: string;
+  displayName: string;
+  onRemove: (key: string, e: React.MouseEvent) => void;
+}
+
+function ProviderPill({ providerKey, displayName, onRemove }: ProviderPillProps) {
+  return (
+    <m.span
+      key={providerKey}
+      variants={pillVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      layout
+      className={cn(
+        "inline-flex items-center gap-sp-1 rounded-full",
+        "bg-brand-goldenrod/10 px-sp-2 py-0.5",
+        "text-caption font-medium text-brand-charcoal",
+      )}
+    >
+      <span
+        className="h-2 w-2 rounded-full shrink-0"
+        style={{ backgroundColor: getProviderColor(displayName) }}
+      />
+      {displayName}
+      <button
+        type="button"
+        className="ml-0.5 rounded-full p-0.5 text-brand-slate hover:text-brand-charcoal hover:bg-brand-goldenrod/20 transition-colors duration-micro"
+        onClick={(e) => onRemove(providerKey, e)}
+        aria-label={`Remove ${displayName}`}
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </m.span>
+  );
+}
+
+function OverflowBadge({ count }: { count: number }) {
+  return (
+    <m.span
+      key="overflow"
+      variants={pillVariants}
+      initial="initial"
+      animate="animate"
+      exit="exit"
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      layout
+      className={cn(
+        "inline-flex items-center rounded-full",
+        "bg-brand-mist px-sp-2 py-0.5",
+        "text-caption font-medium text-brand-slate",
+      )}
+    >
+      +{count} more
+    </m.span>
+  );
+}
+
+interface ProviderListItemProps {
+  provider: { name: string; count: number };
+  index: number;
+  isSelected: boolean;
+  isHighlighted: boolean;
+  isFlashed: boolean;
+  onToggle: (name: string) => void;
+  onMouseEnter: (index: number) => void;
+  itemRefs: React.MutableRefObject<Map<number, HTMLButtonElement>>;
+}
+
+function ProviderListItem({
+  provider,
+  index,
+  isSelected,
+  isHighlighted,
+  isFlashed,
+  onToggle,
+  onMouseEnter,
+  itemRefs,
+}: ProviderListItemProps) {
+  return (
+    <button
+      ref={(el) => {
+        if (el) itemRefs.current.set(index, el);
+        else itemRefs.current.delete(index);
+      }}
+      type="button"
+      role="option"
+      aria-selected={isSelected}
+      onClick={() => onToggle(provider.name)}
+      onMouseEnter={() => onMouseEnter(index)}
+      className={cn(
+        "flex w-full items-center gap-sp-3 px-sp-3 py-sp-2",
+        "text-body-sm text-brand-charcoal",
+        "transition-colors duration-micro",
+        isHighlighted && "bg-brand-cream",
+        isFlashed && "bg-brand-goldenrod/10",
+      )}
+    >
+      <span
+        className="h-2.5 w-2.5 rounded-full shrink-0"
+        style={{ backgroundColor: getProviderColor(provider.name) }}
+      />
+      <span className="flex-1 text-left">
+        {provider.name}{" "}
+        <span className="text-brand-slate">({provider.count})</span>
+      </span>
+      <div className="w-4 h-4 flex items-center justify-center shrink-0">
+        <AnimatePresence>
+          {isSelected && (
+            <m.div
+              variants={checkVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{ type: "spring", stiffness: 500, damping: 25 }}
+            >
+              <Check className="h-4 w-4 text-brand-goldenrod" />
+            </m.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </button>
+  );
+}
+
 export function ProviderCombobox({
   providers,
   selected,
@@ -85,17 +212,16 @@ export function ProviderCombobox({
     [providers, search],
   );
 
-  // Reset highlight and search when dropdown opens/closes
-  useEffect(() => {
-    if (open) {
+  const handleOpenChange = useCallback((nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) {
       setSearch("");
       setHighlightIndex(-1);
-      // Focus search input after popover animation starts
       requestAnimationFrame(() => {
         searchInputRef.current?.focus();
       });
     }
-  }, [open]);
+  }, []);
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -178,7 +304,7 @@ export function ProviderCombobox({
   const overflowCount = selectedArray.length - MAX_VISIBLE_PILLS;
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root open={open} onOpenChange={handleOpenChange}>
       <Popover.Trigger asChild>
         <button
           type="button"
@@ -200,66 +326,26 @@ export function ProviderCombobox({
                 const provider = providers.find(
                   (p) => p.name.toLowerCase() === key,
                 );
-                const displayName = provider?.name ?? key;
                 return (
-                  <motion.span
+                  <ProviderPill
                     key={key}
-                    variants={pillVariants}
-                    initial="initial"
-                    animate="animate"
-                    exit="exit"
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                    layout
-                    className={cn(
-                      "inline-flex items-center gap-sp-1 rounded-full",
-                      "bg-brand-goldenrod/10 px-sp-2 py-0.5",
-                      "text-caption font-medium text-brand-charcoal",
-                    )}
-                  >
-                    <span
-                      className="h-2 w-2 rounded-full shrink-0"
-                      style={{ backgroundColor: getProviderColor(displayName) }}
-                    />
-                    {displayName}
-                    <button
-                      type="button"
-                      className="ml-0.5 rounded-full p-0.5 text-brand-slate hover:text-brand-charcoal hover:bg-brand-goldenrod/20 transition-colors duration-micro"
-                      onClick={(e) => removePill(key, e)}
-                      aria-label={`Remove ${displayName}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </motion.span>
+                    providerKey={key}
+                    displayName={provider?.name ?? key}
+                    onRemove={removePill}
+                  />
                 );
               })}
-              {overflowCount > 0 && (
-                <motion.span
-                  key="overflow"
-                  variants={pillVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  layout
-                  className={cn(
-                    "inline-flex items-center rounded-full",
-                    "bg-brand-mist px-sp-2 py-0.5",
-                    "text-caption font-medium text-brand-slate",
-                  )}
-                >
-                  +{overflowCount} more
-                </motion.span>
-              )}
+              {overflowCount > 0 && <OverflowBadge count={overflowCount} />}
             </AnimatePresence>
           </div>
 
-          <motion.div
+          <m.div
             animate={{ rotate: open ? 180 : 0 }}
             transition={{ type: "spring", stiffness: 300, damping: 20 }}
             className="shrink-0 text-brand-slate"
           >
             <ChevronDown className="h-4 w-4" />
-          </motion.div>
+          </m.div>
         </button>
       </Popover.Trigger>
 
@@ -273,7 +359,7 @@ export function ProviderCombobox({
               className="z-50"
               onKeyDown={handleKeyDown}
             >
-              <motion.div
+              <m.div
                 variants={dropdownVariants}
                 initial="initial"
                 animate="animate"
@@ -316,68 +402,21 @@ export function ProviderCombobox({
                       No providers match "{search}"
                     </p>
                   )}
-                  {filteredProviders.map((provider, index) => {
-                    const key = provider.name.toLowerCase();
-                    const isSelected = selected.has(key);
-                    const isHighlighted = highlightIndex === index;
-                    const isFlashed = flashedProvider === key;
-
-                    return (
-                      <button
-                        key={provider.name}
-                        ref={(el) => {
-                          if (el) itemRefs.current.set(index, el);
-                          else itemRefs.current.delete(index);
-                        }}
-                        type="button"
-                        role="option"
-                        aria-selected={isSelected}
-                        onClick={() => toggleProvider(provider.name)}
-                        onMouseEnter={() => setHighlightIndex(index)}
-                        className={cn(
-                          "flex w-full items-center gap-sp-3 px-sp-3 py-sp-2",
-                          "text-body-sm text-brand-charcoal",
-                          "transition-colors duration-micro",
-                          isHighlighted && "bg-brand-cream",
-                          isFlashed && "bg-brand-goldenrod/10",
-                        )}
-                      >
-                        <span
-                          className="h-2.5 w-2.5 rounded-full shrink-0"
-                          style={{
-                            backgroundColor: getProviderColor(provider.name),
-                          }}
-                        />
-                        <span className="flex-1 text-left">
-                          {provider.name}{" "}
-                          <span className="text-brand-slate">
-                            ({provider.count})
-                          </span>
-                        </span>
-                        <div className="w-4 h-4 flex items-center justify-center shrink-0">
-                          <AnimatePresence>
-                            {isSelected && (
-                              <motion.div
-                                variants={checkVariants}
-                                initial="initial"
-                                animate="animate"
-                                exit="exit"
-                                transition={{
-                                  type: "spring",
-                                  stiffness: 500,
-                                  damping: 25,
-                                }}
-                              >
-                                <Check className="h-4 w-4 text-brand-goldenrod" />
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                      </button>
-                    );
-                  })}
+                  {filteredProviders.map((provider, index) => (
+                    <ProviderListItem
+                      key={provider.name}
+                      provider={provider}
+                      index={index}
+                      isSelected={selected.has(provider.name.toLowerCase())}
+                      isHighlighted={highlightIndex === index}
+                      isFlashed={flashedProvider === provider.name.toLowerCase()}
+                      onToggle={toggleProvider}
+                      onMouseEnter={setHighlightIndex}
+                      itemRefs={itemRefs}
+                    />
+                  ))}
                 </div>
-              </motion.div>
+              </m.div>
             </Popover.Content>
           </Popover.Portal>
         )}

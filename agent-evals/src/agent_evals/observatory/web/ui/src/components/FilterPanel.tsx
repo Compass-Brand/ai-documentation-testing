@@ -10,7 +10,7 @@ interface FilterSectionProps {
 }
 
 export function FilterSection({ label, children, defaultOpen = true }: FilterSectionProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [isOpen, setIsOpen] = useState(() => defaultOpen);
 
   return (
     <div className="mb-sp-6">
@@ -86,9 +86,15 @@ export function FilterRange({
   const trackRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  // Local state for instant visual feedback; debounce parent callback
-  const [localValue, setLocalValue] = useState(value);
-  useEffect(() => { setLocalValue(value); }, [value]);
+  // Local state for instant visual feedback; debounce parent callback.
+  // Use a key derived from the prop to reset local state when the prop changes,
+  // avoiding both useEffect sync and ref access during render.
+  const [localValue, setLocalValue] = useState(() => value);
+  const [trackedValue, setTrackedValue] = useState(() => value);
+  if (trackedValue[0] !== value[0] || trackedValue[1] !== value[1]) {
+    setTrackedValue(value);
+    setLocalValue(value);
+  }
 
   // Clean up debounce timer on unmount
   useEffect(() => {

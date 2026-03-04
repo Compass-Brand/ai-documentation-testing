@@ -1,15 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, Suspense } from "react";
 import { useParams } from "react-router-dom";
 import { FlaskConical, BarChart3 } from "lucide-react";
-import {
-  Chart,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Tooltip as ChartTooltip,
-  Legend,
-} from "chart.js";
-import { Bar } from "react-chartjs-2";
 import { useRunAnalysis } from "../api/hooks";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
 import { Skeleton } from "../components/Skeleton";
@@ -20,10 +11,9 @@ import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { CHART_COLORS } from "../lib/chart-theme";
+import { LazyBar } from "../lib/lazy-charts";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import type { ColumnDef } from "@tanstack/react-table";
-
-Chart.register(CategoryScale, LinearScale, BarElement, ChartTooltip, Legend);
 
 interface AnovaRow {
   factor: string;
@@ -108,6 +98,47 @@ export function FactorAnalysis() {
   const { runId } = useParams<{ runId: string }>();
   const { data: analysis, isLoading } = useRunAnalysis(runId ?? null);
 
+  const factors = analysis ? Object.keys(analysis.main_effects) : [];
+  const allLevels = useMemo(() => analysis ? Array.from(
+    new Set(factors.flatMap((f) => Object.keys(analysis.main_effects[f]))),
+  ) : [], [analysis, factors]);
+
+  const barData = useMemo(() => ({
+    labels: factors,
+    datasets: allLevels.map((level, i) => ({
+      label: level,
+      data: factors.map((f) => analysis?.main_effects[f][level] ?? 0),
+      backgroundColor: LEVEL_COLORS[i % LEVEL_COLORS.length],
+      borderRadius: 4,
+    })),
+  }), [factors, allLevels, analysis]);
+
+  const barOptions = useMemo(() => ({
+    responsive: true,
+    plugins: {
+      legend: { display: true },
+    },
+    scales: {
+      y: {
+        title: { display: true, text: "S/N Ratio (dB)" },
+      },
+    },
+  }), []);
+
+  const anovaRows: AnovaRow[] = analysis ? Object.entries(analysis.anova).map(
+    ([factor, stats]) => ({
+      factor,
+      ss: stats.ss,
+      df: stats.df,
+      ms: stats.ms,
+      f_ratio: stats.f_ratio,
+      p_value: stats.p_value,
+      eta_squared: stats.eta_squared ?? 0,
+      omega_squared: stats.omega_squared,
+      significant: analysis.significant_factors.includes(factor),
+    }),
+  ) : [];
+
   if (isLoading) {
     return (
       <div className="mx-auto max-w-wide px-sp-6 py-sp-8">
@@ -135,47 +166,6 @@ export function FactorAnalysis() {
     );
   }
 
-  const factors = Object.keys(analysis.main_effects);
-  const allLevels = useMemo(() => Array.from(
-    new Set(factors.flatMap((f) => Object.keys(analysis.main_effects[f]))),
-  ), [analysis, factors]);
-
-  const barData = useMemo(() => ({
-    labels: factors,
-    datasets: allLevels.map((level, i) => ({
-      label: level,
-      data: factors.map((f) => analysis.main_effects[f][level] ?? 0),
-      backgroundColor: LEVEL_COLORS[i % LEVEL_COLORS.length],
-      borderRadius: 4,
-    })),
-  }), [factors, allLevels, analysis]);
-
-  const barOptions = useMemo(() => ({
-    responsive: true,
-    plugins: {
-      legend: { display: true },
-    },
-    scales: {
-      y: {
-        title: { display: true, text: "S/N Ratio (dB)" },
-      },
-    },
-  }), []);
-
-  const anovaRows: AnovaRow[] = Object.entries(analysis.anova).map(
-    ([factor, stats]) => ({
-      factor,
-      ss: stats.ss,
-      df: stats.df,
-      ms: stats.ms,
-      f_ratio: stats.f_ratio,
-      p_value: stats.p_value,
-      eta_squared: stats.eta_squared ?? 0,
-      omega_squared: stats.omega_squared,
-      significant: analysis.significant_factors.includes(factor),
-    }),
-  );
-
   return (
     <div className="mx-auto max-w-wide px-sp-6 py-sp-8">
       <FadeIn>
@@ -200,7 +190,9 @@ export function FactorAnalysis() {
               label="Main effects bar chart"
               summary={`Bar chart showing S/N ratios for ${factors.length} factors`}
             >
-              <Bar data={barData} options={barOptions} />
+              <Suspense fallback={<div className="h-64 animate-pulse bg-brand-mist/30 rounded-card" />}>
+                <LazyBar data={barData} options={barOptions} />
+              </Suspense>
             </AccessibleChart>
           </CardContent>
         </Card>

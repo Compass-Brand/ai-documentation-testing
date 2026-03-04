@@ -1,10 +1,13 @@
-import { useEffect, useRef } from "react";
-import { motion, useMotionValue, useSpring } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { m, useMotionValue, useSpring } from "framer-motion";
 
 const SPRING_CONFIG = { stiffness: 500, damping: 35 };
 const GLOW_SIZE = 220;
 
 export function CursorGlow() {
+  const [hasPointer, setHasPointer] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches,
+  );
   const mouseX = useMotionValue(-GLOW_SIZE);
   const mouseY = useMotionValue(-GLOW_SIZE);
   const springX = useSpring(mouseX, SPRING_CONFIG);
@@ -13,6 +16,15 @@ export function CursorGlow() {
   const latestEvent = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
+    const mq = window.matchMedia("(pointer: fine)");
+    const onChange = (e: MediaQueryListEvent) => setHasPointer(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!hasPointer) return;
+
     const handleMouseMove = (e: MouseEvent) => {
       latestEvent.current = { x: e.clientX - GLOW_SIZE / 2, y: e.clientY - GLOW_SIZE / 2 };
       if (!pending.current) {
@@ -27,10 +39,12 @@ export function CursorGlow() {
 
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [mouseX, mouseY]);
+  }, [mouseX, mouseY, hasPointer]);
+
+  if (!hasPointer) return null;
 
   return (
-    <motion.div
+    <m.div
       className="fixed pointer-events-none"
       style={{
         x: springX,

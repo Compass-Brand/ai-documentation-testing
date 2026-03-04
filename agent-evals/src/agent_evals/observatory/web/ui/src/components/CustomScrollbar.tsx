@@ -1,4 +1,4 @@
-import { motion, useMotionValue, useSpring, animate } from "framer-motion";
+import { m, useMotionValue, useSpring, animate } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 
@@ -14,10 +14,12 @@ const THUMB_MIN_HEIGHT = 24;
 
 const SPRING_CONFIG = { stiffness: 300, damping: 30 };
 
+const EMPTY_POSITIONS: number[] = [];
+
 export function CustomScrollbar({
   children,
   scrollRef,
-  selectedPositions = [],
+  selectedPositions = EMPTY_POSITIONS,
   className,
 }: CustomScrollbarProps) {
   const trackRef = useRef<HTMLDivElement>(null);
@@ -132,15 +134,15 @@ export function CustomScrollbar({
       {children}
 
       {/* track */}
-      <motion.div
+      <m.div
         ref={trackRef}
         className="absolute right-0 top-0 z-20 w-[10px] rounded-full"
         style={{ height: trackHeight || "100%", opacity }}
       >
         {/* mini-map dots */}
-        {selectedPositions.map((pos, i) => (
+        {selectedPositions.map((pos) => (
           <div
-            key={i}
+            key={`pos-${pos.toFixed(6)}`}
             className="absolute left-1/2 h-[3px] w-[3px] -translate-x-1/2 rounded-full"
             style={{
               top: `${pos * 100}%`,
@@ -151,7 +153,7 @@ export function CustomScrollbar({
         ))}
 
         {/* thumb */}
-        <motion.div
+        <m.div
           className="absolute left-1/2 w-[6px] -translate-x-1/2 cursor-grab rounded-full active:cursor-grabbing"
           style={{
             y: springY,
@@ -165,7 +167,7 @@ export function CustomScrollbar({
           transition={{ duration: 0.15 }}
           onPointerDown={onPointerDown}
         />
-      </motion.div>
+      </m.div>
     </div>
   );
 }

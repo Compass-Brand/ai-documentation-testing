@@ -8,14 +8,14 @@ import {
   type Row,
 } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { motion } from "framer-motion";
+import { m } from "framer-motion";
 import { ArrowUpDown, ChevronUp } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { CompassCheckbox } from "./CompassCheckbox";
 import { CustomScrollbar } from "./CustomScrollbar";
 
-const VIRTUAL_THRESHOLD = 50;
+const VIRTUAL_THRESHOLD = 25;
 
 const ROW_SPRING = { type: "spring" as const, stiffness: 400, damping: 30 };
 
@@ -36,6 +36,7 @@ export function DataTable<T>({
   getRowId,
   onSelectAll,
 }: DataTableProps<T>) {
+  "use no memo";
   const [sorting, setSorting] = useState<SortingState>([]);
   const [scrolled, setScrolled] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -99,7 +100,7 @@ export function DataTable<T>({
     const rowId = getRowId?.(row.original) ?? row.id;
     const isSelected = selectedRowIds?.has(rowId) ?? false;
     const isFirstEnter = !hasEntered.current.has(rowId);
-    const shouldAnimate = isFirstEnter && rowIndex < 20;
+    const shouldAnimate = isFirstEnter && rowIndex < 10;
 
     if (isFirstEnter) {
       hasEntered.current.add(rowId);
@@ -107,7 +108,7 @@ export function DataTable<T>({
 
     return (
       <React.Fragment key={row.id}>
-        <motion.tr
+        <m.tr
           initial={shouldAnimate ? { opacity: 0, y: 8 } : false}
           animate={{ opacity: 1, y: 0 }}
           className={cn(
@@ -129,7 +130,7 @@ export function DataTable<T>({
         >
           {selectedRowIds && (
             <td className="py-sp-3 overflow-hidden">
-              <motion.div
+              <m.div
                 initial={false}
                 animate={{
                   scaleX: isSelected ? 1 : 0,
@@ -143,7 +144,7 @@ export function DataTable<T>({
                   checked={isSelected}
                   aria-label="Select row"
                 />
-              </motion.div>
+              </m.div>
             </td>
           )}
           {row.getVisibleCells().map((cell) => (
@@ -157,12 +158,12 @@ export function DataTable<T>({
               {flexRender(cell.column.columnDef.cell, cell.getContext())}
             </td>
           ))}
-        </motion.tr>
+        </m.tr>
       </React.Fragment>
     );
   };
 
-  const renderHeader = () =>
+  const headerRows =
     table.getHeaderGroups().map((hg) => (
       <tr key={hg.id}>
         {selectedRowIds && (
@@ -199,14 +200,14 @@ export function DataTable<T>({
               )}
               {header.column.getCanSort() &&
                 (header.column.getIsSorted() ? (
-                  <motion.div
+                  <m.div
                     animate={{
                       rotate: header.column.getIsSorted() === "desc" ? 180 : 0,
                     }}
                     transition={{ type: "spring", stiffness: 500, damping: 25 }}
                   >
                     <ChevronUp className="h-4 w-4 text-brand-goldenrod" />
-                  </motion.div>
+                  </m.div>
                 ) : (
                   <ArrowUpDown className="h-4 w-4 text-brand-slate/50" />
                 ))}
@@ -249,7 +250,7 @@ export function DataTable<T>({
     <div
       ref={useVirtual ? scrollContainerRef : undefined}
       className={cn(
-        "overflow-x-auto rounded-card border border-brand-mist bg-white backdrop-blur-sm",
+        "overflow-x-auto rounded-card border border-brand-mist bg-white",
         useVirtual && "max-h-[600px] overflow-y-auto",
       )}
       {...(useVirtual ? { "data-virtual-scroller": "" } : {})}
@@ -259,11 +260,11 @@ export function DataTable<T>({
           className={cn(
             useVirtual && "sticky top-0 z-10",
             useVirtual && scrolled
-              ? "backdrop-blur-md bg-white/80 border-b border-brand-mist/60"
+              ? "bg-white border-b border-brand-mist/60"
               : "bg-brand-cream",
           )}
         >
-          {renderHeader()}
+          {headerRows}
         </thead>
         <tbody>
           {useVirtual

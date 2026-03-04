@@ -29,7 +29,9 @@ vi.mock("../../components/CompassCheckbox", () => ({
       data-checked={checked}
       aria-label={ariaLabel}
       role="checkbox"
+      aria-checked={checked}
       onClick={() => onChange?.(!checked)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onChange?.(!checked); }}
     />
   ),
 }));

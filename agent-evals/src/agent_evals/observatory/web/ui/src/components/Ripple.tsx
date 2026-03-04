@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { m, AnimatePresence } from "framer-motion";
 
 interface RippleItem {
   id: number;
@@ -24,9 +24,9 @@ export function useRipple() {
   const RippleContainer = () => (
     <AnimatePresence>
       {ripples.map((ripple) => (
-        <motion.span
+        <m.span
           key={ripple.id}
-          initial={{ scale: 0, opacity: 0.5 }}
+          initial={{ scale: 0.2, opacity: 0.5 }}
           animate={{ scale: 2, opacity: 0 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.4, ease: "easeOut" }}

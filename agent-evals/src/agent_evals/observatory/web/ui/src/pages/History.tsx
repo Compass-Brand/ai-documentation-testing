@@ -1,16 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Suspense } from "react";
 import { History as HistoryIcon } from "lucide-react";
 import type { ColumnDef } from "@tanstack/react-table";
-import {
-  Chart,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip,
-} from "chart.js";
-import { Line } from "react-chartjs-2";
+import { LazyLine } from "../lib/lazy-charts";
 import { useRuns, useCostTrend, useCompareRuns } from "../api/hooks";
 import type { Run } from "../api/client";
 import { Card, CardHeader, CardTitle, CardContent } from "../components/Card";
@@ -24,15 +15,6 @@ import { FadeIn } from "../components/FadeIn";
 import { shortId, formatRunDate } from "../lib/utils";
 import { CHART_COLORS } from "../lib/chart-theme";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
-
-Chart.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip,
-);
 
 const statusMap = {
   completed: "success",
@@ -178,7 +160,9 @@ export function History() {
             >
               <div className="h-64">
                 {trendData.length > 0 ? (
-                  <Line data={lineData} options={lineOptions} />
+                  <Suspense fallback={<div className="h-64 animate-pulse bg-brand-mist/30 rounded-card" />}>
+                    <LazyLine data={lineData} options={lineOptions} />
+                  </Suspense>
                 ) : (
                   <div className="flex h-full items-center justify-center text-brand-slate">
                     No completed runs yet.

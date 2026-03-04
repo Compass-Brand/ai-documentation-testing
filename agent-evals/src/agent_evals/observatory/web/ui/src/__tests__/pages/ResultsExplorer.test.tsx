@@ -5,25 +5,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { ReactNode } from "react";
 
-// Mock chart.js to avoid canvas issues in jsdom
-vi.mock("react-chartjs-2", () => ({
-  Bar: (props: Record<string, unknown>) =>
+// Mock lazy-loaded chart components
+vi.mock("../../lib/lazy-charts", () => ({
+  LazyBar: (props: Record<string, unknown>) =>
     createElement("canvas", { "data-testid": "bar-chart", ...props }),
-  Radar: (props: Record<string, unknown>) =>
+  LazyRadar: (props: Record<string, unknown>) =>
     createElement("canvas", { "data-testid": "radar-chart", ...props }),
-}));
-
-vi.mock("chart.js", () => ({
-  Chart: { register: vi.fn() },
-  CategoryScale: class {},
-  LinearScale: class {},
-  BarElement: class {},
-  RadialLinearScale: class {},
-  PointElement: class {},
-  LineElement: class {},
-  Filler: class {},
-  Tooltip: class {},
-  Legend: class {},
 }));
 
 // Mock the hooks

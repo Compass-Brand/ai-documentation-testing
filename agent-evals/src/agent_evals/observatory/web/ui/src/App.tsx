@@ -1,5 +1,6 @@
 import React, { Suspense, useState } from "react";
 import { Routes, Route, NavLink, useLocation } from "react-router-dom";
+import { LazyMotion, domAnimation } from "framer-motion";
 import {
   Play,
   Activity,
@@ -40,6 +41,7 @@ export default function App() {
   useKeyboardShortcuts(() => setHelpOpen(true));
 
   return (
+    <LazyMotion features={domAnimation}>
     <div className="min-h-screen bg-brand-cream">
       <ScrollThread />
       <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} />
@@ -108,5 +110,6 @@ export default function App() {
         </Suspense>
       </main>
     </div>
+    </LazyMotion>
   );
 }
