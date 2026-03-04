@@ -558,7 +558,7 @@ export function Models() {
                   <CompassRose />
                 </div>
                 <FadeIn delay={1}>
-                  <div className="relative">
+                  <div className="relative bg-white/80 backdrop-blur-sm rounded-card p-sp-4 -m-sp-4">
                     <Input
                       ref={searchRef}
                       placeholder="Search models..."
