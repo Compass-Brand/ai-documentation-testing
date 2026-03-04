@@ -119,6 +119,7 @@ class EvalRunConfig:
     store_traces: bool = False
 
     _VALID_OUTPUT_FORMATS = frozenset({"json", "csv", "both"})
+    _VALID_DISPLAY_MODES = frozenset({"rich", "plain", "none"})
 
     def __post_init__(self) -> None:
         if self.repetitions < 1:
@@ -127,6 +128,8 @@ class EvalRunConfig:
             raise ValueError(
                 f"max_connections must be >= 1, got {self.max_connections}"
             )
+        if self.max_tasks < 1:
+            raise ValueError(f"max_tasks must be >= 1, got {self.max_tasks}")
         if self.max_tokens < 1:
             raise ValueError(f"max_tokens must be >= 1, got {self.max_tokens}")
         if not 0.0 <= self.temperature <= 2.0:
@@ -137,6 +140,11 @@ class EvalRunConfig:
             raise ValueError(
                 f"output_format must be one of {sorted(self._VALID_OUTPUT_FORMATS)}, "
                 f"got {self.output_format!r}"
+            )
+        if self.display_mode not in self._VALID_DISPLAY_MODES:
+            raise ValueError(
+                f"display_mode must be one of {sorted(self._VALID_DISPLAY_MODES)}, "
+                f"got {self.display_mode!r}"
             )
 
 

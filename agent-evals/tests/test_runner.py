@@ -288,6 +288,27 @@ class TestEvalRunConfig:
         assert config.output_dir == "/tmp/reports"
         assert config.display_mode == "plain"
 
+    def test_rejects_zero_max_tasks(self) -> None:
+        """max_tasks=0 should raise ValueError."""
+        with pytest.raises(ValueError, match="max_tasks"):
+            EvalRunConfig(max_tasks=0)
+
+    def test_rejects_negative_max_tasks(self) -> None:
+        """max_tasks=-1 should raise ValueError."""
+        with pytest.raises(ValueError, match="max_tasks"):
+            EvalRunConfig(max_tasks=-1)
+
+    def test_rejects_invalid_display_mode(self) -> None:
+        """display_mode='fancy' should raise ValueError."""
+        with pytest.raises(ValueError, match="display_mode"):
+            EvalRunConfig(display_mode="fancy")
+
+    def test_accepts_valid_display_modes(self) -> None:
+        """rich, plain, and none are valid display_mode values."""
+        for mode in ("rich", "plain", "none"):
+            config = EvalRunConfig(display_mode=mode)
+            assert config.display_mode == mode
+
 
 # ---------------------------------------------------------------------------
 # EvalRunResult dataclass tests
