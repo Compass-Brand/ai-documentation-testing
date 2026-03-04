@@ -9,12 +9,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
+import random
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
 
 from agent_index.models import DocFile, DocTree
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubError(Exception):
@@ -40,6 +46,7 @@ def scan_local(
     *,
     file_extensions: set[str] | None = None,
     ignore_patterns: list[str] | None = None,
+    max_file_size: int | None = None,
 ) -> DocTree:
     """Scan a local directory for documentation files.
 
@@ -50,6 +57,8 @@ def scan_local(
         root_path: Directory to scan.
         file_extensions: File extensions to include (default: .md, .mdx, .rst, .txt).
         ignore_patterns: Path patterns to ignore (default: node_modules, __pycache__, .git, .venv).
+        max_file_size: Maximum file size in bytes. Files exceeding this are
+            skipped with a warning. None means no limit.
 
     Returns:
         DocTree with all matching files.
@@ -75,7 +84,10 @@ def scan_local(
 
     # Collect files
     files: dict[str, DocFile] = {}
-    _scan_directory(root, root, extensions_lower, ignores, files, visited_dirs=set())
+    _scan_directory(
+        root, root, extensions_lower, ignores, files,
+        visited_dirs=set(), max_file_size=max_file_size,
+    )
 
     return DocTree(
         files=files,
@@ -91,6 +103,7 @@ def _scan_directory(
     ignore_patterns: list[str],
     files: dict[str, DocFile],
     visited_dirs: set[Path],
+    max_file_size: int | None = None,
 ) -> None:
     """Recursively scan a directory for documentation files.
 
@@ -101,6 +114,7 @@ def _scan_directory(
         ignore_patterns: Path patterns to ignore.
         files: Dictionary to populate with found files.
         visited_dirs: Set of real paths already visited (for loop detection).
+        max_file_size: Maximum file size in bytes. None means no limit.
     """
     # Resolve to real path for loop detection
     try:
@@ -137,7 +151,7 @@ def _scan_directory(
                     continue
                 # Symlink to file - process it
                 if _matches_extension(entry, extensions):
-                    doc = _create_docfile(entry, root)
+                    doc = _create_docfile(entry, root, max_file_size)
                     if doc is not None:
                         files[doc.rel_path] = doc
             except OSError:
@@ -145,10 +159,13 @@ def _scan_directory(
                 continue
         elif entry.is_dir():
             # Recurse into subdirectory
-            _scan_directory(entry, root, extensions, ignore_patterns, files, visited_dirs)
+            _scan_directory(
+                entry, root, extensions, ignore_patterns, files,
+                visited_dirs, max_file_size,
+            )
         elif entry.is_file() and _matches_extension(entry, extensions):
             # Process file with matching extension
-            doc = _create_docfile(entry, root)
+            doc = _create_docfile(entry, root, max_file_size)
             if doc is not None:
                 files[doc.rel_path] = doc
 
@@ -192,19 +209,34 @@ def _matches_extension(path: Path, extensions: set[str]) -> bool:
     return path.suffix.lower() in extensions
 
 
-def _create_docfile(path: Path, root: Path) -> DocFile | None:
+def _create_docfile(
+    path: Path, root: Path, max_file_size: int | None = None,
+) -> DocFile | None:
     """Create a DocFile from a file path.
 
     Args:
         path: Path to the file.
         root: Root directory for computing relative path.
+        max_file_size: Maximum file size in bytes. None means no limit.
 
     Returns:
-        DocFile instance, or None if the file cannot be read.
+        DocFile instance, or None if the file cannot be read or exceeds size limit.
     """
     try:
-        content = path.read_text(encoding="utf-8")
         stat = path.stat()
+
+        # Check file size before reading content
+        if max_file_size is not None and stat.st_size > max_file_size:
+            rel = path.relative_to(root).as_posix()
+            logger.warning(
+                "Skipping oversized file %s (%d bytes, limit %d)",
+                rel,
+                stat.st_size,
+                max_file_size,
+            )
+            return None
+
+        content = path.read_text(encoding="utf-8")
 
         # Compute relative path with forward slashes for consistency
         rel_path = path.relative_to(root).as_posix()
@@ -515,22 +547,44 @@ def _fetch_file_content(repo: str, branch: str, path: str) -> str | None:
     return None
 
 
-def _github_api_get(url: str) -> httpx.Response:
-    """Make a GET request to the GitHub API.
+_RETRYABLE_STATUS_CODES = frozenset({403, 429, 500, 502, 503, 504})
+
+
+def _github_api_get(
+    url: str,
+    *,
+    max_retries: int = 3,
+) -> httpx.Response:
+    """Make a GET request to the GitHub API with auth and retry support.
+
+    Uses ``GITHUB_TOKEN`` env var for authentication when available.
+    Retries on rate-limit (403/429) and server errors (5xx) with
+    exponential backoff and jitter.
 
     Args:
         url: URL to fetch.
+        max_retries: Maximum number of retries on retryable errors.
 
     Returns:
         HTTP response object.
     """
+    headers: dict[str, str] = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "agent-index/0.1.0",
+    }
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
     with httpx.Client() as client:
-        response = client.get(
-            url,
-            headers={
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "agent-index/0.1.0",
-            },
-            follow_redirects=True,
-        )
+        response = client.get(url, headers=headers, follow_redirects=True)
+
+        for attempt in range(max_retries):
+            if response.status_code not in _RETRYABLE_STATUS_CODES:
+                break
+            # Exponential backoff with jitter: 1s, 2s, 4s + up to 1s jitter
+            delay = (2 ** attempt) + random.uniform(0, 1)
+            time.sleep(delay)
+            response = client.get(url, headers=headers, follow_redirects=True)
+
     return response

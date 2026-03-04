@@ -110,6 +110,13 @@ class TaguchiRunner:
             # Not in main thread — skip signal registration.
             pass
 
+        # Pre-build composites once per row (avoids per-trial setup/teardown).
+        row_composites: dict[int, CompositeVariant] = {}
+        for row in self._design.rows:
+            composite = self._build_composite(row)
+            composite.setup(doc_tree)
+            row_composites[row.run_id] = composite
+
         # Build work items: (row, task, repetition)
         work_items: list[tuple[TaguchiExperimentRow, EvalTask, int]] = []
         for row in self._design.rows:
@@ -164,8 +171,10 @@ class TaguchiRunner:
                     for row, task, rep in work_items:
                         if shutdown_requested.is_set():
                             break
+                        composite = row_composites[row.run_id]
                         future = executor.submit(
-                            self._run_trial, row, task, doc_tree, rep, source, phase
+                            self._run_trial, row, task, composite,
+                            doc_tree, rep, source, phase,
                         )
                         futures[future] = (row, task, rep)
 
@@ -227,6 +236,9 @@ class TaguchiRunner:
                         )
         finally:
             tracker.stop()
+            # Teardown all pre-built composites once per row.
+            for composite in row_composites.values():
+                composite.teardown()
             # Restore original signal handlers.
             try:
                 if old_sigint is not None:
@@ -254,6 +266,7 @@ class TaguchiRunner:
         self,
         row: TaguchiExperimentRow,
         task: EvalTask,
+        composite: CompositeVariant,
         doc_tree: DocTree,
         repetition: int,
         source: str,
@@ -261,10 +274,6 @@ class TaguchiRunner:
     ) -> TrialResult:
         """Execute a single trial for an OA row + task + repetition."""
         trial_start = time.monotonic()
-
-        # Build composite variant from row assignments
-        composite = self._build_composite(row)
-        composite.setup(doc_tree)
 
         # Build metrics dict with optional phase
         metrics: dict[str, float | str] = {"oa_row_id": float(row.run_id)}
@@ -346,9 +355,6 @@ class TaguchiRunner:
                 source=source,
                 model=model_name,
             )
-        finally:
-            composite.teardown()
-
     def _build_composite(self, row: TaguchiExperimentRow) -> CompositeVariant:
         """Create a CompositeVariant from an OA row's axis assignments."""
         components: dict[int, IndexVariant] = {}

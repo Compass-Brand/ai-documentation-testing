@@ -660,6 +660,69 @@ class TestMetricsHarmonization:
             assert trial.metrics["prompt_build_ms"] >= 0
 
 
+class TestSetupTeardownPerRow:
+    """CompositeVariant setup/teardown should happen once per OA row, not per trial."""
+
+    def test_setup_called_once_per_row_not_per_trial(self):
+        """With 3 rows, 2 tasks, 2 reps: setup called 3 times, not 12."""
+        from unittest.mock import call, patch
+
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=3, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=2, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [_make_mock_task("t1"), _make_mock_task("t2")]
+        doc_tree = MagicMock()
+
+        # Track setup/teardown calls on composites
+        setup_count = 0
+        teardown_count = 0
+        orig_build = runner._build_composite
+
+        def tracking_build(row):
+            nonlocal setup_count, teardown_count
+            composite = orig_build(row)
+            orig_setup = composite.setup
+            orig_teardown = composite.teardown
+
+            def counted_setup(*a, **kw):
+                nonlocal setup_count
+                setup_count += 1
+                return orig_setup(*a, **kw)
+
+            def counted_teardown(*a, **kw):
+                nonlocal teardown_count
+                teardown_count += 1
+                return orig_teardown(*a, **kw)
+
+            composite.setup = counted_setup
+            composite.teardown = counted_teardown
+            return composite
+
+        runner._build_composite = tracking_build
+
+        result = runner.run(tasks, doc_tree)
+        # 3 rows * 2 tasks * 2 reps = 12 trials
+        assert len(result.trials) == 12
+
+        # Setup and teardown should be called once per row (3), not per trial (12)
+        assert setup_count == 3, (
+            f"Expected 3 setup calls (once per row), got {setup_count}"
+        )
+        assert teardown_count == 3, (
+            f"Expected 3 teardown calls (once per row), got {teardown_count}"
+        )
+
+
 class TestParallelExecution:
     """TaguchiRunner must use ThreadPoolExecutor to run trials concurrently."""
 

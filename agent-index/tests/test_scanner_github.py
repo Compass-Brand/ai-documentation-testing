@@ -1,12 +1,13 @@
 """Tests for GitHub repository scanner functionality."""
 
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 from agent_index.models import DocTree
-from agent_index.scanner import GitHubError, scan_github
+from agent_index.scanner import GitHubError, _github_api_get, scan_github
 
 
 class TestScanGitHubValidation:
@@ -415,6 +416,135 @@ class TestGitHubErrorClass:
         """GitHubError status_code defaults to None."""
         error = GitHubError("Some error")
         assert error.status_code is None
+
+
+# ---------------------------------------------------------------------------
+# Auth and Retry Tests
+# ---------------------------------------------------------------------------
+
+
+class TestGitHubAuth:
+    """Tests for GitHub token authentication support."""
+
+    def test_github_token_sent_as_auth_header(self, monkeypatch) -> None:
+        """When GITHUB_TOKEN is set, it should be included in API headers."""
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_test123")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+
+        with patch("agent_index.scanner.httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            mock_client.get.return_value = mock_response
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            MockClient.return_value = mock_client
+
+            _github_api_get("https://api.github.com/repos/foo/bar/contents")
+
+            # Verify Authorization header was set
+            call_kwargs = mock_client.get.call_args
+            headers = call_kwargs[1].get("headers", {}) if call_kwargs[1] else call_kwargs.kwargs.get("headers", {})
+            assert "Authorization" in headers, "GITHUB_TOKEN should set Authorization header"
+            assert headers["Authorization"] == "Bearer ghp_test123"
+
+    def test_no_auth_header_without_token(self, monkeypatch) -> None:
+        """When GITHUB_TOKEN is not set, no Authorization header should be sent."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+
+        with patch("agent_index.scanner.httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            mock_client.get.return_value = mock_response
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            MockClient.return_value = mock_client
+
+            _github_api_get("https://api.github.com/repos/foo/bar/contents")
+
+            call_kwargs = mock_client.get.call_args
+            headers = call_kwargs[1].get("headers", {}) if call_kwargs[1] else call_kwargs.kwargs.get("headers", {})
+            assert "Authorization" not in headers
+
+
+class TestGitHubRetry:
+    """Tests for GitHub API retry with exponential backoff."""
+
+    def test_retries_on_403_rate_limit(self, monkeypatch) -> None:
+        """_github_api_get retries on 403 rate limit responses."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+        rate_limit_response = MagicMock()
+        rate_limit_response.status_code = 403
+        rate_limit_response.headers = {"X-RateLimit-Remaining": "0"}
+
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+
+        with patch("agent_index.scanner.httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            mock_client.get.side_effect = [rate_limit_response, ok_response]
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            MockClient.return_value = mock_client
+
+            with patch("time.sleep"):  # Don't actually sleep in tests
+                result = _github_api_get("https://api.github.com/repos/foo/bar/contents")
+
+            assert result.status_code == 200
+            assert mock_client.get.call_count == 2
+
+    def test_retries_on_502_server_error(self, monkeypatch) -> None:
+        """_github_api_get retries on 502 server errors."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+        error_response = MagicMock()
+        error_response.status_code = 502
+        error_response.headers = {}
+
+        ok_response = MagicMock()
+        ok_response.status_code = 200
+
+        with patch("agent_index.scanner.httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            mock_client.get.side_effect = [error_response, ok_response]
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            MockClient.return_value = mock_client
+
+            with patch("time.sleep"):
+                result = _github_api_get("https://api.github.com/repos/foo/bar/contents")
+
+            assert result.status_code == 200
+
+    def test_returns_last_response_after_max_retries(self, monkeypatch) -> None:
+        """After max retries, returns the last error response."""
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+        error_response = MagicMock()
+        error_response.status_code = 502
+        error_response.headers = {}
+
+        with patch("agent_index.scanner.httpx.Client") as MockClient:
+            mock_client = MagicMock()
+            mock_client.get.return_value = error_response
+            mock_client.__enter__ = MagicMock(return_value=mock_client)
+            mock_client.__exit__ = MagicMock(return_value=False)
+            MockClient.return_value = mock_client
+
+            with patch("time.sleep"):
+                result = _github_api_get(
+                    "https://api.github.com/repos/foo/bar/contents",
+                    max_retries=3,
+                )
+
+            assert result.status_code == 502
+            # 1 initial + 3 retries = 4 total calls
+            assert mock_client.get.call_count == 4
 
 
 # Fixtures

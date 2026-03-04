@@ -459,3 +459,68 @@ class TestScanLocalEdgeCases:
         result = scan_local(tmp_path)
 
         assert ".hidden.md" in result.files
+
+
+# ---------------------------------------------------------------------------
+# File size limits
+# ---------------------------------------------------------------------------
+
+
+class TestScanLocalFileSizeLimits:
+    """Tests for max_file_size parameter."""
+
+    def test_files_under_limit_included(self, tmp_path: Path) -> None:
+        """Files smaller than max_file_size should be included."""
+        (tmp_path / "small.md").write_text("small")
+        result = scan_local(tmp_path, max_file_size=1024)
+        assert "small.md" in result.files
+
+    def test_files_over_limit_skipped(self, tmp_path: Path) -> None:
+        """Files larger than max_file_size should be skipped."""
+        big = tmp_path / "huge.md"
+        big.write_text("x" * 2000)
+        result = scan_local(tmp_path, max_file_size=1024)
+        assert "huge.md" not in result.files
+
+    def test_files_at_exact_limit_included(self, tmp_path: Path) -> None:
+        """Files exactly at max_file_size should be included."""
+        exact = tmp_path / "exact.md"
+        exact.write_text("x" * 100)
+        result = scan_local(tmp_path, max_file_size=100)
+        assert "exact.md" in result.files
+
+    def test_default_no_limit(self, tmp_path: Path) -> None:
+        """Without max_file_size, all files are included regardless of size."""
+        big = tmp_path / "big.md"
+        big.write_text("x" * 500_000)
+        result = scan_local(tmp_path)
+        assert "big.md" in result.files
+
+    def test_oversized_file_logged_as_warning(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Skipped oversized files should produce a WARNING log."""
+        import logging
+
+        big = tmp_path / "huge.md"
+        big.write_text("x" * 2000)
+
+        with caplog.at_level(logging.WARNING, logger="agent_index.scanner"):
+            scan_local(tmp_path, max_file_size=1024)
+
+        warning_records = [
+            r for r in caplog.records
+            if r.levelno >= logging.WARNING and "huge.md" in r.message
+        ]
+        assert len(warning_records) >= 1
+
+    def test_mix_of_sizes(self, tmp_path: Path) -> None:
+        """Only files under the limit should be kept."""
+        (tmp_path / "small.md").write_text("ok")
+        (tmp_path / "big.md").write_text("x" * 5000)
+        (tmp_path / "medium.md").write_text("x" * 500)
+
+        result = scan_local(tmp_path, max_file_size=1024)
+        assert "small.md" in result.files
+        assert "medium.md" in result.files
+        assert "big.md" not in result.files
