@@ -408,6 +408,29 @@ class TestDiagnosticTrackerCompletedOffset:
         assert "RUN COMPLETE" in caplog.text
         assert "151/200" in caplog.text
 
+    def test_avg_not_diluted_by_offset(self) -> None:
+        """Averages should use only new trial count, not offset + new."""
+        tracker = DiagnosticTracker(total_trials=500, completed_offset=100)
+        tracker.record_trial(
+            tokens=50, cost=0.001, retries=0, api_ms=200.0,
+            trial_ms=400.0, error=False, rate_limited=False,
+        )
+        tracker.record_trial(
+            tokens=50, cost=0.001, retries=0, api_ms=400.0,
+            trial_ms=600.0, error=False, rate_limited=False,
+        )
+        snapshot = tracker.snapshot()
+        # 2 new trials: avg_api = (200+400)/2 = 300, NOT (200+400)/102
+        assert snapshot["avg_api_ms"] == pytest.approx(300.0)
+        assert snapshot["avg_trial_ms"] == pytest.approx(500.0)
+
+    def test_avg_zero_when_no_new_trials_with_offset(self) -> None:
+        """With offset but no new trials, averages should be 0."""
+        tracker = DiagnosticTracker(total_trials=500, completed_offset=100)
+        snapshot = tracker.snapshot()
+        assert snapshot["avg_api_ms"] == 0.0
+        assert snapshot["avg_trial_ms"] == 0.0
+
 
 # ---------------------------------------------------------------------------
 # Judge failure tracking

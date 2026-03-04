@@ -103,8 +103,16 @@ class DiagnosticTracker:
                 "total_judge_failures": self._total_judge_failures,
                 "total_api_ms": total_api_ms,
                 "total_trial_ms": total_trial_ms,
-                "avg_api_ms": total_api_ms / completed if completed else 0.0,
-                "avg_trial_ms": total_trial_ms / completed if completed else 0.0,
+                "avg_api_ms": (
+                    total_api_ms / (completed - self._completed_offset)
+                    if completed > self._completed_offset
+                    else 0.0
+                ),
+                "avg_trial_ms": (
+                    total_trial_ms / (completed - self._completed_offset)
+                    if completed > self._completed_offset
+                    else 0.0
+                ),
             }
 
     def start(self) -> None:
