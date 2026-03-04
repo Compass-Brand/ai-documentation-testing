@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from agent_evals.pipeline import DOEPipeline, PipelineConfig, PhaseResult, PipelineResult
 
 
@@ -228,6 +230,57 @@ def test_pipeline_screening_identifies_significant_factors(
 
     # Should include only significant factors, sorted by omega_squared desc
     assert result.significant_factors == ["axis_1", "axis_3"]
+
+
+# ---------------------------------------------------------------------------
+# DOEPipeline.run_screening validation tests
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_screening_rejects_empty_variants():
+    """run_screening raises ValueError when no variants are provided."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    with pytest.raises(ValueError, match="axes"):
+        pipeline.run_screening(tasks=[], variants=[], doc_tree=MagicMock())
+
+
+def test_pipeline_screening_rejects_only_baseline_variants():
+    """run_screening raises ValueError when all variants are axis 0 (baseline)."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    # Create variants that are all axis 0
+    baseline_variants = []
+    for name in ["baseline_a", "baseline_b"]:
+        v = MagicMock()
+        m = MagicMock()
+        m.axis = 0
+        m.name = name
+        v.metadata.return_value = m
+        baseline_variants.append(v)
+
+    with pytest.raises(ValueError, match="axes"):
+        pipeline.run_screening(tasks=[], variants=baseline_variants, doc_tree=MagicMock())
+
+
+def test_pipeline_screening_rejects_single_axis_single_level():
+    """run_screening raises ValueError when only 1 axis has a single level."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    v = MagicMock()
+    m = MagicMock()
+    m.axis = 1
+    m.name = "axis1_a"
+    v.metadata.return_value = m
+
+    with pytest.raises(ValueError, match="axes"):
+        pipeline.run_screening(tasks=[], variants=[v], doc_tree=MagicMock())
 
 
 # ---------------------------------------------------------------------------

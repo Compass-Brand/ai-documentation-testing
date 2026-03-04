@@ -113,6 +113,17 @@ class DOEPipeline:
             if meta.name not in axes[meta.axis]:
                 axes[meta.axis].append(meta.name)
 
+        # 1b. Validate axes — Taguchi needs >= 2 axes with >= 2 levels each
+        usable_axes = {
+            k: v for k, v in axes.items() if k != 0 and len(v) >= 2
+        }
+        if len(usable_axes) < 2:
+            raise ValueError(
+                f"Taguchi design requires at least 2 axes with 2+ levels "
+                f"each (excluding axis 0 baselines). Got {len(usable_axes)} "
+                f"usable axes from {len(variants)} variant(s)."
+            )
+
         # 2. Build the Taguchi experimental design
         design = build_design(
             dict(axes), self.config.models, self.config.oa_override
