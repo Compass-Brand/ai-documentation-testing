@@ -57,6 +57,7 @@ class PhaseResult:
     anova: dict[str, Any] | None = None
     optimal: dict[str, str] | None = None
     significant_factors: list[str] = field(default_factory=list)
+    predicted_sn: float | None = None
     confirmation: dict[str, Any] | None = None
 
 
@@ -175,6 +176,7 @@ class DOEPipeline:
             main_effects=main_effects,
             anova=anova,
             optimal=optimal.optimal_assignment,
+            predicted_sn=optimal.predicted_sn,
             significant_factors=[f.factor_name for f in sig_factors],
         )
 
@@ -216,7 +218,7 @@ class DOEPipeline:
 
         prediction = OptimalPrediction(
             optimal_assignment=screening_result.optimal or {},
-            predicted_sn=0.0,
+            predicted_sn=screening_result.predicted_sn or 0.0,
         )
 
         # Validate observed against prediction

@@ -420,6 +420,44 @@ def test_pipeline_confirmation_calls_validate():
     assert result.confirmation["within_interval"] is False
 
 
+def test_pipeline_confirmation_uses_screening_predicted_sn():
+    """Phase 2 must use the actual predicted_sn from screening, not 0.0."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator(score=0.7)
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a"},
+        significant_factors=["axis_1"],
+        predicted_sn=15.3,
+    )
+
+    with patch("agent_evals.pipeline.validate_confirmation") as mock_val:
+        mock_val.return_value = MagicMock(
+            within_interval=True,
+            sigma_deviation=0.5,
+            observed_sn=14.8,
+            predicted_sn=15.3,
+            prediction_interval=(13.0, 17.6),
+        )
+        pipeline.run_confirmation(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+        # The OptimalPrediction passed to validate_confirmation must have
+        # predicted_sn=15.3 from screening, NOT 0.0
+        prediction_arg = mock_val.call_args[0][0]
+        assert prediction_arg.predicted_sn == 15.3, (
+            f"Expected predicted_sn=15.3 from screening, got {prediction_arg.predicted_sn}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # DOEPipeline.run_refinement tests
 # ---------------------------------------------------------------------------
