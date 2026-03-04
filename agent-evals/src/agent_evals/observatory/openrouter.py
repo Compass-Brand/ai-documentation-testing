@@ -205,5 +205,5 @@ def fetch_generation_stats(
             return resp.json()
         return None
     except Exception:
-        logger.debug("Failed to fetch generation %s", generation_id)
+        logger.warning("Failed to fetch generation %s", generation_id, exc_info=True)
         return None

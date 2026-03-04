@@ -81,7 +81,11 @@ class HeartbeatThread(threading.Thread):
             try:
                 self._store.update_heartbeat(self._run_id)
             except Exception:
-                pass
+                logger.warning(
+                    "Heartbeat update failed for run %s",
+                    self._run_id,
+                    exc_info=True,
+                )
 
     def stop(self) -> None:
         self._stop_event.set()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import logging
 from dataclasses import asdict
 from typing import Any
 
@@ -19,6 +20,8 @@ from agent_evals.observatory.model_sync import ModelSync
 from agent_evals.observatory.run_manager import RunConflictError, RunManager, StartRunRequest
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
+
+logger = logging.getLogger(__name__)
 
 _sse_seq = itertools.count(1)
 
@@ -390,6 +393,7 @@ def create_router(
                 return {"endpoints": endpoints}
             return {"endpoints": []}
         except Exception:
+            logger.warning("Failed to fetch model endpoints", exc_info=True)
             return {"endpoints": []}
 
     @router.get("/api/models/{model_id:path}")

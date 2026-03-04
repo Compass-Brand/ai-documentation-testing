@@ -201,5 +201,5 @@ def fetch_provider_endpoints(model_id: str) -> dict[str, Any] | None:
             return resp.json()
         return None
     except Exception:
-        logger.debug("Failed to fetch endpoints for %s", model_id)
+        logger.warning("Failed to fetch endpoints for %s", model_id, exc_info=True)
         return None

@@ -292,7 +292,7 @@ class EventTracker:
             try:
                 listener(event)
             except Exception:  # noqa: BLE001
-                logging.getLogger(__name__).debug("Listener error", exc_info=True)
+                logging.getLogger(__name__).warning("Listener error", exc_info=True)
 
 
 class _ModelStats:

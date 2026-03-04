@@ -218,6 +218,21 @@ class TestHeartbeatThread:
         assert summary.heartbeat_at is not None
 
 
+    def test_heartbeat_failure_logs_warning(self, tmp_path: Path) -> None:
+        """Heartbeat update failure should log a warning, not silently pass."""
+        store = MagicMock()
+        store.update_heartbeat.side_effect = RuntimeError("DB locked")
+        thread = HeartbeatThread(store=store, run_id="run1", interval=0.01)
+        with patch(
+            "agent_evals.observatory.run_manager.logger"
+        ) as mock_logger:
+            thread.start()
+            time.sleep(0.05)
+            thread.stop()
+            thread.join(timeout=1.0)
+            mock_logger.warning.assert_called()
+
+
 class TestModelValidation:
     """Task 17: Model name validation on run submission."""
 
