@@ -117,7 +117,7 @@ class TestPipelineIntegration:
             mock_me.return_value = {"structure": {"flat": 10.0, "nested": 12.0}}
             mock_anova.return_value = MagicMock()
             mock_anova.return_value.factors = [
-                MagicMock(factor_name="structure", p_value=0.001, omega_squared=0.089),
+                MagicMock(factor_name="structure", p_value=0.001, corrected_p_value=0.001, omega_squared=0.089),
             ]
             mock_pred.return_value = MagicMock()
             mock_pred.return_value.optimal_assignment = {"structure": "nested"}
@@ -129,12 +129,16 @@ class TestPipelineIntegration:
                 prediction_interval=(9.0, 12.0),
             )
 
-            # Create mock variants
+            # Create mock variants across 2 axes (validation requires ≥2 axes)
             v1 = MagicMock()
             v1.metadata.return_value = MagicMock(axis=1, name="flat")
             v2 = MagicMock()
             v2.metadata.return_value = MagicMock(axis=1, name="nested")
-            variants = [v1, v2]
+            v3 = MagicMock()
+            v3.metadata.return_value = MagicMock(axis=2, name="brief")
+            v4 = MagicMock()
+            v4.metadata.return_value = MagicMock(axis=2, name="verbose")
+            variants = [v1, v2, v3, v4]
 
             pipeline_result = pipeline.run(
                 tasks=[], variants=variants, doc_tree=MagicMock(),
@@ -175,9 +179,16 @@ class TestPipelineIntegration:
             mock_pred.return_value = MagicMock()
             mock_pred.return_value.optimal_assignment = {}
 
+            # Need ≥2 axes with ≥2 levels for Taguchi validation
             v1 = MagicMock()
             v1.metadata.return_value = MagicMock(axis=1, name="flat")
-            variants = [v1]
+            v2 = MagicMock()
+            v2.metadata.return_value = MagicMock(axis=1, name="nested")
+            v3 = MagicMock()
+            v3.metadata.return_value = MagicMock(axis=2, name="brief")
+            v4 = MagicMock()
+            v4.metadata.return_value = MagicMock(axis=2, name="verbose")
+            variants = [v1, v2, v3, v4]
 
             # Callback rejects after screening
             pipeline_result = pipeline.run(
