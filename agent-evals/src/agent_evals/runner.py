@@ -250,6 +250,8 @@ class EvalRunner:
                 for rep in range(1, self._config.repetitions + 1):
                     work_items.append((task, variant, rep))
 
+        original_total = len(work_items)
+
         # Filter out already-completed trials for resume.
         if completed_keys:
             work_items = [
@@ -264,7 +266,7 @@ class EvalRunner:
             ]
 
         remaining = len(work_items)
-        offset = len(completed_keys) if completed_keys else 0
+        offset = original_total - remaining
         total = remaining
         trials: list[TrialResult] = []
         completed = 0

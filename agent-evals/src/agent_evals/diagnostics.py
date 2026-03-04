@@ -40,6 +40,7 @@ class DiagnosticTracker:
 
         # Counters (protected by _lock)
         self._lock = threading.Lock()
+        self._completed_offset = completed_offset
         self._completed = completed_offset
         self._total_tokens = 0
         self._total_cost = 0.0
@@ -125,7 +126,8 @@ class DiagnosticTracker:
         while not self._stop_event.wait(self._heartbeat_interval):
             snap = self.snapshot()
             elapsed = time.monotonic() - self._start_time
-            rate = snap["completed"] / (elapsed / 60.0) if elapsed > 0 else 0.0
+            new_trials = snap["completed"] - self._completed_offset
+            rate = new_trials / (elapsed / 60.0) if elapsed > 0 else 0.0
             pct = 100.0 * snap["completed"] / self._total if self._total else 0.0
 
             with self._lock:
@@ -161,7 +163,8 @@ class DiagnosticTracker:
         """Log a final summary line."""
         snap = self.snapshot()
         elapsed = time.monotonic() - self._start_time
-        rate = snap["completed"] / (elapsed / 60.0) if elapsed > 0 else 0.0
+        new_trials = snap["completed"] - self._completed_offset
+        rate = new_trials / (elapsed / 60.0) if elapsed > 0 else 0.0
 
         logger.info(
             "RUN COMPLETE: %d/%d trials | %.1f trials/min | $%.4f spent | "

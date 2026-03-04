@@ -117,6 +117,8 @@ class TaguchiRunner:
                 for rep in range(1, self._config.repetitions + 1):
                     work_items.append((row, task, rep))
 
+        original_total = len(work_items)
+
         # Filter out already-completed trials for resume.
         if completed_keys:
             # Pre-compute variant name per row to avoid rebuilding composites.
@@ -136,7 +138,7 @@ class TaguchiRunner:
             ]
 
         remaining = len(work_items)
-        offset = len(completed_keys) if completed_keys else 0
+        offset = original_total - remaining
         total = remaining
         all_trials: list[TrialResult] = []
         completed = 0
