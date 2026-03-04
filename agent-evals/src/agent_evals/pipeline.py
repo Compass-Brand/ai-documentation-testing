@@ -257,47 +257,17 @@ class DOEPipeline:
         # Build variant lookup
         variant_lookup = {v.metadata().name: v for v in variants}
 
-        # Select top K significant factors
-        top_factors = screening_result.significant_factors[: self.config.top_k]
-
-        # Build full factorial design for top K factors
-        # Collect level names from main_effects for each top factor
-        axes: dict[int, list[str]] = {}
-        main_eff = screening_result.main_effects or {}
-        for i, fname in enumerate(top_factors):
-            if fname in main_eff:
-                axes[i + 1] = list(main_eff[fname].keys())
-
-        if axes:
-            from itertools import product as iter_product
-
-            # Build full factorial combos
-            factor_names = list(axes.keys())
-            level_lists = [axes[k] for k in factor_names]
-            combos = list(iter_product(*level_lists))
-
-            # Run trials via orchestrator (full mode, not Taguchi)
-            result = self._orchestrator.run(
-                tasks,
-                variants,
-                doc_tree,
-                variant_lookup=variant_lookup,
-                phase="refinement",
-                pipeline_id=self._pipeline_id,
-                mode="full",
-                resume_run_id=resume_run_id,
-            )
-        else:
-            result = self._orchestrator.run(
-                tasks,
-                variants,
-                doc_tree,
-                variant_lookup=variant_lookup,
-                phase="refinement",
-                pipeline_id=self._pipeline_id,
-                mode="full",
-                resume_run_id=resume_run_id,
-            )
+        # Run trials via orchestrator (full mode, not Taguchi)
+        result = self._orchestrator.run(
+            tasks,
+            variants,
+            doc_tree,
+            variant_lookup=variant_lookup,
+            phase="refinement",
+            pipeline_id=self._pipeline_id,
+            mode="full",
+            resume_run_id=resume_run_id,
+        )
 
         return PhaseResult(
             run_id=result.run_id,
