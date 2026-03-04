@@ -2,9 +2,10 @@ import { useEffect, useRef } from "react";
 import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 
 const SPRING = { stiffness: 40, damping: 20 };
-const NUM_RINGS = 9;
+const NUM_RINGS = 14;
 const PTS = 64;
-const RING_GAP = 60;
+const RING_GAP = 50;
+const RING_GROWTH = 0.12;
 const COLOR = [154, 123, 79]; // #9A7B4F
 
 /* ── Compact 2D Perlin noise (no deps) ─────────────────────────── */
@@ -62,7 +63,11 @@ function drawSmooth(ctx: CanvasRenderingContext2D, pts: [number, number][]) {
 /**
  * Ambient background with three layers:
  * 1. Mouse-reactive gradient mesh (z-index: -1)
- * 2. Canvas topo contours — organic, cursor-ripple, compass-coupled (z-index: 0)
+ * 2. Canvas topo contours centered on [data-compass-rose] element (z-index: 0)
+ *    - Tracks compass position via getBoundingClientRect (scroll-aware)
+ *    - 14 rings with non-linear spacing covering full viewport
+ *    - Perlin noise + traveling waves for constant organic motion
+ *    - Subtle cursor ripple (pond effect)
  * 3. Floating particles (z-index: 0)
  *
  * Content wrappers need `relative z-[1]` to sit above the topo layer.
@@ -84,7 +89,6 @@ export function AmbientBackground() {
   );
 
   useEffect(() => {
-    /* Respect reduced-motion preference */
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const canvas = canvasRef.current;
@@ -94,6 +98,15 @@ export function AmbientBackground() {
 
     const noise = createNoise();
     let t = 0;
+
+    /* Cache compass element ref (queried once) */
+    let compassEl: Element | null = null;
+    const findCompass = () => {
+      compassEl = document.querySelector("[data-compass-rose]");
+    };
+    findCompass();
+    /* Re-query after a short delay in case the DOM hasn't rendered yet */
+    const retryTimer = setTimeout(findCompass, 500);
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
@@ -115,33 +128,34 @@ export function AmbientBackground() {
     window.addEventListener("mousemove", onMouse, { passive: true });
 
     const draw = () => {
-      t += 0.004;
+      t += 0.005;
       const w = window.innerWidth;
       const h = window.innerHeight;
 
-      /* Compass center: sidebar 264px, page padding ~24px → center ≈ 156px */
-      const cx = Math.min(156, w * 0.12);
-      const cy = h * 0.5;
+      /* Track compass center via DOM — scroll-aware */
+      let cx = Math.min(156, w * 0.12);
+      let cy = h * 0.5;
+      if (compassEl) {
+        const rect = compassEl.getBoundingClientRect();
+        cx = rect.left + rect.width / 2;
+        cy = rect.top + rect.height / 2;
+      }
+
       const mx = mouseRef.current.x;
       const my = mouseRef.current.y;
-
-      /* Compass rotation coupling (120s CSS period → ~0.22 rad/unit-t) */
       const compassRot = t * 0.22;
 
       ctx.clearRect(0, 0, w, h);
 
       for (let ring = 0; ring < NUM_RINGS; ring++) {
-        /* Non-linear spacing: inner rings tighter, outer wider (ripple feel) */
-        const baseR = (ring + 1) * RING_GAP * (1 + ring * 0.15);
-        const alpha = Math.max(0.04, 0.18 - ring * 0.015);
-        const lw = Math.max(0.6, 1.6 - ring * 0.08);
+        const baseR = (ring + 1) * RING_GAP * (1 + ring * RING_GROWTH);
+        const alpha = Math.max(0.03, 0.16 - ring * 0.009);
+        const lw = Math.max(0.5, 1.5 - ring * 0.06);
 
         const pts: [number, number][] = [];
 
         for (let i = 0; i < PTS; i++) {
           const angle = (i / PTS) * Math.PI * 2;
-
-          /* Compass coupling: inner rings rotate more with compass */
           const coupled = angle + compassRot * 0.05 / (ring + 1);
 
           /* Multi-octave noise → organic shape */
@@ -167,14 +181,14 @@ export function AmbientBackground() {
           let px = cx + Math.cos(angle) * r;
           let py = cy + Math.sin(angle) * r;
 
-          /* Cursor ripple: sinusoidal wave radiating from mouse (pond effect) */
+          /* Subtle cursor ripple */
           const dx = px - mx;
           const dy = py - my;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          const maxInfl = 350;
+          const maxInfl = 250;
           if (dist < maxInfl && dist > 1) {
             const falloff = (1 - dist / maxInfl) ** 2;
-            const ripple = Math.sin(dist * 0.035 - t * 5) * 30 * falloff;
+            const ripple = Math.sin(dist * 0.03 - t * 4) * 12 * falloff;
             px += (dx / dist) * ripple;
             py += (dy / dist) * ripple;
           }
@@ -196,6 +210,7 @@ export function AmbientBackground() {
 
     return () => {
       cancelAnimationFrame(animRef.current);
+      clearTimeout(retryTimer);
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", onMouse);
     };

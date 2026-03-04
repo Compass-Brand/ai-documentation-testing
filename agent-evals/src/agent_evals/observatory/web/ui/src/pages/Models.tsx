@@ -554,7 +554,7 @@ export function Models() {
             <div className="flex gap-sp-6">
               {/* Left sidebar -- 264px */}
               <aside className="hidden lg:block w-[264px] shrink-0 relative">
-                <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                <div className="absolute inset-0 flex items-center justify-center overflow-hidden" data-compass-rose>
                   <CompassRose />
                 </div>
                 <FadeIn delay={1}>
