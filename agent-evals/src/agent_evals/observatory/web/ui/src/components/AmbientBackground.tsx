@@ -37,14 +37,14 @@ export function AmbientBackground() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse at 30% 20%, rgba(194, 166, 118, 0.05) 0%, transparent 70%)",
+            "radial-gradient(ellipse at 30% 20%, rgba(194, 166, 118, 0.12) 0%, transparent 70%)",
         }}
       />
 
       {/* Topographic contour lines */}
       <svg
         className="absolute inset-0 w-full h-full"
-        style={{ opacity: 0.03 }}
+        style={{ opacity: 0.08 }}
       >
         <g className="animate-[drift_60s_linear_infinite]">
           <path
@@ -85,7 +85,7 @@ export function AmbientBackground() {
             left: `${p.x}%`,
             top: `${p.y}%`,
             backgroundColor: "#C2A676",
-            opacity: 0.04,
+            opacity: 0.12,
             animation: `float-${i % 3} ${p.duration}s ease-in-out infinite`,
             animationDelay: `${p.delay}s`,
           }}

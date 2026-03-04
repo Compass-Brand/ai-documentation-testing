@@ -247,7 +247,7 @@ export const api = {
     if (filters?.search) params.set("search", filters.search);
     if (filters?.free) params.set("free", "true");
     if (filters?.maxPrice != null)
-      params.set("max_price", String(filters.maxPrice));
+      params.set("max_price", String(filters.maxPrice / 1_000_000));
     if (filters?.minContext != null)
       params.set("min_context", String(filters.minContext));
     if (filters?.modality) params.set("modality", filters.modality);

@@ -29,7 +29,7 @@ export function CursorGlow() {
         width: GLOW_SIZE,
         height: GLOW_SIZE,
         background:
-          "radial-gradient(circle, rgba(194, 166, 118, 0.04) 0%, transparent 70%)",
+          "radial-gradient(circle, rgba(194, 166, 118, 0.15) 0%, transparent 70%)",
         mixBlendMode: "soft-light",
         zIndex: 9999,
       }}

@@ -19,8 +19,8 @@ export function useFilterParams(): [
     () => ({
       search: searchParams.get("search") ?? undefined,
       free: searchParams.get("free") === "true" || undefined,
-      maxPrice: parseNum(searchParams, "max_price"),
-      minContext: parseNum(searchParams, "min_context"),
+      maxPrice: parseNum(searchParams, "maxPrice"),
+      minContext: parseNum(searchParams, "minContext"),
       modality: searchParams.get("modality") ?? undefined,
       capability: searchParams.get("capability") ?? undefined,
       tokenizer: searchParams.get("tokenizer") ?? undefined,

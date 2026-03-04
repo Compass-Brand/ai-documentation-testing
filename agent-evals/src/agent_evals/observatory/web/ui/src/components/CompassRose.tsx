@@ -2,7 +2,7 @@ export function CompassRose() {
   return (
     <div
       className="pointer-events-none select-none"
-      style={{ opacity: 0.03 }}
+      style={{ opacity: 0.08 }}
       aria-hidden="true"
     >
       <svg

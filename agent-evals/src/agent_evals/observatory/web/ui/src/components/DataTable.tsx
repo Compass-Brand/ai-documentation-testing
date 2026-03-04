@@ -10,7 +10,7 @@ import {
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUpDown, ChevronUp } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { CompassCheckbox } from "./CompassCheckbox";
 import { CustomScrollbar } from "./CustomScrollbar";
@@ -100,9 +100,8 @@ export function DataTable<T>({
     }
 
     return (
-      <>
+      <React.Fragment key={row.id}>
         <motion.tr
-          key={row.id}
           layout
           initial={shouldAnimate ? { opacity: 0, y: 8 } : false}
           animate={{ opacity: 1, y: 0 }}
@@ -181,7 +180,7 @@ export function DataTable<T>({
             </motion.tr>
           )}
         </AnimatePresence>
-      </>
+      </React.Fragment>
     );
   };
 
