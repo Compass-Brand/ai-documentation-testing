@@ -606,6 +606,60 @@ class TestPhaseMetadata:
             assert trial.metrics["phase"] == "confirmation"
 
 
+class TestMetricsHarmonization:
+    """TaguchiRunner metrics should match EvalRunner metrics."""
+
+    def test_scoring_ms_in_metrics(self):
+        """Trial metrics should include scoring_ms."""
+        design = _make_simple_design(n_rows=2)
+        axes = {1: ["flat", "2tier", "3tier"]}
+        variants = _make_variant_lookup(axes)
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [_make_mock_task()]
+        doc_tree = MagicMock()
+        result = runner.run(tasks, doc_tree)
+
+        for trial in result.trials:
+            assert "scoring_ms" in trial.metrics, (
+                f"Trial {trial.task_id} missing scoring_ms metric"
+            )
+            assert trial.metrics["scoring_ms"] >= 0
+
+    def test_prompt_build_ms_in_metrics(self):
+        """Trial metrics should include prompt_build_ms."""
+        design = _make_simple_design(n_rows=2)
+        axes = {1: ["flat", "2tier", "3tier"]}
+        variants = _make_variant_lookup(axes)
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [_make_mock_task()]
+        doc_tree = MagicMock()
+        result = runner.run(tasks, doc_tree)
+
+        for trial in result.trials:
+            assert "prompt_build_ms" in trial.metrics, (
+                f"Trial {trial.task_id} missing prompt_build_ms metric"
+            )
+            assert trial.metrics["prompt_build_ms"] >= 0
+
+
 class TestParallelExecution:
     """TaguchiRunner must use ThreadPoolExecutor to run trials concurrently."""
 

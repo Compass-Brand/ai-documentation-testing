@@ -277,8 +277,10 @@ class TaguchiRunner:
 
         try:
             # Render and build prompt
+            prompt_build_start = time.monotonic()
             index_content = composite.render(doc_tree)
             messages = task.build_prompt(index_content)
+            prompt_build_ms = (time.monotonic() - prompt_build_start) * 1000
 
             # Call LLM
             generation = client.complete(
@@ -288,9 +290,13 @@ class TaguchiRunner:
             )
 
             # Score
+            score_start = time.monotonic()
             score = task.score_response(generation.content)
+            scoring_ms = (time.monotonic() - score_start) * 1000
             latency = time.monotonic() - trial_start
 
+            metrics["scoring_ms"] = round(scoring_ms, 2)
+            metrics["prompt_build_ms"] = round(prompt_build_ms, 2)
             metrics["api_call_ms"] = round(generation.api_call_ms, 1)
             metrics["total_api_ms"] = round(generation.total_api_ms, 1)
             metrics["retry_count"] = float(generation.retry_count)
