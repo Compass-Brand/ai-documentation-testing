@@ -193,11 +193,13 @@ def render_cursor_rules(
         # Build glob patterns from the file paths
         globs = ", ".join(doc.rel_path for doc in tier_files)
 
-        # YAML frontmatter
+        # YAML frontmatter — quote values to handle special chars
+        desc_escaped = tier_config.instruction.replace('"', '\\"')
+        globs_escaped = globs.replace('"', '\\"')
         frontmatter_lines = [
             "---",
-            f"description: {tier_config.instruction}",
-            f"globs: {globs}",
+            f'description: "{desc_escaped}"',
+            f'globs: "{globs_escaped}"',
             "---",
         ]
 

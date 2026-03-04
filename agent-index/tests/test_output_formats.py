@@ -184,7 +184,7 @@ class TestRenderCursorRules:
         result = render_cursor_rules(SAMPLE_FILES, DEFAULT_TIERS)
 
         required_content = result["required-docs.mdc"]
-        assert "description: Read at session start" in required_content
+        assert 'description: "Read at session start"' in required_content
 
     def test_multiple_tiers(self) -> None:
         """render_cursor_rules handles all three default tiers."""
@@ -193,6 +193,49 @@ class TestRenderCursorRules:
         assert len(result) == 3
         for filename in result:
             assert filename.endswith(".mdc")
+
+    def test_yaml_frontmatter_escapes_special_chars_in_description(self) -> None:
+        """Description with YAML-special chars must be quoted."""
+        import yaml
+
+        tiers = [
+            TierConfig(
+                name="required",
+                instruction="Read: always check [brackets] & {braces}",
+                patterns=["*.md"],
+            ),
+        ]
+        files = [make_docfile("a.md", tier="required")]
+        result = render_cursor_rules(files, tiers)
+        content = result["required-docs.mdc"]
+
+        # Extract YAML frontmatter and parse it
+        _, fm_text, _body = content.split("---", 2)
+        parsed = yaml.safe_load(fm_text)
+        assert parsed["description"] == "Read: always check [brackets] & {braces}"
+
+    def test_yaml_frontmatter_escapes_special_chars_in_globs(self) -> None:
+        """Glob paths with commas or special chars produce valid YAML."""
+        import yaml
+
+        tiers = [
+            TierConfig(
+                name="required",
+                instruction="Read at session start",
+                patterns=["*.md"],
+            ),
+        ]
+        files = [
+            make_docfile("docs/api: guide.md", tier="required"),
+            make_docfile("docs/[setup].md", tier="required"),
+        ]
+        result = render_cursor_rules(files, tiers)
+        content = result["required-docs.mdc"]
+
+        _, fm_text, _body = content.split("---", 2)
+        parsed = yaml.safe_load(fm_text)
+        assert "docs/api: guide.md" in parsed["globs"]
+        assert "docs/[setup].md" in parsed["globs"]
 
 
 # ===========================================================================
