@@ -6,6 +6,7 @@ Public API:
     - ``StrategyResult`` -- Output of execute() wrapping generation results.
     - ``StrategyConfig`` -- Configuration for strategy construction.
     - ``FullContextStrategy`` -- Default strategy (full index injection).
+    - ``SystemPromptStrategy`` -- Token-budget constrained strategy.
 """
 
 from agent_evals.context.base import (
@@ -15,6 +16,7 @@ from agent_evals.context.base import (
     StrategyResult,
 )
 from agent_evals.context.full import FullContextStrategy
+from agent_evals.context.system_prompt import SystemPromptStrategy
 
 __all__ = [
     "ContextStrategy",
@@ -22,4 +24,5 @@ __all__ = [
     "PreparedContext",
     "StrategyConfig",
     "StrategyResult",
+    "SystemPromptStrategy",
 ]
