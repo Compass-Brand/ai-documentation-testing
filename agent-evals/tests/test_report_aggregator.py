@@ -318,3 +318,49 @@ class TestVariabilityEstimates:
         ]
         report = aggregate(trials, config=_config())
         assert report.by_variant["flat"].median == pytest.approx(0.8)
+
+
+# ---------------------------------------------------------------------------
+# TestReportDataStrategyFields (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+class TestReportDataStrategyFields:
+    """ReportData includes context_strategy and strategy_comparison fields."""
+
+    def test_context_strategy_default(self) -> None:
+        report = aggregate([_trial()], config=_config())
+        assert report.context_strategy == "full_context"
+
+    def test_context_strategy_set(self) -> None:
+        report = ReportData(
+            config=_config(),
+            total_trials=1,
+            total_cost=0.01,
+            by_variant={},
+            by_task_type={},
+            by_source={},
+            context_strategy="rag",
+        )
+        assert report.context_strategy == "rag"
+
+    def test_strategy_comparison_default_none(self) -> None:
+        report = aggregate([_trial()], config=_config())
+        assert report.strategy_comparison is None
+
+    def test_strategy_comparison_set(self) -> None:
+        comparison = {
+            "strategies": ["full_context", "rag"],
+            "concordance": {"structure": 0.82},
+        }
+        report = ReportData(
+            config=_config(),
+            total_trials=1,
+            total_cost=0.01,
+            by_variant={},
+            by_task_type={},
+            by_source={},
+            strategy_comparison=comparison,
+        )
+        assert report.strategy_comparison is not None
+        assert report.strategy_comparison["concordance"]["structure"] == 0.82

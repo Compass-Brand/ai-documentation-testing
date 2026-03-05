@@ -181,3 +181,67 @@ class TestConfirmationChart:
         names = [t.get("name", "") for t in traces]
         assert "Predicted" in names
         assert "Observed" in names
+
+
+# ---------------------------------------------------------------------------
+# TestStrategyComparisonChart (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+class TestStrategyComparisonChart:
+    """Cross-strategy comparison heatmap chart."""
+
+    def test_returns_traces(self) -> None:
+        from agent_evals.reports.charts import generate_strategy_comparison_chart
+
+        data = {
+            "factors": ["structure", "transform"],
+            "strategies": ["full_context", "rag"],
+            "p_values": [[0.001, 0.05], [0.01, 0.2]],
+        }
+        traces = generate_strategy_comparison_chart(data)
+        assert isinstance(traces, list)
+        assert len(traces) >= 1
+
+    def test_trace_type_is_heatmap(self) -> None:
+        from agent_evals.reports.charts import generate_strategy_comparison_chart
+
+        data = {
+            "factors": ["structure"],
+            "strategies": ["full_context"],
+            "p_values": [[0.01]],
+        }
+        traces = generate_strategy_comparison_chart(data)
+        assert traces[0]["type"] == "heatmap"
+
+
+# ---------------------------------------------------------------------------
+# TestConcordanceChart (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+class TestConcordanceChart:
+    """Kendall's W concordance bar chart."""
+
+    def test_returns_traces(self) -> None:
+        from agent_evals.reports.charts import generate_concordance_chart
+
+        data = {"structure": 0.82, "transform": 0.65, "format": 0.91}
+        traces = generate_concordance_chart(data)
+        assert isinstance(traces, list)
+        assert len(traces) >= 1
+
+    def test_trace_type_is_bar(self) -> None:
+        from agent_evals.reports.charts import generate_concordance_chart
+
+        data = {"structure": 0.82}
+        traces = generate_concordance_chart(data)
+        assert traces[0]["type"] == "bar"
+
+    def test_trace_values_match(self) -> None:
+        from agent_evals.reports.charts import generate_concordance_chart
+
+        data = {"structure": 0.82, "transform": 0.65}
+        traces = generate_concordance_chart(data)
+        assert traces[0]["x"] == ["structure", "transform"]
+        assert traces[0]["y"] == [0.82, 0.65]

@@ -181,6 +181,14 @@ def create_router(
             "mean_score": aggs["mean_score"],
             "by_variant": by_variant_out,
             "by_model": by_model_out,
+            "by_strategy": {
+                s["strategy"]: {
+                    "variant": s["variant"],
+                    "mean_score": s["mean_score"],
+                    "trial_count": s["count"],
+                }
+                for s in aggs.get("by_strategy", [])
+            } or None,
             "unique_tasks": len({t.task_id for t in trials}),
             "avg_latency": aggs["mean_latency_seconds"],
         }
@@ -204,8 +212,11 @@ def create_router(
         return {"run_id": run_id, "status": "completed"}
 
     @router.get("/api/runs/{run_id}/trials")
-    async def get_trials(run_id: str) -> list[dict[str, Any]]:
-        trials = store.get_trials(run_id)
+    async def get_trials(
+        run_id: str,
+        strategy: str | None = Query(None),
+    ) -> list[dict[str, Any]]:
+        trials = store.get_trials(run_id, context_strategy=strategy)
         return [asdict(t) for t in trials]
 
     @router.get("/api/runs/{run_id}/stream")
@@ -459,6 +470,21 @@ def create_router(
                 detail=f"No analysis results for run '{run_id}'",
             )
         return results
+
+    @router.get("/api/runs/{run_id}/strategy-comparison")
+    async def get_strategy_comparison(run_id: str) -> dict[str, Any]:
+        try:
+            store.get_run_summary(run_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        aggs = store.get_run_aggregates(run_id)
+        by_strat = aggs.get("by_strategy", [])
+        strategies = sorted({s["strategy"] for s in by_strat})
+        return {
+            "run_id": run_id,
+            "strategies": strategies,
+            "by_strategy": by_strat,
+        }
 
     @router.post("/api/pipelines/{pipeline_id}/approve")
     async def approve_pipeline(pipeline_id: str) -> dict[str, Any]:

@@ -420,3 +420,52 @@ class TestBurnRateAlert:
         events = [call[0][0] for call in listener.call_args_list]
         burn_events = [e for e in events if e.event_type == "burn_rate_alert"]
         assert len(burn_events) == 0
+
+
+class TestStrategyFields:
+    """Tracker passes strategy fields through to store and events."""
+
+    def test_record_trial_passes_strategy_fields_to_store(
+        self, tmp_path: Path
+    ) -> None:
+        """Strategy fields are persisted via the store."""
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store)
+        tracker.record_trial(
+            **_trial_kwargs(),
+            context_strategy="rag",
+            llm_calls=5,
+            strategy_metadata={"top_k": 3},
+        )
+        trials = store.get_trials("run-1")
+        assert trials[0].context_strategy == "rag"
+        assert trials[0].llm_calls == 5
+        assert trials[0].strategy_metadata == {"top_k": 3}
+
+    def test_trial_completed_event_includes_context_strategy(
+        self, tmp_path: Path
+    ) -> None:
+        """trial_completed event data includes context_strategy."""
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store)
+        listener = MagicMock()
+        tracker.add_listener(listener)
+        tracker.record_trial(
+            **_trial_kwargs(),
+            context_strategy="system_prompt",
+        )
+        event = listener.call_args[0][0]
+        assert event.event_type == "trial_completed"
+        assert event.data["context_strategy"] == "system_prompt"
+
+    def test_default_strategy_is_full_context(
+        self, tmp_path: Path
+    ) -> None:
+        """Without explicit strategy, default is full_context."""
+        store = _make_store(tmp_path)
+        tracker = EventTracker(store=store)
+        listener = MagicMock()
+        tracker.add_listener(listener)
+        tracker.record_trial(**_trial_kwargs())
+        event = listener.call_args[0][0]
+        assert event.data["context_strategy"] == "full_context"

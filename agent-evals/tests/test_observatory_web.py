@@ -520,3 +520,80 @@ class TestRunSubmissionAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["cancelled"] is False
+
+
+# ---------------------------------------------------------------------------
+# Strategy Filtering Tests (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+class TestStrategyFiltering:
+    """Strategy query parameter filtering on API endpoints."""
+
+    def test_list_runs_with_strategy_filter(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """GET /api/runs?strategy=rag filters runs by strategy."""
+        _store.create_run("run-1", "test", {})
+        _record_trial(_store, "run-1", context_strategy="rag")
+        _record_trial(_store, "run-1", context_strategy="full_context")
+        response = client.get("/api/runs")
+        assert response.status_code == 200
+
+    def test_get_trials_with_strategy_filter(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """GET /api/runs/{id}/trials?strategy=rag filters trials."""
+        _store.create_run("run-1", "test", {})
+        _record_trial(
+            _store, "run-1", task_id="t1", context_strategy="rag",
+        )
+        _record_trial(
+            _store, "run-1", task_id="t2", context_strategy="full_context",
+        )
+        response = client.get("/api/runs/run-1/trials?strategy=rag")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["context_strategy"] == "rag"
+
+    def test_enriched_run_includes_by_strategy(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """GET /api/runs/{id} includes by_strategy breakdown."""
+        _store.create_run("run-1", "test", {})
+        _record_trial(
+            _store, "run-1", task_id="t1", context_strategy="rag",
+        )
+        _record_trial(
+            _store, "run-1", task_id="t2", context_strategy="full_context",
+        )
+        response = client.get("/api/runs/run-1")
+        assert response.status_code == 200
+        data = response.json()
+        assert "by_strategy" in data
+
+    def test_strategy_comparison_endpoint(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """GET /api/runs/{id}/strategy-comparison returns comparison data."""
+        _store.create_run("run-1", "test", {})
+        _record_trial(
+            _store, "run-1", task_id="t1",
+            context_strategy="rag", score=0.7,
+        )
+        _record_trial(
+            _store, "run-1", task_id="t2",
+            context_strategy="full_context", score=0.9,
+        )
+        response = client.get("/api/runs/run-1/strategy-comparison")
+        assert response.status_code == 200
+        data = response.json()
+        assert "strategies" in data
+
+    def test_strategy_comparison_not_found(
+        self, client: TestClient
+    ) -> None:
+        """GET /api/runs/nonexistent/strategy-comparison returns 404."""
+        response = client.get("/api/runs/nonexistent/strategy-comparison")
+        assert response.status_code == 404

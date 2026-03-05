@@ -249,3 +249,42 @@ class TestTaguchiSections:
         assert "ANOVA" not in html
         assert "Post-Hoc" not in html
         assert "Optimal" not in html
+
+
+# ---------------------------------------------------------------------------
+# TestCrossStrategySection (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+class TestCrossStrategySection:
+    """Cross-strategy comparison section in HTML report."""
+
+    def test_html_renders_strategy_comparison_section(self) -> None:
+        """HTML report includes Cross-Strategy Comparison when strategy_comparison present."""
+        data = _report_data(
+            strategy_comparison={
+                "strategies": ["full_context", "rag"],
+                "concordance": {"structure": 0.82, "transform": 0.65},
+                "friedman": {"structure": (8.5, 0.004), "transform": (3.2, 0.07)},
+            }
+        )
+        html = render_html(data)
+        assert "Cross-Strategy" in html or "Strategy Comparison" in html
+
+    def test_html_skips_strategy_section_without_data(self) -> None:
+        """Strategy section not rendered when strategy_comparison is None."""
+        data = _report_data()
+        html = render_html(data)
+        assert "Cross-Strategy" not in html
+
+    def test_html_shows_concordance_values(self) -> None:
+        """Concordance values (Kendall's W) are shown in the comparison."""
+        data = _report_data(
+            strategy_comparison={
+                "strategies": ["full_context", "rag"],
+                "concordance": {"structure": 0.82},
+                "friedman": {},
+            }
+        )
+        html = render_html(data)
+        assert "0.82" in html

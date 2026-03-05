@@ -115,6 +115,34 @@ def _render_taguchi_sections(phase: dict[str, Any]) -> list[str]:
     return sections
 
 
+def _render_strategy_comparison(comparison: dict[str, Any]) -> list[str]:
+    """Render cross-strategy comparison section."""
+    sections: list[str] = []
+    sections.append("## Cross-Strategy Comparison\n")
+
+    concordance = comparison.get("concordance", {})
+    if concordance:
+        sections.append("### Concordance (Kendall's W)\n")
+        sections.append("| Factor | W |")
+        sections.append("| --- | ---: |")
+        for factor, w in concordance.items():
+            sections.append(f"| {factor} | {w:.2f} |")
+        sections.append("")
+
+    friedman = comparison.get("friedman", {})
+    if friedman:
+        sections.append("### Friedman Test\n")
+        sections.append("| Factor | Statistic | p-value |")
+        sections.append("| --- | ---: | ---: |")
+        for factor, vals in friedman.items():
+            sections.append(
+                f"| {factor} | {vals[0]:.2f} | {vals[1]:.4f} |"
+            )
+        sections.append("")
+
+    return sections
+
+
 def render_markdown(data: ReportData) -> str:
     """Render ReportData into a Markdown report.
 
@@ -224,6 +252,10 @@ def render_markdown(data: ReportData) -> str:
     # Sections 10-14: Taguchi DOE (conditional)
     if data.phase_results:
         sections.extend(_render_taguchi_sections(data.phase_results))
+
+    # Cross-Strategy Comparison (conditional)
+    if data.strategy_comparison:
+        sections.extend(_render_strategy_comparison(data.strategy_comparison))
 
     # 9. Appendix
     sections.append("## Appendix\n")

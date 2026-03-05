@@ -102,6 +102,9 @@ class EventTracker:
         phase: str | None = None,
         prompt_messages: list[dict] | None = None,
         response_text: str | None = None,
+        context_strategy: str = "full_context",
+        llm_calls: int = 1,
+        strategy_metadata: dict | None = None,
     ) -> int:
         """Record a trial, persist it, update stats, and notify listeners.
 
@@ -130,6 +133,9 @@ class EventTracker:
             error=error,
             oa_row_id=oa_row_id,
             phase=phase,
+            context_strategy=context_strategy,
+            llm_calls=llm_calls,
+            strategy_metadata=strategy_metadata,
         )
 
         # Conditionally store trace.
@@ -200,6 +206,7 @@ class EventTracker:
                 "variant_name": variant_name,
                 "latency_seconds": latency_seconds,
                 "total_tokens": total_tokens,
+                "context_strategy": context_strategy,
             },
         )
         self._notify(listeners, trial_event)

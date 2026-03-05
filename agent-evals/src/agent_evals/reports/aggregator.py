@@ -50,6 +50,8 @@ class ReportData:
     by_source: dict[str, VariantSummary]
     model_versions: dict[str, str] = field(default_factory=dict)
     phase_results: dict[str, Any] | None = None
+    context_strategy: str = "full_context"
+    strategy_comparison: dict | None = None
 
 
 def _summarize(trials: list[TrialResult]) -> VariantSummary:

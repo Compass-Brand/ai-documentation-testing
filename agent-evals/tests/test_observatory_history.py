@@ -197,3 +197,95 @@ class TestModelRanking:
         models = {r["model"] for r in ranking}
         assert "openai/gpt-4o" in models
         assert "anthropic/claude-haiku" in models
+
+
+# ---------------------------------------------------------------------------
+# Strategy Filter Tests (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def strategy_store(store: ObservatoryStore) -> ObservatoryStore:
+    """Store with runs containing mixed context strategies."""
+    store.create_run("run-s1", "taguchi", {})
+    for i, (strat, score) in enumerate([
+        ("full_context", 0.90),
+        ("full_context", 0.85),
+        ("rag", 0.70),
+        ("rag", 0.65),
+    ]):
+        store.record_trial(
+            run_id="run-s1", task_id=f"t{i}", task_type="qa",
+            variant_name="v-A", repetition=1, score=score,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="openai/gpt-4o",
+            context_strategy=strat,
+        )
+    store.finish_run("run-s1")
+
+    store.create_run("run-s2", "taguchi", {})
+    for i, (strat, score) in enumerate([
+        ("full_context", 0.88),
+        ("rag", 0.72),
+    ]):
+        store.record_trial(
+            run_id="run-s2", task_id=f"t{i}", task_type="qa",
+            variant_name="v-A", repetition=1, score=score,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="openai/gpt-4o",
+            context_strategy=strat,
+        )
+    store.finish_run("run-s2")
+    return store
+
+
+class TestCompareRunsStrategyFilter:
+    """compare_runs with optional context_strategy filter."""
+
+    def test_compare_runs_filters_by_strategy(self, strategy_store):
+        result = compare_runs(
+            strategy_store, ["run-s1", "run-s2"],
+            context_strategy="rag",
+        )
+        for entry in result:
+            # All trials should be rag-only, so scores should be lower
+            assert entry["avg_score"] < 0.80
+
+
+class TestVariantTrendStrategyFilter:
+    """variant_performance_trend with context_strategy filter."""
+
+    def test_trend_filters_by_strategy(self, strategy_store):
+        trend = variant_performance_trend(
+            strategy_store, "v-A", ["run-s1", "run-s2"],
+            context_strategy="full_context",
+        )
+        assert len(trend) == 2
+        # Full context scores are higher than overall
+        assert all(t.avg_score > 0.80 for t in trend)
+
+
+class TestDetectRegressionsStrategyFilter:
+    """detect_regressions with context_strategy filter."""
+
+    def test_regressions_filters_by_strategy(self, strategy_store):
+        regressions = detect_regressions(
+            strategy_store, "run-s1", "run-s2",
+            context_strategy="full_context",
+        )
+        # Full context: run-s1 avg=0.875, run-s2 avg=0.88 -> no regression
+        assert len(regressions) == 0
+
+
+class TestModelRankingStrategyFilter:
+    """model_ranking with context_strategy filter."""
+
+    def test_ranking_filters_by_strategy(self, strategy_store):
+        ranking = model_ranking(
+            strategy_store, ["run-s1", "run-s2"],
+            context_strategy="rag",
+        )
+        assert len(ranking) >= 1
+        # Only rag trials should be counted
+        for r in ranking:
+            assert r["avg_score"] < 0.80

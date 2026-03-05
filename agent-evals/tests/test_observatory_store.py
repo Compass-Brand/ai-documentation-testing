@@ -619,3 +619,216 @@ class TestDatabaseIndexes:
         store2 = ObservatoryStore(db_path=db_path)
         indexes = self._get_index_names(store2)
         assert "idx_trials_run_type_variant" in indexes
+
+    def test_should_have_strategy_index(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Index on context_strategy for strategy-filtered queries."""
+        indexes = self._get_index_names(store)
+        assert "idx_trials_strategy" in indexes
+
+
+# ---------------------------------------------------------------------------
+# TestStrategySchema (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+class TestStrategySchema:
+    """Schema migration adds context_strategy, llm_calls, strategy_metadata columns."""
+
+    def test_schema_migration_adds_context_strategy_column(
+        self, tmp_path: Path
+    ) -> None:
+        """Migration adds context_strategy TEXT DEFAULT 'full_context'."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("r", "full", {})
+        store.record_trial(
+            run_id="r", task_id="t1", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.8,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="test",
+        )
+        trials = store.get_trials("r")
+        assert trials[0].context_strategy == "full_context"
+
+    def test_schema_migration_adds_llm_calls_column(
+        self, tmp_path: Path
+    ) -> None:
+        """Migration adds llm_calls INTEGER DEFAULT 1."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("r", "full", {})
+        store.record_trial(
+            run_id="r", task_id="t1", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.8,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="test",
+        )
+        trials = store.get_trials("r")
+        assert trials[0].llm_calls == 1
+
+    def test_schema_migration_adds_strategy_metadata_column(
+        self, tmp_path: Path
+    ) -> None:
+        """Migration adds strategy_metadata TEXT (JSON blob)."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("r", "full", {})
+        store.record_trial(
+            run_id="r", task_id="t1", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.8,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="test",
+        )
+        trials = store.get_trials("r")
+        assert trials[0].strategy_metadata is None
+
+    def test_record_trial_with_strategy_fields(
+        self, tmp_path: Path
+    ) -> None:
+        """record_trial accepts and persists context_strategy, llm_calls, strategy_metadata."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("r", "full", {})
+        store.record_trial(
+            run_id="r", task_id="t1", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.8,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="test",
+            context_strategy="rag",
+            llm_calls=3,
+            strategy_metadata={"chunk_method": "heading", "top_k": 5},
+        )
+        trials = store.get_trials("r")
+        assert trials[0].context_strategy == "rag"
+        assert trials[0].llm_calls == 3
+        assert trials[0].strategy_metadata == {"chunk_method": "heading", "top_k": 5}
+
+    def test_get_trials_filters_by_context_strategy(
+        self, tmp_path: Path
+    ) -> None:
+        """get_trials accepts optional context_strategy filter."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("r", "full", {})
+        store.record_trial(
+            run_id="r", task_id="t1", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.8,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="test",
+            context_strategy="full_context",
+        )
+        store.record_trial(
+            run_id="r", task_id="t2", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.7,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="test",
+            context_strategy="rag",
+        )
+        rag_trials = store.get_trials("r", context_strategy="rag")
+        assert len(rag_trials) == 1
+        assert rag_trials[0].context_strategy == "rag"
+
+    def test_get_run_aggregates_includes_by_strategy(
+        self, tmp_path: Path
+    ) -> None:
+        """get_run_aggregates includes by_strategy grouping."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("r", "full", {})
+        store.record_trial(
+            run_id="r", task_id="t1", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.9,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="test",
+            context_strategy="full_context",
+        )
+        store.record_trial(
+            run_id="r", task_id="t2", task_type="retrieval",
+            variant_name="v1", repetition=1, score=0.7,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.01, latency_seconds=1.0, model="test",
+            context_strategy="rag",
+        )
+        aggs = store.get_run_aggregates("r")
+        assert "by_strategy" in aggs
+        strategies = {s["strategy"] for s in aggs["by_strategy"]}
+        assert "full_context" in strategies
+        assert "rag" in strategies
+
+    def test_schema_migration_backward_compatible(
+        self, tmp_path: Path
+    ) -> None:
+        """Existing data without strategy fields gets correct defaults."""
+        import sqlite3
+
+        db_path = tmp_path / "test.db"
+        # Create a minimal DB without strategy columns
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS runs (
+                run_id TEXT PRIMARY KEY,
+                run_type TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                config TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                finished_at TEXT,
+                parent_run_id TEXT,
+                phase TEXT,
+                pipeline_id TEXT,
+                heartbeat_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS trials (
+                trial_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL,
+                task_id TEXT NOT NULL,
+                task_type TEXT NOT NULL,
+                variant_name TEXT NOT NULL,
+                repetition INTEGER NOT NULL,
+                score REAL NOT NULL,
+                prompt_tokens INTEGER NOT NULL,
+                completion_tokens INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                cost REAL,
+                latency_seconds REAL NOT NULL,
+                model TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'gold_standard',
+                error TEXT,
+                created_at TEXT NOT NULL,
+                oa_row_id INTEGER,
+                phase TEXT
+            );
+            CREATE TABLE IF NOT EXISTS phase_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                run_id TEXT NOT NULL UNIQUE,
+                main_effects TEXT NOT NULL,
+                anova TEXT NOT NULL,
+                optimal TEXT NOT NULL,
+                significant_factors TEXT NOT NULL,
+                quality_type TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS trial_traces (
+                trial_id INTEGER PRIMARY KEY,
+                prompt_json TEXT NOT NULL,
+                response_text TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+        """)
+        conn.execute(
+            "INSERT INTO runs VALUES ('old', 'full', 'completed', '{}', "
+            "'2025-01-01', '2025-01-01', NULL, NULL, NULL, NULL)"
+        )
+        conn.execute(
+            "INSERT INTO trials (run_id, task_id, task_type, variant_name, "
+            "repetition, score, prompt_tokens, completion_tokens, "
+            "total_tokens, cost, latency_seconds, model, source, error, "
+            "created_at, oa_row_id, phase) VALUES "
+            "('old', 't1', 'qa', 'v1', 1, 0.8, 100, 50, 150, 0.01, "
+            "1.0, 'test', 'gold_standard', NULL, '2025-01-01', NULL, NULL)"
+        )
+        conn.commit()
+        conn.close()
+
+        # Now open with ObservatoryStore which runs migration
+        store = ObservatoryStore(db_path)
+        trials = store.get_trials("old")
+        assert len(trials) == 1
+        assert trials[0].context_strategy == "full_context"
+        assert trials[0].llm_calls == 1
+        assert trials[0].strategy_metadata is None

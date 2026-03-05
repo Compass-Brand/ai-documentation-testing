@@ -263,6 +263,31 @@ _TEMPLATE = """\
   </section>
   {% endif %}
 
+  {% if strategy_comparison %}
+  <!-- Cross-Strategy Comparison -->
+  <section id="strategy-comparison">
+    <h2>Cross-Strategy Comparison</h2>
+    {% if strategy_comparison.concordance %}
+    <h3>Concordance (Kendall's W)</h3>
+    <table>
+      <tr><th>Factor</th><th>W</th></tr>
+      {% for factor, w in strategy_comparison.concordance.items() %}
+      <tr><td>{{ factor }}</td><td>{{ "%.2f"|format(w) }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+    {% if strategy_comparison.friedman %}
+    <h3>Friedman Test</h3>
+    <table>
+      <tr><th>Factor</th><th>Statistic</th><th>p-value</th></tr>
+      {% for factor, vals in strategy_comparison.friedman.items() %}
+      <tr><td>{{ factor }}</td><td>{{ "%.2f"|format(vals[0]) }}</td><td>{{ "%.4f"|format(vals[1]) }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  </section>
+  {% endif %}
+
   <!-- 9. Appendix -->
   <section id="appendix">
     <h2>Appendix</h2>
@@ -337,6 +362,7 @@ def render_html(data: ReportData) -> str:
         score_range=score_range,
         config_json=config_json,
         phase_results=data.phase_results,
+        strategy_comparison=data.strategy_comparison,
     )
 
 

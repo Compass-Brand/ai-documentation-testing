@@ -367,6 +367,69 @@ def tukey_hsd(
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Kendall's W (concordance)
+# ---------------------------------------------------------------------------
+
+
+def kendalls_w(rankings: list[list]) -> float:
+    """Compute Kendall's coefficient of concordance W.
+
+    Pure Python implementation: W = 12 * S / (m^2 * (k^3 - k))
+    where m = number of judges/strategies, k = number of items/levels.
+
+    Args:
+        rankings: List of rankings, one per judge. Each is a list of
+            ranks for k items.
+
+    Returns:
+        W value in [0, 1]. 1 = perfect agreement, 0 = no agreement.
+    """
+    m = len(rankings)  # number of judges
+    k = len(rankings[0])  # number of items
+
+    # Column sums of ranks
+    col_sums = [sum(rankings[j][i] for j in range(m)) for i in range(k)]
+    mean_sum = sum(col_sums) / k
+
+    # S = sum of squared deviations of column sums from mean
+    s = sum((cs - mean_sum) ** 2 for cs in col_sums)
+
+    denominator = m * m * (k * k * k - k)
+    if denominator == 0:
+        return 0.0
+    return 12.0 * s / denominator
+
+
+# ---------------------------------------------------------------------------
+# Friedman test
+# ---------------------------------------------------------------------------
+
+
+def friedman_test(data: list[list]) -> tuple[float, float]:
+    """Run Friedman's chi-square test for repeated measures.
+
+    Wraps scipy.stats.friedmanchisquare().
+
+    Args:
+        data: List of rows (blocks/subjects), each row has k treatment
+            scores. Shape: n_blocks x k_treatments.
+
+    Returns:
+        (statistic, p_value) tuple.
+    """
+    arr = np.array(data, dtype=float)
+    # friedmanchisquare expects columns as separate arrays
+    columns = [arr[:, i] for i in range(arr.shape[1])]
+    result = stats.friedmanchisquare(*columns)
+    return (float(result.statistic), float(result.pvalue))
+
+
+# ---------------------------------------------------------------------------
+# Benjamini-Hochberg FDR
+# ---------------------------------------------------------------------------
+
+
 def benjamini_hochberg(
     p_values: list[float],
     alpha: float = 0.05,

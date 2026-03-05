@@ -38,6 +38,9 @@ class TrialRecord:
     error: str | None
     oa_row_id: int | None = None
     phase: str | None = None
+    context_strategy: str = "full_context"
+    llm_calls: int = 1
+    strategy_metadata: dict | None = None
 
 
 @dataclass
@@ -139,6 +142,9 @@ class ObservatoryStore:
             "ALTER TABLE runs ADD COLUMN heartbeat_at TEXT",
             "ALTER TABLE trials ADD COLUMN oa_row_id INTEGER",
             "ALTER TABLE trials ADD COLUMN phase TEXT",
+            "ALTER TABLE trials ADD COLUMN context_strategy TEXT DEFAULT 'full_context'",
+            "ALTER TABLE trials ADD COLUMN llm_calls INTEGER DEFAULT 1",
+            "ALTER TABLE trials ADD COLUMN strategy_metadata TEXT",
         ]
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_trials_run_type_variant "
@@ -147,6 +153,8 @@ class ObservatoryStore:
             "ON trials (source, task_type)",
             "CREATE INDEX IF NOT EXISTS idx_trials_variant_rep "
             "ON trials (variant_name, repetition)",
+            "CREATE INDEX IF NOT EXISTS idx_trials_strategy "
+            "ON trials (context_strategy)",
         ]
         with self._connect() as conn:
             for stmt in migrations:
@@ -252,6 +260,9 @@ class ObservatoryStore:
         error: str | None = None,
         oa_row_id: int | None = None,
         phase: str | None = None,
+        context_strategy: str = "full_context",
+        llm_calls: int = 1,
+        strategy_metadata: dict | None = None,
     ) -> int:
         """Record a single trial result.
 
@@ -259,19 +270,21 @@ class ObservatoryStore:
             The auto-generated trial_id for the inserted row.
         """
         now = datetime.now(timezone.utc).isoformat()
+        meta_json = json.dumps(strategy_metadata) if strategy_metadata else None
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
                 "INSERT INTO trials "
                 "(run_id, task_id, task_type, variant_name, repetition, "
                 "score, prompt_tokens, completion_tokens, total_tokens, "
                 "cost, latency_seconds, model, source, error, created_at, "
-                "oa_row_id, phase) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "oa_row_id, phase, context_strategy, llm_calls, "
+                "strategy_metadata) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id, task_id, task_type, variant_name, repetition,
                     score, prompt_tokens, completion_tokens, total_tokens,
                     cost, latency_seconds, model, source, error, now,
-                    oa_row_id, phase,
+                    oa_row_id, phase, context_strategy, llm_calls, meta_json,
                 ),
             )
             return cursor.lastrowid  # type: ignore[return-value]
@@ -441,6 +454,13 @@ class ObservatoryStore:
                 "GROUP BY variant_name",
                 (run_id,),
             ).fetchall()
+            by_strategy = conn.execute(
+                "SELECT variant_name, context_strategy, "
+                "COUNT(*) AS cnt, AVG(score) AS avg_score "
+                "FROM trials WHERE run_id = ? "
+                "GROUP BY variant_name, context_strategy",
+                (run_id,),
+            ).fetchall()
         return {
             "trial_count": row["cnt"] or 0,
             "mean_score": row["avg_score"] or 0.0,
@@ -454,6 +474,15 @@ class ObservatoryStore:
                 }
                 for r in by_variant
             ],
+            "by_strategy": [
+                {
+                    "variant": r["variant_name"],
+                    "strategy": r["context_strategy"] or "full_context",
+                    "count": r["cnt"],
+                    "mean_score": r["avg_score"],
+                }
+                for r in by_strategy
+            ],
         }
 
     def get_trials(
@@ -462,6 +491,7 @@ class ObservatoryStore:
         *,
         model: str | None = None,
         source: str | None = None,
+        context_strategy: str | None = None,
     ) -> list[TrialRecord]:
         """Return trials for a run, optionally filtered."""
         query = "SELECT * FROM trials WHERE run_id = ?"
@@ -472,10 +502,22 @@ class ObservatoryStore:
         if source is not None:
             query += " AND source = ?"
             params.append(source)
+        if context_strategy is not None:
+            query += " AND context_strategy = ?"
+            params.append(context_strategy)
         query += " ORDER BY trial_id"
 
         with self._connect() as conn:
             rows = conn.execute(query, params).fetchall()
+
+        def _parse_metadata(raw: str | None) -> dict | None:
+            if raw is None:
+                return None
+            try:
+                return json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return None
+
         return [
             TrialRecord(
                 trial_id=r["trial_id"],
@@ -495,6 +537,9 @@ class ObservatoryStore:
                 error=r["error"],
                 oa_row_id=r["oa_row_id"],
                 phase=r["phase"],
+                context_strategy=r["context_strategy"] or "full_context",
+                llm_calls=r["llm_calls"] or 1,
+                strategy_metadata=_parse_metadata(r["strategy_metadata"]),
             )
             for r in rows
         ]

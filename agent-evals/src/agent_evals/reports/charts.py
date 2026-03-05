@@ -158,6 +158,47 @@ def generate_sn_response_table(
     return result
 
 
+def generate_strategy_comparison_chart(
+    data: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Generate heatmap of factor x strategy p-values.
+
+    Args:
+        data: Dict with "factors" (list), "strategies" (list),
+            "p_values" (list of lists, factors x strategies).
+
+    Returns:
+        One heatmap trace.
+    """
+    return [{
+        "type": "heatmap",
+        "z": data["p_values"],
+        "x": data["strategies"],
+        "y": data["factors"],
+        "colorscale": "RdYlGn_r",
+        "name": "Strategy Comparison",
+    }]
+
+
+def generate_concordance_chart(
+    data: dict[str, float],
+) -> list[dict[str, Any]]:
+    """Generate bar chart of Kendall's W per factor.
+
+    Args:
+        data: Mapping of factor_name -> W value.
+
+    Returns:
+        One bar trace.
+    """
+    return [{
+        "type": "bar",
+        "x": list(data.keys()),
+        "y": list(data.values()),
+        "name": "Kendall's W",
+    }]
+
+
 def generate_confirmation_chart(
     data: dict[str, float],
 ) -> list[dict[str, Any]]:

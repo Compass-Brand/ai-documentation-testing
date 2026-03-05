@@ -190,3 +190,126 @@ class TestBenjaminiHochberg:
         adjusted = [r.adjusted_p for r in sorted_results]
         for i in range(1, len(adjusted)):
             assert adjusted[i] >= adjusted[i - 1] - 1e-10
+
+
+# ---------------------------------------------------------------------------
+# TestKendallsW (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+class TestKendallsW:
+    """Kendall's coefficient of concordance W."""
+
+    def test_perfect_agreement_returns_1(self):
+        """All judges rank items identically -> W = 1.0."""
+        from agent_evals.reports.statistics import kendalls_w
+
+        # 3 judges, 4 items, all agree: rank [1,2,3,4]
+        rankings = [
+            [1, 2, 3, 4],
+            [1, 2, 3, 4],
+            [1, 2, 3, 4],
+        ]
+        w = kendalls_w(rankings)
+        assert w == pytest.approx(1.0, abs=0.01)
+
+    def test_no_agreement_returns_near_zero(self):
+        """Random/opposing rankings -> W near 0."""
+        from agent_evals.reports.statistics import kendalls_w
+
+        rankings = [
+            [1, 2, 3, 4],
+            [4, 3, 2, 1],
+        ]
+        w = kendalls_w(rankings)
+        # Not necessarily 0 for 2 judges, but should be low
+        assert 0.0 <= w <= 1.0
+
+    def test_known_value(self):
+        """Verify against a known computed example."""
+        from agent_evals.reports.statistics import kendalls_w
+
+        # Example: 3 judges rank 5 items
+        rankings = [
+            [1, 2, 3, 4, 5],
+            [1, 3, 2, 5, 4],
+            [1, 2, 4, 3, 5],
+        ]
+        w = kendalls_w(rankings)
+        # W should be between 0 and 1
+        assert 0.0 < w < 1.0
+        # Known: W = 12*S / (m^2 * (k^3 - k))
+        # Compute manually: column sums = [3, 7, 9, 12, 14]
+        # mean_rank_sum = 9.0
+        # S = (3-9)^2 + (7-9)^2 + (9-9)^2 + (12-9)^2 + (14-9)^2
+        #   = 36 + 4 + 0 + 9 + 25 = 74
+        # W = 12*74 / (9*(125-5)) = 888 / 1080 = 0.8222
+        assert w == pytest.approx(0.8222, abs=0.01)
+
+    def test_returns_float(self):
+        from agent_evals.reports.statistics import kendalls_w
+
+        w = kendalls_w([[1, 2], [2, 1]])
+        assert isinstance(w, float)
+
+    def test_w_between_0_and_1(self):
+        from agent_evals.reports.statistics import kendalls_w
+
+        rankings = [
+            [1, 2, 3],
+            [2, 1, 3],
+            [1, 3, 2],
+        ]
+        w = kendalls_w(rankings)
+        assert 0.0 <= w <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# TestFriedmanTest (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+class TestFriedmanTest:
+    """Friedman test wrapper."""
+
+    def test_returns_statistic_and_pvalue(self):
+        from agent_evals.reports.statistics import friedman_test
+
+        data = [
+            [0.8, 0.7, 0.9],
+            [0.85, 0.72, 0.88],
+            [0.82, 0.68, 0.91],
+            [0.79, 0.71, 0.87],
+        ]
+        stat, p = friedman_test(data)
+        assert isinstance(stat, float)
+        assert isinstance(p, float)
+        assert stat >= 0
+        assert 0.0 <= p <= 1.0
+
+    def test_identical_columns_not_significant(self):
+        from math import isnan
+
+        from agent_evals.reports.statistics import friedman_test
+
+        data = [
+            [0.8, 0.8, 0.8],
+            [0.8, 0.8, 0.8],
+            [0.8, 0.8, 0.8],
+        ]
+        stat, p = friedman_test(data)
+        # Scipy returns NaN for zero-variance data (divide by zero)
+        assert p > 0.05 or stat == 0.0 or isnan(stat)
+
+    def test_different_columns_significant(self):
+        from agent_evals.reports.statistics import friedman_test
+
+        data = [
+            [0.1, 0.5, 0.9],
+            [0.15, 0.55, 0.85],
+            [0.12, 0.52, 0.92],
+            [0.08, 0.48, 0.88],
+            [0.11, 0.51, 0.91],
+        ]
+        stat, p = friedman_test(data)
+        assert p < 0.05

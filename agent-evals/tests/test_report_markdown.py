@@ -329,3 +329,39 @@ class TestTaguchiSkippedWithoutPhaseResults:
     def test_no_main_effects_without_phase_results(self) -> None:
         md = render_markdown(_report_data())
         assert "Main Effects" not in md
+
+
+# ---------------------------------------------------------------------------
+# TestMarkdownStrategyComparison (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+class TestMarkdownStrategyComparison:
+    """Cross-strategy comparison section in markdown report."""
+
+    def test_renders_strategy_comparison_heading(self) -> None:
+        data = _report_data(
+            strategy_comparison={
+                "strategies": ["full_context", "rag"],
+                "concordance": {"structure": 0.82, "transform": 0.65},
+                "friedman": {"structure": (8.5, 0.004)},
+            }
+        )
+        md = render_markdown(data)
+        assert "Cross-Strategy" in md or "Strategy Comparison" in md
+
+    def test_renders_concordance_table(self) -> None:
+        data = _report_data(
+            strategy_comparison={
+                "strategies": ["full_context", "rag"],
+                "concordance": {"structure": 0.82},
+                "friedman": {},
+            }
+        )
+        md = render_markdown(data)
+        assert "0.82" in md
+        assert "structure" in md
+
+    def test_skips_strategy_section_without_data(self) -> None:
+        md = render_markdown(_report_data())
+        assert "Cross-Strategy" not in md

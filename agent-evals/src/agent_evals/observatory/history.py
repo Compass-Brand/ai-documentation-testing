@@ -74,12 +74,15 @@ def _aggregate_trials(
 def compare_runs(
     store: ObservatoryStore,
     run_ids: list[str],
+    *,
+    context_strategy: str | None = None,
 ) -> list[dict[str, Any]]:
     """Compare aggregate statistics between runs.
 
     Args:
         store: The observatory store.
         run_ids: Run IDs to compare (in chronological order).
+        context_strategy: If set, filter trials by strategy.
 
     Returns:
         List of dicts with run_id, total_trials, avg_score, total_cost,
@@ -89,7 +92,7 @@ def compare_runs(
     prev_avg: float | None = None
 
     for run_id in run_ids:
-        trials = store.get_trials(run_id)
+        trials = store.get_trials(run_id, context_strategy=context_strategy)
         agg = _aggregate_trials(trials)
         entry: dict[str, Any] = {"run_id": run_id, **agg}
 
@@ -108,6 +111,8 @@ def variant_performance_trend(
     store: ObservatoryStore,
     variant_name: str,
     run_ids: list[str],
+    *,
+    context_strategy: str | None = None,
 ) -> list[VariantTrend]:
     """Track a variant's performance across runs.
 
@@ -115,6 +120,7 @@ def variant_performance_trend(
         store: The observatory store.
         variant_name: The variant to track.
         run_ids: Run IDs in chronological order.
+        context_strategy: If set, filter trials by strategy.
 
     Returns:
         List of VariantTrend, one per run that has data for this variant.
@@ -122,7 +128,7 @@ def variant_performance_trend(
     trends: list[VariantTrend] = []
 
     for run_id in run_ids:
-        trials = store.get_trials(run_id)
+        trials = store.get_trials(run_id, context_strategy=context_strategy)
         variant_trials = [
             t for t in trials if t.variant_name == variant_name
         ]
@@ -146,6 +152,7 @@ def detect_regressions(
     comparison_run_id: str,
     *,
     threshold: float = 0.05,
+    context_strategy: str | None = None,
 ) -> list[dict[str, Any]]:
     """Detect variants that regressed between two runs.
 
@@ -157,12 +164,17 @@ def detect_regressions(
         baseline_run_id: The earlier run.
         comparison_run_id: The later run.
         threshold: Minimum score drop to flag as regression.
+        context_strategy: If set, filter trials by strategy.
 
     Returns:
         List of dicts with variant, baseline_score, comparison_score, delta.
     """
-    baseline_trials = store.get_trials(baseline_run_id)
-    comparison_trials = store.get_trials(comparison_run_id)
+    baseline_trials = store.get_trials(
+        baseline_run_id, context_strategy=context_strategy
+    )
+    comparison_trials = store.get_trials(
+        comparison_run_id, context_strategy=context_strategy
+    )
 
     # Group by variant
     baseline_by_variant: dict[str, list[float]] = {}
@@ -223,18 +235,28 @@ def cost_trend(
 def model_ranking(
     store: ObservatoryStore,
     run_ids: list[str],
+    *,
+    context_strategy: str | None = None,
 ) -> list[dict[str, Any]]:
     """Rank models by average score across all specified runs.
 
     Args:
         store: The observatory store.
         run_ids: Run IDs to include.
+        context_strategy: If set, filter trials by strategy.
 
     Returns:
         List of dicts with model, avg_score, total_trials, avg_cost,
         sorted by avg_score descending.
     """
-    all_trials = get_cross_run_trials(store, run_ids)
+    if context_strategy is not None:
+        all_trials: list[TrialRecord] = []
+        for run_id in run_ids:
+            all_trials.extend(
+                store.get_trials(run_id, context_strategy=context_strategy)
+            )
+    else:
+        all_trials = get_cross_run_trials(store, run_ids)
 
     by_model: dict[str, list[TrialRecord]] = {}
     for t in all_trials:
