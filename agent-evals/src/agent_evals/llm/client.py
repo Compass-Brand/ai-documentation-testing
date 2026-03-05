@@ -39,6 +39,7 @@ class GenerationResult:
     api_call_ms: float = 0.0
     retry_count: int = 0
     total_api_ms: float = 0.0
+    tool_calls: list | None = None
 
 
 class LLMClientError(Exception):
@@ -69,7 +70,11 @@ class LLMClient:
         self.temperature = temperature
 
     def complete(
-        self, messages: list[dict[str, str]], **kwargs: object
+        self,
+        messages: list[dict[str, str]],
+        *,
+        tools: list[dict] | None = None,
+        **kwargs: object,
     ) -> GenerationResult:
         """Send a completion request and return a result with metadata.
 
@@ -77,6 +82,10 @@ class LLMClient:
         ----------
         messages:
             Chat messages in the OpenAI format (list of role/content dicts).
+        tools:
+            Optional list of tool definitions in OpenAI function calling
+            format. When provided, the model may return tool_calls instead
+            of text content.
         **kwargs:
             Extra keyword arguments forwarded to ``litellm.completion()``
             (e.g. ``max_tokens``, ``top_p``).
@@ -98,6 +107,9 @@ class LLMClient:
             "timeout": self.REQUEST_TIMEOUT,
             **kwargs,
         }
+
+        if tools is not None:
+            call_kwargs["tools"] = tools
 
         if self.api_key is not None:
             call_kwargs["api_key"] = self.api_key
@@ -190,6 +202,24 @@ class LLMClient:
         if isinstance(hidden_params, dict):
             cost = hidden_params.get("response_cost")
 
+        # Extract tool_calls from the response message when present.
+        response_tool_calls = getattr(
+            response.choices[0].message, "tool_calls", None,
+        )
+        serialized_tool_calls: list | None = None
+        if response_tool_calls:
+            serialized_tool_calls = [
+                {
+                    "id": tc.id,
+                    "type": tc.type,
+                    "function": {
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    },
+                }
+                for tc in response_tool_calls
+            ]
+
         return GenerationResult(
             content=response.choices[0].message.content or "",
             prompt_tokens=response.usage.prompt_tokens,
@@ -201,4 +231,5 @@ class LLMClient:
             api_call_ms=api_call_ms,
             retry_count=retry_count,
             total_api_ms=total_api_ms,
+            tool_calls=serialized_tool_calls,
         )

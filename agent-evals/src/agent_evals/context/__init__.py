@@ -8,6 +8,7 @@ Public API:
     - ``FullContextStrategy`` -- Default strategy (full index injection).
     - ``SystemPromptStrategy`` -- Token-budget constrained strategy.
     - ``RAGStrategy`` -- Chunk, embed, retrieve context strategy.
+    - ``ToolBasedStrategy`` -- Multi-turn agentic strategy with doc tools.
 """
 
 from agent_evals.context.base import (
@@ -19,6 +20,7 @@ from agent_evals.context.base import (
 from agent_evals.context.full import FullContextStrategy
 from agent_evals.context.rag import RAGStrategy
 from agent_evals.context.system_prompt import SystemPromptStrategy
+from agent_evals.context.tool_based import ToolBasedStrategy
 
 __all__ = [
     "ContextStrategy",
@@ -28,4 +30,5 @@ __all__ = [
     "StrategyConfig",
     "StrategyResult",
     "SystemPromptStrategy",
+    "ToolBasedStrategy",
 ]
