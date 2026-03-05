@@ -1899,3 +1899,74 @@ class TestRemovedFlags:
         assert flag in parser._option_string_actions, (
             f"{flag} was removed but should still exist"
         )
+
+
+# ---------------------------------------------------------------------------
+# Context strategy CLI flags (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+class TestStrategyFlagDefaults:
+    """Default values for strategy-related CLI flags."""
+
+    def test_default_context_strategy_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.context_strategy is None
+
+    def test_default_strategies_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.strategies is None
+
+    def test_default_strategy_reps_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.strategy_reps is None
+
+
+class TestStrategyFlagParsing:
+    """Strategy-related CLI flags accept correct values."""
+
+    def test_context_strategy_accepts_string(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--context-strategy", "rag"])
+        assert args.context_strategy == "rag"
+
+    def test_strategies_accepts_comma_separated(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--strategies", "full_context,rag,system_prompt"])
+        assert args.strategies == "full_context,rag,system_prompt"
+
+    def test_strategy_reps_accepts_key_value_pairs(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--strategy-reps", "tool_based=10,rag=5"])
+        assert args.strategy_reps == "tool_based=10,rag=5"
+
+
+class TestStrategyResolveConfig:
+    """Strategy flags resolve through config precedence chain."""
+
+    def test_context_strategy_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--context-strategy", "rag"])
+        resolved = resolve_config(args, {})
+        assert resolved["context_strategy"] == "rag"
+
+    def test_strategies_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--strategies", "full_context,rag"])
+        resolved = resolve_config(args, {})
+        assert resolved["strategies"] == "full_context,rag"
+
+    def test_strategy_reps_resolved_from_cli(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["--strategy-reps", "rag=5"])
+        resolved = resolve_config(args, {})
+        assert resolved["strategy_reps"] == "rag=5"
+
+    def test_context_strategy_resolved_from_config_file(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        resolved = resolve_config(args, {"context_strategy": "system_prompt"})
+        assert resolved["context_strategy"] == "system_prompt"

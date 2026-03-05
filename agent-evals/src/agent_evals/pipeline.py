@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import copy
+import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from agent_evals.context.base import StrategyConfig
 from agent_evals.taguchi.analysis import (
     compute_main_effects,
     compute_sn_ratios,
@@ -18,6 +21,8 @@ from agent_evals.taguchi.factors import build_design
 
 if TYPE_CHECKING:
     from agent_evals.orchestrator import EvalOrchestrator
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -41,6 +46,8 @@ class PipelineConfig:
     temperature: float = 0.3
     global_budget: float | None = None
     model_budgets: dict[str, float] | None = None
+    strategy_config: StrategyConfig = field(default_factory=StrategyConfig)
+    strategy_reps: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -432,5 +439,116 @@ class DOEPipeline:
             final_optimal=final_optimal,
             total_trials=total_trials,
             total_cost=total_cost,
+            elapsed_seconds=elapsed,
+        )
+
+
+@dataclass
+class MultiStrategyResult:
+    """Aggregated results across multiple context strategies."""
+
+    pipeline_id: str
+    strategy_results: dict[str, PipelineResult] = field(default_factory=dict)
+    total_cost: float = 0.0
+    total_trials: int = 0
+    elapsed_seconds: float = 0.0
+
+
+class MultiStrategyPipeline:
+    """Runs independent DOEPipeline per context strategy.
+
+    Deep-copies PipelineConfig per strategy to avoid shared-state
+    mutation. Overrides per-strategy repetition counts from
+    ``strategy_reps``. Each strategy gets a distinct pipeline_id.
+    """
+
+    def __init__(
+        self,
+        config: PipelineConfig,
+        orchestrator: EvalOrchestrator,
+        strategies: list[str],
+        pipeline_id: str | None = None,
+    ) -> None:
+        self.config = config
+        self._orchestrator = orchestrator
+        self.strategies = strategies
+        self._pipeline_id = pipeline_id or uuid4().hex[:12]
+        self._completed_strategies: dict[str, PipelineResult] = {}
+
+    def _build_pipeline_ids(self) -> dict[str, str]:
+        """Build strategy-specific pipeline IDs."""
+        return {
+            name: f"{self._pipeline_id}__{name}"
+            for name in self.strategies
+        }
+
+    def _build_strategy_configs(self) -> dict[str, PipelineConfig]:
+        """Deep-copy PipelineConfig per strategy with rep overrides."""
+        configs: dict[str, PipelineConfig] = {}
+        for name in self.strategies:
+            cfg = copy.deepcopy(self.config)
+            cfg.strategy_config = StrategyConfig(
+                strategy=name,
+                token_budget=self.config.strategy_config.token_budget,
+                truncation=self.config.strategy_config.truncation,
+                chunk_method=self.config.strategy_config.chunk_method,
+                rag_top_k=self.config.strategy_config.rag_top_k,
+                embedding_model=self.config.strategy_config.embedding_model,
+                max_turns=self.config.strategy_config.max_turns,
+            )
+            # Override reps from strategy_reps mapping
+            if name in self.config.strategy_reps:
+                cfg.screening_reps = self.config.strategy_reps[name]
+                cfg.confirmation_reps = cfg.screening_reps + 2
+            configs[name] = cfg
+        return configs
+
+    def run(
+        self,
+        tasks: list[Any],
+        variants: list[Any],
+        doc_tree: Any,
+        *,
+        phase_callback: Any | None = None,
+    ) -> MultiStrategyResult:
+        """Execute DOEPipeline per strategy, collecting results."""
+        pipeline_ids = self._build_pipeline_ids()
+        configs = self._build_strategy_configs()
+        results: dict[str, PipelineResult] = dict(self._completed_strategies)
+        total_cost = sum(r.total_cost for r in results.values())
+        total_trials = sum(r.total_trials for r in results.values())
+        elapsed = sum(r.elapsed_seconds for r in results.values())
+
+        for name in self.strategies:
+            if name in results:
+                logger.info("Strategy %s already completed, skipping", name)
+                continue
+
+            logger.info("Running DOEPipeline for strategy: %s", name)
+            # Update orchestrator's strategy_config for this strategy
+            self._orchestrator.config.strategy_config = configs[name].strategy_config
+
+            pipeline = DOEPipeline(
+                config=configs[name],
+                orchestrator=self._orchestrator,
+                pipeline_id=pipeline_ids[name],
+            )
+            result = pipeline.run(
+                tasks=tasks,
+                variants=variants,
+                doc_tree=doc_tree,
+                phase_callback=phase_callback,
+            )
+            results[name] = result
+            self._completed_strategies[name] = result
+            total_cost += result.total_cost
+            total_trials += result.total_trials
+            elapsed += result.elapsed_seconds
+
+        return MultiStrategyResult(
+            pipeline_id=self._pipeline_id,
+            strategy_results=results,
+            total_cost=total_cost,
+            total_trials=total_trials,
             elapsed_seconds=elapsed,
         )

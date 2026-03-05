@@ -62,6 +62,9 @@ class StartRunRequest(BaseModel):
     top_k: int = Field(default=3, ge=1, le=10)
     alpha: float = Field(default=0.05, ge=0.001, le=0.1)
     source: str = "gold_standard"
+    context_strategy: str | None = None
+    strategies: str | None = None
+    strategy_reps: str | None = None
 
 
 class HeartbeatThread(threading.Thread):
@@ -267,6 +270,13 @@ class RunManager:
             temperature=0.3,
         )
 
+        # Build strategy config from request
+        from agent_evals.context.base import StrategyConfig
+
+        strategy_config = StrategyConfig(
+            strategy=request.context_strategy or "full_context",
+        )
+
         # Build orchestrator with shared store/tracker
         orch_config = OrchestratorConfig(
             mode=request.mode,
@@ -277,6 +287,7 @@ class RunManager:
             store=self._store,
             tracker=self._tracker,
             run_id=run_id,
+            strategy_config=strategy_config,
         )
         orchestrator = EvalOrchestrator(orch_config)
 

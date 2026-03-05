@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from agent_evals.context.base import StrategyConfig
 from agent_evals.llm.client_pool import LLMClientPool
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker, TrackerEvent
@@ -65,6 +66,7 @@ class OrchestratorConfig:
     run_id: str | None = None
     store_traces: bool = False
     resume_run_id: str | None = None
+    strategy_config: StrategyConfig = field(default_factory=StrategyConfig)
 
 
 @dataclass
@@ -445,6 +447,24 @@ class EvalOrchestrator:
     # Internal
     # ------------------------------------------------------------------
 
+    def _build_strategy_factory(self) -> Any:
+        """Build a strategy factory callable from strategy_config."""
+        from agent_evals.context.registry import get_strategy_by_name, load_all
+
+        sc = self.config.strategy_config
+        strategy_name = sc.strategy
+
+        def factory() -> Any:
+            load_all()
+            strategy = get_strategy_by_name(strategy_name)
+            if strategy is not None:
+                return strategy
+            # Fallback: import and instantiate directly
+            from agent_evals.context.full import FullContextStrategy
+            return FullContextStrategy()
+
+        return factory
+
     def _run_full(
         self,
         tasks: list[EvalTask],
@@ -459,7 +479,11 @@ class EvalOrchestrator:
         model_name = self.config.models[0] if self.config.models else "unknown"
         client = self.client_pool.get_client(model_name)
 
-        runner = EvalRunner(client=client, config=eval_config)
+        strategy_factory = self._build_strategy_factory()
+        runner = EvalRunner(
+            client=client, config=eval_config,
+            strategy_factory=strategy_factory,
+        )
         return runner.run(
             tasks=tasks,
             variants=variants,
@@ -496,12 +520,14 @@ class EvalOrchestrator:
         for model_name in self.config.models:
             clients[model_name] = self.client_pool.get_client(model_name)
 
+        strategy_factory = self._build_strategy_factory()
         runner = TaguchiRunner(
             clients=clients,
             config=eval_config,
             design=design,
             variant_lookup=variant_lookup,
             store=self.store,
+            strategy_factory=strategy_factory,
         )
         return runner.run(
             tasks=tasks,

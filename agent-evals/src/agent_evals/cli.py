@@ -272,6 +272,26 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         help="Model sync interval in hours (default: 6)",
     )
 
+    # Context strategy flags
+    parser.add_argument(
+        "--context-strategy",
+        type=str,
+        default=None,
+        help="Context delivery strategy (full_context, system_prompt, rag, tool_based)",
+    )
+    parser.add_argument(
+        "--strategies",
+        type=str,
+        default=None,
+        help="Comma-separated strategies for multi-strategy pipeline comparison",
+    )
+    parser.add_argument(
+        "--strategy-reps",
+        type=str,
+        default=None,
+        help='Per-strategy rep overrides, e.g. "tool_based=10,rag=5"',
+    )
+
     # Verbosity (mutually exclusive)
     verbosity = parser.add_mutually_exclusive_group()
     verbosity.add_argument(
@@ -444,6 +464,9 @@ _CONFIG_KEYS: dict[str, type] = {
     "dashboard": bool,
     "model_group": str,
     "sync_interval": float,
+    "context_strategy": str,
+    "strategies": str,
+    "strategy_reps": str,
 }
 
 
@@ -538,8 +561,6 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
 
     Returns 0 on success, 1 on error.
     """
-    from agent_evals.runner import EvalRunner
-
     # --list-datasets: show available datasets and exit (no model needed)
     if resolved.get("list_datasets"):
         from agent_evals.datasets import list_available, load_all as load_all_datasets
@@ -679,16 +700,7 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         return 1
 
     # Import heavy dependencies only when actually running
-    from agent_evals.llm.client import LLMClient
-    from agent_evals.tasks.loader import load_tasks
     from agent_evals.variants.registry import get_variants_for_axis
-
-    # Build LLM client (api_key already validated above)
-    client = LLMClient(
-        model=model,
-        api_key=api_key,
-        temperature=run_config.temperature,
-    )
 
     # Load tasks and doc_tree based on --source
     from agent_evals.source import (
@@ -760,6 +772,11 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
 
     if mode == "taguchi":
         pipeline_mode = resolved.get("pipeline")
+        strategies_str = resolved.get("strategies")
+        if strategies_str:
+            return _run_multi_strategy_pipeline(
+                resolved, tasks, variants, doc_tree, api_key, run_config,
+            )
         if pipeline_mode:
             return _run_pipeline(
                 resolved, tasks, variants, doc_tree, api_key, run_config,
@@ -768,17 +785,104 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
             resolved, tasks, variants, doc_tree, api_key, run_config,
         )
 
-    # Default: full mode via EvalRunner
-    from agent_evals.progress import make_progress_callback
+    # Default: full mode via orchestrator (wires strategy_factory)
+    return _run_full(resolved, tasks, variants, doc_tree, api_key, run_config)
 
-    display = run_config.display_mode or "rich"
-    callback = make_progress_callback(display)
 
-    runner = EvalRunner(client=client, config=run_config)
-    result = runner.run(
-        tasks=tasks, variants=variants, doc_tree=doc_tree,
-        progress_callback=callback,
+def _build_strategy_config(
+    resolved: dict[str, Any],
+    raw_yaml: dict[str, Any] | None = None,
+) -> Any:
+    """Build a StrategyConfig from resolved config and raw YAML."""
+    from agent_evals.context.base import StrategyConfig
+
+    strategy_name = resolved.get("context_strategy", "full_context")
+    # Strategy sub-parameters come from YAML strategy_config section only
+    yaml_sc = {}
+    if raw_yaml and "strategy_config" in raw_yaml:
+        yaml_sc = raw_yaml["strategy_config"]
+
+    return StrategyConfig(
+        strategy=strategy_name,
+        token_budget=yaml_sc.get("token_budget"),
+        truncation=yaml_sc.get("truncation", "hard"),
+        chunk_method=yaml_sc.get("chunk_method", "heading"),
+        rag_top_k=yaml_sc.get("rag_top_k", 5),
+        embedding_model=yaml_sc.get("embedding_model", "text-embedding-3-small"),
+        max_turns=yaml_sc.get("max_turns", 10),
     )
+
+
+def _parse_model_budgets(resolved: dict[str, Any]) -> dict[str, float] | None:
+    """Parse model budget string into dict."""
+    raw_budgets = resolved.get("model_budgets")
+    if raw_budgets and isinstance(raw_budgets, str):
+        budgets: dict[str, float] = {}
+        for pair in raw_budgets.split(","):
+            key, _, val = pair.partition("=")
+            budgets[key.strip()] = float(val.strip())
+        return budgets
+    return None
+
+
+def _parse_strategy_reps(resolved: dict[str, Any]) -> dict[str, int]:
+    """Parse strategy reps string into dict."""
+    raw = resolved.get("strategy_reps")
+    if not raw or not isinstance(raw, str):
+        return {}
+    reps: dict[str, int] = {}
+    for pair in raw.split(","):
+        key, _, val = pair.partition("=")
+        reps[key.strip()] = int(val.strip())
+    return reps
+
+
+def _run_full(
+    resolved: dict[str, Any],
+    tasks: list,
+    variants: list,
+    doc_tree: Any,
+    api_key: str,
+    run_config: EvalRunConfig,
+) -> int:
+    """Execute a full-sweep evaluation via EvalOrchestrator.
+
+    Routes through orchestrator to ensure strategy_factory is wired.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+
+    model = str(resolved["model"])
+    strategy_config = _build_strategy_config(resolved)
+    model_budgets = _parse_model_budgets(resolved)
+
+    orch_config = OrchestratorConfig(
+        mode="full",
+        models=[model],
+        api_key=api_key,
+        report_format=resolved.get("report"),
+        global_budget=resolved.get("budget"),
+        model_budgets=model_budgets,
+        temperature=run_config.temperature,
+        eval_config=run_config,
+        dashboard=resolved.get("dashboard", False),
+        dashboard_port=int(resolved.get("dashboard_port", 8501)),
+        store_traces=resolved.get("store_traces", False),
+        resume_run_id=resolved.get("resume"),
+        strategy_config=strategy_config,
+    )
+    orchestrator = EvalOrchestrator(orch_config)
+
+    orchestrator.start_dashboard()
+    try:
+        result = orchestrator.run(
+            tasks=tasks,
+            variants=variants,
+            doc_tree=doc_tree,
+        )
+    finally:
+        orchestrator.stop_dashboard()
 
     logger.info(
         "Evaluation complete: %d trials, $%.4f cost, %.1fs elapsed",
@@ -842,14 +946,8 @@ def _run_taguchi(
     # Build variant lookup
     variant_lookup = {v.metadata().name: v for v in variants}
 
-    # Parse model budgets
-    model_budgets: dict[str, float] | None = None
-    raw_budgets = resolved.get("model_budgets")
-    if raw_budgets and isinstance(raw_budgets, str):
-        model_budgets = {}
-        for pair in raw_budgets.split(","):
-            key, _, val = pair.partition("=")
-            model_budgets[key.strip()] = float(val.strip())
+    model_budgets = _parse_model_budgets(resolved)
+    strategy_config = _build_strategy_config(resolved)
 
     # Create orchestrator
     orch_config = OrchestratorConfig(
@@ -865,6 +963,7 @@ def _run_taguchi(
         dashboard_port=int(resolved.get("dashboard_port", 8501)),
         store_traces=resolved.get("store_traces", False),
         resume_run_id=resolved.get("resume"),
+        strategy_config=strategy_config,
     )
     orchestrator = EvalOrchestrator(orch_config)
 
@@ -915,14 +1014,8 @@ def _run_pipeline(
     else:
         models_list = [model]
 
-    # Parse model budgets
-    model_budgets: dict[str, float] | None = None
-    raw_budgets = resolved.get("model_budgets")
-    if raw_budgets and isinstance(raw_budgets, str):
-        model_budgets = {}
-        for pair in raw_budgets.split(","):
-            key, _, val = pair.partition("=")
-            model_budgets[key.strip()] = float(val.strip())
+    model_budgets = _parse_model_budgets(resolved)
+    strategy_config = _build_strategy_config(resolved)
 
     # Build orchestrator
     orch_config = OrchestratorConfig(
@@ -937,6 +1030,7 @@ def _run_pipeline(
         dashboard=resolved.get("dashboard", False),
         dashboard_port=int(resolved.get("dashboard_port", 8501)),
         store_traces=resolved.get("store_traces", False),
+        strategy_config=strategy_config,
     )
     orchestrator = EvalOrchestrator(orch_config)
 
@@ -954,6 +1048,7 @@ def _run_pipeline(
         temperature=run_config.temperature,
         global_budget=resolved.get("budget"),
         model_budgets=model_budgets,
+        strategy_config=strategy_config,
     )
 
     resume_pipeline_id = resolved.get("resume_pipeline")
@@ -971,6 +1066,97 @@ def _run_pipeline(
 
     logger.info(
         "DOE pipeline complete: %d trials, $%.4f cost, %.1fs elapsed",
+        result.total_trials,
+        result.total_cost,
+        result.elapsed_seconds,
+    )
+    return 0
+
+
+def _run_multi_strategy_pipeline(
+    resolved: dict[str, Any],
+    tasks: list,
+    variants: list,
+    doc_tree: Any,
+    api_key: str,
+    run_config: EvalRunConfig,
+) -> int:
+    """Execute MultiStrategyPipeline for cross-strategy comparison.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+    from agent_evals.pipeline import MultiStrategyPipeline, PipelineConfig
+
+    # Parse models list
+    models_str = resolved.get("models")
+    model = str(resolved["model"])
+    if models_str:
+        models_list = [m.strip() for m in str(models_str).split(",")]
+    else:
+        models_list = [model]
+
+    model_budgets = _parse_model_budgets(resolved)
+    strategy_config = _build_strategy_config(resolved)
+    strategy_reps = _parse_strategy_reps(resolved)
+
+    # Parse strategies list
+    strategies_str = str(resolved["strategies"])
+    strategies = [s.strip() for s in strategies_str.split(",")]
+
+    # Build orchestrator
+    orch_config = OrchestratorConfig(
+        mode="taguchi",
+        models=models_list,
+        api_key=api_key,
+        report_format=resolved.get("report"),
+        global_budget=resolved.get("budget"),
+        model_budgets=model_budgets,
+        temperature=run_config.temperature,
+        eval_config=run_config,
+        dashboard=resolved.get("dashboard", False),
+        dashboard_port=int(resolved.get("dashboard_port", 8501)),
+        store_traces=resolved.get("store_traces", False),
+        strategy_config=strategy_config,
+    )
+    orchestrator = EvalOrchestrator(orch_config)
+
+    # Build pipeline config
+    pipeline_config = PipelineConfig(
+        models=models_list,
+        mode=str(resolved.get("pipeline", "auto")),
+        quality_type=str(resolved.get("quality_type", "larger_is_better")),
+        alpha=float(resolved.get("alpha", 0.05)),
+        top_k=int(resolved.get("top_k", 3)),
+        oa_override=resolved.get("oa_type"),
+        report_format=resolved.get("report"),
+        api_key=api_key,
+        dashboard=resolved.get("dashboard", False),
+        temperature=run_config.temperature,
+        global_budget=resolved.get("budget"),
+        model_budgets=model_budgets,
+        strategy_config=strategy_config,
+        strategy_reps=strategy_reps,
+    )
+
+    resume_pipeline_id = resolved.get("resume_pipeline")
+    msp = MultiStrategyPipeline(
+        config=pipeline_config,
+        orchestrator=orchestrator,
+        strategies=strategies,
+        pipeline_id=resume_pipeline_id,
+    )
+
+    orchestrator.start_dashboard()
+    try:
+        result = msp.run(tasks=tasks, variants=variants, doc_tree=doc_tree)
+    finally:
+        orchestrator.stop_dashboard()
+
+    logger.info(
+        "Multi-strategy pipeline complete: %d strategies, %d trials, "
+        "$%.4f cost, %.1fs elapsed",
+        len(result.strategy_results),
         result.total_trials,
         result.total_cost,
         result.elapsed_seconds,
