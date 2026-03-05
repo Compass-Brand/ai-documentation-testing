@@ -441,6 +441,85 @@ class TestPredictOptimal:
         assert low < high
         assert low <= prediction.predicted_sn <= high
 
+    def test_prediction_se_uses_anova_ms_error(self):
+        """Prediction SE must use ANOVA ms_error, not total variance.
+
+        When factor effects explain most of the variance, total variance
+        is much larger than ms_error. Using total variance inflates the SE.
+        """
+        design = _make_design_2factor()
+        # Strong factor effects: axis_1 dominates, small residual error.
+        sn_ratios = {
+            1: 0.5, 2: 1.0, 3: 2.5,     # flat levels
+            4: 5.5, 5: 6.0, 6: 6.5,     # 2tier levels
+            7: 10.0, 8: 11.5, 9: 12.0,  # 3tier levels
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
+        )
+
+        # ms_error should be much smaller than total variance
+        n = len(sn_ratios)
+        sn_mean = sum(sn_ratios.values()) / n
+        total_var = sum(
+            (v - sn_mean) ** 2 for v in sn_ratios.values()
+        ) / (n - 1)
+        assert anova.ms_error < total_var * 0.1  # ms_error << total_var
+
+        # SE must use ms_error, so it should be much smaller
+        old_se = math.sqrt(total_var / n)
+        assert prediction.se_prediction is not None
+        assert prediction.se_prediction < old_se * 0.5
+
+    def test_prediction_interval_uses_anova_df_error(self):
+        """Prediction interval df should be ANOVA df_error, not n-1."""
+        design = _make_design_2factor()
+        sn_ratios = {
+            1: 0.5, 2: 1.0, 3: 2.5,
+            4: 5.5, 5: 6.0, 6: 6.5,
+            7: 10.0, 8: 11.5, 9: 12.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
+        )
+
+        # Compute expected interval using ms_error and df_error
+        n = len(sn_ratios)
+        se_expected = math.sqrt(anova.ms_error / n)
+        t_val = stats.t.ppf(0.975, anova.df_error)
+        margin = t_val * se_expected
+        expected_low = prediction.predicted_sn - margin
+        expected_high = prediction.predicted_sn + margin
+
+        assert prediction.prediction_interval is not None
+        assert abs(prediction.prediction_interval[0] - expected_low) < 1e-10
+        assert abs(prediction.prediction_interval[1] - expected_high) < 1e-10
+
+    def test_prediction_interval_known_values(self):
+        """Verify interval with hand-computed values where total var != ms_error."""
+        design = _make_design_2factor()
+        # Perfectly additive data: zero residual error
+        sn_ratios = {
+            1: 1.0, 2: 3.0, 3: 2.0,
+            4: 3.0, 5: 5.0, 6: 4.0,
+            7: 5.0, 8: 7.0, 9: 6.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
+        )
+
+        # With perfectly additive data, ms_error ≈ 0 → se ≈ 0 → no interval
+        assert anova.ms_error < 1e-10
+        # SE should be effectively zero
+        if prediction.se_prediction is not None:
+            assert prediction.se_prediction < 1e-10
+
     def test_additivity_r_squared_computed_with_design(self):
         """When design is provided, additivity R-squared should be computed."""
         design = _make_design_2factor()

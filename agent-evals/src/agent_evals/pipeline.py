@@ -157,7 +157,9 @@ class DOEPipeline:
         )
         main_effects = compute_main_effects(design, sn_ratios)
         anova = run_anova(design, sn_ratios)
-        optimal = predict_optimal(main_effects, sn_ratios, design=design)
+        optimal = predict_optimal(
+            main_effects, sn_ratios, design=design, anova_result=anova,
+        )
 
         # 10. Extract significant factors (BH-corrected p < alpha), sorted by omega_squared
         sig_factors = sorted(
