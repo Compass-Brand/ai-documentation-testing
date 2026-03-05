@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 
 from agent_evals.taguchi.catalog import get_oa, select_oa
 
+# Sentinel value for dummy-level assignments in mixed-level OA designs.
+DUMMY_LEVEL = "__dummy__"
+
 
 @dataclass
 class TaguchiFactorDef:
@@ -23,6 +26,7 @@ class TaguchiExperimentRow:
 
     run_id: int
     assignments: dict[str, str]  # factor_name -> level_name
+    dummy_factors: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -112,18 +116,25 @@ def build_design(
                 f"levels) to OA '{oa.name}': no suitable column available"
             )
 
-    # Build rows
+    # Build rows — use dummy-level exclusion for mixed-level columns.
+    # When a factor has fewer levels than its OA column, OA values beyond
+    # the factor's level count are assigned DUMMY_LEVEL and flagged for
+    # exclusion from S/N ratio and ANOVA computation.
     rows: list[TaguchiExperimentRow] = []
     for run_id in range(oa.n_runs):
         assignments: dict[str, str] = {}
+        dummy_factors: set[str] = set()
         for factor, col_idx in zip(factors, col_assignments, strict=True):
             raw_level = int(oa.matrix[run_id, col_idx])
-            # Map OA level (0-indexed) to actual level name (mod n_levels)
-            mapped_level = raw_level % factor.n_levels
-            assignments[factor.name] = factor.level_names[mapped_level]
+            if raw_level < factor.n_levels:
+                assignments[factor.name] = factor.level_names[raw_level]
+            else:
+                assignments[factor.name] = DUMMY_LEVEL
+                dummy_factors.add(factor.name)
         rows.append(TaguchiExperimentRow(
             run_id=run_id + 1,
             assignments=assignments,
+            dummy_factors=dummy_factors,
         ))
 
     return TaguchiDesign(

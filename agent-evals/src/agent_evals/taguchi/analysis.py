@@ -178,6 +178,8 @@ def compute_main_effects(
     for row in design.rows:
         sn_val = sn_ratios[row.run_id]
         for factor in design.factors:
+            if factor.name in row.dummy_factors:
+                continue
             level_name = row.assignments[factor.name]
             effects[factor.name][level_name].append(sn_val)
 
@@ -210,7 +212,13 @@ def run_anova(
     Returns:
         ANOVAResult with per-factor statistics and error terms.
     """
-    all_sn = [sn_ratios[row.run_id] for row in design.rows]
+    # Exclude rows that have ANY dummy factor from the global S/N pool.
+    # This keeps the grand mean unbiased by incomplete experimental conditions.
+    non_dummy_rows = [
+        row for row in design.rows
+        if not row.dummy_factors
+    ]
+    all_sn = [sn_ratios[row.run_id] for row in non_dummy_rows]
     n = len(all_sn)
     grand_mean = sum(all_sn) / n
 
@@ -223,11 +231,13 @@ def run_anova(
     df_factors_sum = 0
 
     for factor in design.factors:
-        # Group S/N ratios by level
+        # Group S/N ratios by level, excluding dummy rows for this factor
         level_groups: dict[str, list[float]] = {
             level: [] for level in factor.level_names
         }
         for row in design.rows:
+            if factor.name in row.dummy_factors:
+                continue
             level_name = row.assignments[factor.name]
             level_groups[level_name].append(sn_ratios[row.run_id])
 
@@ -344,11 +354,16 @@ def predict_optimal(
     main_effects: dict[str, dict[str, float]],
     sn_ratios: dict[int, float] | None = None,
     design: TaguchiDesign | None = None,
+    anova_result: ANOVAResult | None = None,
 ) -> OptimalPrediction:
     """Predict the optimal configuration from main effects.
 
     Selects the level with the highest mean S/N for each factor and
     computes the predicted S/N using the additive model.
+
+    When *anova_result* is provided, the prediction interval uses the
+    ANOVA residual error (ms_error) and proper degrees of freedom
+    (df_error) instead of total variance.
 
     When *design* is provided alongside *sn_ratios*, an additivity check
     is performed.  The R-squared of the additive model is computed by
@@ -359,6 +374,7 @@ def predict_optimal(
         main_effects: {factor_name: {level_name: mean_sn}}.
         sn_ratios: Optional S/N ratios for prediction interval computation.
         design: Optional TaguchiDesign for additivity validation.
+        anova_result: Optional ANOVA result for proper prediction intervals.
 
     Returns:
         OptimalPrediction with assignment, predicted S/N, and optional interval.
@@ -386,14 +402,23 @@ def predict_optimal(
     se: float | None = None
 
     if sn_ratios is not None and len(sn_ratios) > 2:
-        sn_values = list(sn_ratios.values())
-        n = len(sn_values)
-        sn_mean = sum(sn_values) / n
-        residual_var = sum((y - sn_mean) ** 2 for y in sn_values) / (n - 1)
-        se = math.sqrt(residual_var / n)
+        n = len(sn_ratios)
+
+        if anova_result is not None:
+            # Use ANOVA residual error (excludes factor-effect variance)
+            se = math.sqrt(anova_result.ms_error / n)
+            df = anova_result.df_error
+        else:
+            # Fallback: total variance (no ANOVA available)
+            sn_values = list(sn_ratios.values())
+            sn_mean = sum(sn_values) / n
+            residual_var = (
+                sum((y - sn_mean) ** 2 for y in sn_values) / (n - 1)
+            )
+            se = math.sqrt(residual_var / n)
+            df = n - 1
 
         if se > 0:
-            df = n - 1
             t_val = sp_stats.t.ppf(0.975, df)
             margin = t_val * se
             interval = (predicted - margin, predicted + margin)
@@ -455,6 +480,9 @@ def _compute_additivity_r_squared(
 
     for row in design.rows:
         if row.run_id not in sn_ratios:
+            continue
+        # Skip rows with dummy factors (level not in main_effects)
+        if row.dummy_factors:
             continue
         obs = sn_ratios[row.run_id]
         pred = grand_mean
