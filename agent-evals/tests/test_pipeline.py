@@ -587,3 +587,98 @@ def test_pipeline_semi_mode_stops_on_rejection():
         mock_r.assert_not_called()
         assert result.confirmation is None
         assert result.refinement is None
+
+
+# ---------------------------------------------------------------------------
+# Per-phase repetition count tests (bead #99)
+# ---------------------------------------------------------------------------
+
+
+@patch("agent_evals.pipeline.predict_optimal")
+@patch("agent_evals.pipeline.run_anova")
+@patch("agent_evals.pipeline.compute_main_effects")
+@patch("agent_evals.pipeline.compute_sn_ratios")
+@patch("agent_evals.pipeline.build_design")
+def test_pipeline_screening_applies_screening_reps(
+    mock_build, mock_sn, mock_me, mock_anova, mock_pred
+):
+    """run_screening sets eval_config.repetitions to screening_reps."""
+    from agent_evals.runner import EvalRunConfig
+
+    mock_build.return_value = MagicMock()
+    mock_sn.return_value = {0: 10.0}
+    mock_me.return_value = {}
+    mock_anova.return_value = MagicMock(factors=[])
+    mock_pred.return_value = MagicMock(optimal_assignment={})
+
+    config = PipelineConfig(models=["model-a"], screening_reps=5)
+    orch = _make_mock_orchestrator()
+
+    # Give orchestrator a real EvalRunConfig to verify rep override
+    eval_cfg = EvalRunConfig(repetitions=1)
+    orch.config = MagicMock()
+    orch.config.eval_config = eval_cfg
+
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+    pipeline.run_screening(tasks=[], variants=_make_variants(), doc_tree=MagicMock())
+
+    assert eval_cfg.repetitions == 5
+
+
+def test_pipeline_confirmation_applies_confirmation_reps():
+    """run_confirmation sets eval_config.repetitions to confirmation_reps."""
+    from agent_evals.runner import EvalRunConfig
+
+    config = PipelineConfig(models=["model-a"], confirmation_reps=7)
+    orch = _make_mock_orchestrator(score=0.7)
+
+    eval_cfg = EvalRunConfig(repetitions=1)
+    orch.config = MagicMock()
+    orch.config.eval_config = eval_cfg
+
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1", phase="screening", trials=[],
+        optimal={"axis_1": "a"}, significant_factors=["axis_1"],
+        predicted_sn=12.0,
+    )
+
+    with patch("agent_evals.pipeline.validate_confirmation") as mock_val:
+        mock_val.return_value = MagicMock(
+            within_interval=True, sigma_deviation=0.3,
+            observed_sn=11.5, predicted_sn=12.0,
+            prediction_interval=(10.0, 14.0),
+        )
+        pipeline.run_confirmation(
+            screening_result=screening, tasks=[],
+            variants=_make_variants(), doc_tree=MagicMock(),
+        )
+
+    assert eval_cfg.repetitions == 7
+
+
+def test_pipeline_refinement_applies_refinement_reps():
+    """run_refinement sets eval_config.repetitions to refinement_reps."""
+    from agent_evals.runner import EvalRunConfig
+
+    config = PipelineConfig(models=["model-a"], refinement_reps=9)
+    orch = _make_mock_orchestrator()
+
+    eval_cfg = EvalRunConfig(repetitions=1)
+    orch.config = MagicMock()
+    orch.config.eval_config = eval_cfg
+
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1", phase="screening", trials=[],
+        optimal={"axis_1": "a"}, significant_factors=["axis_1"],
+    )
+
+    pipeline.run_refinement(
+        screening_result=screening, tasks=[],
+        variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    assert eval_cfg.repetitions == 9

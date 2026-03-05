@@ -125,6 +125,12 @@ class DOEPipeline:
                 f"usable axes from {len(variants)} variant(s)."
             )
 
+        # 1c. Apply phase-specific repetition count
+        if self._orchestrator.config.eval_config is not None:
+            self._orchestrator.config.eval_config.repetitions = (
+                self.config.screening_reps
+            )
+
         # 2. Build the Taguchi experimental design
         design = build_design(
             dict(axes), self.config.models, self.config.oa_override
@@ -197,6 +203,12 @@ class DOEPipeline:
         then validates that observed performance falls within the prediction
         interval.
         """
+        # Apply phase-specific repetition count
+        if self._orchestrator.config.eval_config is not None:
+            self._orchestrator.config.eval_config.repetitions = (
+                self.config.confirmation_reps
+            )
+
         # Build variant lookup
         variant_lookup = {v.metadata().name: v for v in variants}
 
@@ -258,6 +270,12 @@ class DOEPipeline:
         Builds all combinations of the top K significant factors while
         fixing remaining factors at their optimal levels.
         """
+        # Apply phase-specific repetition count
+        if self._orchestrator.config.eval_config is not None:
+            self._orchestrator.config.eval_config.repetitions = (
+                self.config.refinement_reps
+            )
+
         # Build variant lookup
         variant_lookup = {v.metadata().name: v for v in variants}
 
