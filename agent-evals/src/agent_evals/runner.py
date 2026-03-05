@@ -19,13 +19,15 @@ import time
 from collections import defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
+from agent_evals.context.base import ContextStrategy, StrategyResult
+from agent_evals.context.full import FullContextStrategy
 from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.llm.cache import ResponseCache
 from agent_evals.llm.client import GenerationResult, LLMClient
@@ -86,6 +88,9 @@ class TrialResult:
     source: str = "gold_standard"
     model: str = ""
     prompt_messages: list[dict] | None = None
+    context_strategy: str | None = None
+    strategy_metadata: dict = field(default_factory=dict)
+    llm_calls: int = 1
 
 
 @dataclass
@@ -205,9 +210,11 @@ class EvalRunner:
         client: LLMClient,
         config: EvalRunConfig | None = None,
         cache: ResponseCache | None = None,
+        strategy_factory: Callable[[], ContextStrategy] | None = None,
     ) -> None:
         self._client = client
         self._config = config or EvalRunConfig()
+        self._strategy_factory = strategy_factory or (lambda: FullContextStrategy())
 
         if cache is not None:
             self._cache = cache
@@ -270,10 +277,23 @@ class EvalRunner:
 
         # Setup all variants (track which succeeded for teardown safety)
         setup_variants: list[IndexVariant] = []
+        variant_strategies: dict[str, ContextStrategy] = {}
         for variant in variants:
             try:
                 variant.setup(doc_tree)
                 setup_variants.append(variant)
+                # Create per-variant strategy instance
+                strategy = self._strategy_factory()
+                vname = variant.metadata().name
+                is_baseline = isinstance(
+                    variant, (OracleBaseline, LengthMatchedRandomBaseline),
+                )
+                # Skip strategy setup for baselines with non-full strategies
+                # (baselines produce per-task renders; non-full strategies
+                # cache the rendered index at setup time).
+                if not is_baseline or strategy.name() == "full_context":
+                    strategy.setup(variant.render(doc_tree), doc_tree)
+                variant_strategies[vname] = strategy
             except Exception:
                 # Teardown variants that were already set up before re-raising
                 for v in setup_variants:
@@ -283,6 +303,14 @@ class EvalRunner:
                         logger.warning(
                             "Teardown failed for variant %s during setup cleanup",
                             v.metadata().name,
+                            exc_info=True,
+                        )
+                for s in variant_strategies.values():
+                    try:
+                        s.teardown()
+                    except Exception:
+                        logger.warning(
+                            "Strategy teardown failed during setup cleanup",
                             exc_info=True,
                         )
                 raise
@@ -328,8 +356,11 @@ class EvalRunner:
                     for idx, (task, variant, rep) in enumerate(work_items, 1):
                         if shutdown_requested.is_set():
                             break
+                        vname = variant.metadata().name
+                        strat = variant_strategies.get(vname)
                         future = executor.submit(
-                            self._run_trial, task, variant, doc_tree, rep, source, trial_index=idx
+                            self._run_trial, task, variant, doc_tree, rep, source,
+                            trial_index=idx, strategy=strat,
                         )
                         future_to_item[future] = (task, variant, rep)
 
@@ -380,6 +411,15 @@ class EvalRunner:
 
         finally:
             tracker.stop()
+            # Teardown all variant strategies.
+            for s in variant_strategies.values():
+                try:
+                    s.teardown()
+                except Exception:
+                    logger.warning(
+                        "Strategy teardown failed",
+                        exc_info=True,
+                    )
             # Teardown all variants even if an exception occurred.
             # Protect individual teardowns so one failure doesn't skip the rest.
             for variant in setup_variants:
@@ -464,6 +504,9 @@ class EvalRunner:
                 "cached": t.cached,
                 "error": t.error,
                 "source": t.source,
+                "context_strategy": t.context_strategy,
+                "llm_calls": t.llm_calls,
+                "strategy_metadata": t.strategy_metadata,
             })
 
         # -- by_variant aggregation ------------------------------------------
@@ -551,6 +594,8 @@ class EvalRunner:
                 "cached",
                 "error",
                 "source",
+                "context_strategy",
+                "llm_calls",
             ]
 
             csv_path = output_dir / f"run_{timestamp}.csv"
@@ -681,6 +726,7 @@ class EvalRunner:
         repetition: int,
         source: str = "gold_standard",
         trial_index: int = 0,
+        strategy: ContextStrategy | None = None,
     ) -> TrialResult:
         """Execute a single (task, variant, repetition) trial.
 
@@ -694,6 +740,8 @@ class EvalRunner:
             Documentation tree for rendering.
         repetition:
             1-based repetition number.
+        strategy:
+            Context strategy for this variant (looked up from variant_strategies).
 
         Returns
         -------
@@ -706,6 +754,8 @@ class EvalRunner:
             If the LLM call fails and no cached response is available.
         """
         trial_start = time.monotonic()
+        strategy = strategy or FullContextStrategy()
+        strategy_name = strategy.name()
 
         # Get a thread-safe variant (copied for stateful baselines).
         variant = self._setup_variant_for_task(variant, task, doc_tree)
@@ -713,28 +763,29 @@ class EvalRunner:
         prompt_build_start = time.monotonic()
         index_content = variant.render(doc_tree)
 
-        messages = task.build_prompt(index_content)
+        # Use strategy to prepare context
+        prepared = strategy.prepare(index_content, task, doc_tree)
+        messages = prepared.messages
         prompt_build_ms = (time.monotonic() - prompt_build_start) * 1000
 
         variant_meta = variant.metadata()
         variant_name = variant_meta.name
 
-        # Check cache
+        # Check cache (only if strategy supports it)
         cached = False
-        generation: GenerationResult | None = None
+        strategy_result: StrategyResult | None = None
 
-        if self._config.use_cache:
-            # Include repetition in the cache key so that different
-            # repetitions within a run are NOT served from cache.
-            # DESIGN.md line 833: "Caching disabled across repetitions
-            # within a run to capture variance."  Including the repetition
-            # number means a re-run of the *same* configuration reuses
-            # the prior results (cross-run caching), while different
-            # repetitions always produce distinct API calls.
+        if self._config.use_cache and strategy.supports_caching():
             cache_messages = [
                 *messages,
                 {"role": "system", "content": f"__rep:{repetition}"},
             ]
+            # Include strategy name in cache key for non-full_context
+            # to preserve backward compat with existing caches.
+            if strategy_name != "full_context":
+                cache_messages.append(
+                    {"role": "system", "content": f"__strategy:{strategy_name}"},
+                )
             cache_key = self._cache.make_key(
                 model=self._client.model,
                 temperature=self._config.temperature,
@@ -754,45 +805,66 @@ class EvalRunner:
                     model=resp_data.get("model", self._client.model),
                     generation_id=resp_data.get("generation_id"),
                 )
+                strategy_result = StrategyResult(
+                    final_response=generation.content,
+                    generations=[generation],
+                    total_prompt_tokens=generation.prompt_tokens,
+                    total_completion_tokens=generation.completion_tokens,
+                    total_tokens=generation.total_tokens,
+                    total_cost=generation.cost,
+                    messages=messages,
+                    strategy_metadata=prepared.strategy_metadata,
+                )
 
-        # Cache miss: call LLM
-        if generation is None:
-            generation = self._client.complete(
-                messages,
+        # Cache miss: execute via strategy
+        if strategy_result is None:
+            strategy_result = strategy.execute(
+                prepared, task, self._client,
                 max_tokens=self._config.max_tokens,
                 temperature=self._config.temperature,
             )
 
             # Store in cache
-            if self._config.use_cache:
+            if self._config.use_cache and strategy.supports_caching():
+                first_gen = (
+                    strategy_result.generations[0]
+                    if strategy_result.generations
+                    else None
+                )
                 self._cache.put(
                     cache_key,
                     {
-                        "content": generation.content,
-                        "prompt_tokens": generation.prompt_tokens,
-                        "completion_tokens": generation.completion_tokens,
-                        "total_tokens": generation.total_tokens,
-                        "cost": generation.cost,
-                        "model": generation.model,
-                        "generation_id": generation.generation_id,
+                        "content": strategy_result.final_response,
+                        "prompt_tokens": strategy_result.total_prompt_tokens,
+                        "completion_tokens": strategy_result.total_completion_tokens,
+                        "total_tokens": strategy_result.total_tokens,
+                        "cost": strategy_result.total_cost,
+                        "model": first_gen.model if first_gen else self._client.model,
+                        "generation_id": first_gen.generation_id if first_gen else None,
                     },
-                    model=generation.model,
-                    tokens_used=generation.total_tokens,
+                    model=first_gen.model if first_gen else self._client.model,
+                    tokens_used=strategy_result.total_tokens,
                 )
 
         # Score the response
         score_start = time.monotonic()
-        score = task.score_response(generation.content)
+        score = task.score_response(strategy_result.final_response)
         scoring_ms = (time.monotonic() - score_start) * 1000
 
         latency = time.monotonic() - trial_start
 
+        # Extract timing from first generation if available
+        first_gen = (
+            strategy_result.generations[0]
+            if strategy_result.generations
+            else None
+        )
         metrics: dict[str, float] = {
             "scoring_ms": round(scoring_ms, 2),
             "prompt_build_ms": round(prompt_build_ms, 2),
-            "api_call_ms": round(generation.api_call_ms, 1),
-            "total_api_ms": round(generation.total_api_ms, 1),
-            "retry_count": float(generation.retry_count),
+            "api_call_ms": round(first_gen.api_call_ms, 1) if first_gen else 0.0,
+            "total_api_ms": round(first_gen.total_api_ms, 1) if first_gen else 0.0,
+            "retry_count": float(first_gen.retry_count) if first_gen else 0.0,
         }
         # LLM-as-judge sampling: evaluate 2% of trials
         if trial_index > 0 and trial_index % JUDGE_SAMPLE_RATE == 0:
@@ -801,7 +873,7 @@ class EvalRunner:
                 judge_result = self._call_judge(
                     task.definition.type,
                     question,
-                    generation.content,
+                    strategy_result.final_response,
                 )
                 metrics["judge_score"] = judge_result.score
                 metrics["judge_heuristic_delta"] = round(
@@ -817,14 +889,17 @@ class EvalRunner:
             repetition=repetition,
             score=score,
             metrics=metrics,
-            prompt_tokens=generation.prompt_tokens,
-            completion_tokens=generation.completion_tokens,
-            total_tokens=generation.total_tokens,
-            cost=generation.cost,
+            prompt_tokens=strategy_result.total_prompt_tokens,
+            completion_tokens=strategy_result.total_completion_tokens,
+            total_tokens=strategy_result.total_tokens,
+            cost=strategy_result.total_cost,
             latency_seconds=latency,
-            response=generation.content,
+            response=strategy_result.final_response,
             cached=cached,
             source=source,
             model=self._client.model,
             prompt_messages=messages,
+            context_strategy=strategy_name,
+            strategy_metadata=strategy_result.strategy_metadata,
+            llm_calls=len(strategy_result.generations),
         )

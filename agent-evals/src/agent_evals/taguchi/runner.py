@@ -17,6 +17,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from agent_evals.context.base import ContextStrategy
+from agent_evals.context.full import FullContextStrategy
 from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.runner import EvalRunConfig, TrialResult
 from agent_evals.taguchi.factors import TaguchiDesign, TaguchiExperimentRow
@@ -64,6 +66,7 @@ class TaguchiRunner:
         design: TaguchiDesign,
         variant_lookup: dict[str, IndexVariant],
         store: Any | None = None,
+        strategy_factory: Callable[[], ContextStrategy] | None = None,
     ) -> None:
         self._clients = clients
         self._config = config
@@ -71,6 +74,7 @@ class TaguchiRunner:
         self._variant_lookup = variant_lookup
         self._default_client_name = next(iter(clients))
         self._store = store
+        self._strategy_factory = strategy_factory or (lambda: FullContextStrategy())
 
     def run(
         self,
@@ -110,12 +114,20 @@ class TaguchiRunner:
             # Not in main thread — skip signal registration.
             pass
 
-        # Pre-build composites once per row (avoids per-trial setup/teardown).
+        # Pre-build composites and strategies once per row.
         row_composites: dict[int, CompositeVariant] = {}
+        row_strategies: dict[int, ContextStrategy] = {}
+        row_rendered: dict[int, str] = {}
         for row in self._design.rows:
             composite = self._build_composite(row)
             composite.setup(doc_tree)
             row_composites[row.run_id] = composite
+            # Pre-render index and create per-row strategy
+            rendered = composite.render(doc_tree)
+            row_rendered[row.run_id] = rendered
+            strategy = self._strategy_factory()
+            strategy.setup(rendered, doc_tree)
+            row_strategies[row.run_id] = strategy
 
         # Build work items: (row, task, repetition)
         work_items: list[tuple[TaguchiExperimentRow, EvalTask, int]] = []
@@ -172,9 +184,12 @@ class TaguchiRunner:
                         if shutdown_requested.is_set():
                             break
                         composite = row_composites[row.run_id]
+                        strat = row_strategies[row.run_id]
+                        rendered = row_rendered[row.run_id]
                         future = executor.submit(
                             self._run_trial, row, task, composite,
                             doc_tree, rep, source, phase,
+                            strategy=strat, rendered_index=rendered,
                         )
                         futures[future] = (row, task, rep)
 
@@ -236,6 +251,15 @@ class TaguchiRunner:
                         )
         finally:
             tracker.stop()
+            # Teardown per-row strategies.
+            for strat in row_strategies.values():
+                try:
+                    strat.teardown()
+                except Exception:
+                    logger.warning(
+                        "Strategy teardown failed for row",
+                        exc_info=True,
+                    )
             # Teardown all pre-built composites once per row.
             for composite in row_composites.values():
                 try:
@@ -277,9 +301,13 @@ class TaguchiRunner:
         repetition: int,
         source: str,
         phase: str | None = None,
+        strategy: ContextStrategy | None = None,
+        rendered_index: str | None = None,
     ) -> TrialResult:
         """Execute a single trial for an OA row + task + repetition."""
         trial_start = time.monotonic()
+        strategy = strategy or FullContextStrategy()
+        strategy_name = strategy.name()
 
         # Build metrics dict with optional phase
         metrics: dict[str, float | str] = {"oa_row_id": float(row.run_id)}
@@ -291,30 +319,38 @@ class TaguchiRunner:
         model_name = getattr(client, "model", self._default_client_name)
 
         try:
-            # Render and build prompt
+            # Use pre-rendered index or render now
             prompt_build_start = time.monotonic()
-            index_content = composite.render(doc_tree)
-            messages = task.build_prompt(index_content)
+            index_content = rendered_index if rendered_index is not None else composite.render(doc_tree)
+
+            # Use strategy to prepare and execute
+            prepared = strategy.prepare(index_content, task, doc_tree)
+            messages = prepared.messages
             prompt_build_ms = (time.monotonic() - prompt_build_start) * 1000
 
-            # Call LLM
-            generation = client.complete(
-                messages,
+            strategy_result = strategy.execute(
+                prepared, task, client,
                 max_tokens=self._config.max_tokens,
                 temperature=self._config.temperature,
             )
 
             # Score
             score_start = time.monotonic()
-            score = task.score_response(generation.content)
+            score = task.score_response(strategy_result.final_response)
             scoring_ms = (time.monotonic() - score_start) * 1000
             latency = time.monotonic() - trial_start
 
+            # Extract timing from first generation if available
+            first_gen = (
+                strategy_result.generations[0]
+                if strategy_result.generations
+                else None
+            )
             metrics["scoring_ms"] = round(scoring_ms, 2)
             metrics["prompt_build_ms"] = round(prompt_build_ms, 2)
-            metrics["api_call_ms"] = round(generation.api_call_ms, 1)
-            metrics["total_api_ms"] = round(generation.total_api_ms, 1)
-            metrics["retry_count"] = float(generation.retry_count)
+            metrics["api_call_ms"] = round(first_gen.api_call_ms, 1) if first_gen else 0.0
+            metrics["total_api_ms"] = round(first_gen.total_api_ms, 1) if first_gen else 0.0
+            metrics["retry_count"] = float(first_gen.retry_count) if first_gen else 0.0
 
             return TrialResult(
                 task_id=task.definition.task_id,
@@ -323,16 +359,19 @@ class TaguchiRunner:
                 repetition=repetition,
                 score=score,
                 metrics=metrics,
-                prompt_tokens=generation.prompt_tokens,
-                completion_tokens=generation.completion_tokens,
-                total_tokens=generation.total_tokens,
-                cost=generation.cost,
+                prompt_tokens=strategy_result.total_prompt_tokens,
+                completion_tokens=strategy_result.total_completion_tokens,
+                total_tokens=strategy_result.total_tokens,
+                cost=strategy_result.total_cost,
                 latency_seconds=latency,
-                response=generation.content,
+                response=strategy_result.final_response,
                 cached=False,
                 source=source,
                 model=model_name,
                 prompt_messages=messages,
+                context_strategy=strategy_name,
+                strategy_metadata=strategy_result.strategy_metadata,
+                llm_calls=len(strategy_result.generations),
             )
         except Exception as exc:
             logger.warning(
@@ -360,6 +399,7 @@ class TaguchiRunner:
                 error=str(exc),
                 source=source,
                 model=model_name,
+                context_strategy=strategy_name,
             )
     def _build_composite(self, row: TaguchiExperimentRow) -> CompositeVariant:
         """Create a CompositeVariant from an OA row's axis assignments."""
