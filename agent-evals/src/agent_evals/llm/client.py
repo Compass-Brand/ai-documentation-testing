@@ -121,8 +121,12 @@ class LLMClient:
                 attempt_ms = (time.monotonic() - attempt_start) * 1000
                 # Detect silent 429: litellm swallows OpenRouter rate
                 # limit errors and returns content=None instead of raising.
-                content = response.choices[0].message.content
-                if content is None:
+                # Tool call responses legitimately have content=None with
+                # tool_calls populated — do not treat those as rate limits.
+                message = response.choices[0].message
+                content = message.content
+                tool_calls = getattr(message, "tool_calls", None)
+                if content is None and not tool_calls:
                     logger.debug(
                         "Silent rate limit (model=%s, attempt_ms=%.0f)",
                         self.model, attempt_ms,

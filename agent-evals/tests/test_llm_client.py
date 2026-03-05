@@ -16,17 +16,19 @@ from agent_evals.llm.client import GenerationResult, LLMClient, LLMClientError
 
 def _mock_litellm_response(
     *,
-    content: str = "Hello, world!",
+    content: str | None = "Hello, world!",
     prompt_tokens: int = 10,
     completion_tokens: int = 5,
     total_tokens: int = 15,
     model: str = "openrouter/anthropic/claude-sonnet-4.5",
     generation_id: str | None = "gen-abc123",
+    tool_calls: list[MagicMock] | None = None,
 ) -> MagicMock:
     """Build a mock that resembles a litellm ModelResponse."""
     response = MagicMock()
     response.choices = [MagicMock()]
     response.choices[0].message.content = content
+    response.choices[0].message.tool_calls = tool_calls
     response.usage.prompt_tokens = prompt_tokens
     response.usage.completion_tokens = completion_tokens
     response.usage.total_tokens = total_tokens
@@ -686,10 +688,11 @@ class TestRetryLogging:
         mock_sleep: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Silent 429 (empty content) should produce a warning log."""
+        """Silent 429 (empty content, no tool_calls) should produce a warning log."""
         empty_response = MagicMock()
         empty_response.choices = [MagicMock()]
         empty_response.choices[0].message.content = None
+        empty_response.choices[0].message.tool_calls = None
 
         mock_litellm.completion.side_effect = [
             empty_response,
@@ -854,10 +857,11 @@ class TestCompleteDiagnosticLogging:
         mock_sleep: MagicMock,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Silent rate limit (content=None) should emit DEBUG log."""
+        """Silent rate limit (content=None, no tool_calls) should emit DEBUG log."""
         empty_response = MagicMock()
         empty_response.choices = [MagicMock()]
         empty_response.choices[0].message.content = None
+        empty_response.choices[0].message.tool_calls = None
 
         mock_litellm.completion.side_effect = [
             empty_response,
@@ -923,3 +927,84 @@ class TestCompleteDiagnosticLogging:
 
         assert result.retry_count == 2
         assert result.total_api_ms >= result.api_call_ms
+
+
+# ---------------------------------------------------------------------------
+# Tool call responses with content=None (bead #148)
+# ---------------------------------------------------------------------------
+
+
+class TestToolCallContentNone:
+    """Tool call responses legitimately have content=None with tool_calls populated.
+    These should NOT be treated as silent rate limits."""
+
+    @patch("agent_evals.llm.client.litellm")
+    def test_tool_call_response_not_retried(
+        self, mock_litellm: MagicMock
+    ) -> None:
+        """A response with content=None but tool_calls present should succeed
+        on the first attempt without retrying."""
+        tool_call = MagicMock()
+        tool_call.id = "call_abc123"
+        tool_call.function.name = "get_weather"
+        tool_call.function.arguments = '{"city": "London"}'
+
+        response = _mock_litellm_response(
+            content=None,
+            tool_calls=[tool_call],
+        )
+        # content is None but we passed tool_calls via the helper; override
+        # since the helper sets content as a string by default
+        response.choices[0].message.content = None
+        mock_litellm.completion.return_value = response
+
+        client = LLMClient(model="test/model", api_key="key")
+        result = client.complete([{"role": "user", "content": "hi"}])
+
+        assert mock_litellm.completion.call_count == 1
+        assert result.retry_count == 0
+        assert result.content == ""  # content is None, coerced to ""
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_true_rate_limit_still_retries(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """A response with content=None and NO tool_calls should still retry
+        (genuine silent rate limit)."""
+        empty_response = _mock_litellm_response()
+        empty_response.choices[0].message.content = None
+        empty_response.choices[0].message.tool_calls = None
+
+        mock_litellm.completion.side_effect = [
+            empty_response,
+            _mock_litellm_response(),
+        ]
+
+        client = LLMClient(model="test/model", api_key="key")
+        result = client.complete([{"role": "user", "content": "hi"}])
+
+        assert mock_litellm.completion.call_count == 2
+        assert result.retry_count == 1
+        assert result.content == "Hello, world!"
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_empty_tool_calls_list_still_retries(
+        self, mock_litellm: MagicMock, mock_sleep: MagicMock
+    ) -> None:
+        """An empty tool_calls list should still trigger rate limit retry."""
+        empty_response = _mock_litellm_response()
+        empty_response.choices[0].message.content = None
+        empty_response.choices[0].message.tool_calls = []
+
+        mock_litellm.completion.side_effect = [
+            empty_response,
+            _mock_litellm_response(),
+        ]
+
+        client = LLMClient(model="test/model", api_key="key")
+        result = client.complete([{"role": "user", "content": "hi"}])
+
+        assert mock_litellm.completion.call_count == 2
+        assert result.retry_count == 1
