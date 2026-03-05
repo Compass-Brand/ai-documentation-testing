@@ -15,6 +15,7 @@ from agent_evals.taguchi.factors import (
     TaguchiFactorDef,
 )
 from agent_evals.taguchi.runner import TaguchiRunner
+from conftest import make_mock_client, make_mock_task, make_mock_variant
 
 
 # ---------------------------------------------------------------------------
@@ -165,43 +166,6 @@ class TestGetCompletedTrialKeys:
 # ---------------------------------------------------------------------------
 
 
-def _mock_client(model: str = "mock") -> MagicMock:
-    """Mock LLMClient returning canned results."""
-    client = MagicMock()
-    client.model = model
-    gen = MagicMock()
-    gen.content = "response"
-    gen.prompt_tokens = 10
-    gen.completion_tokens = 5
-    gen.total_tokens = 15
-    gen.cost = 0.001
-    gen.model = model
-    gen.generation_id = None
-    client.complete.return_value = gen
-    return client
-
-
-def _mock_task(task_id: str = "t1") -> MagicMock:
-    """Mock EvalTask."""
-    task = MagicMock()
-    task.definition.task_id = task_id
-    task.definition.type = "retrieval"
-    task.build_prompt.return_value = [{"role": "user", "content": "q"}]
-    task.score_response.return_value = 0.8
-    return task
-
-
-def _mock_variant(name: str, axis: int = 1) -> MagicMock:
-    """Mock IndexVariant."""
-    variant = MagicMock()
-    meta = MagicMock()
-    meta.name = name
-    meta.token_estimate = 100
-    variant.metadata.return_value = meta
-    variant.render.return_value = f"rendered {name}"
-    return variant
-
-
 def _mock_doc_tree() -> MagicMock:
     """Minimal mock DocTree."""
     return MagicMock()
@@ -230,14 +194,14 @@ class TestTaguchiRunnerCompletedKeys:
             oa_name="L2", n_runs=2, factors=factors, rows=rows,
             level_counts=[2],
         )
-        lookup = {"A": _mock_variant("A"), "B": _mock_variant("B")}
+        lookup = {"A": make_mock_variant("A"), "B": make_mock_variant("B")}
         return design, lookup
 
     def test_no_completed_keys_runs_all(self) -> None:
         design, lookup = self._make_design()
-        tasks = [_mock_task("t1"), _mock_task("t2")]
+        tasks = [make_mock_task("t1"), make_mock_task("t2")]
         runner = TaguchiRunner(
-            clients={"m": _mock_client()},
+            clients={"m": make_mock_client()},
             config=EvalRunConfig(repetitions=1),
             design=design,
             variant_lookup=lookup,
@@ -249,9 +213,9 @@ class TestTaguchiRunnerCompletedKeys:
 
     def test_completed_keys_skips_matching(self) -> None:
         design, lookup = self._make_design()
-        tasks = [_mock_task("t1"), _mock_task("t2")]
+        tasks = [make_mock_task("t1"), make_mock_task("t2")]
         runner = TaguchiRunner(
-            clients={"m": _mock_client()},
+            clients={"m": make_mock_client()},
             config=EvalRunConfig(repetitions=1),
             design=design,
             variant_lookup=lookup,
@@ -265,9 +229,9 @@ class TestTaguchiRunnerCompletedKeys:
 
     def test_all_completed_returns_empty(self) -> None:
         design, lookup = self._make_design()
-        tasks = [_mock_task("t1")]
+        tasks = [make_mock_task("t1")]
         runner = TaguchiRunner(
-            clients={"m": _mock_client()},
+            clients={"m": make_mock_client()},
             config=EvalRunConfig(repetitions=1),
             design=design,
             variant_lookup=lookup,
@@ -285,9 +249,9 @@ class TestTaguchiRunnerCompletedKeys:
         a name without axis 0 (e.g. 'A').
         """
         design, lookup = self._make_design()
-        tasks = [_mock_task("t1")]
+        tasks = [make_mock_task("t1")]
         runner = TaguchiRunner(
-            clients={"m": _mock_client()},
+            clients={"m": make_mock_client()},
             config=EvalRunConfig(repetitions=1),
             design=design,
             variant_lookup=lookup,
@@ -310,9 +274,9 @@ class TestEvalRunnerCompletedKeys:
     """EvalRunner.run() skips trials in completed_keys."""
 
     def test_no_completed_keys_runs_all(self) -> None:
-        tasks = [_mock_task("t1")]
-        variants = [_mock_variant("v1"), _mock_variant("v2")]
-        runner = EvalRunner(client=_mock_client(), config=EvalRunConfig(repetitions=1))
+        tasks = [make_mock_task("t1")]
+        variants = [make_mock_variant("v1"), make_mock_variant("v2")]
+        runner = EvalRunner(client=make_mock_client(), config=EvalRunConfig(repetitions=1))
 
         result = runner.run(
             tasks, variants, _mock_doc_tree(), completed_keys=None,
@@ -321,9 +285,9 @@ class TestEvalRunnerCompletedKeys:
         assert len(result.trials) == 2
 
     def test_completed_keys_skips_matching(self) -> None:
-        tasks = [_mock_task("t1")]
-        variants = [_mock_variant("v1"), _mock_variant("v2")]
-        runner = EvalRunner(client=_mock_client(), config=EvalRunConfig(repetitions=1))
+        tasks = [make_mock_task("t1")]
+        variants = [make_mock_variant("v1"), make_mock_variant("v2")]
+        runner = EvalRunner(client=make_mock_client(), config=EvalRunConfig(repetitions=1))
 
         # Full-sweep uses None for oa_row_id
         completed = {(None, "t1", "v1", 1)}
@@ -335,9 +299,9 @@ class TestEvalRunnerCompletedKeys:
         assert result.trials[0].variant_name == "v2"
 
     def test_all_completed_returns_empty(self) -> None:
-        tasks = [_mock_task("t1")]
-        variants = [_mock_variant("v1")]
-        runner = EvalRunner(client=_mock_client(), config=EvalRunConfig(repetitions=1))
+        tasks = [make_mock_task("t1")]
+        variants = [make_mock_variant("v1")]
+        runner = EvalRunner(client=make_mock_client(), config=EvalRunConfig(repetitions=1))
 
         completed = {(None, "t1", "v1", 1)}
         result = runner.run(
@@ -396,8 +360,8 @@ class TestOrchestratorResume:
         orch._run_full = fake_run_full  # type: ignore[assignment]
 
         orch.run(
-            tasks=[_mock_task()],
-            variants=[_mock_variant("v1")],
+            tasks=[make_mock_task()],
+            variants=[make_mock_variant("v1")],
             doc_tree=_mock_doc_tree(),
         )
 
@@ -466,8 +430,8 @@ class TestOrchestratorResume:
         orch._run_full = fake_run_full  # type: ignore[assignment]
 
         result = orch.run(
-            tasks=[_mock_task()],
-            variants=[_mock_variant("v1")],
+            tasks=[make_mock_task()],
+            variants=[make_mock_variant("v1")],
             doc_tree=_mock_doc_tree(),
         )
 
@@ -570,8 +534,8 @@ class TestPipelineResumeIncompletePhases:
         )
 
         pipeline.run(
-            tasks=[_mock_task()],
-            variants=[_mock_variant("v1")],
+            tasks=[make_mock_task()],
+            variants=[make_mock_variant("v1")],
             doc_tree=_mock_doc_tree(),
         )
 
@@ -613,8 +577,8 @@ class TestPipelineResumeIncompletePhases:
         )
 
         pipeline.run(
-            tasks=[_mock_task()],
-            variants=[_mock_variant("v1")],
+            tasks=[make_mock_task()],
+            variants=[make_mock_variant("v1")],
             doc_tree=_mock_doc_tree(),
         )
 
@@ -650,8 +614,8 @@ class TestPipelineResumeIncompletePhases:
         )
 
         pipeline.run(
-            tasks=[_mock_task()],
-            variants=[_mock_variant("v1")],
+            tasks=[make_mock_task()],
+            variants=[make_mock_variant("v1")],
             doc_tree=_mock_doc_tree(),
         )
 

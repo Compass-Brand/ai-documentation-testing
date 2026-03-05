@@ -11,52 +11,12 @@ from agent_evals.taguchi.factors import (
     TaguchiFactorDef,
 )
 from agent_evals.taguchi.runner import TaguchiRunResult, TaguchiRunner
+from conftest import make_mock_client, make_mock_task, make_mock_variant
 
 
 # ---------------------------------------------------------------------------
 # Helpers: lightweight mocks that avoid hitting real LLMs
 # ---------------------------------------------------------------------------
-
-
-def _make_mock_client(model_name: str = "mock-model") -> MagicMock:
-    """Create a mock LLMClient that returns a canned GenerationResult."""
-    client = MagicMock()
-    client.model = model_name
-
-    gen = MagicMock()
-    gen.content = f"response from {model_name}"
-    gen.prompt_tokens = 10
-    gen.completion_tokens = 5
-    gen.total_tokens = 15
-    gen.cost = 0.001
-    gen.model = model_name
-    gen.generation_id = None
-
-    client.complete.return_value = gen
-    return client
-
-
-def _make_mock_task(task_id: str = "retrieval_001") -> MagicMock:
-    """Create a mock EvalTask with a canned score."""
-    task = MagicMock()
-    task.definition.task_id = task_id
-    task.definition.type = "retrieval"
-    task.build_prompt.return_value = [
-        {"role": "user", "content": "test question"},
-    ]
-    task.score_response.return_value = 0.8
-    return task
-
-
-def _make_mock_variant(name: str, axis: int) -> MagicMock:
-    """Create a mock IndexVariant."""
-    variant = MagicMock()
-    meta = MagicMock()
-    meta.name = name
-    meta.token_estimate = 100
-    variant.metadata.return_value = meta
-    variant.render.return_value = f"rendered {name}"
-    return variant
 
 
 def _make_simple_design(
@@ -111,7 +71,7 @@ def _make_variant_lookup(
     lookup: dict[str, MagicMock] = {}
     for axis_num, names in axes.items():
         for name in names:
-            lookup[name] = _make_mock_variant(name, axis_num)
+            lookup[name] = make_mock_variant(name, axis_num)
     return lookup
 
 
@@ -127,7 +87,7 @@ class TestWorkItemGeneration:
         design = _make_simple_design(n_rows=9)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=5, max_connections=1)
 
         runner = TaguchiRunner(
@@ -137,7 +97,7 @@ class TestWorkItemGeneration:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task(f"retrieval_{i:03d}") for i in range(10)]
+        tasks = [make_mock_task(f"retrieval_{i:03d}") for i in range(10)]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -148,7 +108,7 @@ class TestWorkItemGeneration:
         design = _make_simple_design(n_rows=3)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -158,7 +118,7 @@ class TestWorkItemGeneration:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -175,7 +135,7 @@ class TestCompositeVariantAssignment:
             axes=axes,
         )
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -185,7 +145,7 @@ class TestCompositeVariantAssignment:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -199,7 +159,7 @@ class TestCompositeVariantAssignment:
         axes = {1: ["flat", "2tier"]}
         design = _make_simple_design(n_rows=2, axes=axes)
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -209,7 +169,7 @@ class TestCompositeVariantAssignment:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         runner.run(tasks, doc_tree)
@@ -229,8 +189,8 @@ class TestModelAssignment:
         design = _make_simple_design(n_rows=4, axes=axes, models=models)
         variants = _make_variant_lookup(axes)
 
-        claude_client = _make_mock_client("claude")
-        gpt_client = _make_mock_client("gpt")
+        claude_client = make_mock_client("claude")
+        gpt_client = make_mock_client("gpt")
         clients = {"claude": claude_client, "gpt": gpt_client}
 
         config = EvalRunConfig(repetitions=1, max_connections=1)
@@ -242,7 +202,7 @@ class TestModelAssignment:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -255,7 +215,7 @@ class TestModelAssignment:
         axes = {1: ["flat", "2tier", "3tier"]}
         design = _make_simple_design(n_rows=3, axes=axes)
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client("only-model")
+        client = make_mock_client("only-model")
         clients = {"only-model": client}
 
         config = EvalRunConfig(repetitions=1, max_connections=1)
@@ -267,7 +227,7 @@ class TestModelAssignment:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -283,7 +243,7 @@ class TestResultGrouping:
         design = _make_simple_design(n_rows=3)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=2, max_connections=1)
 
         runner = TaguchiRunner(
@@ -293,7 +253,7 @@ class TestResultGrouping:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -306,7 +266,7 @@ class TestResultGrouping:
         design = _make_simple_design(n_rows=3)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=2, max_connections=1)
 
         runner = TaguchiRunner(
@@ -316,7 +276,7 @@ class TestResultGrouping:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -341,7 +301,7 @@ class TestProgressCallback:
         design = _make_simple_design(n_rows=2)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -351,7 +311,7 @@ class TestProgressCallback:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         callback_calls: list[tuple[int, int, TrialResult]] = []
@@ -379,7 +339,7 @@ class TestSourcePassthrough:
         design = _make_simple_design(n_rows=2)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -389,7 +349,7 @@ class TestSourcePassthrough:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -401,7 +361,7 @@ class TestSourcePassthrough:
         design = _make_simple_design(n_rows=2)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -411,7 +371,7 @@ class TestSourcePassthrough:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree, source="repliqa")
@@ -429,7 +389,7 @@ class TestTrialErrorHandling:
         design = _make_simple_design(n_rows=3, axes=axes)
         variants = _make_variant_lookup(axes)
 
-        client = _make_mock_client()
+        client = make_mock_client()
         client.complete.side_effect = RuntimeError("API timeout")
         clients = {"mock-model": client}
 
@@ -442,7 +402,7 @@ class TestTrialErrorHandling:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -465,7 +425,7 @@ class TestTaguchiRunResult:
         design = _make_simple_design(n_rows=2)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -475,7 +435,7 @@ class TestTaguchiRunResult:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -487,7 +447,7 @@ class TestTaguchiRunResult:
         design = _make_simple_design(n_rows=2)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -497,7 +457,7 @@ class TestTaguchiRunResult:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -510,7 +470,7 @@ class TestTaguchiRunResult:
         design = _make_simple_design(n_rows=1)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -520,7 +480,7 @@ class TestTaguchiRunResult:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -537,7 +497,7 @@ class TestPhaseMetadata:
         design = _make_simple_design(n_rows=2)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -547,7 +507,7 @@ class TestPhaseMetadata:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree, phase="screening")
@@ -560,7 +520,7 @@ class TestPhaseMetadata:
         design = _make_simple_design(n_rows=2)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -570,7 +530,7 @@ class TestPhaseMetadata:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree)
@@ -585,7 +545,7 @@ class TestPhaseMetadata:
         design = _make_simple_design(n_rows=2, axes=axes)
         variants = _make_variant_lookup(axes)
 
-        client = _make_mock_client()
+        client = make_mock_client()
         client.complete.side_effect = RuntimeError("boom")
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
@@ -596,7 +556,7 @@ class TestPhaseMetadata:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, doc_tree, phase="confirmation")
@@ -614,7 +574,7 @@ class TestMetricsHarmonization:
         design = _make_simple_design(n_rows=2)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -624,7 +584,7 @@ class TestMetricsHarmonization:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
         result = runner.run(tasks, doc_tree)
 
@@ -639,7 +599,7 @@ class TestMetricsHarmonization:
         design = _make_simple_design(n_rows=2)
         axes = {1: ["flat", "2tier", "3tier"]}
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=1, max_connections=1)
 
         runner = TaguchiRunner(
@@ -649,7 +609,7 @@ class TestMetricsHarmonization:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task()]
+        tasks = [make_mock_task()]
         doc_tree = MagicMock()
         result = runner.run(tasks, doc_tree)
 
@@ -670,7 +630,7 @@ class TestSetupTeardownPerRow:
         axes = {1: ["flat", "2tier", "3tier"]}
         design = _make_simple_design(n_rows=3, axes=axes)
         variants = _make_variant_lookup(axes)
-        client = _make_mock_client()
+        client = make_mock_client()
         config = EvalRunConfig(repetitions=2, max_connections=1)
 
         runner = TaguchiRunner(
@@ -680,7 +640,7 @@ class TestSetupTeardownPerRow:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task("t1"), _make_mock_task("t2")]
+        tasks = [make_mock_task("t1"), make_mock_task("t2")]
         doc_tree = MagicMock()
 
         # Track setup/teardown calls on composites
@@ -760,7 +720,7 @@ class TestParallelExecution:
             variant_lookup=variants,
         )
 
-        tasks = [_make_mock_task(f"retrieval_{i:03d}") for i in range(4)]
+        tasks = [make_mock_task(f"retrieval_{i:03d}") for i in range(4)]
         doc_tree = MagicMock()
 
         start = time.monotonic()

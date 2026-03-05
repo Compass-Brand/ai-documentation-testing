@@ -20,6 +20,7 @@ from agent_evals.orchestrator import (
     OrchestratorResult,
 )
 from agent_evals.runner import EvalRunConfig, EvalRunResult, TrialResult
+from conftest import make_mock_client, make_mock_task, make_mock_variant
 
 
 # ---------------------------------------------------------------------------
@@ -80,42 +81,6 @@ def _make_taguchi_run_result(
     return result
 
 
-def _make_mock_client(model_name: str = "mock-model") -> MagicMock:
-    client = MagicMock()
-    client.model = model_name
-    gen = MagicMock()
-    gen.content = f"response from {model_name}"
-    gen.prompt_tokens = 10
-    gen.completion_tokens = 5
-    gen.total_tokens = 15
-    gen.cost = 0.001
-    gen.model = model_name
-    gen.generation_id = None
-    client.complete.return_value = gen
-    return client
-
-
-def _make_mock_task(task_id: str = "retrieval_001") -> MagicMock:
-    task = MagicMock()
-    task.definition.task_id = task_id
-    task.definition.type = "retrieval"
-    task.build_prompt.return_value = [
-        {"role": "user", "content": "test question"},
-    ]
-    task.score_response.return_value = 0.8
-    return task
-
-
-def _make_mock_variant(name: str = "flat") -> MagicMock:
-    variant = MagicMock()
-    meta = MagicMock()
-    meta.name = name
-    meta.token_estimate = 100
-    variant.metadata.return_value = meta
-    variant.render.return_value = f"rendered {name}"
-    return variant
-
-
 def _make_orchestrator(
     tmp_path: Path,
     mode: str = "full",
@@ -154,8 +119,8 @@ class TestModeRouting:
             patch.object(orch, "_run_taguchi") as mock_taguchi,
         ):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -172,7 +137,7 @@ class TestModeRouting:
         taguchi_result = _make_taguchi_run_result(trials)
 
         mock_design = MagicMock()
-        mock_lookup = {"flat": _make_mock_variant()}
+        mock_lookup = {"flat": make_mock_variant()}
 
         with (
             patch.object(
@@ -181,8 +146,8 @@ class TestModeRouting:
             patch.object(orch, "_run_full") as mock_full,
         ):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
                 design=mock_design,
                 variant_lookup=mock_lookup,
@@ -238,8 +203,8 @@ class TestTelemetryWiring:
 
         with patch.object(orch, "_run_full", side_effect=fake_run_full):
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -267,8 +232,8 @@ class TestTelemetryWiring:
 
         with patch.object(orch, "_run_full", side_effect=fake_run_full):
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -297,8 +262,8 @@ class TestTelemetryWiring:
 
         with patch.object(orch, "_run_full", side_effect=fake_run_full):
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -329,8 +294,8 @@ class TestReportGeneration:
 
         with patch.object(orch, "_run_full", return_value=eval_result):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -344,8 +309,8 @@ class TestReportGeneration:
 
         with patch.object(orch, "_run_full", return_value=eval_result):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -361,8 +326,8 @@ class TestReportGeneration:
 
         with patch.object(orch, "_run_full", return_value=eval_result):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -385,8 +350,8 @@ class TestOrchestratorResult:
 
         with patch.object(orch, "_run_full", return_value=eval_result):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -400,8 +365,8 @@ class TestOrchestratorResult:
 
         with patch.object(orch, "_run_full", return_value=eval_result):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -415,8 +380,8 @@ class TestOrchestratorResult:
 
         with patch.object(orch, "_run_full", return_value=eval_result):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -437,8 +402,8 @@ class TestObservatoryStoreIntegration:
 
         with patch.object(orch, "_run_full", return_value=eval_result):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -453,8 +418,8 @@ class TestObservatoryStoreIntegration:
 
         with patch.object(orch, "_run_full", return_value=eval_result):
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -554,11 +519,11 @@ class TestTaguchiValidation:
 
         with pytest.raises(ValueError, match="TaguchiDesign is required"):
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
                 design=None,
-                variant_lookup={"flat": _make_mock_variant()},
+                variant_lookup={"flat": make_mock_variant()},
             )
 
     def test_taguchi_requires_variant_lookup(self, tmp_path: Path) -> None:
@@ -566,8 +531,8 @@ class TestTaguchiValidation:
 
         with pytest.raises(ValueError, match="variant_lookup is required"):
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
                 design=MagicMock(),
                 variant_lookup=None,
@@ -721,7 +686,7 @@ class TestRunFullIntegration:
 
     def test_run_full_creates_eval_runner(self, tmp_path: Path) -> None:
         orch = _make_orchestrator(tmp_path, mode="full")
-        mock_client = _make_mock_client()
+        mock_client = make_mock_client()
 
         with patch.object(
             orch.client_pool, "get_client", return_value=mock_client
@@ -731,8 +696,8 @@ class TestRunFullIntegration:
             mock_runner_cls.return_value = mock_runner
 
             orch._run_full(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
                 eval_config=EvalRunConfig(),
                 progress_callback=None,
@@ -748,8 +713,8 @@ class TestRunFullIntegration:
         orch = _make_orchestrator(
             tmp_path, mode="taguchi", models=["model-a", "model-b"]
         )
-        mock_client_a = _make_mock_client("model-a")
-        mock_client_b = _make_mock_client("model-b")
+        mock_client_a = make_mock_client("model-a")
+        mock_client_b = make_mock_client("model-b")
 
         def fake_get_client(name: str) -> MagicMock:
             return {"model-a": mock_client_a, "model-b": mock_client_b}[name]
@@ -766,11 +731,11 @@ class TestRunFullIntegration:
             mock_runner_cls.return_value = mock_runner
 
             orch._run_taguchi(
-                tasks=[_make_mock_task()],
+                tasks=[make_mock_task()],
                 doc_tree=MagicMock(),
                 eval_config=EvalRunConfig(),
                 design=MagicMock(),
-                variant_lookup={"flat": _make_mock_variant()},
+                variant_lookup={"flat": make_mock_variant()},
                 progress_callback=None,
                 source="gold_standard",
             )
@@ -796,8 +761,8 @@ class TestPhaseRouting:
         with patch.object(orch, "_run_full", return_value=eval_result), \
              patch.object(orch.store, "create_run", wraps=orch.store.create_run) as mock_create:
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
                 phase="screening",
                 pipeline_id="pipe_001",
@@ -818,11 +783,11 @@ class TestPhaseRouting:
             orch, "_run_taguchi", return_value=taguchi_result
         ) as mock_tag:
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
                 design=MagicMock(),
-                variant_lookup={"flat": _make_mock_variant()},
+                variant_lookup={"flat": make_mock_variant()},
                 phase="confirmation",
             )
 
@@ -839,8 +804,8 @@ class TestPhaseRouting:
         with patch.object(orch, "_run_full", return_value=eval_result), \
              patch.object(orch.store, "create_run", wraps=orch.store.create_run) as mock_create:
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -874,8 +839,8 @@ class TestPhaseRouting:
 
             mock_full.side_effect = fake_run_full
             orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -890,7 +855,7 @@ class TestPhaseRouting:
         orch = _make_orchestrator(
             tmp_path, mode="taguchi", models=["model-a"]
         )
-        mock_client = _make_mock_client("model-a")
+        mock_client = make_mock_client("model-a")
         taguchi_result = _make_taguchi_run_result()
 
         with patch.object(
@@ -903,11 +868,11 @@ class TestPhaseRouting:
             mock_runner_cls.return_value = mock_runner
 
             orch._run_taguchi(
-                tasks=[_make_mock_task()],
+                tasks=[make_mock_task()],
                 doc_tree=MagicMock(),
                 eval_config=EvalRunConfig(),
                 design=MagicMock(),
-                variant_lookup={"flat": _make_mock_variant()},
+                variant_lookup={"flat": make_mock_variant()},
                 progress_callback=None,
                 source="gold_standard",
                 phase="screening",
@@ -932,8 +897,8 @@ class TestModeOverride:
             patch.object(orch, "_run_taguchi") as mock_taguchi,
         ):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
                 mode="full",
             )
@@ -954,8 +919,8 @@ class TestModeOverride:
             patch.object(orch, "_run_taguchi") as mock_taguchi,
         ):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
             )
 
@@ -975,11 +940,11 @@ class TestModeOverride:
             patch.object(orch, "_run_full") as mock_full,
         ):
             result = orch.run(
-                tasks=[_make_mock_task()],
-                variants=[_make_mock_variant()],
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
                 doc_tree=MagicMock(),
                 design=MagicMock(),
-                variant_lookup={"flat": _make_mock_variant()},
+                variant_lookup={"flat": make_mock_variant()},
                 mode="taguchi",
             )
 
