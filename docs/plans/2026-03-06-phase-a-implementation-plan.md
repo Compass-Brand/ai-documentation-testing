@@ -1,0 +1,1900 @@
+# Phase A Implementation Plan: Real Data + Semantic Scoring
+
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+
+**Goal:** Run existing 10 axes and 4 context strategies against 9 real-world HuggingFace datasets, scored by programmatic matchers AND LLM-as-judge with PoLL validation.
+
+**Architecture:** Cherry-pick dataset adapter infrastructure and judge module from stranded branch `fix/unit-12-dataset-integration`, adapt to current main (which has context strategies the branch lacks), wire datasets into the runner's existing `source` parameter, wire judge into the runner's existing `_call_judge()` stub, and add a recommendations report layer on top of existing Taguchi analysis.
+
+**Tech Stack:** Python 3.11+, UV workspace, pytest, LiteLLM (OpenRouter), HuggingFace `datasets`, scipy, numpy, pydantic v2, rapidfuzz
+
+**Guardrails:**
+- TDD mandatory: every function has a failing test before implementation
+- 80% coverage minimum, 100% on scoring and statistical modules
+- All tests pass before every commit
+- No skipped tests without tracked issue
+- Input validation on all public APIs (Pydantic validators or explicit checks)
+- Type hints on all function signatures
+- Consistent error handling: raise specific exceptions, never bare `except`
+- Import patterns: lazy imports for optional heavy deps (`datasets`, `huggingface_hub`)
+- Max 300 lines per file, max 50 lines per function
+
+**Key paths:**
+- Source: `agent-evals/src/agent_evals/`
+- Tests: `agent-evals/tests/`
+- Tasks YAML: `agent-evals/src/agent_evals/tasks/`
+- Fixtures: `agent-evals/src/agent_evals/fixtures/`
+- Stranded branch: `origin/fix/unit-12-dataset-integration`
+
+**Commands:**
+- Run all tests: `cd /home/trevor-leigh/Projects/compass_brand/compass-tests/ai-documentation-testing && ~/.local/bin/uv run pytest agent-evals/tests/ -v`
+- Run single test: `~/.local/bin/uv run pytest agent-evals/tests/test_file.py::test_name -v`
+- Run with coverage: `~/.local/bin/uv run pytest agent-evals/tests/ --cov=agent_evals --cov-report=term-missing`
+
+---
+
+## Task 0: Verify Current State
+
+**Purpose:** Confirm what exists on main vs. only on the stranded branch before writing any code. This prevents duplicate work and identifies exact cherry-pick targets.
+
+**Files to check:**
+- `agent-evals/src/agent_evals/datasets/` — should NOT exist on main
+- `agent-evals/src/agent_evals/judge/` — should NOT exist on main
+- `agent-evals/src/agent_evals/runner.py` lines 45-46, 702-724 — check if judge stubs exist
+- `agent-evals/src/agent_evals/cli.py` lines 142-175 — check if dataset CLI flags exist
+
+**Step 1: Run verification commands**
+
+```bash
+# Check if datasets module exists on main
+ls agent-evals/src/agent_evals/datasets/ 2>/dev/null && echo "EXISTS" || echo "MISSING"
+
+# Check if judge module exists on main
+ls agent-evals/src/agent_evals/judge/ 2>/dev/null && echo "EXISTS" || echo "MISSING"
+
+# Check runner for judge stubs
+grep -n "JUDGE_SAMPLE_RATE\|_call_judge\|judge" agent-evals/src/agent_evals/runner.py
+
+# Check CLI for dataset flags
+grep -n "source\|dataset" agent-evals/src/agent_evals/cli.py
+
+# Check pyproject.toml for HF dependencies
+grep -n "datasets\|huggingface" agent-evals/pyproject.toml
+```
+
+**Step 2: Document findings and adjust plan**
+
+Record which components exist on main, which need cherry-picking, which need fresh implementation. Update subsequent tasks accordingly.
+
+**Step 3: Run full test suite to establish green baseline**
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -20
+```
+
+Expected: All tests pass. Record count. Every subsequent task must maintain this baseline.
+
+**Step 4: Commit checkpoint**
+
+No code changes — this is a verification-only task.
+
+---
+
+## Task 1: Dataset Adapter Infrastructure
+
+**Purpose:** Create the base class, registry, cache, and HF utilities that all 9 adapters depend on.
+
+**Files:**
+- Create: `agent-evals/src/agent_evals/datasets/__init__.py`
+- Create: `agent-evals/src/agent_evals/datasets/base.py`
+- Create: `agent-evals/src/agent_evals/datasets/cache.py`
+- Create: `agent-evals/src/agent_evals/datasets/_hf_utils.py`
+- Create: `agent-evals/tests/test_dataset_infra.py`
+- Reference: `git show origin/fix/unit-12-dataset-integration:agent-evals/src/agent_evals/datasets/base.py`
+
+### Step 1: Write failing tests for DatasetAdapter ABC
+
+**File:** `agent-evals/tests/test_dataset_infra.py`
+
+```python
+"""Tests for dataset adapter infrastructure."""
+
+from __future__ import annotations
+
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from agent_evals.datasets.base import DatasetAdapter
+
+
+class _StubAdapter(DatasetAdapter):
+    """Minimal concrete adapter for testing the ABC."""
+
+    def name(self) -> str:
+        return "stub"
+
+    def hf_dataset_id(self) -> str | None:
+        return "test-org/test-dataset"
+
+    def task_type(self) -> str:
+        return "fact_extraction"
+
+    def domain(self) -> str:
+        return "test_domain"
+
+    def license(self) -> str:
+        return "MIT"
+
+    def contamination_risk(self) -> str:
+        return "low"
+
+    def convert_tasks(self, output_dir: Path, limit: int | None = None) -> int:
+        task = {
+            "task_id": "fact_extraction_001",
+            "type": "fact_extraction",
+            "question": "What is X?",
+            "domain": "test_domain",
+            "difficulty": "easy",
+            "tags": [],
+            "metadata": {"expected_answer": "Y"},
+        }
+        (output_dir / "fact_extraction_001.yaml").write_text(
+            json.dumps(task)
+        )
+        return 1
+
+    def build_doc_tree(self, limit: int | None = None):
+        from agent_index.models import DocFile, DocTree
+
+        return DocTree(
+            files={
+                "docs/test.md": DocFile(
+                    rel_path="docs/test.md",
+                    content="# Test\nContent here.",
+                    size_bytes=24,
+                    section="docs",
+                    tier="required",
+                )
+            },
+            scanned_at="2026-03-06T00:00:00Z",
+            source="test-org/test-dataset",
+            total_tokens=10,
+        )
+
+
+class TestDatasetAdapterABC:
+    def test_abstract_methods_enforced(self):
+        """Cannot instantiate DatasetAdapter without implementing all abstract methods."""
+        with pytest.raises(TypeError, match="abstract method"):
+            DatasetAdapter()  # type: ignore[abstract]
+
+    def test_stub_adapter_implements_interface(self):
+        adapter = _StubAdapter()
+        assert adapter.name() == "stub"
+        assert adapter.hf_dataset_id() == "test-org/test-dataset"
+        assert adapter.task_type() == "fact_extraction"
+        assert adapter.domain() == "test_domain"
+        assert adapter.license() == "MIT"
+        assert adapter.contamination_risk() == "low"
+
+    def test_convert_tasks_writes_yaml(self):
+        adapter = _StubAdapter()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            count = adapter.convert_tasks(Path(tmpdir))
+            assert count == 1
+            assert (Path(tmpdir) / "fact_extraction_001.yaml").exists()
+
+    def test_build_doc_tree_returns_valid_tree(self):
+        adapter = _StubAdapter()
+        tree = adapter.build_doc_tree()
+        assert len(tree.files) > 0
+        assert tree.source == "test-org/test-dataset"
+
+    def test_generate_task_id_format(self):
+        adapter = _StubAdapter()
+        tid = adapter._generate_task_id("fact_extraction", 1)
+        assert tid == "fact_extraction_001"
+
+    def test_generate_task_id_pads_to_three_digits(self):
+        adapter = _StubAdapter()
+        assert adapter._generate_task_id("retrieval", 42) == "retrieval_042"
+
+    def test_generate_task_id_handles_large_index(self):
+        adapter = _StubAdapter()
+        assert adapter._generate_task_id("retrieval", 1234) == "retrieval_1234"
+
+    def test_contamination_risk_validation(self):
+        """contamination_risk must return one of: low, moderate, high."""
+        adapter = _StubAdapter()
+        assert adapter.contamination_risk() in ("low", "moderate", "high")
+```
+
+**Step 2: Run test to verify it fails**
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_dataset_infra.py -v
+```
+
+Expected: ImportError — `agent_evals.datasets.base` does not exist.
+
+### Step 3: Implement DatasetAdapter ABC
+
+**File:** `agent-evals/src/agent_evals/datasets/base.py`
+
+Reference the stranded branch version: `git show origin/fix/unit-12-dataset-integration:agent-evals/src/agent_evals/datasets/base.py`
+
+Cherry-pick the file. Verify it contains:
+- ABC with all 8 abstract methods (`name`, `hf_dataset_id`, `task_type`, `domain`, `license`, `contamination_risk`, `convert_tasks`, `build_doc_tree`)
+- `_generate_task_id()` helper method
+- Proper type hints and docstrings
+- Import of `DocTree` from `agent_index.models`
+
+**Adaptation needed:** Verify `agent_index.models.DocTree` and `DocFile` import paths match current main. Check:
+
+```bash
+grep -rn "class DocTree" agent-index/src/
+grep -rn "class DocFile" agent-index/src/
+```
+
+### Step 4: Create `__init__.py` with empty registry
+
+**File:** `agent-evals/src/agent_evals/datasets/__init__.py`
+
+```python
+"""Dataset adapter infrastructure for real-world evaluation data."""
+```
+
+### Step 5: Run tests to verify they pass
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_dataset_infra.py -v
+```
+
+Expected: All tests pass.
+
+### Step 6: Commit
+
+```bash
+git add agent-evals/src/agent_evals/datasets/base.py \
+       agent-evals/src/agent_evals/datasets/__init__.py \
+       agent-evals/tests/test_dataset_infra.py
+git commit -m "feat(datasets): add DatasetAdapter ABC with test stub"
+```
+
+### Step 7: Write failing tests for DatasetCache
+
+**Append to:** `agent-evals/tests/test_dataset_infra.py`
+
+```python
+from agent_evals.datasets.cache import DatasetCache
+
+
+class TestDatasetCache:
+    def test_task_dir_returns_correct_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = DatasetCache(Path(tmpdir))
+            result = cache.task_dir("repliqa")
+            assert result == Path(tmpdir) / "repliqa" / "tasks"
+
+    def test_doc_tree_path_returns_correct_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = DatasetCache(Path(tmpdir))
+            result = cache.doc_tree_path("repliqa")
+            assert result == Path(tmpdir) / "repliqa" / "doc_tree.json"
+
+    def test_is_prepared_false_when_not_prepared(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = DatasetCache(Path(tmpdir))
+            assert cache.is_prepared("repliqa") is False
+
+    def test_mark_prepared_then_is_prepared_true(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = DatasetCache(Path(tmpdir))
+            cache.mark_prepared("repliqa", task_count=100)
+            assert cache.is_prepared("repliqa") is True
+
+    def test_clear_specific_dataset(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = DatasetCache(Path(tmpdir))
+            cache.mark_prepared("repliqa", task_count=100)
+            cache.clear("repliqa")
+            assert cache.is_prepared("repliqa") is False
+
+    def test_clear_all_datasets(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache = DatasetCache(Path(tmpdir))
+            cache.mark_prepared("repliqa", task_count=100)
+            cache.mark_prepared("techqa", task_count=50)
+            cache.clear()
+            assert cache.is_prepared("repliqa") is False
+            assert cache.is_prepared("techqa") is False
+```
+
+### Step 8: Run test to verify it fails
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_dataset_infra.py::TestDatasetCache -v
+```
+
+Expected: ImportError — `agent_evals.datasets.cache` does not exist.
+
+### Step 9: Implement DatasetCache
+
+**File:** `agent-evals/src/agent_evals/datasets/cache.py`
+
+Cherry-pick from stranded branch. Verify:
+- `DatasetCache.__init__(self, base_dir: Path)` — creates base_dir if needed
+- `task_dir(dataset_name) -> Path` — returns `base_dir / name / tasks`
+- `doc_tree_path(dataset_name) -> Path` — returns `base_dir / name / doc_tree.json`
+- `is_prepared(dataset_name) -> bool` — checks for `.prepared` marker file
+- `mark_prepared(dataset_name, task_count)` — writes marker file with metadata
+- `clear(dataset_name=None)` — removes specific or all cached data
+
+### Step 10: Run tests, verify pass
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_dataset_infra.py -v
+```
+
+### Step 11: Commit
+
+```bash
+git add agent-evals/src/agent_evals/datasets/cache.py \
+       agent-evals/tests/test_dataset_infra.py
+git commit -m "feat(datasets): add DatasetCache for local dataset storage"
+```
+
+### Step 12: Write failing tests for HF utilities
+
+**Append to:** `agent-evals/tests/test_dataset_infra.py`
+
+```python
+from agent_evals.datasets._hf_utils import load_hf_dataset
+
+
+class TestHFUtils:
+    def test_load_hf_dataset_with_limit(self):
+        """load_hf_dataset applies limit via select()."""
+        mock_dataset = [{"text": f"row_{i}"} for i in range(100)]
+
+        with patch("agent_evals.datasets._hf_utils.hf_load_dataset") as mock_load:
+            mock_ds = type("MockDS", (), {
+                "select": lambda self, indices: [mock_dataset[i] for i in indices],
+                "__len__": lambda self: len(mock_dataset),
+                "__iter__": lambda self: iter(mock_dataset),
+            })()
+            mock_load.return_value = mock_ds
+            result = load_hf_dataset("test/dataset", "train", limit=5)
+            mock_load.assert_called_once_with("test/dataset", split="train")
+            assert len(result) == 5
+
+    def test_load_hf_dataset_without_limit(self):
+        """load_hf_dataset returns full dataset when limit is None."""
+        mock_dataset = [{"text": f"row_{i}"} for i in range(10)]
+
+        with patch("agent_evals.datasets._hf_utils.hf_load_dataset") as mock_load:
+            mock_load.return_value = mock_dataset
+            result = load_hf_dataset("test/dataset", "train", limit=None)
+            assert result == mock_dataset
+```
+
+### Step 13: Run test to verify it fails
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_dataset_infra.py::TestHFUtils -v
+```
+
+### Step 14: Implement HF utilities
+
+**File:** `agent-evals/src/agent_evals/datasets/_hf_utils.py`
+
+Cherry-pick from stranded branch. Key pattern — lazy import of `datasets`:
+
+```python
+"""HuggingFace dataset loading utilities."""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+def load_hf_dataset(
+    dataset_id: str,
+    split: str,
+    limit: int | None = None,
+    **kwargs: Any,
+):
+    """Load a HuggingFace dataset with optional limit.
+
+    Lazy-imports the datasets library to avoid import cost
+    when datasets are not being used.
+    """
+    from datasets import load_dataset as hf_load_dataset
+
+    ds = hf_load_dataset(dataset_id, split=split, **kwargs)
+    if limit is not None and len(ds) > limit:
+        ds = ds.select(range(limit))
+    return ds
+```
+
+### Step 15: Run tests, verify pass
+
+### Step 16: Commit
+
+```bash
+git add agent-evals/src/agent_evals/datasets/_hf_utils.py \
+       agent-evals/tests/test_dataset_infra.py
+git commit -m "feat(datasets): add HuggingFace loading utilities"
+```
+
+### Step 17: Write failing tests for dataset registry
+
+**Append to:** `agent-evals/tests/test_dataset_infra.py`
+
+```python
+from agent_evals.datasets import (
+    get_adapter,
+    list_available,
+    register_dataset,
+)
+
+
+class TestDatasetRegistry:
+    def test_register_and_retrieve_adapter(self):
+        register_dataset(_StubAdapter)
+        adapter = get_adapter("stub")
+        assert adapter.name() == "stub"
+
+    def test_get_adapter_raises_for_unknown(self):
+        with pytest.raises(KeyError, match="no_such_dataset"):
+            get_adapter("no_such_dataset")
+
+    def test_list_available_includes_registered(self):
+        register_dataset(_StubAdapter)
+        available = list_available()
+        names = [a["name"] for a in available]
+        assert "stub" in names
+
+    def test_list_available_metadata_fields(self):
+        register_dataset(_StubAdapter)
+        available = list_available()
+        stub_info = next(a for a in available if a["name"] == "stub")
+        assert stub_info["task_type"] == "fact_extraction"
+        assert stub_info["license"] == "MIT"
+        assert stub_info["contamination_risk"] == "low"
+        assert stub_info["hf_dataset_id"] == "test-org/test-dataset"
+```
+
+### Step 18: Run test to verify it fails
+
+### Step 19: Implement dataset registry
+
+**File:** `agent-evals/src/agent_evals/datasets/__init__.py`
+
+Cherry-pick from stranded branch. Must include:
+- `DATASET_REGISTRY: dict[str, type[DatasetAdapter]]`
+- `register_dataset(cls)` — validates cls is DatasetAdapter subclass, registers by `cls().name()`
+- `get_adapter(name) -> DatasetAdapter` — instantiates and returns, raises `KeyError` if not found
+- `list_available() -> list[dict]` — returns metadata dicts for all registered adapters
+- `load_all()` — auto-discovers adapter modules via `pkgutil.iter_modules()`
+- Re-export `DatasetAdapter` and `DatasetCache`
+
+### Step 20: Run tests, verify pass
+
+### Step 21: Run FULL test suite to verify no regressions
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -5
+```
+
+Expected: Same pass count as baseline + new tests. Zero failures.
+
+### Step 22: Commit
+
+```bash
+git add agent-evals/src/agent_evals/datasets/__init__.py \
+       agent-evals/tests/test_dataset_infra.py
+git commit -m "feat(datasets): add adapter registry with auto-discovery"
+```
+
+---
+
+## Task 2: First Dataset Adapter (RepLiQA)
+
+**Purpose:** Implement RepLiQA as the template adapter. RepLiQA maps to the `negative` task type (unanswerable questions), has low contamination risk, and uses CC-BY-4.0 license — making it ideal for first integration.
+
+**Files:**
+- Create: `agent-evals/src/agent_evals/datasets/repliqa.py`
+- Create: `agent-evals/tests/test_dataset_repliqa.py`
+- Reference: `git show origin/fix/unit-12-dataset-integration:agent-evals/src/agent_evals/datasets/repliqa.py`
+
+### Step 1: Write failing tests
+
+**File:** `agent-evals/tests/test_dataset_repliqa.py`
+
+```python
+"""Tests for RepLiQA dataset adapter."""
+
+from __future__ import annotations
+
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from agent_evals.datasets.repliqa import RepLiQAAdapter
+
+
+class TestRepLiQAAdapter:
+    def setup_method(self):
+        self.adapter = RepLiQAAdapter()
+
+    def test_name(self):
+        assert self.adapter.name() == "repliqa"
+
+    def test_hf_dataset_id(self):
+        assert self.adapter.hf_dataset_id() == "ServiceNow/repliqa"
+
+    def test_task_type(self):
+        assert self.adapter.task_type() == "negative"
+
+    def test_domain(self):
+        assert self.adapter.domain() == "synthetic_docs"
+
+    def test_license(self):
+        assert self.adapter.license() == "CC-BY-4.0"
+
+    def test_contamination_risk(self):
+        assert self.adapter.contamination_risk() == "low"
+
+    def test_convert_tasks_writes_yaml_files(self):
+        """convert_tasks produces valid YAML task files."""
+        mock_rows = [
+            {
+                "question": "What is the capital of Atlantis?",
+                "answer": "unanswerable",
+                "document_id": "doc_001",
+                "document": "# Atlantis\nAtlantis was a mythical island.",
+                "category": "unanswerable",
+            },
+            {
+                "question": "What year was Atlantis founded?",
+                "answer": "According to the document, Atlantis was founded in 9600 BC.",
+                "document_id": "doc_001",
+                "document": "# Atlantis\nAtlantis was founded in 9600 BC.",
+                "category": "answerable",
+            },
+        ]
+
+        with patch(
+            "agent_evals.datasets.repliqa.load_hf_dataset",
+            return_value=mock_rows,
+        ):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                count = self.adapter.convert_tasks(Path(tmpdir), limit=2)
+                assert count == 2
+                yaml_files = list(Path(tmpdir).glob("*.yaml"))
+                assert len(yaml_files) == 2
+
+    def test_convert_tasks_produces_valid_task_definitions(self):
+        """Each generated YAML can be loaded as a TaskDefinition."""
+        import yaml
+
+        from agent_evals.tasks.base import TaskDefinition
+
+        mock_rows = [
+            {
+                "question": "What is X?",
+                "answer": "unanswerable",
+                "document_id": "doc_001",
+                "document": "# Doc\nContent.",
+                "category": "unanswerable",
+            },
+        ]
+
+        with patch(
+            "agent_evals.datasets.repliqa.load_hf_dataset",
+            return_value=mock_rows,
+        ):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                self.adapter.convert_tasks(Path(tmpdir), limit=1)
+                yaml_file = next(Path(tmpdir).glob("*.yaml"))
+                data = yaml.safe_load(yaml_file.read_text())
+                task_def = TaskDefinition(**data)
+                assert task_def.type == "negative"
+                assert task_def.domain == "synthetic_docs"
+
+    def test_build_doc_tree_returns_valid_tree(self):
+        """build_doc_tree produces a DocTree with files from the dataset."""
+        mock_rows = [
+            {
+                "document_id": "doc_001",
+                "document": "# First Doc\nContent of first doc.",
+                "question": "unused",
+                "answer": "unused",
+                "category": "answerable",
+            },
+            {
+                "document_id": "doc_002",
+                "document": "# Second Doc\nContent of second doc.",
+                "question": "unused",
+                "answer": "unused",
+                "category": "answerable",
+            },
+        ]
+
+        with patch(
+            "agent_evals.datasets.repliqa.load_hf_dataset",
+            return_value=mock_rows,
+        ):
+            tree = self.adapter.build_doc_tree(limit=2)
+            assert len(tree.files) >= 1
+            assert tree.source == "ServiceNow/repliqa"
+            # Every file must have content, section, and tier
+            for path, doc_file in tree.files.items():
+                assert doc_file.content
+                assert doc_file.section
+                assert doc_file.tier
+
+    def test_convert_tasks_respects_limit(self):
+        """When limit=1, only one task is produced."""
+        mock_rows = [
+            {
+                "question": f"Q{i}?",
+                "answer": "A",
+                "document_id": f"doc_{i:03d}",
+                "document": f"# Doc {i}\nContent.",
+                "category": "answerable",
+            }
+            for i in range(10)
+        ]
+
+        with patch(
+            "agent_evals.datasets.repliqa.load_hf_dataset",
+            return_value=mock_rows[:1],  # limit applied by load_hf_dataset
+        ):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                count = self.adapter.convert_tasks(Path(tmpdir), limit=1)
+                assert count == 1
+```
+
+### Step 2: Run tests to verify failure
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_dataset_repliqa.py -v
+```
+
+Expected: ImportError — `agent_evals.datasets.repliqa` does not exist.
+
+### Step 3: Implement RepLiQA adapter
+
+**File:** `agent-evals/src/agent_evals/datasets/repliqa.py`
+
+Cherry-pick from stranded branch and adapt. Key requirements:
+
+1. Class `RepLiQAAdapter(DatasetAdapter)` decorated with `@register_dataset`
+2. `convert_tasks()`:
+   - Downloads via `load_hf_dataset("ServiceNow/repliqa", "train", limit=limit)`
+   - Maps `category == "unanswerable"` rows to `negative` tasks
+   - Maps `category == "answerable"` rows to `fact_extraction` tasks (secondary)
+   - Writes YAML files with valid `TaskDefinition` schema
+   - Sets `metadata.expected_answer` for answerable, `metadata.is_unanswerable: true` for unanswerable
+3. `build_doc_tree()`:
+   - Deduplicates documents by `document_id`
+   - Creates `DocFile` per unique document with `section="documents"`, `tier="required"`
+   - Returns `DocTree` with `source="ServiceNow/repliqa"`
+
+**Verify import pattern:** The adapter must import `register_dataset` from `agent_evals.datasets` and `load_hf_dataset` from `agent_evals.datasets._hf_utils`. Check the stranded branch for exact field names in the HuggingFace dataset — field names may differ from the mock.
+
+### Step 4: Run tests, verify pass
+
+### Step 5: Run full test suite
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -5
+```
+
+### Step 6: Commit
+
+```bash
+git add agent-evals/src/agent_evals/datasets/repliqa.py \
+       agent-evals/tests/test_dataset_repliqa.py
+git commit -m "feat(datasets): add RepLiQA adapter for negative/fact_extraction tasks"
+```
+
+---
+
+## Task 3: Remaining Dataset Adapters (8 adapters)
+
+**Purpose:** Implement the remaining 8 adapters following the RepLiQA pattern.
+
+**Pattern:** Each adapter follows the same structure:
+1. Test file: `agent-evals/tests/test_dataset_{name}.py`
+2. Implementation: `agent-evals/src/agent_evals/datasets/{name}.py`
+3. Tests mock `load_hf_dataset` and verify: metadata, task YAML validity, DocTree correctness, limit compliance
+
+**For each adapter, cherry-pick from the stranded branch and adapt.** Verify HuggingFace field names match by checking the stranded code. The critical adaptation for each is ensuring `build_doc_tree()` populates `section` and `tier` fields that the variant system needs.
+
+### Adapter 3a: IBM TechQA
+
+- **File:** `agent-evals/src/agent_evals/datasets/ibm_techqa.py`
+- **Test:** `agent-evals/tests/test_dataset_ibm_techqa.py`
+- **HF ID:** `PrimeQA/TechQA`
+- **Task type:** `fact_extraction`
+- **Key fields:** `question`, `answer`, `document` (technote text)
+- **DocTree mapping:** Technotes as `DocFile` objects, `section="technotes"`, `tier="required"`
+- **Commit:** `feat(datasets): add IBM TechQA adapter for fact_extraction tasks`
+
+### Adapter 3b: CodeRAG-Bench
+
+- **File:** `agent-evals/src/agent_evals/datasets/code_rag_bench.py`
+- **Test:** `agent-evals/tests/test_dataset_code_rag_bench.py`
+- **HF ID:** `code-rag-bench/library-documentation`
+- **Task type:** `retrieval`
+- **Key fields:** Library documentation files with queries about API usage
+- **DocTree mapping:** Library docs as files, `section` from library name, `tier` based on doc type
+- **Commit:** `feat(datasets): add CodeRAG-Bench adapter for retrieval tasks`
+
+### Adapter 3c: DS-1000
+
+- **File:** `agent-evals/src/agent_evals/datasets/ds1000.py`
+- **Test:** `agent-evals/tests/test_dataset_ds1000.py`
+- **HF ID:** `code-rag-bench/ds1000`
+- **Task type:** `code_generation`
+- **Key fields:** Problem description, reference solution, test cases
+- **DocTree mapping:** Library reference docs, `section` from library (numpy, pandas, etc.), `tier="reference"`
+- **Commit:** `feat(datasets): add DS-1000 adapter for code_generation tasks`
+
+### Adapter 3d: SWE-bench Verified
+
+- **File:** `agent-evals/src/agent_evals/datasets/swe_bench.py`
+- **Test:** `agent-evals/tests/test_dataset_swe_bench.py`
+- **HF ID:** `princeton-nlp/SWE-bench_Verified`
+- **Task type:** `agentic`
+- **Key fields:** `problem_statement`, `patch`, `test_patch`, repo files
+- **DocTree mapping:** Repository files from the instance, `section` from directory structure, `tier` from file type
+- **Note:** JSON strings in SWE-bench fields need parsing — check stranded branch for handling
+- **Commit:** `feat(datasets): add SWE-bench Verified adapter for agentic tasks`
+
+### Adapter 3e: MultiHop-RAG
+
+- **File:** `agent-evals/src/agent_evals/datasets/multihop_rag.py`
+- **Test:** `agent-evals/tests/test_dataset_multihop_rag.py`
+- **HF ID:** `yixuantt/MultiHopRAG`
+- **Task type:** `multi_hop`
+- **Key fields:** Multi-hop query, supporting facts, answer
+- **DocTree mapping:** News articles as docs, `section="articles"`, `tier="required"`
+- **Commit:** `feat(datasets): add MultiHop-RAG adapter for multi_hop tasks`
+
+### Adapter 3f: AmbigQA
+
+- **File:** `agent-evals/src/agent_evals/datasets/ambigqa.py`
+- **Test:** `agent-evals/tests/test_dataset_ambigqa.py`
+- **HF ID:** `din0s/ambig_qa`
+- **Task type:** `disambiguation`
+- **Key fields:** Ambiguous question, multiple valid answers with interpretations
+- **DocTree mapping:** Wikipedia passages as docs, `section="encyclopedia"`, `tier="reference"`
+- **Commit:** `feat(datasets): add AmbigQA adapter for disambiguation tasks`
+
+### Adapter 3g: BigCodeBench
+
+- **File:** `agent-evals/src/agent_evals/datasets/bigcodebench.py`
+- **Test:** `agent-evals/tests/test_dataset_bigcodebench.py`
+- **HF ID:** `bigcode/bigcodebench`
+- **Task type:** `compositional`
+- **Key fields:** Multi-part coding tasks with sub-requirements
+- **DocTree mapping:** Library API docs, `section` from library, `tier="reference"`
+- **Commit:** `feat(datasets): add BigCodeBench adapter for compositional tasks`
+
+### Adapter 3h: WikiContradict
+
+- **File:** `agent-evals/src/agent_evals/datasets/wikicontradict.py`
+- **Test:** `agent-evals/tests/test_dataset_wikicontradict.py`
+- **HF ID:** `ibm-research/Wikipedia_contradict_benchmark`
+- **Task type:** `conflicting`
+- **Key fields:** Contradicting Wikipedia passages, resolution
+- **DocTree mapping:** Wikipedia passages as docs, `section="encyclopedia"`, `tier="required"`
+- **Commit:** `feat(datasets): add WikiContradict adapter for conflicting tasks`
+
+### Step after all adapters: Integration verification
+
+```bash
+# Verify all adapters register correctly
+~/.local/bin/uv run python -c "
+from agent_evals.datasets import load_all, list_available
+load_all()
+for ds in list_available():
+    print(f\"{ds['name']:20s} {ds['task_type']:20s} {ds['hf_dataset_id']}\")
+"
+```
+
+Expected: 9 adapters listed.
+
+### Step: Run full test suite
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -5
+```
+
+### Step: Commit integration check
+
+```bash
+git commit --allow-empty -m "chore: verify all 9 dataset adapters register correctly"
+```
+
+---
+
+## Task 4: Source Routing
+
+**Purpose:** Wire `--source <dataset>` CLI flag to load tasks and DocTree from a dataset adapter instead of the built-in gold tasks.
+
+**Files:**
+- Create: `agent-evals/src/agent_evals/datasets/source.py`
+- Modify: `agent-evals/src/agent_evals/cli.py` (evaluation flow)
+- Create: `agent-evals/tests/test_dataset_source.py`
+- Reference: `git show origin/fix/unit-12-dataset-integration:agent-evals/src/agent_evals/datasets/source.py`
+
+### Step 1: Write failing tests for source module
+
+**File:** `agent-evals/tests/test_dataset_source.py`
+
+```python
+"""Tests for dataset source routing."""
+
+from __future__ import annotations
+
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from agent_evals.datasets.source import load_from_source
+
+
+class TestLoadFromSource:
+    def test_gold_standard_returns_none(self):
+        """source='gold_standard' returns None, signaling built-in tasks."""
+        result = load_from_source("gold_standard")
+        assert result is None
+
+    def test_unknown_source_raises_key_error(self):
+        with pytest.raises(KeyError, match="unknown_dataset"):
+            load_from_source("unknown_dataset")
+
+    def test_valid_source_returns_tasks_and_tree(self):
+        """A registered adapter returns (tasks, doc_tree, source_name)."""
+        mock_adapter = MagicMock()
+        mock_adapter.name.return_value = "test_ds"
+        mock_adapter.task_type.return_value = "fact_extraction"
+
+        mock_tree = MagicMock()
+        mock_adapter.build_doc_tree.return_value = mock_tree
+
+        mock_task = MagicMock()
+        mock_task.definition.task_id = "fact_extraction_001"
+
+        with patch(
+            "agent_evals.datasets.source.get_adapter",
+            return_value=mock_adapter,
+        ), patch(
+            "agent_evals.datasets.source.load_tasks",
+            return_value=[mock_task],
+        ), patch(
+            "agent_evals.datasets.source.DatasetCache",
+        ) as mock_cache_cls:
+            mock_cache = mock_cache_cls.return_value
+            mock_cache.is_prepared.return_value = True
+            mock_cache.task_dir.return_value = Path("/tmp/fake")
+            mock_cache.doc_tree_path.return_value = Path("/tmp/fake/tree.json")
+
+            tasks, tree, name = load_from_source("test_ds")
+            assert name == "test_ds"
+            assert len(tasks) > 0
+            assert tree is not None
+
+    def test_unprepared_source_triggers_prepare(self):
+        """If cache miss, adapter.convert_tasks() is called first."""
+        mock_adapter = MagicMock()
+        mock_adapter.name.return_value = "test_ds"
+        mock_adapter.convert_tasks.return_value = 5
+        mock_adapter.build_doc_tree.return_value = MagicMock()
+
+        with patch(
+            "agent_evals.datasets.source.get_adapter",
+            return_value=mock_adapter,
+        ), patch(
+            "agent_evals.datasets.source.load_tasks",
+            return_value=[MagicMock()],
+        ), patch(
+            "agent_evals.datasets.source.DatasetCache",
+        ) as mock_cache_cls:
+            mock_cache = mock_cache_cls.return_value
+            mock_cache.is_prepared.return_value = False
+            mock_cache.task_dir.return_value = Path("/tmp/fake")
+            mock_cache.doc_tree_path.return_value = Path("/tmp/fake/tree.json")
+
+            load_from_source("test_ds")
+            mock_adapter.convert_tasks.assert_called_once()
+```
+
+### Step 2: Run tests to verify failure
+
+### Step 3: Implement source module
+
+**File:** `agent-evals/src/agent_evals/datasets/source.py`
+
+Cherry-pick from stranded branch and adapt. Key logic:
+
+```python
+"""Source routing for dataset-backed evaluation runs."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agent_evals.tasks.base import EvalTask
+    from agent_index.models import DocTree
+
+DEFAULT_CACHE_DIR = Path.home() / ".agent-evals" / "datasets"
+
+
+def load_from_source(
+    source: str,
+    limit: int | None = None,
+    cache_dir: Path | None = None,
+) -> tuple[list["EvalTask"], "DocTree", str] | None:
+    """Load tasks and DocTree from a dataset source.
+
+    Returns None for 'gold_standard' (caller uses built-in tasks).
+    Returns (tasks, doc_tree, source_name) for dataset sources.
+    Raises KeyError for unknown sources.
+    """
+    if source == "gold_standard":
+        return None
+
+    from agent_evals.datasets import get_adapter
+    from agent_evals.datasets.cache import DatasetCache
+    from agent_evals.tasks.loader import load_tasks
+
+    adapter = get_adapter(source)  # Raises KeyError if unknown
+    cache = DatasetCache(cache_dir or DEFAULT_CACHE_DIR)
+
+    if not cache.is_prepared(source):
+        task_dir = cache.task_dir(source)
+        task_dir.mkdir(parents=True, exist_ok=True)
+        count = adapter.convert_tasks(task_dir, limit=limit)
+        cache.mark_prepared(source, task_count=count)
+
+    tasks = load_tasks(cache.task_dir(source))
+    doc_tree = adapter.build_doc_tree(limit=limit)
+
+    return tasks, doc_tree, source
+```
+
+### Step 4: Run tests, verify pass
+
+### Step 5: Verify CLI integration points
+
+Check what `--source` handling already exists in `cli.py`:
+
+```bash
+grep -n "source" agent-evals/src/agent_evals/cli.py | head -20
+```
+
+If `--source` routing already exists in the CLI (from partial earlier merges), verify it calls the right function. If not, wire it in:
+
+**Modify:** `agent-evals/src/agent_evals/cli.py` — in `_run_evaluation()`, after config resolution:
+
+```python
+# After resolving config, before building runner:
+source = resolved.get("source", "gold_standard")
+source_result = load_from_source(
+    source,
+    limit=resolved.get("dataset_limit"),
+    cache_dir=resolved.get("dataset_cache_dir"),
+)
+if source_result is not None:
+    tasks, doc_tree, source_name = source_result
+else:
+    # Use built-in gold tasks and fixture
+    tasks = load_tasks(GOLD_TASKS_DIR)
+    doc_tree = load_sample_doc_tree()
+    source_name = "gold_standard"
+```
+
+### Step 6: Run full test suite
+
+### Step 7: Commit
+
+```bash
+git add agent-evals/src/agent_evals/datasets/source.py \
+       agent-evals/src/agent_evals/cli.py \
+       agent-evals/tests/test_dataset_source.py
+git commit -m "feat(datasets): add source routing for dataset-backed runs"
+```
+
+---
+
+## Task 5: Judge Module
+
+**Purpose:** Bring the LLM-as-judge calibrator and PoLL module from the stranded branch to main.
+
+**Files:**
+- Create: `agent-evals/src/agent_evals/judge/__init__.py`
+- Create: `agent-evals/src/agent_evals/judge/calibrator.py`
+- Create: `agent-evals/src/agent_evals/judge/poll.py`
+- Create: `agent-evals/tests/test_judge_calibrator.py`
+- Create: `agent-evals/tests/test_judge_poll.py`
+- Reference: stranded branch `agent-evals/src/agent_evals/judge/`
+
+### Step 1: Write failing tests for calibrator
+
+**File:** `agent-evals/tests/test_judge_calibrator.py`
+
+```python
+"""Tests for LLM-as-judge calibrator."""
+
+from __future__ import annotations
+
+import pytest
+
+from agent_evals.judge.calibrator import (
+    CalibrationResult,
+    GoldExample,
+    JudgeScore,
+    build_judge_prompt,
+    calibrate,
+    compute_cohens_kappa,
+    compute_kendall_tau,
+    compute_mean_absolute_error,
+    compute_spearman,
+    parse_judge_response,
+)
+
+
+class TestComputeCohensKappa:
+    def test_perfect_agreement(self):
+        scores = [0.0, 0.25, 0.5, 0.75, 1.0]
+        result = compute_cohens_kappa(scores, scores)
+        assert result == 1.0
+
+    def test_no_agreement(self):
+        a = [0.0, 0.0, 0.0, 0.0, 0.0]
+        b = [1.0, 1.0, 1.0, 1.0, 1.0]
+        result = compute_cohens_kappa(a, b)
+        assert result < 0.5
+
+    def test_mismatched_lengths_raises(self):
+        with pytest.raises(ValueError, match="same length"):
+            compute_cohens_kappa([0.1, 0.2], [0.1])
+
+    def test_empty_returns_zero(self):
+        assert compute_cohens_kappa([], []) == 0.0
+
+    def test_single_value_returns_zero(self):
+        assert compute_cohens_kappa([0.5], [0.5]) == 0.0
+
+
+class TestComputeSpearman:
+    def test_perfect_positive_correlation(self):
+        a = [0.1, 0.2, 0.3, 0.4, 0.5]
+        b = [0.2, 0.4, 0.6, 0.8, 1.0]
+        result = compute_spearman(a, b)
+        assert result > 0.99
+
+    def test_constant_returns_zero(self):
+        assert compute_spearman([0.5, 0.5, 0.5], [0.1, 0.2, 0.3]) == 0.0
+
+
+class TestComputeKendallTau:
+    def test_perfect_correlation(self):
+        a = [0.1, 0.2, 0.3, 0.4]
+        b = [0.1, 0.2, 0.3, 0.4]
+        result = compute_kendall_tau(a, b)
+        assert result > 0.99
+
+
+class TestComputeMAE:
+    def test_perfect_predictions(self):
+        assert compute_mean_absolute_error([0.5, 0.7], [0.5, 0.7]) == 0.0
+
+    def test_known_error(self):
+        result = compute_mean_absolute_error([0.0, 1.0], [0.5, 0.5])
+        assert abs(result - 0.5) < 0.001
+
+
+class TestParseJudgeResponse:
+    def test_valid_response(self):
+        response = "RATIONALE: Good answer.\nSCORE: 0.85"
+        score, rationale = parse_judge_response(response)
+        assert score == 0.85
+        assert "Good answer" in rationale
+
+    def test_missing_score_raises(self):
+        with pytest.raises(ValueError, match="Could not parse SCORE"):
+            parse_judge_response("No score here")
+
+    def test_out_of_range_raises(self):
+        with pytest.raises(ValueError, match="out of range"):
+            parse_judge_response("RATIONALE: Bad.\nSCORE: 1.5")
+
+    def test_boundary_scores(self):
+        score_0, _ = parse_judge_response("RATIONALE: x\nSCORE: 0.0")
+        score_1, _ = parse_judge_response("RATIONALE: x\nSCORE: 1.0")
+        assert score_0 == 0.0
+        assert score_1 == 1.0
+
+
+class TestBuildJudgePrompt:
+    def test_returns_system_and_user_messages(self):
+        messages = build_judge_prompt(
+            task_type="fact_extraction",
+            question="What is X?",
+            response="X is Y.",
+        )
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[1]["role"] == "user"
+
+    def test_system_message_contains_task_type(self):
+        messages = build_judge_prompt(
+            task_type="retrieval",
+            question="Q",
+            response="R",
+        )
+        assert "retrieval" in messages[0]["content"].lower()
+
+    def test_user_message_contains_question_and_response(self):
+        messages = build_judge_prompt(
+            task_type="fact_extraction",
+            question="What is X?",
+            response="X is Y.",
+        )
+        assert "What is X?" in messages[1]["content"]
+        assert "X is Y." in messages[1]["content"]
+
+    def test_all_11_task_types_have_rubrics(self):
+        task_types = [
+            "retrieval", "fact_extraction", "code_generation", "agentic",
+            "multi_hop", "negative", "compositional", "robustness",
+            "disambiguation", "conflicting", "efficiency",
+        ]
+        for tt in task_types:
+            messages = build_judge_prompt(tt, "Q", "R")
+            assert len(messages) == 2
+            # System message should have a rubric, not the generic one
+            assert "evaluate" in messages[0]["content"].lower()
+
+
+class TestCalibrate:
+    def test_empty_inputs_return_not_passed(self):
+        result = calibrate([], [])
+        assert result.passed is False
+        assert result.total_examples == 0
+
+    def test_perfect_agreement_passes(self):
+        gold = [
+            GoldExample(f"ex_{i}", "fact_extraction", "easy", "Q", "R", score, "")
+            for i, score in enumerate([0.0, 0.25, 0.5, 0.75, 1.0] * 10)
+        ]
+        judge = [
+            JudgeScore(f"ex_{i}", "gpt-5-mini", score, "", "")
+            for i, score in enumerate([0.0, 0.25, 0.5, 0.75, 1.0] * 10)
+        ]
+        result = calibrate(gold, judge)
+        assert result.passed is True
+        assert result.cohens_kappa >= 0.70
+        assert result.spearman_rho >= 0.80
+
+    def test_flags_low_agreement_task_types(self):
+        gold = [
+            GoldExample(f"ex_{i}", "retrieval", "easy", "Q", "R", float(i) / 9, "")
+            for i in range(10)
+        ]
+        # Judge scores are random — low agreement expected
+        judge = [
+            JudgeScore(f"ex_{i}", "gpt-5-mini", 1.0 - float(i) / 9, "", "")
+            for i in range(10)
+        ]
+        result = calibrate(gold, judge)
+        assert "retrieval" in result.flagged_types
+```
+
+### Step 2: Run tests to verify failure
+
+### Step 3: Cherry-pick calibrator from stranded branch
+
+```bash
+git show origin/fix/unit-12-dataset-integration:agent-evals/src/agent_evals/judge/calibrator.py > \
+    agent-evals/src/agent_evals/judge/calibrator.py
+```
+
+Create `__init__.py`:
+
+```bash
+git show origin/fix/unit-12-dataset-integration:agent-evals/src/agent_evals/judge/__init__.py > \
+    agent-evals/src/agent_evals/judge/__init__.py
+```
+
+Verify all imports resolve against current main. Key check: `scipy.stats` and `numpy` are already in dependencies.
+
+### Step 4: Run tests, verify pass
+
+### Step 5: Commit
+
+```bash
+git add agent-evals/src/agent_evals/judge/ \
+       agent-evals/tests/test_judge_calibrator.py
+git commit -m "feat(judge): add LLM-as-judge calibrator with agreement metrics"
+```
+
+### Step 6: Write failing tests for PoLL
+
+**File:** `agent-evals/tests/test_judge_poll.py`
+
+```python
+"""Tests for Panel of LLM evaluators (PoLL)."""
+
+from __future__ import annotations
+
+import pytest
+
+from agent_evals.judge.calibrator import JudgeScore
+from agent_evals.judge.poll import (
+    PanelScore,
+    PollConfig,
+    PollResult,
+    aggregate_panel_scores,
+    build_poll_result,
+    format_poll_report,
+    identify_disagreements,
+    validate_panel_correlation,
+)
+
+
+class TestAggregatePanelScores:
+    def test_mean_aggregation(self):
+        scores = {
+            "model_a": [JudgeScore("ex_0", "model_a", 0.8, "", "")],
+            "model_b": [JudgeScore("ex_0", "model_b", 0.6, "", "")],
+        }
+        result = aggregate_panel_scores(scores, aggregation="mean")
+        assert len(result) == 1
+        assert abs(result[0].aggregated_score - 0.7) < 0.001
+
+    def test_median_aggregation(self):
+        scores = {
+            "model_a": [JudgeScore("ex_0", "model_a", 0.8, "", "")],
+            "model_b": [JudgeScore("ex_0", "model_b", 0.6, "", "")],
+            "model_c": [JudgeScore("ex_0", "model_c", 0.9, "", "")],
+        }
+        result = aggregate_panel_scores(scores, aggregation="median")
+        assert abs(result[0].aggregated_score - 0.8) < 0.001
+
+    def test_spread_calculation(self):
+        scores = {
+            "model_a": [JudgeScore("ex_0", "model_a", 0.3, "", "")],
+            "model_b": [JudgeScore("ex_0", "model_b", 0.9, "", "")],
+        }
+        result = aggregate_panel_scores(scores)
+        assert abs(result[0].score_spread - 0.6) < 0.001
+
+    def test_invalid_aggregation_raises(self):
+        with pytest.raises(ValueError, match="Unsupported"):
+            aggregate_panel_scores({}, aggregation="invalid")
+
+
+class TestValidatePanelCorrelation:
+    def test_perfect_correlation_passes(self):
+        poll = [
+            PanelScore("ex_0", [], 0.2, 0.0),
+            PanelScore("ex_1", [], 0.5, 0.0),
+            PanelScore("ex_2", [], 0.8, 0.0),
+        ]
+        routine = [
+            JudgeScore("ex_0", "routine", 0.2, "", ""),
+            JudgeScore("ex_1", "routine", 0.5, "", ""),
+            JudgeScore("ex_2", "routine", 0.8, "", ""),
+        ]
+        corr, passed = validate_panel_correlation(poll, routine)
+        assert passed is True
+        assert corr > 0.99
+
+    def test_no_overlap_fails(self):
+        poll = [PanelScore("ex_0", [], 0.5, 0.0)]
+        routine = [JudgeScore("ex_999", "routine", 0.5, "", "")]
+        corr, passed = validate_panel_correlation(poll, routine)
+        assert passed is False
+
+
+class TestIdentifyDisagreements:
+    def test_finds_high_spread(self):
+        scores = [
+            PanelScore("ex_0", [], 0.5, 0.1),  # Low spread
+            PanelScore("ex_1", [], 0.5, 0.5),  # High spread
+        ]
+        result = identify_disagreements(scores, spread_threshold=0.3)
+        assert len(result) == 1
+        assert result[0].example_id == "ex_1"
+
+
+class TestBuildPollResult:
+    def test_builds_result_without_routine(self):
+        scores = {
+            "model_a": [JudgeScore("ex_0", "model_a", 0.8, "", "")],
+        }
+        result = build_poll_result(scores)
+        assert len(result.scores) == 1
+        assert result.correlation_with_routine is None
+
+    def test_builds_result_with_routine(self):
+        scores = {
+            "model_a": [
+                JudgeScore("ex_0", "model_a", 0.2, "", ""),
+                JudgeScore("ex_1", "model_a", 0.8, "", ""),
+            ],
+        }
+        routine = [
+            JudgeScore("ex_0", "routine", 0.2, "", ""),
+            JudgeScore("ex_1", "routine", 0.8, "", ""),
+        ]
+        result = build_poll_result(scores, routine_scores=routine)
+        assert result.correlation_with_routine is not None
+
+
+class TestFormatPollReport:
+    def test_report_contains_panel_models(self):
+        result = PollResult(
+            panel_models=["model_a", "model_b"],
+            scores=[],
+        )
+        report = format_poll_report(result)
+        assert "model_a" in report
+        assert "model_b" in report
+```
+
+### Step 7: Run tests to verify failure
+
+### Step 8: Cherry-pick poll module
+
+```bash
+git show origin/fix/unit-12-dataset-integration:agent-evals/src/agent_evals/judge/poll.py > \
+    agent-evals/src/agent_evals/judge/poll.py
+```
+
+### Step 9: Run tests, verify pass
+
+### Step 10: Run full test suite
+
+### Step 11: Commit
+
+```bash
+git add agent-evals/src/agent_evals/judge/poll.py \
+       agent-evals/tests/test_judge_poll.py
+git commit -m "feat(judge): add PoLL panel evaluation with correlation validation"
+```
+
+---
+
+## Task 6: Wire Judge into Runner
+
+**Purpose:** Connect the judge module to the runner's existing `_call_judge()` stub so judge scores are captured on sampled trials.
+
+**Files:**
+- Modify: `agent-evals/src/agent_evals/runner.py`
+- Modify: `agent-evals/tests/test_runner.py`
+
+### Step 1: Write failing tests for judge integration
+
+**Append to or create:** `agent-evals/tests/test_runner_judge.py`
+
+```python
+"""Tests for runner judge integration."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from agent_evals.runner import EvalRunner, EvalRunConfig, TrialResult
+
+
+class TestRunnerJudgeIntegration:
+    def test_judge_score_stored_on_trial_result(self):
+        """When judge fires, its score appears in trial metrics."""
+        # This test depends on the exact runner integration
+        # Mock the judge to always return a score
+        pass  # Placeholder — fill in after verifying runner structure
+
+    def test_judge_sample_rate_controls_frequency(self):
+        """Judge is called approximately 1/N trials."""
+        pass
+
+    def test_judge_failure_does_not_crash_trial(self):
+        """If judge call fails, trial still completes with programmatic score."""
+        pass
+
+    def test_judge_score_not_in_composite(self):
+        """Judge score is stored but not factored into the composite score."""
+        pass
+```
+
+**Note:** The exact test implementation depends on what `_call_judge()` already looks like on main. The exploration found it at runner.py:702-724 with lazy imports. The tests need to:
+1. Verify the judge is called on the expected sample rate
+2. Verify the `JudgeScore` is stored in `TrialResult.metrics["judge_score"]`
+3. Verify failures are caught and logged, not propagated
+4. Verify the composite score ignores judge scores
+
+### Step 2: Verify current `_call_judge()` implementation
+
+```bash
+sed -n '700,730p' agent-evals/src/agent_evals/runner.py
+```
+
+### Step 3: Adapt runner integration
+
+Key changes needed in `runner.py`:
+1. Make `JUDGE_SAMPLE_RATE` configurable via `EvalRunConfig`
+2. Make `JUDGE_MODEL` configurable via `EvalRunConfig`
+3. Add `judge_enabled: bool = False` to `EvalRunConfig` (default off)
+4. In `_run_trial()`, after programmatic scoring, check if judge should fire
+5. Store `JudgeScore` in `TrialResult.metrics["judge"]` dict
+6. Wrap judge call in try/except — log warning on failure, never crash the trial
+
+### Step 4: Add judge config fields to EvalRunConfig
+
+```python
+# In EvalRunConfig dataclass:
+judge_enabled: bool = False
+judge_sample_rate: int = 20  # 1 in N trials
+judge_model: str = "openrouter/openai/gpt-5-mini"
+judge_mode: str = "routine"  # or "poll"
+```
+
+### Step 5: Run full test suite, verify pass
+
+### Step 6: Commit
+
+```bash
+git commit -m "feat(runner): wire judge module into trial execution with configurable sampling"
+```
+
+---
+
+## Task 7: Recommendations Report Layer
+
+**Purpose:** Add a plain-language recommendations section to existing Taguchi reports that documentation authors can act on.
+
+**Files:**
+- Create: `agent-evals/src/agent_evals/reports/recommendations.py`
+- Create: `agent-evals/tests/test_recommendations.py`
+- Modify: `agent-evals/src/agent_evals/reports/__init__.py` (if it exists)
+
+### Step 1: Write failing tests
+
+**File:** `agent-evals/tests/test_recommendations.py`
+
+```python
+"""Tests for plain-language recommendation generation."""
+
+from __future__ import annotations
+
+import pytest
+
+from agent_evals.reports.recommendations import (
+    Finding,
+    StrategyBreakdown,
+    generate_findings,
+    render_findings_text,
+)
+
+
+class TestGenerateFindings:
+    def test_generates_finding_per_significant_factor(self):
+        """One Finding object per factor with p < alpha."""
+        # Mock ANOVA results with 3 significant factors
+        anova_results = {
+            "axis_1_structure": {"p_value": 0.001, "significant": True},
+            "axis_2_metadata": {"p_value": 0.02, "significant": True},
+            "axis_3_format": {"p_value": 0.5, "significant": False},
+        }
+        main_effects = {
+            "axis_1_structure": {
+                "flat": 65.0, "2-tier": 82.0, "3-tier": 78.0,
+            },
+            "axis_2_metadata": {
+                "path-only": 70.0, "with-summary": 80.0,
+            },
+            "axis_3_format": {
+                "markdown": 75.0, "yaml": 74.0,
+            },
+        }
+        findings = generate_findings(anova_results, main_effects)
+        # Only significant factors produce findings
+        assert len(findings) == 2
+        assert findings[0].factor_name == "axis_1_structure"
+        assert findings[0].best_level == "2-tier"
+        assert findings[0].worst_level == "flat"
+
+    def test_finding_includes_effect_size(self):
+        anova_results = {
+            "axis_1_structure": {"p_value": 0.001, "significant": True},
+        }
+        main_effects = {
+            "axis_1_structure": {"flat": 65.0, "2-tier": 82.0},
+        }
+        findings = generate_findings(anova_results, main_effects)
+        assert findings[0].effect_size == pytest.approx(17.0)
+
+    def test_no_significant_factors_returns_empty(self):
+        anova_results = {
+            "axis_1": {"p_value": 0.5, "significant": False},
+        }
+        main_effects = {"axis_1": {"flat": 75.0, "2-tier": 76.0}}
+        findings = generate_findings(anova_results, main_effects)
+        assert len(findings) == 0
+
+
+class TestRenderFindingsText:
+    def test_renders_human_readable_output(self):
+        findings = [
+            Finding(
+                factor_name="axis_1_structure",
+                best_level="2-tier",
+                worst_level="flat",
+                effect_size=17.0,
+                p_value=0.001,
+                confidence_interval=(12.0, 22.0),
+                strategy_breakdowns=[],
+            ),
+        ]
+        text = render_findings_text(findings)
+        assert "2-tier" in text
+        assert "flat" in text
+        assert "17.0" in text
+
+    def test_includes_strategy_breakdown_when_present(self):
+        findings = [
+            Finding(
+                factor_name="axis_1_structure",
+                best_level="2-tier",
+                worst_level="flat",
+                effect_size=17.0,
+                p_value=0.001,
+                confidence_interval=(12.0, 22.0),
+                strategy_breakdowns=[
+                    StrategyBreakdown("full_context", "2-tier", 14.1),
+                    StrategyBreakdown("rag", "3-tier", 9.2),
+                ],
+            ),
+        ]
+        text = render_findings_text(findings)
+        assert "full_context" in text
+        assert "rag" in text
+        assert "3-tier" in text  # RAG disagrees
+```
+
+### Step 2: Run tests to verify failure
+
+### Step 3: Implement recommendations module
+
+**File:** `agent-evals/src/agent_evals/reports/recommendations.py`
+
+```python
+"""Generate plain-language recommendations from Taguchi analysis results."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class StrategyBreakdown:
+    """Per-strategy result for a single factor."""
+
+    strategy: str
+    best_level: str
+    effect_size: float
+
+
+@dataclass
+class Finding:
+    """A single actionable finding from Taguchi screening."""
+
+    factor_name: str
+    best_level: str
+    worst_level: str
+    effect_size: float
+    p_value: float
+    confidence_interval: tuple[float, float] | None = None
+    strategy_breakdowns: list[StrategyBreakdown] = field(
+        default_factory=list
+    )
+
+
+def generate_findings(
+    anova_results: dict,
+    main_effects: dict,
+    strategy_results: dict | None = None,
+) -> list[Finding]:
+    """Generate findings from Taguchi ANOVA and main effects.
+
+    Only produces findings for statistically significant factors.
+    """
+    findings = []
+    for factor, anova in anova_results.items():
+        if not anova.get("significant", False):
+            continue
+
+        effects = main_effects.get(factor, {})
+        if not effects:
+            continue
+
+        best_level = max(effects, key=effects.get)
+        worst_level = min(effects, key=effects.get)
+        effect_size = effects[best_level] - effects[worst_level]
+
+        breakdowns = []
+        if strategy_results and factor in strategy_results:
+            for strategy, strat_effects in strategy_results[factor].items():
+                strat_best = max(strat_effects, key=strat_effects.get)
+                strat_effect = (
+                    strat_effects[strat_best]
+                    - strat_effects[min(strat_effects, key=strat_effects.get)]
+                )
+                breakdowns.append(
+                    StrategyBreakdown(strategy, strat_best, strat_effect)
+                )
+
+        findings.append(
+            Finding(
+                factor_name=factor,
+                best_level=best_level,
+                worst_level=worst_level,
+                effect_size=effect_size,
+                p_value=anova["p_value"],
+                strategy_breakdowns=breakdowns,
+            )
+        )
+
+    return sorted(findings, key=lambda f: f.effect_size, reverse=True)
+
+
+def render_findings_text(findings: list[Finding]) -> str:
+    """Render findings as plain-language text for documentation authors."""
+    if not findings:
+        return "No statistically significant findings."
+
+    sections = []
+    for i, f in enumerate(findings, 1):
+        lines = [
+            f"FINDING {i}: {_humanize_factor(f.factor_name)}",
+            f"  Best:  {f.best_level}",
+            f"  Worst: {f.worst_level}",
+            f"  Effect size: +{f.effect_size:.1f} points",
+        ]
+        if f.confidence_interval:
+            lo, hi = f.confidence_interval
+            lines.append(f"  95% CI: [{lo:.1f}, {hi:.1f}]")
+        lines.append(f"  p-value: {f.p_value:.4f}")
+
+        if f.strategy_breakdowns:
+            lines.append("")
+            strategies_agree = len(
+                {b.best_level for b in f.strategy_breakdowns}
+            ) == 1
+            lines.append(
+                f"  Consistent across strategies: "
+                f"{'yes' if strategies_agree else 'NO — strategies disagree'}"
+            )
+            for b in f.strategy_breakdowns:
+                marker = " <-" if b.best_level != f.best_level else ""
+                lines.append(
+                    f"    {b.strategy:20s} {b.best_level} "
+                    f"(+{b.effect_size:.1f} pts){marker}"
+                )
+
+        sections.append("\n".join(lines))
+
+    return "\n\n".join(sections)
+
+
+def _humanize_factor(factor_name: str) -> str:
+    """Convert axis_1_structure to 'Documentation structure'."""
+    mapping = {
+        "axis_1_structure": "Documentation hierarchy depth",
+        "axis_2_metadata": "Metadata richness",
+        "axis_3_format": "Serialization format",
+        "axis_4_position": "Content positioning",
+        "axis_5_scale": "Documentation scale",
+        "axis_6_granularity": "Chunk granularity",
+        "axis_7_noise": "Noise tolerance",
+        "axis_8_xref": "Cross-references",
+        "axis_9_transform": "Documentation transformation",
+        "axis_10_temporal": "Temporal metadata",
+    }
+    return mapping.get(factor_name, factor_name.replace("_", " ").title())
+```
+
+### Step 4: Run tests, verify pass
+
+### Step 5: Run full test suite
+
+### Step 6: Commit
+
+```bash
+git add agent-evals/src/agent_evals/reports/recommendations.py \
+       agent-evals/tests/test_recommendations.py
+git commit -m "feat(reports): add plain-language recommendations from Taguchi findings"
+```
+
+---
+
+## Task 8: Integration Tests
+
+**Purpose:** Verify the full pipeline works end-to-end: dataset → tasks → variants → strategies → scoring → judge → report.
+
+**Files:**
+- Create: `agent-evals/tests/test_integration_phase_a.py`
+
+### Step 1: Write integration test
+
+```python
+"""Phase A integration tests — dataset → strategy → judge → report."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from agent_evals.context.registry import get_strategy_by_name
+from agent_evals.datasets import get_adapter, load_all as load_all_datasets
+from agent_evals.datasets.source import load_from_source
+from agent_evals.fixtures import load_sample_doc_tree
+from agent_evals.judge.calibrator import build_judge_prompt, parse_judge_response
+from agent_evals.reports.recommendations import Finding, generate_findings
+from agent_evals.runner import EvalRunConfig, EvalRunner
+from agent_evals.variants.registry import load_all as load_all_variants
+
+
+class TestDatasetRegistryIntegration:
+    def test_all_9_adapters_register(self):
+        load_all_datasets()
+        from agent_evals.datasets import list_available
+        available = list_available()
+        assert len(available) >= 9
+        names = {a["name"] for a in available}
+        expected = {
+            "repliqa", "ibm-techqa", "code-rag-bench", "ds1000",
+            "swe-bench", "multihop-rag", "ambigqa", "bigcodebench",
+            "wikicontradict",
+        }
+        assert expected.issubset(names), f"Missing: {expected - names}"
+
+
+class TestSourceRoutingIntegration:
+    def test_gold_standard_returns_none(self):
+        result = load_from_source("gold_standard")
+        assert result is None
+
+    def test_unknown_source_raises(self):
+        with pytest.raises(KeyError):
+            load_from_source("nonexistent_dataset_xyz")
+
+
+class TestJudgePromptIntegration:
+    def test_judge_prompt_for_all_task_types(self):
+        """Judge can build prompts for every task type in the system."""
+        from agent_evals.tasks.base import load_all_task_types
+        load_all_task_types()
+        from agent_evals.tasks.base import TASK_TYPES
+        for task_type in TASK_TYPES:
+            messages = build_judge_prompt(task_type, "Test question", "Test response")
+            assert len(messages) == 2
+            assert messages[0]["role"] == "system"
+
+
+class TestRecommendationsIntegration:
+    def test_generate_and_render_findings(self):
+        """Full pipeline: ANOVA results → findings → text output."""
+        anova = {
+            "axis_1_structure": {"p_value": 0.001, "significant": True},
+            "axis_5_scale": {"p_value": 0.03, "significant": True},
+            "axis_7_noise": {"p_value": 0.8, "significant": False},
+        }
+        effects = {
+            "axis_1_structure": {"flat": 65.0, "2-tier": 82.0, "3-tier": 78.0},
+            "axis_5_scale": {"5pct": 55.0, "50pct": 78.0, "100pct": 80.0},
+            "axis_7_noise": {"clean": 76.0, "25pct": 74.0},
+        }
+        findings = generate_findings(anova, effects)
+        assert len(findings) == 2
+
+        from agent_evals.reports.recommendations import render_findings_text
+        text = render_findings_text(findings)
+        assert "2-tier" in text
+        assert "Documentation hierarchy" in text
+        assert "noise" not in text.lower()  # Not significant
+```
+
+### Step 2: Run integration tests
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_integration_phase_a.py -v
+```
+
+### Step 3: Run full test suite with coverage
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/ --cov=agent_evals --cov-report=term-missing -v 2>&1 | tail -30
+```
+
+Verify: 80%+ coverage overall. Zero failures.
+
+### Step 4: Commit
+
+```bash
+git add agent-evals/tests/test_integration_phase_a.py
+git commit -m "test: add Phase A integration tests for dataset-judge-report pipeline"
+```
+
+---
+
+## Task 9: Final Verification and Cleanup
+
+### Step 1: Run full test suite
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short
+```
+
+### Step 2: Run linting
+
+```bash
+~/.local/bin/uv run ruff check agent-evals/src/agent_evals/datasets/ agent-evals/src/agent_evals/judge/ agent-evals/src/agent_evals/reports/recommendations.py
+```
+
+### Step 3: Run type checking
+
+```bash
+~/.local/bin/uv run mypy agent-evals/src/agent_evals/datasets/ agent-evals/src/agent_evals/judge/ agent-evals/src/agent_evals/reports/recommendations.py
+```
+
+### Step 4: Verify no regressions in existing tests
+
+Compare test count against Task 0 baseline. Must be strictly greater (new tests added) with zero failures.
+
+### Step 5: Commit and tag
+
+```bash
+git commit --allow-empty -m "chore: Phase A implementation complete — all tests passing"
+```
+
+---
+
+## Summary
+
+| Task | What | Tests | Commits |
+|------|------|-------|---------|
+| 0 | Verify current state | — | — |
+| 1 | Dataset infrastructure (ABC, cache, HF utils, registry) | ~20 tests | 4 commits |
+| 2 | RepLiQA adapter (template) | ~6 tests | 1 commit |
+| 3 | 8 remaining adapters | ~48 tests (6 per adapter) | 8 commits |
+| 4 | Source routing | ~5 tests | 1 commit |
+| 5 | Judge module (calibrator + PoLL) | ~25 tests | 2 commits |
+| 6 | Wire judge into runner | ~4 tests | 1 commit |
+| 7 | Recommendations report | ~6 tests | 1 commit |
+| 8 | Integration tests | ~5 tests | 1 commit |
+| 9 | Final verification | — | 1 commit |
+| **Total** | | **~119 tests** | **~20 commits** |
