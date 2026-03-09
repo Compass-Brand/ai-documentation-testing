@@ -9,12 +9,12 @@ from dataclasses import dataclass
 class CostEfficiencyRow:
     """A single variant's cost-efficiency profile."""
 
-    variant: str
+    variant_name: str
     accuracy: float
-    cost: float
-    stability: float
+    cost_per_trial: float
+    variance: float
     cache_hit_rate: float = 0.0
-    pareto: bool = False
+    is_pareto_optimal: bool = False
     strategy: str | None = None
 
 
@@ -42,16 +42,16 @@ def compute_pareto_frontier(
                 continue
             if (
                 other.accuracy >= candidate.accuracy
-                and other.cost <= candidate.cost
+                and other.cost_per_trial <= candidate.cost_per_trial
                 and (
                     other.accuracy > candidate.accuracy
-                    or other.cost < candidate.cost
+                    or other.cost_per_trial < candidate.cost_per_trial
                 )
             ):
                 dominated = True
                 break
         if not dominated:
-            candidate.pareto = True
+            candidate.is_pareto_optimal = True
             frontier.append(candidate)
 
     return frontier
@@ -72,11 +72,11 @@ def _render_single_table(rows: list[CostEfficiencyRow]) -> str:
     lines = [header, sep]
 
     for r in sorted_rows:
-        status = "Pareto optimal" if r.pareto else ""
+        status = "Pareto optimal" if r.is_pareto_optimal else ""
         lines.append(
-            f"{r.variant:<25s} {r.accuracy:>9.1f}% "
-            f"${r.cost:>10.4f} {r.cache_hit_rate:>9.0f}% "
-            f"{r.stability:>9.1f}% {status:>16s}"
+            f"{r.variant_name:<25s} {r.accuracy:>9.1f}% "
+            f"${r.cost_per_trial:>10.4f} {r.cache_hit_rate:>9.0f}% "
+            f"{r.variance:>9.1f}% {status:>16s}"
         )
 
     return "\n".join(lines)

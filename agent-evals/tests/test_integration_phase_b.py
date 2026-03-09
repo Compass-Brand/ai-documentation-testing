@@ -54,13 +54,13 @@ class TestMetricsPipelineIntegration:
         from agent_evals.reports.cost_efficiency import CostEfficiencyRow
 
         row = CostEfficiencyRow(
-            variant="2-tier-md",
+            variant_name="2-tier-md",
             accuracy=stability.mean * 100,
-            cost=0.004,
-            stability=stability.coefficient_of_variation * 100,
+            cost_per_trial=0.004,
+            variance=stability.coefficient_of_variation * 100,
         )
         assert row.accuracy > 0
-        assert row.stability < 10  # Low CV = stable
+        assert row.variance < 10  # Low CV = stable
 
     def test_pareto_and_render_pipeline(self):
         """Full pipeline: metrics → Pareto → rendered table."""
