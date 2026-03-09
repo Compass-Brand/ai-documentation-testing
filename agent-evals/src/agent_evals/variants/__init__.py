@@ -1,6 +1,7 @@
 """Variant system for index format experimentation.
 
 Public API:
+    - ``PipelineRole`` -- Enum for composite pipeline roles.
     - ``VariantMetadata`` -- Pydantic model describing a variant.
     - ``IndexVariant`` -- ABC that all variants must subclass.
     - ``register_variant`` -- Register a variant class (also usable as decorator).
@@ -9,7 +10,7 @@ Public API:
     - ``load_all`` -- Auto-discover variant modules via pkgutil.
 """
 
-from agent_evals.variants.base import IndexVariant, VariantMetadata
+from agent_evals.variants.base import IndexVariant, PipelineRole, VariantMetadata
 from agent_evals.variants.registry import (
     clear_registry,
     get_all_variants,
@@ -20,6 +21,7 @@ from agent_evals.variants.registry import (
 
 __all__ = [
     "IndexVariant",
+    "PipelineRole",
     "VariantMetadata",
     "clear_registry",
     "get_all_variants",

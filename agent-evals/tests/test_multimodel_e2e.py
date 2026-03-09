@@ -362,15 +362,16 @@ class TestObservatoryMultiModelTracking:
 class TestCompositeVariantMultiModel:
     """CompositeVariant works correctly in multi-model context."""
 
-    def test_composite_renders_all_axes(self):
+    def test_composite_renders_primary_axis(self):
+        """Pipeline renders one primary (lowest axis), not all."""
         v0 = StubVariant("flat", 0)
         v1 = StubVariant("alpha", 1)
         composite = CompositeVariant({0: v0, 1: v1})
 
         doc_tree = MagicMock()
         output = composite.render(doc_tree)
+        # Only the lowest-axis primary renders
         assert "[flat]" in output
-        assert "[alpha]" in output
 
     def test_composite_metadata_combines_names(self):
         v0 = StubVariant("flat", 0)
