@@ -1008,3 +1008,157 @@ class TestToolCallContentNone:
 
         assert mock_litellm.completion.call_count == 2
         assert result.retry_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Extended OpenRouter metadata fields (Phase B Task 1)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerationResultExtendedMetadata:
+    def test_cached_tokens_field_exists(self):
+        result = GenerationResult(
+            content="test",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=0.01,
+            model="test-model",
+            generation_id="gen-123",
+            cached_tokens=80,
+        )
+        assert result.cached_tokens == 80
+
+    def test_cached_tokens_defaults_to_zero(self):
+        result = GenerationResult(
+            content="test",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=None,
+            model="test-model",
+            generation_id=None,
+        )
+        assert result.cached_tokens == 0
+
+    def test_reasoning_tokens_field_exists(self):
+        result = GenerationResult(
+            content="test",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=None,
+            model="test-model",
+            generation_id=None,
+            reasoning_tokens=20,
+        )
+        assert result.reasoning_tokens == 20
+
+    def test_cache_write_tokens_field_exists(self):
+        result = GenerationResult(
+            content="test",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=None,
+            model="test-model",
+            generation_id=None,
+            cache_write_tokens=100,
+        )
+        assert result.cache_write_tokens == 100
+
+    def test_provider_field_exists(self):
+        result = GenerationResult(
+            content="test",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=None,
+            model="test-model",
+            generation_id=None,
+            provider="Anthropic",
+        )
+        assert result.provider == "Anthropic"
+
+
+class TestClientStreamingDisabled:
+    def test_client_uses_non_streaming(self):
+        """LLMClient must use stream=False to avoid LiteLLM cost bug #16021."""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test"
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.id = "gen-test"
+        mock_response.model = "test-model"
+        mock_response.provider = None
+        mock_response.usage.prompt_tokens = 10
+        mock_response.usage.completion_tokens = 5
+        mock_response.usage.total_tokens = 15
+        mock_response.usage.prompt_tokens_details = None
+        mock_response.usage.completion_tokens_details = None
+        mock_response._hidden_params = {"response_cost": 0.001}
+
+        with patch("agent_evals.llm.client.litellm") as mock_litellm:
+            mock_litellm.completion.return_value = mock_response
+            client = LLMClient(model="test", api_key="fake")
+            client.complete([{"role": "user", "content": "hi"}])
+
+            call_kwargs = mock_litellm.completion.call_args
+            assert call_kwargs.kwargs.get("stream") is False, \
+                "LLMClient MUST pass stream=False to litellm.completion (see LiteLLM issue #16021)"
+
+
+class TestExtendedMetadataExtraction:
+    def test_extracts_cached_tokens_from_response(self):
+        """LLMClient extracts prompt_tokens_details.cached_tokens."""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test response"
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.id = "gen-test"
+        mock_response.model = "test-model"
+        mock_response.provider = "Anthropic"
+
+        mock_response.usage.prompt_tokens = 100
+        mock_response.usage.completion_tokens = 50
+        mock_response.usage.total_tokens = 150
+        mock_response.usage.prompt_tokens_details.cached_tokens = 80
+        mock_response.usage.prompt_tokens_details.cache_write_tokens = 20
+        mock_response.usage.completion_tokens_details.reasoning_tokens = 10
+
+        mock_response._hidden_params = {"response_cost": 0.005}
+
+        with patch("agent_evals.llm.client.litellm") as mock_litellm:
+            mock_litellm.completion.return_value = mock_response
+            client = LLMClient(model="test", api_key="fake")
+            result = client.complete([{"role": "user", "content": "hi"}])
+
+            assert result.cached_tokens == 80
+            assert result.cache_write_tokens == 20
+            assert result.reasoning_tokens == 10
+            assert result.provider == "Anthropic"
+
+    def test_handles_missing_token_details_gracefully(self):
+        """When prompt_tokens_details is None, defaults to 0."""
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "test"
+        mock_response.choices[0].message.tool_calls = None
+        mock_response.id = "gen-test"
+        mock_response.model = "test-model"
+        mock_response.provider = None
+        mock_response.usage.prompt_tokens = 100
+        mock_response.usage.completion_tokens = 50
+        mock_response.usage.total_tokens = 150
+        mock_response.usage.prompt_tokens_details = None
+        mock_response.usage.completion_tokens_details = None
+        mock_response._hidden_params = {"response_cost": 0.001}
+
+        with patch("agent_evals.llm.client.litellm") as mock_litellm:
+            mock_litellm.completion.return_value = mock_response
+            client = LLMClient(model="test", api_key="fake")
+            result = client.complete([{"role": "user", "content": "hi"}])
+
+            assert result.cached_tokens == 0
+            assert result.cache_write_tokens == 0
+            assert result.reasoning_tokens == 0

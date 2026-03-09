@@ -40,6 +40,10 @@ class GenerationResult:
     retry_count: int = 0
     total_api_ms: float = 0.0
     tool_calls: list | None = None
+    cached_tokens: int = 0
+    cache_write_tokens: int = 0
+    reasoning_tokens: int = 0
+    provider: str | None = None
 
 
 class LLMClientError(Exception):
@@ -105,6 +109,7 @@ class LLMClient:
             "messages": messages,
             "temperature": self.temperature,
             "timeout": self.REQUEST_TIMEOUT,
+            "stream": False,  # MUST be False — LiteLLM streaming cost bug #16021
             **kwargs,
         }
 
@@ -220,6 +225,25 @@ class LLMClient:
                 for tc in response_tool_calls
             ]
 
+        # Extract extended OpenRouter metadata
+        usage = getattr(response, "usage", None)
+        cached_tokens = 0
+        cache_write_tokens = 0
+        reasoning_tokens = 0
+
+        if usage:
+            prompt_details = getattr(usage, "prompt_tokens_details", None)
+            if prompt_details:
+                cached_tokens = getattr(prompt_details, "cached_tokens", 0) or 0
+                cache_write_tokens = getattr(prompt_details, "cache_write_tokens", 0) or 0
+
+            completion_details = getattr(usage, "completion_tokens_details", None)
+            if completion_details:
+                reasoning_tokens = getattr(completion_details, "reasoning_tokens", 0) or 0
+
+        # Extract provider from response (OpenRouter includes this)
+        provider = getattr(response, "provider", None)
+
         return GenerationResult(
             content=response.choices[0].message.content or "",
             prompt_tokens=response.usage.prompt_tokens,
@@ -232,4 +256,8 @@ class LLMClient:
             retry_count=retry_count,
             total_api_ms=total_api_ms,
             tool_calls=serialized_tool_calls,
+            cached_tokens=cached_tokens,
+            cache_write_tokens=cache_write_tokens,
+            reasoning_tokens=reasoning_tokens,
+            provider=provider,
         )
