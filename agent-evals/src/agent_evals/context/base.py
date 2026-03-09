@@ -90,3 +90,4 @@ class StrategyConfig:
     rag_top_k: int = 5
     embedding_model: str = "text-embedding-3-small"
     max_turns: int = 10
+    compression_method: str = "algorithmic"
