@@ -151,15 +151,16 @@ class TestCompositeVariantMetadata:
 
 
 class TestCompositeVariantRender:
-    """Verify render delegates and combines output."""
+    """Verify render uses pipeline: one primary renders, not all."""
 
-    def test_output_contains_all_components(
+    def test_primary_component_output_present(
         self, stub_a: StubVariant, stub_b: StubVariant, doc_tree: MagicMock
     ) -> None:
+        """With multiple PRIMARY components, the lowest-axis one renders."""
         composite = CompositeVariant(components={1: stub_a, 2: stub_b})
         output = composite.render(doc_tree)
+        # Lowest axis (1) is the primary renderer
         assert "STRUCTURE_OUTPUT" in output
-        assert "METADATA_OUTPUT" in output
 
     def test_output_is_nonempty(
         self, stub_a: StubVariant, doc_tree: MagicMock
@@ -168,20 +169,19 @@ class TestCompositeVariantRender:
         output = composite.render(doc_tree)
         assert len(output) > 0
 
-    def test_render_applies_in_axis_order(
+    def test_single_primary_renders_not_all(
         self, doc_tree: MagicMock
     ) -> None:
-        """Components should render in ascending axis order."""
+        """Only one primary component renders to avoid prompt inflation."""
         v7 = StubVariant(name="yaml", axis=7, output="SEVEN")
         v2 = StubVariant(name="summary", axis=2, output="TWO")
         v5 = StubVariant(name="medium", axis=5, output="FIVE")
-        # Insert out of order to verify sorting
         composite = CompositeVariant(components={7: v7, 2: v2, 5: v5})
         output = composite.render(doc_tree)
-        pos_two = output.index("TWO")
-        pos_five = output.index("FIVE")
-        pos_seven = output.index("SEVEN")
-        assert pos_two < pos_five < pos_seven
+        # Only the lowest axis (2) renders as primary
+        assert "TWO" in output
+        # Others do NOT concatenate their full render
+        assert output.count("TWO") == 1
 
 
 # ---------------------------------------------------------------------------
