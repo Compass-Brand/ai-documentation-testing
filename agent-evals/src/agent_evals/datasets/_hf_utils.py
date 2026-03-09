@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from datasets import load_dataset
-
 
 def load_hf_dataset(
     dataset_id: str,
@@ -28,6 +26,8 @@ def load_hf_dataset(
     Returns:
         A HuggingFace Dataset object (or subset if limit is set).
     """
+    from datasets import load_dataset
+
     ds = load_dataset(dataset_id, split=split, trust_remote_code=False, **kwargs)
     if limit is not None:
         ds = ds.select(range(min(limit, len(ds))))

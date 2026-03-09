@@ -18,7 +18,7 @@ class TestLoadHFDataset:
         mock_ds = MagicMock()
         mock_ds.__len__ = lambda self: 100
 
-        with patch("agent_evals.datasets._hf_utils.load_dataset") as mock_load:
+        with patch("datasets.load_dataset") as mock_load:
             mock_load.return_value = mock_ds
             from agent_evals.datasets._hf_utils import load_hf_dataset
 
@@ -35,7 +35,7 @@ class TestLoadHFDataset:
         mock_ds.__len__ = lambda self: 1000
         mock_ds.select = MagicMock(return_value="subset")
 
-        with patch("agent_evals.datasets._hf_utils.load_dataset") as mock_load:
+        with patch("datasets.load_dataset") as mock_load:
             mock_load.return_value = mock_ds
             from agent_evals.datasets._hf_utils import load_hf_dataset
 
@@ -51,7 +51,7 @@ class TestLoadHFDataset:
         mock_ds.__len__ = lambda self: 10
         mock_ds.select = MagicMock(return_value="subset")
 
-        with patch("agent_evals.datasets._hf_utils.load_dataset") as mock_load:
+        with patch("datasets.load_dataset") as mock_load:
             mock_load.return_value = mock_ds
             from agent_evals.datasets._hf_utils import load_hf_dataset
 
@@ -66,7 +66,7 @@ class TestLoadHFDataset:
         mock_ds = MagicMock()
         mock_ds.__len__ = lambda self: 100
 
-        with patch("agent_evals.datasets._hf_utils.load_dataset") as mock_load:
+        with patch("datasets.load_dataset") as mock_load:
             mock_load.return_value = mock_ds
             from agent_evals.datasets._hf_utils import load_hf_dataset
 

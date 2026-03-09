@@ -440,7 +440,7 @@ class TestCalibrate:
             _make_judge(f"ex_{i}", score)
             for i, score in enumerate([0.1, 0.3, 0.5, 0.7, 0.9])
         ]
-        result = calibrate(golds, judges)
+        result = calibrate(golds, judges, min_examples_per_type=0)
         assert result.passed is True
         assert result.cohens_kappa == pytest.approx(1.0)
         assert result.spearman_rho == pytest.approx(1.0)
@@ -458,7 +458,7 @@ class TestCalibrate:
             _make_judge(f"ex_{i}", score)
             for i, score in enumerate([0.9, 0.7, 0.5, 0.3, 0.1])
         ]
-        result = calibrate(golds, judges)
+        result = calibrate(golds, judges, min_examples_per_type=0)
         assert result.passed is False
 
     def test_per_type_breakdown(self) -> None:
@@ -478,7 +478,7 @@ class TestCalibrate:
             _make_judge("c_1", 0.6),
             _make_judge("c_2", 0.95),
         ]
-        result = calibrate(golds, judges)
+        result = calibrate(golds, judges, min_examples_per_type=0)
         assert "retrieval" in result.per_type_kappa
         assert "code_generation" in result.per_type_kappa
         assert "retrieval" in result.per_type_spearman
@@ -507,7 +507,7 @@ class TestCalibrate:
             _make_judge("c_1", 0.5),
             _make_judge("c_2", 0.1),
         ]
-        result = calibrate(golds, judges_good + judges_bad)
+        result = calibrate(golds, judges_good + judges_bad, min_examples_per_type=0)
         assert "code_generation" in result.flagged_types
 
     def test_empty_gold_examples(self) -> None:
@@ -525,14 +525,14 @@ class TestCalibrate:
     def test_no_overlapping_ids(self) -> None:
         golds = [_make_gold("gold_0", "retrieval", 0.5)]
         judges = [_make_judge("judge_0", 0.5)]
-        result = calibrate(golds, judges)
+        result = calibrate(golds, judges, min_examples_per_type=0)
         assert result.total_examples == 0
         assert result.passed is False
 
     def test_judge_model_propagated(self) -> None:
         golds = [_make_gold("ex_0", "retrieval", 0.5)]
         judges = [_make_judge("ex_0", 0.5, model="claude-3-opus")]
-        result = calibrate(golds, judges)
+        result = calibrate(golds, judges, min_examples_per_type=0)
         assert result.judge_model == "claude-3-opus"
 
     def test_result_is_calibration_result(self) -> None:
@@ -543,7 +543,7 @@ class TestCalibrate:
         judges = [
             _make_judge(f"ex_{i}", s) for i, s in enumerate([0.1, 0.5, 0.9])
         ]
-        result = calibrate(golds, judges)
+        result = calibrate(golds, judges, min_examples_per_type=0)
         assert isinstance(result, CalibrationResult)
 
     def test_custom_thresholds(self) -> None:
@@ -557,12 +557,13 @@ class TestCalibrate:
             for i, score in enumerate([0.15, 0.35, 0.45, 0.75, 0.85])
         ]
         result = calibrate(
-            golds, judges, kappa_threshold=0.3, spearman_threshold=0.5
+            golds, judges, kappa_threshold=0.3, spearman_threshold=0.5,
+            min_examples_per_type=0,
         )
         assert result.passed is True
 
     def test_min_examples_per_type_raises_when_below_threshold(self) -> None:
-        """calibrate() rejects task types with fewer than min_examples_per_type."""
+        """calibrate() rejects task types with fewer than default min (30)."""
         # Only 3 examples for "retrieval" — below the default of 30
         golds = [
             _make_gold(f"ex_{i}", "retrieval", s)
@@ -571,8 +572,9 @@ class TestCalibrate:
         judges = [
             _make_judge(f"ex_{i}", s) for i, s in enumerate([0.1, 0.5, 0.9])
         ]
+        # Default min_examples_per_type=30 should reject this
         with pytest.raises(ValueError, match="retrieval.*3.*30"):
-            calibrate(golds, judges, min_examples_per_type=30)
+            calibrate(golds, judges)
 
     def test_min_examples_per_type_zero_disables_check(self) -> None:
         """Setting min_examples_per_type=0 skips the validation."""
@@ -629,6 +631,6 @@ class TestCalibrate:
             _make_judge("ex_1", 0.5),
             _make_judge("ex_2", 0.8),
         ]
-        result = calibrate(golds, judges)
+        result = calibrate(golds, judges, min_examples_per_type=0)
         # MAE = (0.1 + 0.0 + 0.2) / 3 = 0.1
         assert result.mean_absolute_error == pytest.approx(0.1)

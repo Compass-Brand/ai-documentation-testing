@@ -395,7 +395,7 @@ def calibrate(
     judge_scores: list[JudgeScore],
     kappa_threshold: float = 0.70,
     spearman_threshold: float = 0.80,
-    min_examples_per_type: int = 0,
+    min_examples_per_type: int = 30,
 ) -> CalibrationResult:
     """Calibrate judge scores against gold standard.
 
@@ -414,8 +414,8 @@ def calibrate(
         Minimum Spearman rho for a task type to pass.
     min_examples_per_type:
         Minimum number of gold examples required per task type.
-        Set to 0 to disable the check (default). The design target
-        is 30 examples per task type.
+        Set to 0 to disable the check. Default is 30 per the
+        design target.
 
     Returns
     -------
