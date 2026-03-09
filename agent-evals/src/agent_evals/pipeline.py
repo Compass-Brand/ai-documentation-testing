@@ -100,6 +100,26 @@ class DOEPipeline:
         self._pipeline_id = pipeline_id or uuid4().hex[:12]
         self._store = orchestrator.store
 
+    @staticmethod
+    def _resolve_factor_axes(
+        variants: list[Any],
+        factor_names: list[str],
+    ) -> set[int]:
+        """Map Taguchi factor names back to variant axis numbers.
+
+        Factor names follow the convention ``axis_{N}`` where *N* is
+        the integer axis number from variant metadata.  Returns the
+        set of axis ints that correspond to *factor_names*.
+        """
+        axes: set[int] = set()
+        for name in factor_names:
+            if name.startswith("axis_"):
+                try:
+                    axes.add(int(name.split("_", 1)[1]))
+                except ValueError:
+                    pass
+        return axes
+
     def run_screening(
         self,
         tasks: list[Any],
@@ -216,13 +236,29 @@ class DOEPipeline:
                 self.config.confirmation_reps
             )
 
-        # Build variant lookup
-        variant_lookup = {v.metadata().name: v for v in variants}
+        # Filter variants to only the optimal config from screening
+        optimal_names = set(
+            (screening_result.optimal or {}).values()
+        )
+        filtered_variants = [
+            v for v in variants if v.metadata().name in optimal_names
+        ]
+        if not filtered_variants:
+            logger.warning(
+                "No variants matched optimal config %s; using all",
+                screening_result.optimal,
+            )
+            filtered_variants = variants
+
+        # Build variant lookup from filtered set
+        variant_lookup = {
+            v.metadata().name: v for v in filtered_variants
+        }
 
         # Run optimal config trials via orchestrator (full mode, not Taguchi)
         result = self._orchestrator.run(
             tasks,
-            variants,
+            filtered_variants,
             doc_tree,
             variant_lookup=variant_lookup,
             phase="confirmation",
@@ -283,13 +319,30 @@ class DOEPipeline:
                 self.config.refinement_reps
             )
 
-        # Build variant lookup
-        variant_lookup = {v.metadata().name: v for v in variants}
+        # Filter variants to top-K significant factors from screening
+        top_k_factors = (
+            screening_result.significant_factors[: self.config.top_k]
+        )
+        top_k_axes = self._resolve_factor_axes(variants, top_k_factors)
+        filtered_variants = [
+            v for v in variants if v.metadata().axis in top_k_axes
+        ]
+        if not filtered_variants:
+            logger.warning(
+                "No variants matched top-K factors %s; using all",
+                top_k_factors,
+            )
+            filtered_variants = variants
+
+        # Build variant lookup from filtered set
+        variant_lookup = {
+            v.metadata().name: v for v in filtered_variants
+        }
 
         # Run trials via orchestrator (full mode, not Taguchi)
         result = self._orchestrator.run(
             tasks,
-            variants,
+            filtered_variants,
             doc_tree,
             variant_lookup=variant_lookup,
             phase="refinement",

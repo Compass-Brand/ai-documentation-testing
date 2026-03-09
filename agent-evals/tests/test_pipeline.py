@@ -326,6 +326,48 @@ def test_pipeline_confirmation_returns_phase_result():
     assert result.confirmation["within_interval"] is True
 
 
+def test_pipeline_confirmation_filters_to_optimal_variants():
+    """Bug #96: Confirmation must only pass optimal variants to orchestrator."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator(score=0.7)
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    # Screening says axis_1="axis1_a" and axis_2="axis2_b" are optimal
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "axis1_a", "axis_2": "axis2_b"},
+        significant_factors=["axis_1", "axis_2"],
+    )
+
+    all_variants = _make_variants()  # 5 axes * 3 levels = 15 variants
+
+    with patch("agent_evals.pipeline.validate_confirmation") as mock_val:
+        mock_val.return_value = MagicMock(
+            within_interval=True,
+            sigma_deviation=0.3,
+            observed_sn=11.5,
+            predicted_sn=12.0,
+            prediction_interval=(10.0, 14.0),
+        )
+        pipeline.run_confirmation(
+            screening_result=screening,
+            tasks=[],
+            variants=all_variants,
+            doc_tree=MagicMock(),
+        )
+
+    # Orchestrator should receive ONLY the 2 optimal variants, not all 15
+    call_kwargs = orch.run.call_args
+    passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
+    variant_names = {v.metadata().name for v in passed_variants}
+    assert variant_names == {"axis1_a", "axis2_b"}, (
+        f"Expected only optimal variants {{'axis1_a', 'axis2_b'}}, "
+        f"got {variant_names}"
+    )
+
+
 def test_pipeline_confirmation_passes_mode_full():
     """Phase 2 passes mode='full' to orchestrator to avoid Taguchi design requirement."""
     config = PipelineConfig(models=["model-a"])
@@ -463,6 +505,62 @@ def test_pipeline_confirmation_uses_screening_predicted_sn():
 # ---------------------------------------------------------------------------
 
 
+def test_pipeline_refinement_filters_to_top_k_factor_variants():
+    """Bug #96: Refinement must only pass top-K factor variants to orchestrator."""
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    # axis_1 and axis_3 are top-2 significant factors
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "axis1_a", "axis_2": "axis2_b", "axis_3": "axis3_c"},
+        significant_factors=["axis_1", "axis_3", "axis_2"],
+        main_effects={
+            "axis_1": {"axis1_a": 12.0, "axis1_b": 10.0, "axis1_c": 8.0},
+            "axis_2": {"axis2_a": 9.0, "axis2_b": 11.0, "axis2_c": 10.0},
+            "axis_3": {"axis3_a": 8.5, "axis3_b": 10.5, "axis3_c": 11.5},
+        },
+    )
+
+    all_variants = _make_variants()  # 5 axes * 3 levels = 15 variants
+
+    with patch("agent_evals.pipeline.compute_sn_ratios"), \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred:
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(optimal_assignment={})
+        pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=all_variants,
+            doc_tree=MagicMock(),
+        )
+
+    # Orchestrator should receive only variants from top-2 factors (axis_1, axis_3)
+    call_kwargs = orch.run.call_args
+    passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
+    variant_names = {v.metadata().name for v in passed_variants}
+
+    # top_k=2 means axis_1 and axis_3 (sorted by significance)
+    expected_axes = {"axis_1", "axis_3"}
+    for vname in variant_names:
+        axis_prefix = "_".join(vname.split("_")[:1])  # e.g. "axis1"
+        factor_name = f"axis_{axis_prefix.replace('axis', '')}"
+        assert factor_name in expected_axes or vname in variant_names, (
+            f"Variant {vname} does not belong to top-K factors {expected_axes}"
+        )
+
+    # Should have 6 variants (3 levels * 2 axes), not all 15
+    assert len(passed_variants) == 6, (
+        f"Expected 6 variants for 2 top-K factors, got {len(passed_variants)}"
+    )
+
+
 def test_pipeline_refinement_returns_phase_result():
     """Phase 3 runs full factorial on top K factors."""
     config = PipelineConfig(models=["model-a"], top_k=2)
@@ -481,12 +579,20 @@ def test_pipeline_refinement_returns_phase_result():
             "axis_3": {"a": 8.5, "b": 10.5, "c": 11.5},
         },
     )
-    result = pipeline.run_refinement(
-        screening_result=screening,
-        tasks=[],
-        variants=_make_variants(),
-        doc_tree=MagicMock(),
-    )
+
+    with patch("agent_evals.pipeline.compute_sn_ratios"), \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred:
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(optimal_assignment={})
+        result = pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
 
     assert isinstance(result, PhaseResult)
     assert result.phase == "refinement"
