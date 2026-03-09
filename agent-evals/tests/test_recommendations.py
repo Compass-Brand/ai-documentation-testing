@@ -69,6 +69,40 @@ class TestGenerateFindings:
         findings = generate_findings(anova_results, main_effects)
         assert findings[0].effect_size > findings[1].effect_size
 
+    def test_confidence_interval_auto_computed_from_anova(self):
+        """generate_findings() auto-computes 95% CI when ANOVA has df and ms_error."""
+        anova_results = {
+            "axis_1_structure": {
+                "p_value": 0.001,
+                "significant": True,
+                "df": 2,
+                "ms_error": 25.0,
+                "n_per_level": 10,
+            },
+        }
+        main_effects = {
+            "axis_1_structure": {"flat": 65.0, "2-tier": 82.0, "3-tier": 78.0},
+        }
+        findings = generate_findings(anova_results, main_effects)
+        assert len(findings) == 1
+        assert findings[0].confidence_interval is not None
+        lo, hi = findings[0].confidence_interval
+        # CI should bracket the effect size (17.0)
+        assert lo < findings[0].effect_size
+        assert hi > findings[0].effect_size
+
+    def test_confidence_interval_none_when_anova_missing_fields(self):
+        """CI is None when ANOVA lacks df/ms_error/n_per_level."""
+        anova_results = {
+            "axis_1_structure": {"p_value": 0.001, "significant": True},
+        }
+        main_effects = {
+            "axis_1_structure": {"flat": 65.0, "2-tier": 82.0},
+        }
+        findings = generate_findings(anova_results, main_effects)
+        assert len(findings) == 1
+        assert findings[0].confidence_interval is None
+
     def test_missing_main_effects_skipped(self):
         anova_results = {
             "axis_1": {"p_value": 0.01, "significant": True},

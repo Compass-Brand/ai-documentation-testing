@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
+
+from scipy import stats  # type: ignore[import-untyped]
 
 
 @dataclass
@@ -29,6 +32,20 @@ class Finding:
     )
 
 
+def _compute_effect_ci(
+    effect_size: float,
+    ms_error: float,
+    n_per_level: int,
+    df_error: int,
+    alpha: float = 0.05,
+) -> tuple[float, float]:
+    """Compute 95% CI for a contrast (best - worst level mean)."""
+    se = math.sqrt(2.0 * ms_error / n_per_level)
+    t_crit = stats.t.ppf(1.0 - alpha / 2.0, df_error)
+    margin = t_crit * se
+    return (effect_size - margin, effect_size + margin)
+
+
 def generate_findings(
     anova_results: dict,
     main_effects: dict,
@@ -37,6 +54,9 @@ def generate_findings(
     """Generate findings from Taguchi ANOVA and main effects.
 
     Only produces findings for statistically significant factors.
+    When the ANOVA dict contains ``ms_error``, ``n_per_level``, and
+    ``df`` (or ``df_error``), a 95% confidence interval is computed
+    for the effect size.
     """
     findings = []
     for factor, anova in anova_results.items():
@@ -50,6 +70,14 @@ def generate_findings(
         best_level = max(effects, key=effects.get)
         worst_level = min(effects, key=effects.get)
         effect_size = effects[best_level] - effects[worst_level]
+
+        # Auto-compute 95% CI when ANOVA provides the needed fields
+        ci: tuple[float, float] | None = None
+        ms_error = anova.get("ms_error")
+        n_per_level = anova.get("n_per_level")
+        df_error = anova.get("df_error") or anova.get("df")
+        if ms_error is not None and n_per_level and df_error:
+            ci = _compute_effect_ci(effect_size, ms_error, n_per_level, df_error)
 
         breakdowns = []
         if strategy_results and factor in strategy_results:
@@ -70,6 +98,7 @@ def generate_findings(
                 worst_level=worst_level,
                 effect_size=effect_size,
                 p_value=anova["p_value"],
+                confidence_interval=ci,
                 strategy_breakdowns=breakdowns,
             )
         )

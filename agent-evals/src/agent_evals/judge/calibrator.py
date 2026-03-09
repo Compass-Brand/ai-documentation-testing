@@ -395,6 +395,7 @@ def calibrate(
     judge_scores: list[JudgeScore],
     kappa_threshold: float = 0.70,
     spearman_threshold: float = 0.80,
+    min_examples_per_type: int = 0,
 ) -> CalibrationResult:
     """Calibrate judge scores against gold standard.
 
@@ -411,11 +412,20 @@ def calibrate(
         Minimum Cohen's kappa for a task type to pass.
     spearman_threshold:
         Minimum Spearman rho for a task type to pass.
+    min_examples_per_type:
+        Minimum number of gold examples required per task type.
+        Set to 0 to disable the check (default). The design target
+        is 30 examples per task type.
 
     Returns
     -------
     CalibrationResult
         Aggregated calibration metrics with per-type breakdowns.
+
+    Raises
+    ------
+    ValueError
+        If any task type has fewer than *min_examples_per_type* examples.
     """
     if not gold_examples or not judge_scores:
         return CalibrationResult(
@@ -430,6 +440,19 @@ def calibrate(
             flagged_types=[],
             passed=False,
         )
+
+    # Validate minimum sample size per task type
+    if min_examples_per_type > 0:
+        from collections import Counter
+
+        type_counts = Counter(g.task_type for g in gold_examples)
+        for task_type, count in sorted(type_counts.items()):
+            if count < min_examples_per_type:
+                msg = (
+                    f"Task type '{task_type}' has only {count} gold examples, "
+                    f"but min_examples_per_type requires {min_examples_per_type}"
+                )
+                raise ValueError(msg)
 
     # Build lookup: example_id -> gold example
     gold_lookup: dict[str, GoldExample] = {g.example_id: g for g in gold_examples}

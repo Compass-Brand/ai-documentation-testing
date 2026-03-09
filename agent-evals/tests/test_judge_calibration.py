@@ -561,6 +561,63 @@ class TestCalibrate:
         )
         assert result.passed is True
 
+    def test_min_examples_per_type_raises_when_below_threshold(self) -> None:
+        """calibrate() rejects task types with fewer than min_examples_per_type."""
+        # Only 3 examples for "retrieval" — below the default of 30
+        golds = [
+            _make_gold(f"ex_{i}", "retrieval", s)
+            for i, s in enumerate([0.1, 0.5, 0.9])
+        ]
+        judges = [
+            _make_judge(f"ex_{i}", s) for i, s in enumerate([0.1, 0.5, 0.9])
+        ]
+        with pytest.raises(ValueError, match="retrieval.*3.*30"):
+            calibrate(golds, judges, min_examples_per_type=30)
+
+    def test_min_examples_per_type_zero_disables_check(self) -> None:
+        """Setting min_examples_per_type=0 skips the validation."""
+        golds = [
+            _make_gold(f"ex_{i}", "retrieval", s)
+            for i, s in enumerate([0.1, 0.5, 0.9])
+        ]
+        judges = [
+            _make_judge(f"ex_{i}", s) for i, s in enumerate([0.1, 0.5, 0.9])
+        ]
+        # Should NOT raise
+        result = calibrate(golds, judges, min_examples_per_type=0)
+        assert result.total_examples == 3
+
+    def test_min_examples_per_type_custom_value(self) -> None:
+        """Custom min_examples_per_type is respected."""
+        golds = [
+            _make_gold(f"ex_{i}", "retrieval", s)
+            for i, s in enumerate([0.1, 0.5, 0.9])
+        ]
+        judges = [
+            _make_judge(f"ex_{i}", s) for i, s in enumerate([0.1, 0.5, 0.9])
+        ]
+        # 3 examples meets min of 3
+        result = calibrate(golds, judges, min_examples_per_type=3)
+        assert result.total_examples == 3
+
+    def test_min_examples_per_type_reports_worst_type(self) -> None:
+        """Error message names the specific type that's under-represented."""
+        golds = [
+            _make_gold(f"r_{i}", "retrieval", s)
+            for i, s in enumerate([0.1, 0.5, 0.9])
+        ] + [
+            _make_gold(f"c_{i}", "code_generation", s)
+            for i, s in enumerate([0.2, 0.6])
+        ]
+        judges = [
+            _make_judge(f"r_{i}", s) for i, s in enumerate([0.1, 0.5, 0.9])
+        ] + [
+            _make_judge(f"c_{i}", s) for i, s in enumerate([0.2, 0.6])
+        ]
+        # code_generation has only 2, retrieval has 3 — both under 5
+        with pytest.raises(ValueError, match="code_generation.*2.*5"):
+            calibrate(golds, judges, min_examples_per_type=5)
+
     def test_mae_reflects_differences(self) -> None:
         golds = [
             _make_gold("ex_0", "retrieval", 0.0),
