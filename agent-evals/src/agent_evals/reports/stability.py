@@ -34,7 +34,7 @@ def compute_stability(
     """
     if exclude_fallbacks and cost_metrics_list is not None:
         filtered = [
-            (s, cm) for s, cm in zip(scores, cost_metrics_list)
+            (s, cm) for s, cm in zip(scores, cost_metrics_list, strict=False)
             if cm.provider_fallbacks == 0
         ]
         scores = [s for s, _ in filtered]

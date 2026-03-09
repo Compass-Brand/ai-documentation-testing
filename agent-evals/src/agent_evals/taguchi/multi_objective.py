@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from agent_evals.taguchi.analysis import (
-    ANOVAResult,
     compute_main_effects,
     compute_sn_ratios,
     run_anova,

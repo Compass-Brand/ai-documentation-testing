@@ -42,7 +42,7 @@ class SecurityChecker:
             matches = 0
             total_windows = max(1, len(doc) - window_size + 1)
 
-            for i in range(0, len(doc) - window_size + 1):
+            for i in range(len(doc) - window_size + 1):
                 chunk = doc[i : i + window_size]
                 if chunk in response:
                     matches += 1
@@ -122,10 +122,7 @@ class SecurityChecker:
         novel_numbers = response_numbers - source_numbers
 
         # If response introduces novel entities or numbers not in source
-        if novel_entities or novel_numbers:
-            return True
-
-        return False
+        return bool(novel_entities or novel_numbers)
 
     def run_all_checks(
         self,
