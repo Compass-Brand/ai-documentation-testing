@@ -575,6 +575,24 @@ git add agent-evals/src/agent_evals/datasets/__init__.py \
 git commit -m "feat(datasets): add adapter registry with auto-discovery"
 ```
 
+### Step 23: Write auto-discovery unit test
+
+**Append to:** `agent-evals/tests/test_dataset_infra.py`
+
+```python
+def test_load_all_discovers_all_adapters():
+    """pkgutil.iter_modules discovers and registers all adapter modules."""
+    from agent_evals.datasets import load_all, get_all_adapters
+    load_all()
+    adapters = get_all_adapters()
+    assert len(adapters) >= 9
+    names = {a.name() for a in adapters}
+    assert "repliqa" in names
+    assert "ibm-techqa" in names
+```
+
+> **Note:** This test will initially fail until adapters are implemented in Tasks 2-3. It serves as a forward-looking regression test to ensure `load_all()` auto-discovery continues to find all adapters as they are added.
+
 ---
 
 ## Task 2: First Dataset Adapter (RepLiQA)
@@ -893,6 +911,28 @@ Expected: 9 adapters listed.
 
 ```bash
 ~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -5
+```
+
+### Step: Per-adapter graceful degradation test
+
+Every adapter MUST pass this shared parametrized test. Add to `agent-evals/tests/test_dataset_infra.py`:
+
+```python
+@pytest.mark.parametrize("adapter_name", [
+    "repliqa", "ibm-techqa", "code-rag-bench", "ds1000",
+    "swe-bench", "multihop-rag", "ambigqa", "bigcodebench", "wikicontradict",
+])
+def test_adapter_handles_missing_fields_gracefully(adapter_name):
+    """Every adapter must produce DocFiles with tier and section populated,
+    even when source dataset fields are missing or None."""
+    from agent_evals.datasets import get_adapter
+    adapter = get_adapter(adapter_name)
+    doc_tree = adapter.build_doc_tree(limit=5)
+    for rel_path, doc_file in doc_tree.files.items():
+        assert doc_file.tier in ("required", "recommended", "reference"), \
+            f"{adapter_name}: {rel_path} has invalid tier '{doc_file.tier}'"
+        assert doc_file.section, f"{adapter_name}: {rel_path} has empty section"
+        assert doc_file.rel_path, f"{adapter_name}: {rel_path} has empty rel_path"
 ```
 
 ### Step: Commit integration check
@@ -1216,7 +1256,16 @@ class TestMixedSourceLoader:
 
         with pytest.raises(ValueError, match="at least 2"):
             parse_mixed_source_args("mixed", "repliqa")
+
+    def test_mixed_source_handles_imbalanced_adapters(self):
+        """When adapters produce different task counts, round-robin
+        continues until all adapters are exhausted. Short adapters
+        stop contributing but don't block longer ones."""
+        # adapter_a produces 3 tasks, adapter_b produces 10 tasks
+        # Result: 13 tasks total, round-robin wraps adapter_a
 ```
+
+> **Implementation note:** When an adapter's tasks are exhausted during round-robin, skip it and continue with remaining adapters until all are exhausted.
 
 ### Step 9: Run tests to verify failure
 
@@ -1570,6 +1619,14 @@ class TestCalibrate:
         ]
         with pytest.raises(ValueError, match="at least 30"):
             calibrate(gold, judge)
+
+    def test_calibrate_validates_per_task_type_minimum(self):
+        """Each task type must have >= 30 examples, not just total >= 30.
+        50 retrieval examples + 0 fact_extraction should fail."""
+        examples = [make_gold_example(task_type="retrieval") for _ in range(50)]
+        # All same task type — should fail because fact_extraction has 0
+        with pytest.raises(ValueError, match="per task type"):
+            calibrate(examples, min_per_type=30)
 ```
 
 **Implementation note for `calibrate()`:** Add a validation check at the top of the function that groups examples by task type and verifies each group has at least 30 examples:
@@ -1950,6 +2007,57 @@ class TestJudgeScoreExclusion:
         assert "judge" not in {
             k for k in trial.metrics if k != "judge"
         }  # judge key exists but is excluded from composite
+
+    def test_judge_score_never_affects_trial_score(self):
+        """Guard: trial.score is ALWAYS the programmatic score.
+        Judge score lives ONLY in trial.metrics['judge'].
+        This prevents accidental regression if scoring logic changes."""
+        # Run trial with judge enabled
+        # Verify trial.score == programmatic_score (not judge_score)
+        # Verify trial.metrics["judge"]["score"] == judge_score
+        # Verify they are independent values
+```
+
+**Implementation note:** Add the following guard comment in `runner.py` inside `_call_judge()`:
+
+```python
+# PHASE A GUARD: judge scores are validation-only. Do NOT modify trial.score
+# with judge results. See Phase B Task 9 for graduation.
+```
+
+### Step 6b: Wire PoLL mode into the runner
+
+Add an explicit implementation step showing how `--judge-mode poll` connects to the runner.
+
+**Modify:** `agent-evals/src/agent_evals/runner.py` — in `_call_judge()`:
+
+```python
+# In runner._call_judge():
+def _call_judge(self, task_type, question, response):
+    if self._config.judge_mode == "poll":
+        from agent_evals.judge.poll import run_poll, PollConfig
+        config = PollConfig(
+            models=self._config.poll_models or [
+                "openrouter/openai/gpt-5-mini",
+                "openrouter/anthropic/claude-haiku-4.5",
+                "openrouter/google/gemini-2.5-flash",
+            ],
+        )
+        return run_poll(config, task_type, question, response, self._client)
+    else:
+        # Routine mode: single model
+        messages = build_judge_prompt(task_type, question, response)
+        raw = self._client.complete(messages).content
+        score, rationale = parse_judge_response(raw)
+        return JudgeScore(score=score, rationale=rationale)
+```
+
+**Append test to:** `agent-evals/tests/test_runner_judge.py`
+
+```python
+class TestPollModeWiring:
+    def test_poll_mode_invokes_panel(self):
+        """When judge_mode='poll', runner calls run_poll with 3 models."""
 ```
 
 ### Step 7: Run full test suite, verify pass
@@ -2153,6 +2261,8 @@ def render_anova_table(anova_results: dict) -> str:
     footnote = "* Significant after Benjamini-Hochberg correction"
     return "\n".join([header, separator, *rows, "", footnote])
 ```
+
+> **ANOVA significance method:** The ANOVA table uses Benjamini-Hochberg (BH) false discovery rate correction for multiple comparisons (consistent with existing `taguchi/analysis.py` which already applies BH via `scipy.stats.false_discovery_control`). The "Significant" column shows "Yes" when adjusted p-value < 0.05.
 
 ### Step 2: Run tests to verify failure
 
@@ -2383,6 +2493,32 @@ def extract_strategy_breakdowns(
     return breakdowns
 ```
 
+### Step 5b: Data flow and integration with MultiStrategyPipeline
+
+The recommendations layer consumes results from `MultiStrategyPipeline` using the following data flow:
+
+```
+Data flow:
+  MultiStrategyPipeline.run()
+    -> per-strategy DOEPipeline.run()
+    -> per-strategy PhaseResult (main_effects, anova_results)
+    -> stored in dict[str, PhaseResult]
+
+  generate_recommendations(strategy_phase_results: dict[str, PhaseResult])
+    -> iterates each factor across all strategies
+    -> builds Finding with StrategyBreakdown per strategy
+    -> identifies cross-strategy agreement via Kendall's W
+```
+
+**Append to:** `agent-evals/tests/test_recommendations.py`
+
+```python
+class TestRecommendationsMultiStrategyIntegration:
+    def test_recommendations_consume_multistrategy_results():
+        """Verify generate_recommendations() correctly processes
+        PhaseResult objects from all 4 strategies."""
+```
+
 ### Step 6: Run full test suite
 
 ### Step 7: Commit
@@ -2569,6 +2705,20 @@ class TestDatasetSourceTaguchiEndToEnd:
         text = render_findings_text(findings)
         assert "2-tier" in text
         assert len(text) > 0
+
+
+class TestFullPhaseAExitCriteria:
+    @pytest.mark.slow
+    def test_full_phase_a_exit_criteria():
+        """Verify ALL 5 Phase A exit criteria with real Taguchi execution.
+        Uses mocked LLM but real pipeline, real ANOVA, real recommendations."""
+        # 1. Load at least 2 adapters (repliqa + ibm_techqa)
+        # 2. Build MultiStrategyPipeline with all 4 strategies
+        # 3. Run screening (real L50 OA, mocked LLM)
+        # 4. Verify PhaseResult contains main_effects and anova
+        # 5. Generate recommendations
+        # 6. Assert recommendations contain per-strategy breakdowns
+        # 7. Assert cross-strategy comparison shows agreement/disagreement
 ```
 
 ### Step 2: Run integration tests

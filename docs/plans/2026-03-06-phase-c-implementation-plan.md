@@ -1260,6 +1260,84 @@ def execute(
     )
 ```
 
+4. Add `_summary_client` field and `set_summary_client()` method for runner wiring:
+
+```python
+# Add field to CompressionStrategy.__init__:
+self._summary_client: LLMClient | None = None
+
+def set_summary_client(self, client: LLMClient) -> None:
+    """Set the LLM client used for llm_summarized compression.
+
+    Called by the runner before trials begin so that execute()
+    can perform LLM-based summarization.
+    """
+    self._summary_client = client
+```
+
+> **Implementation note — two-phase approach for LLM-summarized compression:**
+>
+> The `llm_summarized` method uses a two-phase approach:
+> 1. **`prepare()` phase (algorithmic fallback):** Since `prepare()` has no client access,
+>    it applies algorithmic compression as a fallback. This produces a valid PreparedContext
+>    with reduced tokens, ensuring the pipeline works even if LLM summarization fails.
+> 2. **`execute()` phase (LLM replacement):** When `execute()` runs, it detects
+>    `method="llm_summarized"`, calls `_llm_summarize()` on the already-compressed content,
+>    rebuilds the messages with the LLM-compressed version, then calls the main LLM for
+>    the actual task. This means the final prompt contains LLM-quality compression rather
+>    than the algorithmic approximation.
+>
+> The `_summary_client` can be set via `set_summary_client()` (called by runner before trials)
+> or `execute()` falls back to using the main trial client. This separation allows using a
+> cheaper model (e.g., gpt-4o-mini) for summarization while using the evaluation model for
+> the actual task.
+
+5. Add test for execute replacing content with LLM summary:
+
+**Append to** `agent-evals/tests/test_context_compression.py`:
+
+```python
+class TestExecuteReplacesContentWithLLMSummary:
+    def test_execute_replaces_content_with_llm_summary(self):
+        """execute() should replace algorithmically compressed content with
+        LLM-summarized content when method=llm_summarized."""
+        from agent_evals.context.compression import CompressionStrategy
+        from tests.conftest import make_mock_task
+        from unittest.mock import MagicMock
+
+        strategy = CompressionStrategy(method="llm_summarized")
+        doc_tree = _make_doc_tree()
+        rendered = "Long documentation content. " * 50
+        strategy.setup(rendered, doc_tree)
+        task = make_mock_task()
+        # prepare() uses algorithmic fallback
+        prepared = strategy.prepare(rendered, task, doc_tree)
+        algorithmic_content = prepared.messages[0]["content"]
+
+        # Set summary client
+        summary_client = MagicMock()
+        summary_gen = MagicMock()
+        summary_gen.content = "LLM-compressed documentation summary."
+        summary_client.complete.return_value = summary_gen
+        strategy.set_summary_client(summary_client)
+
+        # Main client for task completion
+        client = MagicMock()
+        task_gen = MagicMock()
+        task_gen.content = "The answer based on LLM summary."
+        task_gen.prompt_tokens = 20
+        task_gen.completion_tokens = 5
+        task_gen.total_tokens = 25
+        task_gen.cost = 0.001
+        client.complete.return_value = task_gen
+
+        result = strategy.execute(prepared, task, client, 1024, 0.0)
+        # Summary client should have been called with the algorithmic content
+        summary_client.complete.assert_called_once()
+        # Final result uses main client's response
+        assert result.final_response == "The answer based on LLM summary."
+```
+
 ### Step 5: Extend StrategyConfig
 
 **Add to** `agent-evals/src/agent_evals/context/base.py` StrategyConfig:
@@ -2148,12 +2226,32 @@ class TestInstructionDeploymentOnly:
         assert instruction_section.count("\n") < 40
 
 
+class TestInstructionIrrelevantOnly:
+    def test_irrelevant_only_metadata(self):
+        from agent_evals.variants.agent_instruction import InstructionIrrelevantOnly
+        v = InstructionIrrelevantOnly()
+        assert v.metadata().axis == 12
+        assert v.metadata().category == "agent_instruction"
+        assert v.metadata().name == "instruction-irrelevant-only"
+
+    def test_irrelevant_only_contains_deployment(self):
+        from agent_evals.variants.agent_instruction import InstructionIrrelevantOnly
+        v = InstructionIrrelevantOnly()
+        result = v.render(_make_doc_tree())
+        instruction_section = result.split("# Documentation Index")[0]
+        # Should contain deployment/CI/style content
+        assert "deploy" in instruction_section.lower() or "ci/cd" in instruction_section.lower()
+        assert "style" in instruction_section.lower() or "black" in instruction_section.lower()
+        # Should NOT contain task-relevant content like auth instructions
+        assert "answer questions" not in instruction_section.lower()
+
+
 class TestInstructionRegistration:
     def test_all_variants_discoverable(self):
         from agent_evals.variants.registry import get_variants_for_axis, load_all
         load_all()
         axis_12 = get_variants_for_axis(12)
-        assert len(axis_12) >= 8  # 5 verbosity + 3 ablative
+        assert len(axis_12) >= 9  # 5 verbosity + 4 ablative
         names = {v.metadata().name for v in axis_12}
         assert "instruction-none" in names
         assert "instruction-minimal" in names
@@ -2163,6 +2261,7 @@ class TestInstructionRegistration:
         assert "instruction-conventions-only" in names
         assert "instruction-architecture-only" in names
         assert "instruction-deployment-only" in names
+        assert "instruction-irrelevant-only" in names
 ```
 
 ### Step 2: Run tests to verify they fail
@@ -2551,6 +2650,71 @@ class InstructionDeploymentOnly(IndexVariant):
 
     def render(self, doc_tree: DocTree) -> str:
         return _DEPLOYMENT_ONLY_INSTRUCTIONS + "\n" + _render_doc_index(doc_tree)
+
+
+# --- ETH Zurich Failure Mode 3: Irrelevant Requirements ---
+# The three ETH Zurich failure modes are:
+#   1. Unnecessary exploration -> architecture-only (directory trees agents can discover)
+#   2. Redundant information -> conventions-only (info agents can infer)
+#   3. Irrelevant requirements -> irrelevant-only (style guides, deployment, CI/CD)
+#
+# InstructionIrrelevantOnly isolates failure mode 3 by loading only content
+# that has nothing to do with answering documentation questions.
+
+_IRRELEVANT_INSTRUCTIONS = """\
+# Agent Instructions — Project Policies
+
+## Deployment Pipeline
+- CI/CD via GitHub Actions with matrix builds.
+- Staging deploys on push to develop branch.
+- Production deploys on merge to main after approval.
+- Canary deployment with 10% traffic split for 30 minutes.
+- Rollback: `kubectl rollout undo deployment/api`.
+
+## Security Policies
+- All secrets stored in HashiCorp Vault.
+- Rotate API keys every 90 days.
+- Enable CORS only for whitelisted origins.
+- Run SAST scans on every PR (Semgrep + CodeQL).
+- Container images scanned with Trivy before push.
+
+## Style Guide
+- Use Black formatter with line-length=88.
+- Sort imports with isort (profile=black).
+- Docstrings follow Google style.
+- Variable names: snake_case, constants: UPPER_SNAKE_CASE.
+- Maximum cyclomatic complexity: 10.
+
+## CI/CD Configuration
+- Pre-commit hooks: ruff, mypy, pytest.
+- Branch protection: require 2 approvals for main.
+- Auto-merge dependabot PRs if tests pass.
+- Coverage gate: 80% minimum, no decrease allowed.
+
+## Release Process
+- Semantic versioning: MAJOR.MINOR.PATCH.
+- Changelog generated from conventional commits.
+- GitHub Releases created automatically on tag push.
+- Docker images tagged with git SHA and semver.
+"""
+
+
+@register_variant
+class InstructionIrrelevantOnly(IndexVariant):
+    """Irrelevant requirements only — style guides, deployment, CI/CD.
+    Tests ETH Zurich failure mode 3: irrelevant requirements loaded into every task."""
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name="instruction-irrelevant-only",
+            axis=12,
+            category="agent_instruction",
+            description="Only irrelevant requirements (deployment, CI, style guides).",
+            token_estimate=200,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        return _IRRELEVANT_INSTRUCTIONS + "\n" + _render_doc_index(doc_tree)
 ```
 
 ### Step 4: Run tests
@@ -2567,10 +2731,11 @@ git add agent-evals/src/agent_evals/variants/agent_instruction.py \
   agent-evals/tests/test_axis_12_agent_instruction.py
 git commit -m "feat(variants): add axis 12 agent instruction verbosity + ablative variants
 
-Eight variants testing ETH Zurich AGENTS.md findings:
+Nine variants testing ETH Zurich AGENTS.md findings:
 Five verbosity levels (none, minimal, standard, verbose, overloaded)
-plus three ablative variants (conventions-only, architecture-only,
-deployment-only) to decompose which content types cause failure modes.
+plus four ablative variants (conventions-only, architecture-only,
+deployment-only, irrelevant-only) to decompose which content types
+cause the three ETH Zurich failure modes.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
@@ -3210,6 +3375,86 @@ def format_durability_score(results: list[dict]) -> float:
     return sum(ratios) / len(ratios)
 ```
 
+### Step 4a: Add related task sequence validation
+
+**Purpose:** Task sequences should test knowledge carryover, not just independent tasks. Define related task pairs where Task 2 depends on information learned in Task 1.
+
+> **Design note:** Related task sequences verify that compaction preserves
+> causally relevant information. After compaction between tasks, we measure
+> whether the agent retains enough context to answer subsequent questions
+> correctly.
+>
+> Example sequence:
+>   - Task 1: "What authentication method does the API use?" -> learns OAuth2
+>   - Task 2: "What are the security implications of the auth method?" -> needs OAuth2 context
+>   - Task 3: "How should I configure token refresh?" -> needs OAuth2 + token knowledge
+>
+> After compaction between tasks, measure whether the agent retains
+> enough context to answer subsequent questions correctly. Task 2's
+> accuracy directly measures whether the compacted context preserved
+> the critical "OAuth2" fact from Task 1.
+
+**Append test** to `agent-evals/tests/test_compaction_modifier.py`:
+
+```python
+class TestRelatedTaskSequenceCarryover:
+    def test_related_task_sequence_tests_carryover(self):
+        """Verify task sequences test knowledge retention, not just independent tasks."""
+        from agent_evals.context.modifiers.compaction import run_compacted_sequence
+        from unittest.mock import MagicMock
+
+        # Task 1 establishes knowledge (OAuth2)
+        task1 = MagicMock()
+        task1.definition.question = "What authentication method does the API use?"
+        task1.build_prompt.return_value = [
+            {"role": "system", "content": "Docs: Use OAuth2 for auth."},
+            {"role": "user", "content": task1.definition.question},
+        ]
+
+        # Task 2 references task1's expected answer (needs OAuth2 context)
+        task2 = MagicMock()
+        task2.definition.question = "What are the security implications of the auth method?"
+        task2.build_prompt.return_value = [
+            {"role": "system", "content": "Docs: Use OAuth2 for auth."},
+            {"role": "user", "content": task2.definition.question},
+        ]
+
+        strategy = MagicMock()
+        strategy.name.return_value = "full_context"
+        strategy.prepare.return_value = MagicMock(
+            messages=[
+                {"role": "system", "content": "Docs."},
+                {"role": "user", "content": "Q"},
+            ],
+            tools=None,
+            strategy_metadata={},
+        )
+
+        mock_result = MagicMock()
+        mock_result.final_response = "OAuth2 is used."
+        mock_result.messages = [
+            {"role": "system", "content": "Docs."},
+            {"role": "user", "content": "Q"},
+            {"role": "assistant", "content": "OAuth2 is used."},
+        ]
+        mock_result.strategy_metadata = {}
+        mock_result.total_prompt_tokens = 100
+        mock_result.total_completion_tokens = 20
+        mock_result.total_tokens = 120
+        mock_result.total_cost = 0.001
+        mock_result.generations = []
+        strategy.execute.return_value = mock_result
+
+        client = MagicMock()
+        results = run_compacted_sequence(
+            [task1, task2], strategy, client, compaction_ratio=0.5,
+        )
+        # After compaction, task2 accuracy measures retention
+        assert len(results) == 2
+        # Second task should have compaction metadata
+        assert results[1].strategy_metadata.get("compaction_applied") is True
+```
+
 ### Step 5: Run tests
 
 ```bash
@@ -3513,6 +3758,186 @@ class DynamicToolModifier(ContextStrategy):
             messages=result.messages,
             strategy_metadata=metadata,
         )
+
+    def execute(
+        self,
+        prepared: PreparedContext,
+        task: EvalTask,
+        client: LLMClient,
+        max_tokens: int,
+        temperature: float,
+    ) -> StrategyResult:
+        if self._mode == "phase_based":
+            return self._execute_phase_based(prepared, task, client, max_tokens, temperature)
+        result = self._inner.execute(
+            prepared, task, client, max_tokens, temperature,
+        )
+        metadata = dict(result.strategy_metadata)
+        metadata["dynamic_tools_mode"] = self._mode
+        return StrategyResult(
+            final_response=result.final_response,
+            generations=result.generations,
+            total_prompt_tokens=result.total_prompt_tokens,
+            total_completion_tokens=result.total_completion_tokens,
+            total_tokens=result.total_tokens,
+            total_cost=result.total_cost,
+            messages=result.messages,
+            strategy_metadata=metadata,
+        )
+
+    def _execute_phase_based(
+        self,
+        prepared: PreparedContext,
+        task: EvalTask,
+        client: LLMClient,
+        max_tokens: int,
+        temperature: float,
+    ) -> StrategyResult:
+        """Multi-turn loop with per-turn tool filtering.
+
+        Unlike the default execute() which sets tools once in prepare(),
+        phase_based mode changes available tools at each turn by calling
+        filter_tools() with the current turn number. This enables the
+        explore-then-answer pattern where early turns have limited tools
+        (list/read only) and later turns unlock all tools.
+        """
+        import json
+
+        messages: list[dict] = list(prepared.messages)
+        all_tools = prepared.tools or []
+        generations = []
+        max_turns = 10
+        total_tool_calls = 0
+        tools_used: set[str] = set()
+
+        for turn in range(max_turns):
+            turn_tools = filter_tools(all_tools, "phase_based", turn=turn, max_turns=max_turns)
+            generation = client.complete(
+                messages, tools=turn_tools, max_tokens=max_tokens, temperature=temperature,
+            )
+            generations.append(generation)
+
+            if not generation.tool_calls:
+                break
+
+            messages.append({
+                "role": "assistant",
+                "content": generation.content or None,
+                "tool_calls": generation.tool_calls,
+            })
+
+            for tc in generation.tool_calls:
+                fn_name = tc["function"]["name"]
+                try:
+                    fn_args = json.loads(tc["function"]["arguments"])
+                except (json.JSONDecodeError, TypeError):
+                    fn_args = {}
+                # Dispatch tool calls using inner strategy's _execute_tool
+                tool_result = self._inner._execute_tool(fn_name, fn_args)
+                tools_used.add(fn_name)
+                total_tool_calls += 1
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": tool_result,
+                })
+
+        num_turns = len(generations)
+        last_gen = generations[-1]
+        final_text = (last_gen.content or "").strip()
+
+        total_prompt = sum(g.prompt_tokens for g in generations)
+        total_completion = sum(g.completion_tokens for g in generations)
+        total_tokens = sum(g.total_tokens for g in generations)
+        total_cost = sum(g.cost for g in generations if g.cost is not None) or None
+
+        return StrategyResult(
+            final_response=final_text,
+            generations=generations,
+            total_prompt_tokens=total_prompt,
+            total_completion_tokens=total_completion,
+            total_tokens=total_tokens,
+            total_cost=total_cost,
+            messages=messages,
+            strategy_metadata={
+                "dynamic_tools_mode": "phase_based",
+                "turns": num_turns,
+                "tool_calls_made": total_tool_calls,
+                "tools_used": sorted(tools_used),
+            },
+        )
+```
+
+> **Note:** The `execute()` method above replaces the simpler delegation-only version
+> shown earlier. For non-phase_based modes, it delegates to the inner strategy. For
+> phase_based mode, it implements its own multi-turn loop (like ToolBasedStrategy) that
+> calls `filter_tools()` on each turn, providing different tools at different turns.
+
+**Append test** to `agent-evals/tests/test_dynamic_tools_modifier.py`:
+
+```python
+class TestPhaseBasedExecuteLoop:
+    def test_phase_based_changes_tools_during_execution(self):
+        """Phase-based mode provides different tools at different turns."""
+        from agent_evals.context.modifiers.dynamic_tools import DynamicToolModifier, filter_tools
+        from unittest.mock import MagicMock
+        import json
+
+        inner = MagicMock()
+        inner.name.return_value = "mcp_native"
+        inner._execute_tool.return_value = "tool result"
+
+        modifier = DynamicToolModifier(inner, mode="phase_based")
+
+        # Prepared context with all tools
+        prepared = MagicMock()
+        prepared.messages = [
+            {"role": "system", "content": "System"},
+            {"role": "user", "content": "Question"},
+        ]
+        prepared.tools = [
+            {"function": {"name": "list_docs"}},
+            {"function": {"name": "read_doc"}},
+            {"function": {"name": "search_docs"}},
+        ]
+        prepared.strategy_metadata = {}
+
+        task = MagicMock()
+        client = MagicMock()
+
+        # Turn 0 (explore): agent calls list_docs (should be available)
+        gen0 = MagicMock()
+        gen0.content = None
+        gen0.tool_calls = [{"id": "tc0", "function": {"name": "list_docs", "arguments": "{}"}}]
+        gen0.prompt_tokens = 10
+        gen0.completion_tokens = 5
+        gen0.total_tokens = 15
+        gen0.cost = 0.001
+
+        # Turn 1: agent responds (no more tool calls)
+        gen1 = MagicMock()
+        gen1.content = "The answer."
+        gen1.tool_calls = None
+        gen1.prompt_tokens = 15
+        gen1.completion_tokens = 5
+        gen1.total_tokens = 20
+        gen1.cost = 0.001
+
+        client.complete.side_effect = [gen0, gen1]
+
+        result = modifier.execute(prepared, task, client, 1024, 0.0)
+        assert result.final_response == "The answer."
+        assert result.strategy_metadata["dynamic_tools_mode"] == "phase_based"
+        assert result.strategy_metadata["turns"] == 2
+
+        # Verify that tools were filtered per-turn: first call should NOT have search_docs
+        first_call_tools = client.complete.call_args_list[0]
+        first_tools = first_call_tools[1].get("tools", first_call_tools[0][1] if len(first_call_tools[0]) > 1 else [])
+        # Turn 0 out of max_turns=10 -> explore phase (first half = turns 0-4)
+        explore_tools = filter_tools(prepared.tools, "phase_based", turn=0, max_turns=10)
+        explore_names = [t["function"]["name"] for t in explore_tools]
+        assert "list_docs" in explore_names
+        assert "search_docs" not in explore_names
 ```
 
 ### Step 4: Run tests
@@ -3927,6 +4352,96 @@ def correlate_format_with_cache(
                 result[f"{prop}_correlation"] = 0.0
 
     return result
+
+
+def get_variant_format_properties(variant_name: str) -> dict[str, float]:
+    """Map variant name to numeric format properties for correlation analysis.
+
+    Properties:
+    - hierarchy_depth: 0 (flat) to 4 (deep nesting)
+    - positioning_stability: 0.0 (random) to 1.0 (fixed order)
+    - serialization_complexity: 0.0 (plain text) to 1.0 (structured YAML)
+    - metadata_richness: 0.0 (path only) to 1.0 (full summary+tokens+related)
+    """
+    # Mapping based on known variant properties from axes 1-10
+    PROPERTIES: dict[str, dict[str, float]] = {
+        "flat": {"hierarchy_depth": 0, "positioning_stability": 0.5, "serialization_complexity": 0.0, "metadata_richness": 0.2},
+        "2-tier": {"hierarchy_depth": 2, "positioning_stability": 0.8, "serialization_complexity": 0.2, "metadata_richness": 0.4},
+        "3-tier": {"hierarchy_depth": 3, "positioning_stability": 0.8, "serialization_complexity": 0.3, "metadata_richness": 0.5},
+        "4-tier": {"hierarchy_depth": 4, "positioning_stability": 0.9, "serialization_complexity": 0.3, "metadata_richness": 0.6},
+        "yaml": {"hierarchy_depth": 2, "positioning_stability": 1.0, "serialization_complexity": 1.0, "metadata_richness": 0.7},
+        "json": {"hierarchy_depth": 2, "positioning_stability": 1.0, "serialization_complexity": 0.9, "metadata_richness": 0.7},
+        "xml": {"hierarchy_depth": 2, "positioning_stability": 1.0, "serialization_complexity": 0.8, "metadata_richness": 0.6},
+        "markdown": {"hierarchy_depth": 2, "positioning_stability": 0.7, "serialization_complexity": 0.3, "metadata_richness": 0.5},
+        "random": {"hierarchy_depth": 1, "positioning_stability": 0.0, "serialization_complexity": 0.1, "metadata_richness": 0.2},
+        "alphabetical": {"hierarchy_depth": 1, "positioning_stability": 1.0, "serialization_complexity": 0.1, "metadata_richness": 0.2},
+        "path-only": {"hierarchy_depth": 1, "positioning_stability": 0.5, "serialization_complexity": 0.0, "metadata_richness": 0.0},
+        "summary": {"hierarchy_depth": 1, "positioning_stability": 0.5, "serialization_complexity": 0.2, "metadata_richness": 0.6},
+        "detailed": {"hierarchy_depth": 2, "positioning_stability": 0.7, "serialization_complexity": 0.4, "metadata_richness": 1.0},
+    }
+    # Default properties for unknown variants
+    default = {"hierarchy_depth": 1, "positioning_stability": 0.5, "serialization_complexity": 0.3, "metadata_richness": 0.3}
+    return PROPERTIES.get(variant_name, default)
+```
+
+**Update** `correlate_format_with_cache()` to use `get_variant_format_properties()` instead of requiring a raw metadata dict. Change its signature and implementation:
+
+```python
+def correlate_format_with_cache(
+    trials: list[dict[str, Any]],
+    variant_metadata: dict[str, dict[str, Any]] | None = None,
+) -> dict:
+    """Compute correlation between format properties and cache hit rates.
+
+    If variant_metadata is not provided, uses get_variant_format_properties()
+    to automatically map variant names to numeric format properties.
+    """
+    if not trials:
+        return {}
+
+    # Auto-map variant names to properties if metadata not provided
+    if variant_metadata is None:
+        variant_names = {t.get("variant_name", "unknown") for t in trials}
+        variant_metadata = {
+            name: get_variant_format_properties(name) for name in variant_names
+        }
+
+    # ... rest of existing implementation unchanged ...
+```
+
+**Append tests** to `agent-evals/tests/test_cache_analysis.py`:
+
+```python
+class TestVariantFormatProperties:
+    def test_variant_format_properties_maps_known_variants(self):
+        """Known variants return meaningful numeric properties."""
+        from agent_evals.reports.cache_analysis import get_variant_format_properties
+        props = get_variant_format_properties("yaml")
+        assert props["serialization_complexity"] > 0.5
+        props_flat = get_variant_format_properties("flat")
+        assert props_flat["hierarchy_depth"] == 0
+
+    def test_unknown_variant_returns_defaults(self):
+        """Unknown variants return default numeric properties."""
+        from agent_evals.reports.cache_analysis import get_variant_format_properties
+        props = get_variant_format_properties("nonexistent-variant")
+        assert "hierarchy_depth" in props
+        assert "positioning_stability" in props
+        assert "serialization_complexity" in props
+        assert "metadata_richness" in props
+
+    def test_correlate_format_with_cache_auto_maps(self):
+        """correlate_format_with_cache works without explicit metadata dict."""
+        from agent_evals.reports.cache_analysis import correlate_format_with_cache
+        trials = [
+            {"cached_tokens": 800, "prompt_tokens": 1000, "variant_name": "yaml"},
+            {"cached_tokens": 700, "prompt_tokens": 1000, "variant_name": "yaml"},
+            {"cached_tokens": 200, "prompt_tokens": 1000, "variant_name": "flat"},
+            {"cached_tokens": 150, "prompt_tokens": 1000, "variant_name": "flat"},
+        ]
+        # No variant_metadata argument — should auto-map
+        correlation = correlate_format_with_cache(trials)
+        assert isinstance(correlation, dict)
 ```
 
 ### Step 4: Run tests
@@ -4083,7 +4598,46 @@ def compute_variant_summary(
     return summary
 ```
 
-3. Add `hallucination_rate` as queryable column in observatory trials table:
+3. Add hallucination as a second Taguchi response variable:
+
+> **NOTE: Hallucination is NOT a Taguchi factor (factors are format axes 1-12).**
+> Hallucination is an ADDITIONAL RESPONSE VARIABLE alongside accuracy.
+>
+> The existing Taguchi analysis uses `compute_sn_ratios()` with `quality_type`
+> `"larger_is_better"` for accuracy. For hallucination, add a parallel analysis
+> using `quality_type` `"smaller_is_better"` (lower hallucination = better).
+>
+> This means for each Taguchi screening, TWO analyses run:
+> 1. **Accuracy analysis:** which format levels maximize accuracy (`larger_is_better`)
+> 2. **Hallucination analysis:** which format levels minimize hallucination (`smaller_is_better`)
+
+**Add test** to `agent-evals/tests/test_runner.py`:
+
+```python
+class TestTaguchiHallucinationAsResponseVariable:
+    def test_taguchi_hallucination_as_response_variable(self):
+        """Hallucination scores feed into Taguchi as a second response variable
+        with smaller_is_better quality type."""
+        from agent_evals.taguchi.analysis import compute_sn_ratios
+        # Use hallucination scores as response values
+        hallucination_scores = [0.1, 0.3, 0.05, 0.2, 0.15]
+        sn = compute_sn_ratios(hallucination_scores, "smaller_is_better")
+        assert all(s <= 0 for s in sn)  # S/N ratios for smaller_is_better are <= 0
+```
+
+**Add to DOE pipeline** (in `agent-evals/src/agent_evals/pipeline.py` or runner screening logic):
+
+```python
+# After accuracy screening:
+if hallucination_scores:
+    hallucination_sn = compute_sn_ratios(hallucination_scores, "smaller_is_better")
+    hallucination_anova = run_anova(
+        hallucination_sn, factors, orthogonal_array,
+    )
+    phase_results.hallucination_main_effects = hallucination_anova.main_effects
+```
+
+4. Add `hallucination_rate` as queryable column in observatory trials table:
 
 ```python
 # In observatory/run_manager.py, add to CREATE TABLE trials:
@@ -4288,7 +4842,7 @@ class TestNewAxesDiscovery:
         from agent_evals.variants.registry import get_variants_for_axis, load_all
         load_all()
         variants = get_variants_for_axis(12)
-        assert len(variants) >= 8  # 5 verbosity + 3 ablative
+        assert len(variants) >= 9  # 5 verbosity + 4 ablative
 
     def test_axes_11_12_in_taguchi_factors(self):
         from agent_evals.taguchi.factors import build_factors_from_axes
@@ -4710,6 +5264,86 @@ def generate_cross_strategy_recommendation(
         )
 
     return "\n".join(lines)
+
+
+def rank_format_recommendations(
+    strategy_phase_results: dict[str, dict[str, Any]],
+) -> dict[str, str]:
+    """For each strategy, find the optimal format combination.
+
+    Returns dict mapping strategy name to recommended format string:
+    {"mcp_native": "2-tier markdown with detailed tool descriptions",
+     "compression": "yaml with minimal instructions", ...}
+    """
+    recommendations: dict[str, str] = {}
+    for strategy, results in strategy_phase_results.items():
+        optimal_levels = results.get("optimal_levels", {})
+        recommendations[strategy] = format_optimal_combination(optimal_levels)
+    return recommendations
+
+
+def format_optimal_combination(optimal_levels: dict[str, str]) -> str:
+    """Convert optimal level dict to human-readable recommendation."""
+    if not optimal_levels:
+        return "no recommendation (no data)"
+    parts = []
+    for factor, level in sorted(optimal_levels.items()):
+        parts.append(f"{level} ({factor})")
+    return ", ".join(parts)
+```
+
+**Update** `generate_cross_strategy_recommendation()` to call `rank_format_recommendations()` and include per-strategy recommendations in the final output. Add the following before the return statement:
+
+```python
+    # Per-strategy format recommendations
+    per_strategy_recs = rank_format_recommendations(phase_results_by_strategy)
+    lines.append("")
+    lines.append("## Per-Strategy Optimal Formats")
+    lines.append("")
+    for strategy, rec in sorted(per_strategy_recs.items()):
+        lines.append(f"- **{strategy}**: {rec}")
+
+    return "\n".join(lines)
+```
+
+**Append tests** to `agent-evals/tests/test_cross_strategy_synthesis.py`:
+
+```python
+class TestRankFormatRecommendations:
+    def test_rank_format_recommendations(self):
+        """Produces per-strategy format recommendation from phase results."""
+        from agent_evals.reports.cross_strategy_synthesis import rank_format_recommendations
+
+        results = {
+            "mcp_native": {
+                "optimal_levels": {"axis_1": "yaml", "axis_11": "tool-desc-detailed"},
+                "mean_score": 0.79,
+            },
+            "full_context": {
+                "optimal_levels": {"axis_1": "yaml", "axis_2": "hierarchical"},
+                "mean_score": 0.82,
+            },
+        }
+        recs = rank_format_recommendations(results)
+        assert "mcp_native" in recs
+        assert isinstance(recs["mcp_native"], str)
+        assert len(recs["mcp_native"]) > 0
+        assert "full_context" in recs
+        # Recommendations should mention the optimal levels
+        assert "yaml" in recs["mcp_native"]
+
+    def test_format_optimal_combination(self):
+        """format_optimal_combination produces human-readable string."""
+        from agent_evals.reports.cross_strategy_synthesis import format_optimal_combination
+        result = format_optimal_combination({"axis_1": "yaml", "axis_2": "hierarchical"})
+        assert "yaml (axis_1)" in result
+        assert "hierarchical (axis_2)" in result
+
+    def test_format_optimal_combination_empty(self):
+        """Empty optimal levels produces 'no recommendation' string."""
+        from agent_evals.reports.cross_strategy_synthesis import format_optimal_combination
+        result = format_optimal_combination({})
+        assert "no recommendation" in result
 ```
 
 ### Step 4: Run tests
@@ -4743,16 +5377,16 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 | 0 | Verify baseline | 0 | - |
 | 1 | VariantMetadata axis le=13 | 3 | `feat(variants): extend axis range` |
 | 2 | MCP-native strategy + resource metadata ablation | ~20 | `feat(context): add MCP-native strategy` |
-| 3 | Compression strategy + LLM-summarized + cost pairing | ~14 | `feat(context): add compression strategy` |
+| 3 | Compression strategy + LLM-summarized + cost pairing + client wiring | ~15 | `feat(context): add compression strategy` |
 | 4 | Tool description axis (11) + tool set size (4 variants) | ~20 | `feat(variants): add axis 11` |
-| 5 | Agent instruction axis (12) + ETH Zurich ablative (3 variants) | ~19 | `feat(variants): add axis 12` |
+| 5 | Agent instruction axis (12) + ETH Zurich ablative (4 variants) | ~22 | `feat(variants): add axis 12` |
 | 6 | Hallucination detection | ~8 | `feat(judge): add hallucination detection` |
-| 7 | Compaction modifier + multi-task sequence + durability | ~7 | `feat(context): add compaction modifier` |
-| 8 | Dynamic tools modifier + phase_based mode | ~8 | `feat(context): add dynamic tools modifier` |
-| 9 | Cache analysis + sequential runner + format correlation | ~9 | `feat(reports): add cache analysis` |
-| 10 | Runner wiring + hallucination as first-class metric | ~5 | `feat(runner): wire hallucination + cache metrics` |
+| 7 | Compaction modifier + multi-task sequence + durability + carryover | ~8 | `feat(context): add compaction modifier` |
+| 8 | Dynamic tools modifier + phase_based execute loop | ~9 | `feat(context): add dynamic tools modifier` |
+| 9 | Cache analysis + sequential runner + format correlation + variant properties | ~12 | `feat(reports): add cache analysis` |
+| 10 | Runner wiring + hallucination as response variable | ~6 | `feat(runner): wire hallucination + cache metrics` |
 | 11 | CLI wiring | ~2 | `feat(cli): wire Phase C strategies` |
 | 12 | Integration tests | ~8 | `test: Phase C integration tests` |
 | 13 | Final verification | 0 | - |
-| 14 | Cross-strategy synthesis report (EXIT CRITERIA) | ~3 | `feat(reports): cross-strategy synthesis` |
-| **Total** | | **~126** | **~14 commits** |
+| 14 | Cross-strategy synthesis report + ranking logic (EXIT CRITERIA) | ~6 | `feat(reports): cross-strategy synthesis` |
+| **Total** | | **~139** | **~14 commits** |
