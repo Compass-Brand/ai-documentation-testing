@@ -12,12 +12,15 @@ from __future__ import annotations
 import random
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from agent_evals.datasets import register_dataset
 from agent_evals.datasets.base import DatasetAdapter
+
+if TYPE_CHECKING:
+    from agent_index.models import DocTree
 
 # Simple perturbation functions (no external dependencies)
 _PERTURBATION_TYPES = [
@@ -151,7 +154,7 @@ class PerturbationAdapter(DatasetAdapter):
 
         return count
 
-    def build_doc_tree(self, limit: int | None = None) -> "DocTree":
+    def build_doc_tree(self, limit: int | None = None) -> DocTree:
         """Perturbation adapter uses the source dataset's DocTree."""
         from agent_index.models import DocTree
 

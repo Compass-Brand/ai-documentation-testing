@@ -13,11 +13,15 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from agent_evals.datasets import register_dataset
 from agent_evals.datasets._hf_utils import load_hf_dataset
+
+if TYPE_CHECKING:
+    from agent_index.models import DocTree
 from agent_evals.datasets.base import DatasetAdapter
 
 
@@ -79,7 +83,7 @@ class RepliQAAdapter(DatasetAdapter):
 
         return len(unanswerable)
 
-    def build_doc_tree(self, limit: int | None = None) -> "DocTree":
+    def build_doc_tree(self, limit: int | None = None) -> DocTree:
         """Build DocTree from unique RepLiQA documents."""
         from agent_index.models import DocFile, DocTree
 

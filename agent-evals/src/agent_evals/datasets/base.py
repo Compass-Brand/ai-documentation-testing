@@ -59,7 +59,12 @@ class DatasetAdapter(ABC):
 
     @abstractmethod
     def build_doc_tree(self, limit: int | None = None) -> DocTree:
-        """Build a DocTree from the dataset's document corpus."""
+        """Build a DocTree from the dataset's document corpus.
+
+        Every DocFile MUST have ``tier`` and ``section`` populated.
+        If the source dataset has no natural mapping, use defaults:
+        ``tier="reference"``, ``section="general"``.
+        """
         ...
 
     def requires(self) -> list[str]:

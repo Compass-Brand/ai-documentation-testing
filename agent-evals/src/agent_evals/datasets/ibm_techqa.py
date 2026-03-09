@@ -13,13 +13,16 @@ from __future__ import annotations
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from agent_evals.datasets import register_dataset
 from agent_evals.datasets._hf_utils import load_hf_dataset
 from agent_evals.datasets.base import DatasetAdapter
+
+if TYPE_CHECKING:
+    from agent_index.models import DocTree
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +144,7 @@ class IBMTechQAAdapter(DatasetAdapter):
 
         return count
 
-    def build_doc_tree(self, limit: int | None = None) -> "DocTree":
+    def build_doc_tree(self, limit: int | None = None) -> DocTree:
         """Build DocTree from TechQA technotes."""
         from agent_index.models import DocFile, DocTree
 

@@ -57,7 +57,7 @@ def get_adapter(name: str) -> DatasetAdapter:
 def list_available() -> list[dict[str, str]]:
     """Return metadata for all registered dataset adapters."""
     result = []
-    for name, cls in sorted(DATASET_REGISTRY.items()):
+    for _name, cls in sorted(DATASET_REGISTRY.items()):
         adapter = cls()
         result.append({
             "name": adapter.name(),

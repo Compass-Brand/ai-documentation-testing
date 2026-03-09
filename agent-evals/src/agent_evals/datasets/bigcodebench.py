@@ -11,12 +11,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 
 from agent_evals.datasets import register_dataset
 from agent_evals.datasets._hf_utils import load_hf_dataset
 from agent_evals.datasets.base import DatasetAdapter
+
+if TYPE_CHECKING:
+    from agent_index.models import DocTree
 
 
 @register_dataset
@@ -85,7 +89,7 @@ class BigCodeBenchAdapter(DatasetAdapter):
 
         return count
 
-    def build_doc_tree(self, limit: int | None = None) -> "DocTree":
+    def build_doc_tree(self, limit: int | None = None) -> DocTree:
         from agent_index.models import DocFile, DocTree
 
         ds = load_hf_dataset(self.hf_dataset_id(), split="train", limit=limit)
