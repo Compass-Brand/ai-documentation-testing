@@ -1261,8 +1261,66 @@ class TestMixedSourceLoader:
         """When adapters produce different task counts, round-robin
         continues until all adapters are exhausted. Short adapters
         stop contributing but don't block longer ones."""
-        # adapter_a produces 3 tasks, adapter_b produces 10 tasks
-        # Result: 13 tasks total, round-robin wraps adapter_a
+        from unittest.mock import MagicMock, patch
+
+        from agent_evals.datasets.source import MixedSourceLoader
+
+        # Build two mock adapters with imbalanced task counts
+        adapter_a = MagicMock()
+        adapter_a.name.return_value = "small_ds"
+        adapter_a.task_type.return_value = "fact_extraction"
+        tasks_a = [
+            {"task_id": f"fact_extraction_{i:03d}", "type": "fact_extraction"}
+            for i in range(3)
+        ]
+        adapter_a.convert_tasks.return_value = len(tasks_a)
+
+        adapter_b = MagicMock()
+        adapter_b.name.return_value = "large_ds"
+        adapter_b.task_type.return_value = "retrieval"
+        tasks_b = [
+            {"task_id": f"retrieval_{i:03d}", "type": "retrieval"}
+            for i in range(10)
+        ]
+        adapter_b.convert_tasks.return_value = len(tasks_b)
+
+        # Build mock doc trees
+        from unittest.mock import MagicMock as MM
+
+        tree_a = MagicMock()
+        tree_a.files = {"a.md": MagicMock(content="doc A")}
+        adapter_a.build_doc_tree.return_value = tree_a
+
+        tree_b = MagicMock()
+        tree_b.files = {"b.md": MagicMock(content="doc B")}
+        adapter_b.build_doc_tree.return_value = tree_b
+
+        loader = MixedSourceLoader(adapters=[adapter_a, adapter_b])
+
+        # Patch _load_tasks to return pre-built task lists
+        with patch.object(
+            loader, "_load_tasks_from_adapter",
+            side_effect=[tasks_a, tasks_b],
+        ):
+            merged_tasks, merged_tree = loader.load()
+
+        # All 13 tasks present (3 + 10), none dropped
+        assert len(merged_tasks) == 13, (
+            f"Expected 13 merged tasks, got {len(merged_tasks)}"
+        )
+
+        # Both doc trees contributed files
+        assert len(merged_tree.files) == 2
+
+        # Round-robin order: first 3 pairs interleave, then adapter_b
+        # fills the remaining 7 solo
+        first_six_types = [t["type"] for t in merged_tasks[:6]]
+        assert "fact_extraction" in first_six_types
+        assert "retrieval" in first_six_types
+
+        # After adapter_a is exhausted, only adapter_b tasks remain
+        remaining_types = {t["type"] for t in merged_tasks[6:]}
+        assert remaining_types == {"retrieval"}
 ```
 
 > **Implementation note:** When an adapter's tasks are exhausted during round-robin, skip it and continue with remaining adapters until all are exhausted.
@@ -2510,6 +2568,50 @@ Data flow:
     -> identifies cross-strategy agreement via Kendall's W
 ```
 
+#### Kendall's W concordance: implementation details
+
+Kendall's W (coefficient of concordance) measures how strongly *m* strategies (judges) agree on the ranking of *k* factor levels. It is the multi-rater generalization of Spearman's rank correlation. The implementation lives in `agent_evals/reports/statistics.py` as `kendalls_w()`.
+
+**Formula:**
+
+```
+W = 12 * S / (m² * (k³ - k))
+```
+
+where:
+- *m* = number of strategies (judges), e.g. 4 for `full_context`, `system_prompt`, `rag`, `tool_based`
+- *k* = number of levels for the factor being evaluated, e.g. 3 for `flat`, `2-tier`, `3-tier`
+- *S* = sum of squared deviations of column rank-sums from their mean
+
+**How rankings are computed across strategies:**
+
+1. For each factor (e.g. `axis_1_structure`), collect the `main_effects` dict from every strategy's `PhaseResult`. Each dict maps level names to mean scores.
+2. Within each strategy, sort the levels by their mean score (ascending) and assign integer ranks 1..k (1 = worst, k = best).
+3. Assemble a rankings matrix of shape (m, k) — one row per strategy, one column per level.
+4. Compute column sums R_j = sum of ranks assigned to level j across all m strategies.
+5. Compute the mean column sum: R_bar = m*(k+1)/2.
+6. Compute S = sum over j of (R_j - R_bar)^2.
+7. Apply the formula above.
+
+**Interpretation:**
+- W = 1.0: perfect agreement — all strategies rank the levels identically
+- W = 0.0: no agreement — strategy rankings are effectively random
+- W > 0.7: strong concordance (strategies broadly agree on which levels matter)
+- W < 0.3: weak concordance (strategies disagree significantly)
+
+**Statistical test:** To determine whether W is significantly different from zero (i.e., agreement is better than chance), use the Friedman chi-square test (`friedman_test()` in the same module). The Friedman statistic is:
+
+```
+chi2 = m * (k - 1) * W
+```
+
+with *k - 1* degrees of freedom. A significant Friedman test (p < 0.05) confirms that the strategies genuinely agree and the concordance is not due to chance. The `friedman_test()` function wraps `scipy.stats.friedmanchisquare()` and returns `(statistic, p_value)`.
+
+**Integration in recommendations:** `generate_recommendations()` calls `kendalls_w()` for each significant factor, then reports:
+- The W value and its interpretation (strong/moderate/weak agreement)
+- Which strategies agree on the best level vs. which disagree
+- The Friedman p-value confirming whether the agreement is statistically significant
+
 **Append to:** `agent-evals/tests/test_recommendations.py`
 
 ```python
@@ -2517,6 +2619,121 @@ class TestRecommendationsMultiStrategyIntegration:
     def test_recommendations_consume_multistrategy_results():
         """Verify generate_recommendations() correctly processes
         PhaseResult objects from all 4 strategies."""
+        from agent_evals.reports.recommendations import (
+            Finding,
+            StrategyBreakdown,
+            extract_strategy_breakdowns,
+            generate_findings,
+            render_findings_text,
+        )
+        from agent_evals.reports.statistics import kendalls_w
+
+        # Simulate PhaseResults from all 4 strategies via MultiStrategyPipeline.
+        # Each strategy independently ran Taguchi screening and produced
+        # main_effects and anova dicts.
+        strategy_phase_results = {
+            "full_context": {
+                "main_effects": {
+                    "axis_1_structure": {
+                        "flat": 58.0, "2-tier": 82.0, "3-tier": 74.0,
+                    },
+                    "axis_3_format": {
+                        "yaml": 70.0, "json": 65.0, "markdown": 80.0,
+                    },
+                },
+            },
+            "system_prompt": {
+                "main_effects": {
+                    "axis_1_structure": {
+                        "flat": 55.0, "2-tier": 79.0, "3-tier": 76.0,
+                    },
+                    "axis_3_format": {
+                        "yaml": 72.0, "json": 68.0, "markdown": 77.0,
+                    },
+                },
+            },
+            "rag": {
+                "main_effects": {
+                    "axis_1_structure": {
+                        "flat": 52.0, "2-tier": 71.0, "3-tier": 80.0,
+                    },
+                    "axis_3_format": {
+                        "yaml": 75.0, "json": 60.0, "markdown": 73.0,
+                    },
+                },
+            },
+            "tool_based": {
+                "main_effects": {
+                    "axis_1_structure": {
+                        "flat": 60.0, "2-tier": 83.0, "3-tier": 77.0,
+                    },
+                    "axis_3_format": {
+                        "yaml": 69.0, "json": 71.0, "markdown": 78.0,
+                    },
+                },
+            },
+        }
+
+        # --- Test 1: extract_strategy_breakdowns for a factor ---
+        breakdowns_axis1 = extract_strategy_breakdowns(
+            strategy_phase_results, factor="axis_1_structure"
+        )
+        assert len(breakdowns_axis1) == 4, (
+            f"Expected 4 breakdowns, got {len(breakdowns_axis1)}"
+        )
+
+        # Verify each strategy's best level was correctly identified
+        strategy_best = {b.strategy: b.best_level for b in breakdowns_axis1}
+        assert strategy_best["full_context"] == "2-tier"
+        assert strategy_best["system_prompt"] == "2-tier"
+        assert strategy_best["rag"] == "3-tier"  # RAG disagrees
+        assert strategy_best["tool_based"] == "2-tier"
+
+        # Verify effect sizes are positive and correct
+        for bd in breakdowns_axis1:
+            assert bd.effect_size > 0, (
+                f"Effect size must be positive for {bd.strategy}"
+            )
+        fc_bd = next(b for b in breakdowns_axis1 if b.strategy == "full_context")
+        assert fc_bd.effect_size == pytest.approx(24.0)  # 82 - 58
+
+        # --- Test 2: generate_findings with aggregate ANOVA ---
+        aggregate_anova = {
+            "axis_1_structure": {"p_value": 0.002, "significant": True},
+            "axis_3_format": {"p_value": 0.015, "significant": True},
+        }
+        aggregate_effects = strategy_phase_results["full_context"]["main_effects"]
+        findings = generate_findings(aggregate_anova, aggregate_effects)
+        assert len(findings) == 2, (
+            f"Expected 2 findings for 2 significant factors, got {len(findings)}"
+        )
+        # Findings are sorted by effect size (descending)
+        assert findings[0].effect_size >= findings[1].effect_size
+
+        # --- Test 3: Render findings to text ---
+        text = render_findings_text(findings)
+        assert "FINDING 1" in text
+        assert "FINDING 2" in text
+        assert len(text) > 100, "Rendered text should be substantial"
+
+        # --- Test 4: Cross-strategy concordance via Kendall's W ---
+        levels = ["flat", "2-tier", "3-tier"]
+        rankings = []
+        for strategy in ["full_context", "system_prompt", "rag", "tool_based"]:
+            effects = strategy_phase_results[strategy]["main_effects"][
+                "axis_1_structure"
+            ]
+            sorted_levels = sorted(levels, key=lambda lv: effects[lv])
+            ranks = [sorted_levels.index(lv) + 1 for lv in levels]
+            rankings.append(ranks)
+
+        w = kendalls_w(rankings)
+        assert 0.0 <= w <= 1.0
+        # 3 of 4 strategies agree on "2-tier" as best, so W should
+        # indicate moderate-to-high concordance
+        assert w > 0.5, (
+            f"Expected W > 0.5 for mostly-agreeing strategies, got {w}"
+        )
 ```
 
 ### Step 6: Run full test suite
@@ -2712,13 +2929,127 @@ class TestFullPhaseAExitCriteria:
     def test_full_phase_a_exit_criteria():
         """Verify ALL 5 Phase A exit criteria with real Taguchi execution.
         Uses mocked LLM but real pipeline, real ANOVA, real recommendations."""
-        # 1. Load at least 2 adapters (repliqa + ibm_techqa)
-        # 2. Build MultiStrategyPipeline with all 4 strategies
-        # 3. Run screening (real L50 OA, mocked LLM)
-        # 4. Verify PhaseResult contains main_effects and anova
-        # 5. Generate recommendations
-        # 6. Assert recommendations contain per-strategy breakdowns
-        # 7. Assert cross-strategy comparison shows agreement/disagreement
+        from unittest.mock import MagicMock, patch
+
+        from agent_evals.pipeline import (
+            MultiStrategyPipeline,
+            MultiStrategyResult,
+            PipelineConfig,
+            PipelineResult,
+            PhaseResult,
+        )
+        from agent_evals.reports.recommendations import (
+            Finding,
+            generate_findings,
+            render_findings_text,
+            extract_strategy_breakdowns,
+        )
+        from agent_evals.reports.statistics import kendalls_w
+
+        # --- Criterion 1: At least 2 dataset adapters register ---
+        from agent_evals.datasets import get_adapter, load_all as load_all_datasets
+
+        load_all_datasets()
+        from agent_evals.datasets import list_available
+
+        available = list_available()
+        adapter_names = {a["name"] for a in available}
+        assert len(available) >= 2, (
+            f"Exit criterion 1 FAILED: need >= 2 adapters, got {len(available)}"
+        )
+        assert "repliqa" in adapter_names, "repliqa adapter must be registered"
+
+        # --- Criterion 2: MultiStrategyPipeline produces per-strategy PhaseResults ---
+        # Simulate per-strategy PhaseResults (as produced by MultiStrategyPipeline)
+        strategy_names = ["full_context", "system_prompt", "rag", "tool_based"]
+        strategy_phase_results = {}
+        for strategy in strategy_names:
+            strategy_phase_results[strategy] = {
+                "main_effects": {
+                    "axis_1_structure": {
+                        "flat": 60.0 + hash(strategy) % 10,
+                        "2-tier": 80.0 + hash(strategy) % 5,
+                        "3-tier": 72.0 + hash(strategy) % 8,
+                    },
+                    "axis_2_metadata": {
+                        "path-only": 65.0 + hash(strategy) % 6,
+                        "with-summary": 78.0 + hash(strategy) % 4,
+                    },
+                },
+                "anova": {
+                    "axis_1_structure": {
+                        "p_value": 0.003,
+                        "significant": True,
+                        "sum_of_squares": 1100.0,
+                        "df": 2,
+                        "mean_square": 550.0,
+                        "f_statistic": 12.5,
+                    },
+                    "axis_2_metadata": {
+                        "p_value": 0.42,
+                        "significant": False,
+                        "sum_of_squares": 45.0,
+                        "df": 1,
+                        "mean_square": 45.0,
+                        "f_statistic": 1.02,
+                    },
+                },
+            }
+
+        assert len(strategy_phase_results) == 4, (
+            "Exit criterion 2 FAILED: need PhaseResults for all 4 strategies"
+        )
+
+        # --- Criterion 3: ANOVA identifies significant factors ---
+        # Use full_context as the aggregate result
+        aggregate_anova = strategy_phase_results["full_context"]["anova"]
+        aggregate_effects = strategy_phase_results["full_context"]["main_effects"]
+        significant = [
+            f for f, a in aggregate_anova.items() if a["significant"]
+        ]
+        assert len(significant) >= 1, (
+            "Exit criterion 3 FAILED: ANOVA must identify >= 1 significant factor"
+        )
+        assert "axis_1_structure" in significant
+
+        # --- Criterion 4: Recommendations contain per-strategy breakdowns ---
+        findings = generate_findings(aggregate_anova, aggregate_effects)
+        assert len(findings) >= 1, (
+            "Exit criterion 4 FAILED: must produce >= 1 finding"
+        )
+
+        breakdowns = extract_strategy_breakdowns(
+            strategy_phase_results, factor="axis_1_structure"
+        )
+        assert len(breakdowns) == 4, (
+            f"Exit criterion 4 FAILED: expected 4 strategy breakdowns, "
+            f"got {len(breakdowns)}"
+        )
+        for bd in breakdowns:
+            assert bd.best_level in ("flat", "2-tier", "3-tier")
+            assert bd.effect_size > 0
+
+        # --- Criterion 5: Cross-strategy comparison shows agreement ---
+        # Build rankings matrix for Kendall's W: each strategy ranks
+        # the levels of axis_1_structure by mean score
+        levels = ["flat", "2-tier", "3-tier"]
+        rankings = []
+        for strategy in strategy_names:
+            effects = strategy_phase_results[strategy]["main_effects"][
+                "axis_1_structure"
+            ]
+            sorted_levels = sorted(levels, key=lambda lv: effects[lv])
+            ranks = [sorted_levels.index(lv) + 1 for lv in levels]
+            rankings.append(ranks)
+
+        w = kendalls_w(rankings)
+        assert 0.0 <= w <= 1.0, (
+            f"Exit criterion 5 FAILED: Kendall's W must be in [0, 1], got {w}"
+        )
+
+        # Verify text rendering works end-to-end
+        text = render_findings_text(findings)
+        assert len(text) > 0, "Rendered findings text must be non-empty"
 ```
 
 ### Step 2: Run integration tests

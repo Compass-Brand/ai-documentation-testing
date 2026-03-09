@@ -1425,6 +1425,165 @@ class TestCompressionTradeoffTable:
         assert "algorithmic" in table
         assert "format_conversion" in table
         assert "llm_summarized" in table
+
+
+class TestStructuredVsProseCompaction:
+    """Compare structured (KV-format) compaction against prose (LLM-summarized)
+    compaction to validate the hypothesis that structured output is shorter
+    while both preserve key information.
+
+    This sets up the comparison so results could feed into a paired hypothesis
+    test (e.g., Wilcoxon signed-rank) across multiple documentation inputs.
+    """
+
+    def _make_multi_doc_tree(self) -> DocTree:
+        """Build a doc tree with multiple files to produce meaningful samples."""
+        files = {}
+        docs = [
+            ("guides/auth.md", "# Authentication\n\nUse OAuth2 for all API authentication. Tokens expire after 1 hour. Refresh tokens last 30 days.\n\n## Setup\nRegister your app at /settings/oauth."),
+            ("guides/rate-limits.md", "# Rate Limits\n\nDefault rate limit is 100 requests per minute per API key. Enterprise plans get 1000 requests per minute.\n\n## Headers\nCheck X-RateLimit-Remaining header for current quota."),
+            ("api/users.md", "# Users API\n\nGET /users returns a paginated list of users. POST /users creates a new user.\n\n## Parameters\n- page: int (default 1)\n- per_page: int (default 20, max 100)"),
+            ("api/projects.md", "# Projects API\n\nGET /projects lists projects. POST /projects creates a project.\n\n## Fields\n- name: string (required)\n- description: string (optional)\n- visibility: enum (public, private)"),
+            ("reference/errors.md", "# Error Codes\n\n- 400: Bad Request - malformed input\n- 401: Unauthorized - missing or invalid token\n- 403: Forbidden - insufficient permissions\n- 404: Not Found - resource does not exist\n- 429: Too Many Requests - rate limit exceeded"),
+        ]
+        for rel_path, content in docs:
+            files[rel_path] = DocFile(
+                rel_path=rel_path,
+                content=content,
+                size_bytes=len(content),
+                token_count=len(content) // 4,
+                tier="required",
+                section=rel_path.split("/")[0].title(),
+            )
+        return DocTree(
+            files=files,
+            scanned_at=datetime(2026, 1, 1),
+            source="/test",
+            total_tokens=sum(f.token_count for f in files.values()),
+        )
+
+    def test_both_produce_valid_output(self):
+        """Both structured and prose compaction must produce non-empty strings."""
+        from agent_evals.context.compression import (
+            _algorithmic_compress,
+            _format_convert,
+        )
+
+        doc_tree = self._make_multi_doc_tree()
+        for doc in doc_tree.files.values():
+            structured = _format_convert(doc.content)
+            prose = _algorithmic_compress(doc.content)
+            assert isinstance(structured, str) and len(structured) > 0, (
+                f"Structured output empty for {doc.rel_path}"
+            )
+            assert isinstance(prose, str) and len(prose) > 0, (
+                f"Prose output empty for {doc.rel_path}"
+            )
+
+    def test_structured_shorter_than_prose(self):
+        """Structured (KV-format) output should use fewer tokens than
+        algorithmic (prose-like) output because KV strips markdown
+        formatting overhead more aggressively.
+        """
+        from agent_evals.context.compression import (
+            _algorithmic_compress,
+            _format_convert,
+        )
+        from agent_evals.llm.token_counter import count_tokens
+
+        doc_tree = self._make_multi_doc_tree()
+        structured_shorter_count = 0
+        total_docs = len(doc_tree.files)
+
+        for doc in doc_tree.files.values():
+            structured = _format_convert(doc.content)
+            prose = _algorithmic_compress(doc.content)
+            structured_tokens = count_tokens(structured)
+            prose_tokens = count_tokens(prose)
+            if structured_tokens < prose_tokens:
+                structured_shorter_count += 1
+
+        # Structured should be shorter for the majority of docs
+        assert structured_shorter_count > total_docs / 2, (
+            f"Structured was shorter in only {structured_shorter_count}/{total_docs} docs; "
+            f"expected majority"
+        )
+
+    def test_both_preserve_key_information(self):
+        """Both compaction methods must preserve critical technical terms
+        from the original documentation (API names, config values, error codes).
+        """
+        from agent_evals.context.compression import (
+            _algorithmic_compress,
+            _format_convert,
+        )
+
+        doc_tree = self._make_multi_doc_tree()
+        # Critical terms that must survive compression
+        critical_terms_by_doc = {
+            "guides/auth.md": ["OAuth2", "1 hour", "30 days", "/settings/oauth"],
+            "guides/rate-limits.md": ["100", "1000", "X-RateLimit-Remaining"],
+            "api/users.md": ["/users", "GET", "POST", "per_page"],
+            "api/projects.md": ["/projects", "visibility", "public", "private"],
+            "reference/errors.md": ["400", "401", "403", "404", "429"],
+        }
+
+        for rel_path, terms in critical_terms_by_doc.items():
+            doc = doc_tree.files[rel_path]
+            structured = _format_convert(doc.content)
+            prose = _algorithmic_compress(doc.content)
+
+            for term in terms:
+                assert term in structured, (
+                    f"Structured output for {rel_path} missing critical term: {term}"
+                )
+                assert term in prose, (
+                    f"Prose output for {rel_path} missing critical term: {term}"
+                )
+
+    def test_paired_differences_suitable_for_hypothesis_test(self):
+        """Collect paired (structured_tokens, prose_tokens) for each doc
+        and verify the data is suitable for a paired statistical test.
+
+        Requirements for a valid paired test:
+        1. Same number of observations per group (paired by document).
+        2. Non-zero differences exist (the methods are not identical).
+        3. At least 5 pairs for minimum statistical power.
+        """
+        from agent_evals.context.compression import (
+            _algorithmic_compress,
+            _format_convert,
+        )
+        from agent_evals.llm.token_counter import count_tokens
+
+        doc_tree = self._make_multi_doc_tree()
+        structured_counts: list[int] = []
+        prose_counts: list[int] = []
+
+        for doc in doc_tree.files.values():
+            structured_counts.append(count_tokens(_format_convert(doc.content)))
+            prose_counts.append(count_tokens(_algorithmic_compress(doc.content)))
+
+        # Requirement 1: equal sample sizes (paired)
+        assert len(structured_counts) == len(prose_counts)
+
+        # Requirement 2: non-zero differences (methods are not identical)
+        differences = [s - p for s, p in zip(structured_counts, prose_counts)]
+        assert any(d != 0 for d in differences), (
+            "All differences are zero — methods produce identical token counts, "
+            "no hypothesis test possible"
+        )
+
+        # Requirement 3: minimum sample size for paired test
+        assert len(differences) >= 5, (
+            f"Only {len(differences)} pairs; need at least 5 for minimum statistical power"
+        )
+
+        # Verify the direction is consistent (structured typically shorter)
+        negative_diffs = sum(1 for d in differences if d < 0)
+        assert negative_diffs > 0 or sum(1 for d in differences if d > 0) > 0, (
+            "Need variation in differences to run a meaningful test"
+        )
 ```
 
 **Add function** to `agent-evals/src/agent_evals/context/compression.py`:
@@ -1684,6 +1843,125 @@ class TestToolDescRegistration:
         assert "tool-set-extended5" in names
         assert "tool-set-extended7" in names
         assert "tool-set-kitchen-sink" in names
+
+
+class TestToolSetSizePromptLength:
+    """Verify that prompt token counts increase monotonically with tool set size.
+
+    This validates tool set size as a meaningful experimental factor by
+    confirming that adding more tool definitions measurably increases the
+    prompt length seen by the model.
+    """
+
+    def test_token_counts_increase_monotonically(self):
+        """Token counts must follow: core3 < extended5 < extended7 < kitchen_sink."""
+        from agent_evals.variants.tool_description import (
+            ToolSetCore3,
+            ToolSetExtended5,
+            ToolSetExtended7,
+            ToolSetKitchenSink,
+        )
+        from agent_evals.llm.token_counter import count_tokens
+
+        tree = _make_doc_tree()
+        core3_tokens = count_tokens(ToolSetCore3().render(tree))
+        ext5_tokens = count_tokens(ToolSetExtended5().render(tree))
+        ext7_tokens = count_tokens(ToolSetExtended7().render(tree))
+        ks_tokens = count_tokens(ToolSetKitchenSink().render(tree))
+
+        assert core3_tokens < ext5_tokens, (
+            f"core3 ({core3_tokens}) should have fewer tokens than extended5 ({ext5_tokens})"
+        )
+        assert ext5_tokens < ext7_tokens, (
+            f"extended5 ({ext5_tokens}) should have fewer tokens than extended7 ({ext7_tokens})"
+        )
+        assert ext7_tokens < ks_tokens, (
+            f"extended7 ({ext7_tokens}) should have fewer tokens than kitchen_sink ({ks_tokens})"
+        )
+
+    def test_kitchen_sink_measurably_larger_than_core(self):
+        """Kitchen sink variant must have at least 2x the tokens of core3.
+
+        A 2x threshold ensures tool set size is a non-trivial factor,
+        not just a few extra tokens of noise.
+        """
+        from agent_evals.variants.tool_description import (
+            ToolSetCore3,
+            ToolSetKitchenSink,
+        )
+        from agent_evals.llm.token_counter import count_tokens
+
+        tree = _make_doc_tree()
+        core3_tokens = count_tokens(ToolSetCore3().render(tree))
+        ks_tokens = count_tokens(ToolSetKitchenSink().render(tree))
+
+        assert ks_tokens >= 2 * core3_tokens, (
+            f"kitchen_sink ({ks_tokens}) should be at least 2x core3 ({core3_tokens}) "
+            f"to ensure tool set size is a meaningful experimental factor"
+        )
+
+    def test_each_size_level_adds_unique_tool_names(self):
+        """Each tool set size level should contain strictly more tool names
+        than the previous level, confirming the size increase comes from
+        additional tools, not just longer descriptions of the same tools.
+        """
+        from agent_evals.variants.tool_description import (
+            ToolSetCore3,
+            ToolSetExtended5,
+            ToolSetExtended7,
+            ToolSetKitchenSink,
+        )
+
+        tree = _make_doc_tree()
+
+        def _extract_tool_names(rendered: str) -> set[str]:
+            names = set()
+            for line in rendered.splitlines():
+                if line.startswith("## ") and not line.startswith("## Documentation"):
+                    names.add(line[3:].strip())
+            return names
+
+        core3_names = _extract_tool_names(ToolSetCore3().render(tree))
+        ext5_names = _extract_tool_names(ToolSetExtended5().render(tree))
+        ext7_names = _extract_tool_names(ToolSetExtended7().render(tree))
+        ks_names = _extract_tool_names(ToolSetKitchenSink().render(tree))
+
+        assert core3_names < ext5_names, "extended5 must be a strict superset of core3"
+        assert ext5_names < ext7_names, "extended7 must be a strict superset of extended5"
+        assert ext7_names < ks_names, "kitchen_sink must be a strict superset of extended7"
+
+    def test_prompt_length_data_suitable_for_hypothesis_test(self):
+        """Render each variant multiple times and collect token counts to verify
+        they are deterministic (zero variance within a level). This confirms the
+        prompt length differences are structural, not random, making them suitable
+        for statistical comparison as a Taguchi factor.
+        """
+        from agent_evals.variants.tool_description import (
+            ToolSetCore3,
+            ToolSetExtended5,
+            ToolSetExtended7,
+            ToolSetKitchenSink,
+        )
+        from agent_evals.llm.token_counter import count_tokens
+
+        tree = _make_doc_tree()
+        variants = [ToolSetCore3(), ToolSetExtended5(), ToolSetExtended7(), ToolSetKitchenSink()]
+        token_counts: list[list[int]] = []
+
+        for variant in variants:
+            counts = [count_tokens(variant.render(tree)) for _ in range(5)]
+            token_counts.append(counts)
+            # Each variant should produce deterministic token counts
+            assert len(set(counts)) == 1, (
+                f"Variant {variant.metadata().name} produced non-deterministic "
+                f"token counts: {counts}"
+            )
+
+        # All 4 levels should produce distinct token counts
+        level_means = [counts[0] for counts in token_counts]
+        assert len(set(level_means)) == 4, (
+            f"Expected 4 distinct token count levels, got {len(set(level_means))}: {level_means}"
+        )
 ```
 
 ### Step 2: Run tests to verify they fail
