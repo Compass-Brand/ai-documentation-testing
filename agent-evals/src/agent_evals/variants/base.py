@@ -28,7 +28,7 @@ class VariantMetadata(BaseModel):
     """
 
     name: str
-    axis: int = Field(ge=0, le=10)
+    axis: int = Field(ge=0, le=13)
     category: str
     description: str
     token_estimate: int = Field(default=0, ge=0)

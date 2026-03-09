@@ -115,16 +115,36 @@ class TestVariantMetadata:
                 token_estimate=100,
             )
 
-    def test_axis_must_be_at_most_10(self) -> None:
-        """VariantMetadata rejects axis values above 10."""
+    def test_axis_must_be_at_most_13(self) -> None:
+        """VariantMetadata rejects axis values above 13."""
         with pytest.raises(ValueError):
             VariantMetadata(
                 name="bad",
-                axis=11,
+                axis=14,
                 category="test",
                 description="Invalid axis",
                 token_estimate=100,
             )
+
+    def test_axis_11_valid(self) -> None:
+        """VariantMetadata accepts axis 11 (tool description)."""
+        meta = VariantMetadata(
+            name="tool-desc-minimal",
+            axis=11,
+            category="tool_description",
+            description="Minimal tool descriptions.",
+        )
+        assert meta.axis == 11
+
+    def test_axis_12_valid(self) -> None:
+        """VariantMetadata accepts axis 12 (agent instruction)."""
+        meta = VariantMetadata(
+            name="instruction-none",
+            axis=12,
+            category="agent_instruction",
+            description="No instruction file.",
+        )
+        assert meta.axis == 12
 
     def test_token_estimate_allows_zero(self) -> None:
         """VariantMetadata accepts zero token estimate (populated after render)."""
