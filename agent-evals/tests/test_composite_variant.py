@@ -8,7 +8,6 @@ import pytest
 from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.composite import CompositeVariant
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

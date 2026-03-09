@@ -6,13 +6,12 @@ concatenating N independent full renderings (which inflated prompts 10x).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from agent_evals.variants.base import IndexVariant, PipelineRole, VariantMetadata
 from agent_evals.variants.composite import CompositeVariant
 from agent_index.models import DocFile, DocTree
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -67,7 +66,7 @@ def _make_doc_tree(num_files: int = 4) -> DocTree:
 
     return DocTree(
         files=files,
-        scanned_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        scanned_at=datetime(2026, 1, 1, tzinfo=UTC),
         source="/test/docs",
         total_tokens=sum(f.token_count or 0 for f in files.values()),
     )
