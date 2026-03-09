@@ -150,7 +150,8 @@ class LLMClient:
                     )
                     if attempt < self.MAX_RETRIES - 1:
                         retry_count += 1
-                        delay = self.RETRY_BASE_DELAY * (2 ** attempt)
+                        max_delay = self.RETRY_BASE_DELAY * (2 ** attempt)
+                        delay = random.uniform(0, max_delay)  # noqa: S311
                         logger.warning(
                             "LLM returned empty content (attempt %d/%d, possible rate limit). "
                             "Retrying in %.1fs...",

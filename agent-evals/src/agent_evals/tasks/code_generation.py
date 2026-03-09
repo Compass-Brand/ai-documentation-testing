@@ -31,13 +31,44 @@ def _extract_code_blocks(response: str) -> str:
     return response
 
 
-def _check_syntax(code: str) -> bool:
-    """Check whether the code is valid Python syntax via ast.parse.
+_PYTHON_INDICATORS: frozenset[str] = frozenset({
+    "python", "python3", "py", "py3",
+})
 
-    Returns True if the code parses successfully, False otherwise.
-    Silently returns True for empty strings (no code to validate).
+
+def _detect_language(response: str) -> str | None:
+    """Detect the language from fenced code blocks in the response.
+
+    Returns the lowercased language tag from the first fenced code block,
+    or None if no language tag is found.
+    """
+    match = re.search(r"```(\w+)\n", response)
+    if match:
+        return match.group(1).lower()
+    return None
+
+
+def _check_syntax(code: str, language: str | None = None) -> bool:
+    """Check whether the code is syntactically valid.
+
+    Only validates Python code via ``ast.parse``. When a non-Python
+    language tag is detected (e.g. ``javascript``, ``go``), returns
+    True (no penalty) since we cannot validate those languages.
+
+    When no language tag is present, falls back to Python validation
+    as before -- this preserves the penalty for clearly broken Python.
+
+    Args:
+        code: The code string to check.
+        language: Optional detected language tag (e.g. "python", "js").
+
+    Returns:
+        True if valid or non-Python; False only for invalid Python.
     """
     if not code.strip():
+        return True
+    # If language is detected and it's not Python, skip validation
+    if language is not None and language not in _PYTHON_INDICATORS:
         return True
     try:
         ast.parse(code)
@@ -135,7 +166,8 @@ class CodeGenerationTask(EvalTask):
 
         # Syntax validation bonus
         code = _extract_code_blocks(response)
-        syntax_bonus = 1.0 if _check_syntax(code) else 0.0
+        language = _detect_language(response)
+        syntax_bonus = 1.0 if _check_syntax(code, language) else 0.0
 
         score = match_rate * 0.7 + (1.0 - violation_rate) * 0.2 + syntax_bonus * 0.1
         return max(0.0, min(1.0, score))

@@ -709,6 +709,102 @@ class TestRetryLogging:
         assert "empty content" in caplog.text.lower() or "rate limit" in caplog.text.lower()
 
 
+# ---------------------------------------------------------------------------
+# Silent rate-limit retry uses jitter (bead #141)
+# ---------------------------------------------------------------------------
+
+
+class TestSilentRateLimitJitter:
+    """Silent 429 retry path must use jittered backoff to prevent thundering herd."""
+
+    @patch("agent_evals.llm.client.random.uniform", return_value=2.5)
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_silent_retry_calls_random_uniform(
+        self,
+        mock_litellm: MagicMock,
+        mock_sleep: MagicMock,
+        mock_uniform: MagicMock,
+    ) -> None:
+        """Silent rate limit retry must call random.uniform(0, max_delay)
+        instead of using deterministic exponential backoff."""
+        empty_response = _mock_litellm_response()
+        empty_response.choices[0].message.content = None
+        empty_response.choices[0].message.tool_calls = None
+
+        mock_litellm.completion.side_effect = [
+            empty_response,
+            _mock_litellm_response(),
+        ]
+
+        client = LLMClient(model="test/model", api_key="key")
+        client.complete([{"role": "user", "content": "hi"}])
+
+        # random.uniform must have been called for the silent retry
+        mock_uniform.assert_called_once_with(
+            0, client.RETRY_BASE_DELAY * (2 ** 0),
+        )
+        # time.sleep must use the jittered value (2.5), not deterministic
+        mock_sleep.assert_called_once_with(2.5)
+
+    @patch("agent_evals.llm.client.random.uniform", side_effect=lambda a, b: b)
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_silent_retry_backoff_increases_exponentially(
+        self,
+        mock_litellm: MagicMock,
+        mock_sleep: MagicMock,
+        _mock_uniform: MagicMock,
+    ) -> None:
+        """Silent retry delays should increase exponentially (matching the
+        exception retry path behavior)."""
+        empty_response = _mock_litellm_response()
+        empty_response.choices[0].message.content = None
+        empty_response.choices[0].message.tool_calls = None
+
+        mock_litellm.completion.side_effect = [
+            empty_response,
+            empty_response,
+            _mock_litellm_response(),
+        ]
+
+        client = LLMClient(model="test/model", api_key="key")
+        client.complete([{"role": "user", "content": "hi"}])
+
+        delays = [call.args[0] for call in mock_sleep.call_args_list]
+        assert len(delays) == 2
+        # With uniform returning upper bound: delay = base * 2^attempt
+        assert delays[0] == client.RETRY_BASE_DELAY * (2 ** 0)  # 5.0
+        assert delays[1] == client.RETRY_BASE_DELAY * (2 ** 1)  # 10.0
+        assert delays[1] > delays[0]
+
+    @patch("agent_evals.llm.client.time.sleep")
+    @patch("agent_evals.llm.client.litellm")
+    def test_silent_retry_delay_bounded_by_max(
+        self,
+        mock_litellm: MagicMock,
+        mock_sleep: MagicMock,
+    ) -> None:
+        """Silent retry delay should be in [0, base_delay * 2^attempt]."""
+        empty_response = _mock_litellm_response()
+        empty_response.choices[0].message.content = None
+        empty_response.choices[0].message.tool_calls = None
+
+        mock_litellm.completion.side_effect = [
+            empty_response,
+            _mock_litellm_response(),
+        ]
+
+        client = LLMClient(model="test/model", api_key="key")
+        client.complete([{"role": "user", "content": "hi"}])
+
+        delay = mock_sleep.call_args.args[0]
+        max_delay = client.RETRY_BASE_DELAY * (2 ** 0)
+        assert 0 <= delay <= max_delay, (
+            f"Silent retry delay {delay} should be in [0, {max_delay}]"
+        )
+
+
 class TestRequestTimeout:
     """LLMClient must pass a request timeout to litellm to prevent hung threads."""
 
@@ -1162,3 +1258,39 @@ class TestExtendedMetadataExtraction:
             assert result.cached_tokens == 0
             assert result.cache_write_tokens == 0
             assert result.reasoning_tokens == 0
+
+
+# ---------------------------------------------------------------------------
+# Model override via kwargs (bug #136)
+# ---------------------------------------------------------------------------
+
+
+class TestModelOverrideKwarg:
+    """Verify that passing model= kwarg to complete() overrides self.model."""
+
+    @patch("agent_evals.llm.client.litellm")
+    def test_model_kwarg_overrides_default_model(
+        self, mock_litellm: MagicMock,
+    ) -> None:
+        mock_litellm.completion.return_value = _mock_litellm_response()
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        client.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="openrouter/openai/gpt-4o-mini",
+        )
+
+        call_kwargs = mock_litellm.completion.call_args
+        assert call_kwargs.kwargs["model"] == "openrouter/openai/gpt-4o-mini"
+
+    @patch("agent_evals.llm.client.litellm")
+    def test_model_kwarg_absent_uses_default(
+        self, mock_litellm: MagicMock,
+    ) -> None:
+        mock_litellm.completion.return_value = _mock_litellm_response()
+
+        client = LLMClient(model="openrouter/anthropic/claude-sonnet-4.5")
+        client.complete(messages=[{"role": "user", "content": "hi"}])
+
+        call_kwargs = mock_litellm.completion.call_args
+        assert call_kwargs.kwargs["model"] == "openrouter/anthropic/claude-sonnet-4.5"

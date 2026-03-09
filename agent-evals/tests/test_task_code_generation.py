@@ -261,6 +261,36 @@ class TestCodeGenerationSyntaxValidation:
         score = task.score_response(response)
         assert 0.0 <= score <= 1.0
 
+    def test_non_python_code_not_penalized_for_syntax(self) -> None:
+        """Non-Python code must not lose the 0.1 syntax bonus.
+
+        Bug #132: _check_syntax uses ast.parse which only validates Python.
+        Valid JavaScript/Go/Rust etc. always fail the Python syntax check,
+        incorrectly losing the 0.1 syntax bonus.
+        """
+        task = _codegen_task(
+            test="function",
+            forbidden_patterns=[],
+        )
+        # Valid JavaScript that matches the pattern
+        js_response = "```javascript\nfunction add(a, b) { return a + b; }\n```"
+        # Valid Python that matches the pattern
+        py_response = "```python\ndef function_add(a, b):\n    return a + b\n```"
+
+        js_score = task.score_response(js_response)
+        py_score = task.score_response(py_response)
+
+        # Both match the "function" pattern (match_rate=1.0) and have no
+        # violations (violation_rate=0.0). The only difference should NOT
+        # be the syntax bonus. JS should not be penalized.
+        # With the bug: js_score = 0.7 + 0.2 + 0.0 = 0.9
+        #               py_score = 0.7 + 0.2 + 0.1 = 1.0
+        # After fix: both should get the syntax bonus -> both 1.0
+        assert js_score == py_score, (
+            f"JS score {js_score} != Python score {py_score}; "
+            f"non-Python code is being penalized for syntax (bug #132)"
+        )
+
 
 class TestCodeGenerationCaseNormalization:
     """Tests for case-insensitive keyword matching."""
