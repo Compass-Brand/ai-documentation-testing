@@ -101,6 +101,79 @@ class DOEPipeline:
         self._store = orchestrator.store
 
     @staticmethod
+    def _group_refinement_scores(
+        trials: list[Any],
+        design: Any,
+    ) -> dict[int, list[float]]:
+        """Group full-mode trial scores into design-row buckets.
+
+        In refinement, trials run in full mode (one variant per trial).
+        Each design row assigns a level per factor; we match a trial's
+        ``variant_name`` to any row that includes it, then collect
+        scores per row.  Trials matching no row are skipped.
+        """
+        name_to_rows: dict[str, set[int]] = defaultdict(set)
+        for row in design.rows:
+            for level_name in row.assignments.values():
+                name_to_rows[level_name].add(row.run_id)
+
+        row_scores: dict[int, list[float]] = defaultdict(list)
+        for trial in trials:
+            vname = trial.variant_name
+            for rid in name_to_rows.get(vname, set()):
+                row_scores[rid].append(trial.score)
+
+        return dict(row_scores)
+
+    def _analyse_refinement(
+        self,
+        filtered_variants: list[Any],
+        trials: list[Any],
+    ) -> dict[str, Any]:
+        """Run the statistical analysis pipeline on refinement trials.
+
+        Mirrors screening: builds a Taguchi design from filtered axes,
+        groups scores into rows, computes S/N, main effects, ANOVA,
+        and optimal prediction.
+        """
+        axes: dict[int, list[str]] = defaultdict(list)
+        for v in filtered_variants:
+            meta = v.metadata()
+            if meta.name not in axes[meta.axis]:
+                axes[meta.axis].append(meta.name)
+
+        design = build_design(
+            dict(axes), self.config.models, self.config.oa_override,
+        )
+        row_scores = self._group_refinement_scores(trials, design)
+        sn_ratios = compute_sn_ratios(
+            row_scores, self.config.quality_type,
+        )
+        main_effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        optimal = predict_optimal(
+            main_effects, sn_ratios,
+            design=design, anova_result=anova,
+        )
+        sig_factors = sorted(
+            (
+                f for f in anova.factors
+                if f.corrected_p_value < self.config.alpha
+            ),
+            key=lambda f: f.omega_squared,
+            reverse=True,
+        )
+        return {
+            "main_effects": main_effects,
+            "anova": anova,
+            "optimal": optimal.optimal_assignment,
+            "predicted_sn": optimal.predicted_sn,
+            "significant_factors": [
+                f.factor_name for f in sig_factors
+            ],
+        }
+
+    @staticmethod
     def _resolve_factor_axes(
         variants: list[Any],
         factor_names: list[str],
@@ -311,7 +384,8 @@ class DOEPipeline:
         """Execute Phase 3: full factorial refinement on top K factors.
 
         Builds all combinations of the top K significant factors while
-        fixing remaining factors at their optimal levels.
+        fixing remaining factors at their optimal levels, then runs
+        the same analysis pipeline as screening.
         """
         # Apply phase-specific repetition count
         if self._orchestrator.config.eval_config is not None:
@@ -351,6 +425,11 @@ class DOEPipeline:
             resume_run_id=resume_run_id,
         )
 
+        # Analyse refinement trials (mirrors screening analysis)
+        analysis = self._analyse_refinement(
+            filtered_variants, result.trials,
+        )
+
         return PhaseResult(
             run_id=result.run_id,
             phase="refinement",
@@ -358,6 +437,11 @@ class DOEPipeline:
             total_cost=result.total_cost,
             total_tokens=result.total_tokens,
             elapsed_seconds=result.elapsed_seconds,
+            main_effects=analysis["main_effects"],
+            anova=analysis["anova"],
+            optimal=analysis["optimal"],
+            predicted_sn=analysis["predicted_sn"],
+            significant_factors=analysis["significant_factors"],
         )
 
     def run(

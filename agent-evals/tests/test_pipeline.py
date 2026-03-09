@@ -417,12 +417,23 @@ def test_pipeline_refinement_passes_mode_full():
         significant_factors=["axis_1"],
         main_effects={"axis_1": {"a": 12.0, "b": 10.0}},
     )
-    pipeline.run_refinement(
-        screening_result=screening,
-        tasks=[],
-        variants=_make_variants(),
-        doc_tree=MagicMock(),
-    )
+
+    with patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred:
+        mock_sn.return_value = {0: 10.0}
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment={}, predicted_sn=0.0,
+        )
+        pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
 
     orch.run.assert_called_once()
     call_kwargs = orch.run.call_args
@@ -559,6 +570,95 @@ def test_pipeline_refinement_filters_to_top_k_factor_variants():
     assert len(passed_variants) == 6, (
         f"Expected 6 variants for 2 top-K factors, got {len(passed_variants)}"
     )
+
+
+def test_pipeline_refinement_populates_analysis_fields():
+    """Bug #140: Refinement must compute and return analysis like screening."""
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_2": "b", "axis_3": "c"},
+        significant_factors=["axis_1", "axis_3", "axis_2"],
+        main_effects={
+            "axis_1": {"a": 12.0, "b": 10.0, "c": 8.0},
+            "axis_2": {"a": 9.0, "b": 11.0, "c": 10.0},
+            "axis_3": {"a": 8.5, "b": 10.5, "c": 11.5},
+        },
+    )
+
+    mock_main_fx = {"axis_1": {"a": 12.5, "b": 9.5, "c": 7.5}}
+    mock_optimal_assignment = {"axis_1": "a"}
+
+    with patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred:
+        mock_sn.return_value = {0: 12.0}
+        mock_me.return_value = mock_main_fx
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment=mock_optimal_assignment,
+            predicted_sn=12.5,
+        )
+        result = pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+    assert result.main_effects == mock_main_fx, (
+        f"Expected main_effects={mock_main_fx}, got {result.main_effects}"
+    )
+    assert result.anova is not None, "Refinement must populate anova"
+    assert result.optimal == mock_optimal_assignment, (
+        f"Expected optimal={mock_optimal_assignment}, got {result.optimal}"
+    )
+    assert result.predicted_sn == 12.5, (
+        f"Expected predicted_sn=12.5, got {result.predicted_sn}"
+    )
+
+
+def test_pipeline_refinement_calls_analysis_functions():
+    """Bug #140: Refinement must call compute_sn_ratios, main_effects, ANOVA."""
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_3": "c"},
+        significant_factors=["axis_1", "axis_3"],
+    )
+
+    with patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred:
+        mock_sn.return_value = {0: 10.0}
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment={}, predicted_sn=0.0,
+        )
+        pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+        mock_sn.assert_called_once()
+        mock_me.assert_called_once()
+        mock_anova.assert_called_once()
+        mock_pred.assert_called_once()
 
 
 def test_pipeline_refinement_returns_phase_result():
@@ -782,9 +882,19 @@ def test_pipeline_refinement_applies_refinement_reps():
         optimal={"axis_1": "a"}, significant_factors=["axis_1"],
     )
 
-    pipeline.run_refinement(
-        screening_result=screening, tasks=[],
-        variants=_make_variants(), doc_tree=MagicMock(),
-    )
+    with patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred:
+        mock_sn.return_value = {0: 10.0}
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment={}, predicted_sn=0.0,
+        )
+        pipeline.run_refinement(
+            screening_result=screening, tasks=[],
+            variants=_make_variants(), doc_tree=MagicMock(),
+        )
 
     assert eval_cfg.repetitions == 9
