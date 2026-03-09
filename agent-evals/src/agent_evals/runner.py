@@ -127,6 +127,8 @@ class EvalRunConfig:
     judge_model: str = "openrouter/openai/gpt-4o-mini"
     judge_mode: str = "routine"  # "routine" or "poll"
     poll_models: list[str] | None = None
+    fetch_generation_stats: bool = False
+    generation_stats_rate: float = 1.0
 
     _VALID_OUTPUT_FORMATS = frozenset({"json", "csv", "both"})
     _VALID_DISPLAY_MODES = frozenset({"rich", "plain", "none"})
@@ -922,6 +924,51 @@ class EvalRunner:
             "total_api_ms": round(first_gen.total_api_ms, 1) if first_gen else 0.0,
             "retry_count": float(first_gen.retry_count) if first_gen else 0.0,
         }
+
+        # Build CostMetrics from strategy result
+        from agent_evals.metrics import CostMetrics
+
+        cost_metrics = CostMetrics(
+            prompt_tokens=strategy_result.total_prompt_tokens,
+            completion_tokens=strategy_result.total_completion_tokens,
+            reasoning_tokens=first_gen.reasoning_tokens if first_gen else 0,
+            cached_tokens=first_gen.cached_tokens if first_gen else 0,
+            cache_write_tokens=first_gen.cache_write_tokens if first_gen else 0,
+            total_cost_usd=strategy_result.total_cost,
+            cache_discount_usd=None,
+            latency_ms=first_gen.api_call_ms if first_gen else None,
+            generation_time_ms=None,
+            provider=first_gen.provider if first_gen else None,
+            generation_id=first_gen.generation_id if first_gen else None,
+            provider_fallbacks=0,
+        )
+
+        # Optionally fetch generation stats from OpenRouter
+        if self._config.fetch_generation_stats and cost_metrics.generation_id:
+            from agent_evals.llm.generation_stats import fetch_generation_stats
+
+            stats = fetch_generation_stats(
+                cost_metrics.generation_id,
+                api_key=self._client.api_key,
+                fetch_rate=self._config.generation_stats_rate,
+            )
+            if stats:
+                cost_metrics = CostMetrics(
+                    prompt_tokens=cost_metrics.prompt_tokens,
+                    completion_tokens=cost_metrics.completion_tokens,
+                    reasoning_tokens=cost_metrics.reasoning_tokens,
+                    cached_tokens=cost_metrics.cached_tokens,
+                    cache_write_tokens=cost_metrics.cache_write_tokens,
+                    total_cost_usd=cost_metrics.total_cost_usd,
+                    cache_discount_usd=stats.cache_discount,
+                    latency_ms=stats.latency_ms,
+                    generation_time_ms=stats.generation_time_ms,
+                    provider=stats.provider_name or cost_metrics.provider,
+                    generation_id=cost_metrics.generation_id,
+                    provider_fallbacks=stats.provider_fallbacks,
+                )
+
+        metrics["cost_metrics"] = cost_metrics.to_dict()
         # LLM-as-judge sampling: configurable via EvalRunConfig
         sample_rate = self._config.judge_sample_rate
         judge_active = self._config.judge_enabled and trial_index > 0 and trial_index % sample_rate == 0

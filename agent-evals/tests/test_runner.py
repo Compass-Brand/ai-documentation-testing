@@ -1750,3 +1750,80 @@ class TestBaselineVariantThreadSafety:
             assert "Caching" in content, (
                 f"Cache trial rendered wrong content: {content[:80]}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Phase B Task 4: CostMetrics wiring in _run_trial
+# ---------------------------------------------------------------------------
+
+
+class TestCostMetricsInTrial:
+    """Tests that _run_trial populates cost_metrics in the metrics dict."""
+
+    def test_trial_includes_cost_metrics(self) -> None:
+        """TrialResult.metrics should contain a 'cost_metrics' key."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task(score=0.85)
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, 1)
+
+        assert "cost_metrics" in result.metrics
+        cm = result.metrics["cost_metrics"]
+        assert isinstance(cm, dict)
+        assert cm["prompt_tokens"] == 50
+        assert cm["completion_tokens"] == 20
+
+    def test_cost_metrics_has_generation_id(self) -> None:
+        """CostMetrics should capture the generation_id from GenerationResult."""
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, 1)
+
+        cm = result.metrics["cost_metrics"]
+        assert cm["generation_id"] == "gen-test-123"
+
+    def test_cost_metrics_captures_extended_fields(self) -> None:
+        """CostMetrics should capture cached_tokens, reasoning_tokens, provider."""
+        client = MagicMock(spec=LLMClient)
+        client.model = "openrouter/anthropic/claude-sonnet-4.5"
+        client.temperature = 0.3
+        client.complete.return_value = GenerationResult(
+            content="response",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=0.005,
+            model="openrouter/anthropic/claude-sonnet-4.5",
+            generation_id="gen-ext-123",
+            cached_tokens=80,
+            cache_write_tokens=20,
+            reasoning_tokens=10,
+            provider="Anthropic",
+        )
+
+        config = EvalRunConfig(repetitions=1, use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, 1)
+
+        cm = result.metrics["cost_metrics"]
+        assert cm["cached_tokens"] == 80
+        assert cm["cache_write_tokens"] == 20
+        assert cm["reasoning_tokens"] == 10
+        assert cm["provider"] == "Anthropic"
+        assert cm["cache_hit_rate"] == pytest.approx(0.8)
