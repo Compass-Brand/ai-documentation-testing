@@ -297,7 +297,7 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         "--context-strategy",
         type=str,
         default=None,
-        help="Context delivery strategy (full_context, system_prompt, rag, tool_based)",
+        help="Context delivery strategy (full_context, system_prompt, rag, tool_based, mcp_native, compression)",
     )
     parser.add_argument(
         "--strategies",
@@ -851,6 +851,7 @@ def _build_strategy_config(
         rag_top_k=yaml_sc.get("rag_top_k", 5),
         embedding_model=yaml_sc.get("embedding_model", "text-embedding-3-small"),
         max_turns=yaml_sc.get("max_turns", 10),
+        compression_method=yaml_sc.get("compression_method", "algorithmic"),
     )
 
 

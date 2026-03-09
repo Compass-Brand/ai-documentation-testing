@@ -2037,3 +2037,43 @@ class TestBuildStrategyConfigFromYAML:
         assert "raw_yaml" in captured, "_build_strategy_config should be called"
         assert captured["raw_yaml"] is raw_yaml
         assert captured["raw_yaml"]["strategy_config"]["rag_top_k"] == 10
+
+
+# ---------------------------------------------------------------------------
+# Phase C strategy flags
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseCStrategyFlags:
+    """Verify Phase C strategies (mcp_native, compression) are accepted."""
+
+    def test_mcp_native_accepted(self) -> None:
+        """--context-strategy mcp_native should be accepted."""
+        parser = build_parser()
+        args = parser.parse_args(["--context-strategy", "mcp_native"])
+        resolved = resolve_config(args, {})
+        assert resolved["context_strategy"] == "mcp_native"
+
+    def test_compression_accepted(self) -> None:
+        """--context-strategy compression should be accepted."""
+        parser = build_parser()
+        args = parser.parse_args(["--context-strategy", "compression"])
+        resolved = resolve_config(args, {})
+        assert resolved["context_strategy"] == "compression"
+
+    def test_compression_method_passed_through(self) -> None:
+        """compression_method from YAML should reach StrategyConfig."""
+        from agent_evals.cli import _build_strategy_config
+
+        raw_yaml = {"strategy_config": {"compression_method": "llm_summarized"}}
+        result = _build_strategy_config(
+            {"context_strategy": "compression"}, raw_yaml=raw_yaml,
+        )
+        assert result.compression_method == "llm_summarized"
+
+    def test_compression_method_defaults_to_algorithmic(self) -> None:
+        """compression_method defaults to 'algorithmic' when not specified."""
+        from agent_evals.cli import _build_strategy_config
+
+        result = _build_strategy_config({"context_strategy": "compression"})
+        assert result.compression_method == "algorithmic"
