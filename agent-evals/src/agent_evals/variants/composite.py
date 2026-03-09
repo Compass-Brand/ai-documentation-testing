@@ -61,7 +61,16 @@ class CompositeVariant(IndexVariant):
 
         Returns:
             The axis number of the selected primary renderer.
+
+        Raises:
+            ValueError: If no PRIMARY components exist.
         """
+        if not self._primary:
+            raise ValueError(
+                "CompositeVariant requires at least one PRIMARY component, "
+                f"but all {len(self._components)} components are "
+                "PRE_RENDER or POST_RENDER"
+            )
         return self._primary[0]
 
     def metadata(self) -> VariantMetadata:

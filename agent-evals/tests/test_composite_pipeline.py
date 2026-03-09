@@ -518,3 +518,29 @@ class TestCompositeSetupTeardown:
 
         assert 3 in setup_calls
         assert 6 in setup_calls
+
+
+# ---------------------------------------------------------------------------
+# TestCompositeEdgeCases
+# ---------------------------------------------------------------------------
+
+
+class TestCompositeEdgeCases:
+    """Edge cases and error handling for CompositeVariant."""
+
+    def test_no_primary_component_raises_on_render(
+        self, doc_tree: DocTree
+    ) -> None:
+        """Render must raise ValueError when no PRIMARY components exist."""
+        pre = StubPreFilter(max_files=2, axis=6)
+        post = StubPostTransform(suffix="[TAG]", axis=10)
+
+        composite = CompositeVariant(components={6: pre, 10: post})
+
+        with pytest.raises(ValueError, match="at least one PRIMARY component"):
+            composite.render(doc_tree)
+
+    def test_empty_components_raises(self) -> None:
+        """Empty components dict must raise ValueError."""
+        with pytest.raises(ValueError, match="at least one component"):
+            CompositeVariant(components={})
