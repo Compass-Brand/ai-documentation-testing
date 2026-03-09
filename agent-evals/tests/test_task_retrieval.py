@@ -230,3 +230,30 @@ class TestRetrievalPathNormalization:
         score = task.score_response(response)
         # Should get some partial credit via fuzzy matching
         assert score > 0.0
+
+    def test_fuzzy_match_does_not_reuse_extracted_path(self) -> None:
+        """Same extracted path must not fuzzy-match multiple expected files.
+
+        Bug #138: After a fuzzy basename match, the matched extracted path
+        was not removed from the candidate set, allowing one extracted path
+        to match two or more expected paths and inflate the score above 1.0.
+        """
+        # Two expected files share the same basename but different dirs
+        task = _retrieval_task(
+            expected_files=["src/auth.py", "lib/auth.py"],
+        )
+        # Response only mentions ONE path with that basename in a THIRD dir
+        response = "Check vendor/auth.py for details."
+        score = task.score_response(response)
+        # Only one extracted file, so it can match at most one expected file.
+        # Score must not exceed 1.0 and must reflect partial recall.
+        assert score <= 1.0
+        # With 2 expected and only 1 fuzzy match (0.5 true positives),
+        # recall = 0.5 / 2 = 0.25, precision = 0.5 / 1 = 0.5
+        # F-beta(2) = 5 * 0.5 * 0.25 / (4 * 0.5 + 0.25) = 0.625 / 2.25 ~ 0.278
+        # Before the fix, fuzzy_hits would be 1.0 (0.5 + 0.5) since
+        # the same extracted path matched both expected files.
+        assert score < 0.5, (
+            f"Score {score} is too high; same extracted path likely matched "
+            f"multiple expected files (bug #138)"
+        )

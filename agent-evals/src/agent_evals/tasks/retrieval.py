@@ -112,6 +112,7 @@ class RetrievalTask(EvalTask):
             for ext in unmatched_extracted:
                 if os.path.basename(ext) == exp_basename:
                     fuzzy_hits += 0.5
+                    unmatched_extracted.discard(ext)
                     break
 
         true_positives = len(exact_matches) + fuzzy_hits
