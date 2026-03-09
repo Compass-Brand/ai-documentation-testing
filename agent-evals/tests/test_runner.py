@@ -1565,7 +1565,7 @@ class TestTrialResultMetricsTiming:
 # Task 40: LLM-as-judge sampling test
 class TestJudgeSampling:
     def test_judge_score_sampled_into_metrics(self, monkeypatch) -> None:
-        """When JUDGE_SAMPLE_RATE is set, every Nth trial must have judge_score in metrics."""
+        """When judge_enabled=True, every Nth trial must have judge_score in metrics."""
         from agent_evals.judge.calibrator import JudgeScore
         mock_judge_score = JudgeScore(
             example_id="test", judge_model="mock", score=0.8,
@@ -1579,9 +1579,9 @@ class TestJudgeSampling:
         variant = _make_mock_variant()
         doc_tree = _make_sample_doc_tree()
         client = _make_mock_client()
-        config = EvalRunConfig(use_cache=False)
+        config = EvalRunConfig(use_cache=False, judge_enabled=True, judge_sample_rate=20)
         runner = EvalRunner(client, config=config)
-        results = [runner._run_trial(task, variant, doc_tree, repetition=i, trial_index=i) for i in range(1, 55)]
+        results = [runner._run_trial(task, variant, doc_tree, repetition=i, trial_index=i) for i in range(1, 25)]
         judged = [r for r in results if "judge_score" in r.metrics]
         assert len(judged) >= 1, "At least one trial must be judge-sampled"
 
@@ -1601,12 +1601,12 @@ class TestJudgeSampling:
         variant = _make_mock_variant()
         doc_tree = _make_sample_doc_tree()
         client = _make_mock_client()
-        config = EvalRunConfig(use_cache=False)
+        config = EvalRunConfig(use_cache=False, judge_enabled=True, judge_sample_rate=20)
         runner = EvalRunner(client, config=config)
 
         with caplog.at_level(logging.WARNING, logger="agent_evals.runner"):
-            # trial_index=50 triggers the judge sampling (JUDGE_SAMPLE_RATE=50)
-            result = runner._run_trial(task, variant, doc_tree, repetition=1, trial_index=50)
+            # trial_index=20 triggers the judge sampling (judge_sample_rate=20)
+            result = runner._run_trial(task, variant, doc_tree, repetition=1, trial_index=20)
 
         # Should NOT have judge_score since the call failed
         assert "judge_score" not in result.metrics

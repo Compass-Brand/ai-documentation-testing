@@ -122,6 +122,11 @@ class EvalRunConfig:
     display_mode: str = "rich"
     continue_on_error: bool = False
     store_traces: bool = False
+    judge_enabled: bool = False
+    judge_sample_rate: int = 20
+    judge_model: str = "openrouter/openai/gpt-4o-mini"
+    judge_mode: str = "routine"  # "routine" or "poll"
+    poll_models: list[str] | None = None
 
     _VALID_OUTPUT_FORMATS = frozenset({"json", "csv", "both"})
     _VALID_DISPLAY_MODES = frozenset({"rich", "plain", "none"})
@@ -695,13 +700,59 @@ class EvalRunner:
         return variant
 
     def _call_judge(self, task_type: str, question: str, response: str) -> "JudgeScore":
-        """Call LLM judge to score one trial response."""
+        """Call LLM judge to score one trial response.
+
+        PHASE A GUARD: judge scores are validation-only. Do NOT modify
+        trial.score with judge results. See Phase B Task 9 for graduation.
+        """
         from agent_evals.judge.calibrator import (
             JudgeScore,
             build_judge_prompt,
             parse_judge_response,
         )
 
+        if self._config.judge_mode == "poll":
+            from agent_evals.judge.poll import PollConfig, build_poll_result
+
+            poll_config = PollConfig(
+                panel_models=self._config.poll_models or [
+                    "openrouter/openai/gpt-5-mini",
+                    "openrouter/anthropic/claude-haiku-4.5",
+                    "openrouter/google/gemini-2.5-flash",
+                ],
+            )
+            # Collect scores from each panel model
+            scores_by_model: dict[str, list[JudgeScore]] = {}
+            for model in poll_config.panel_models:
+                messages = build_judge_prompt(
+                    task_type=task_type,
+                    question=question,
+                    response=response,
+                    rubric=None,
+                )
+                raw = self._client.complete(messages, model=model).content
+                score_val, rationale = parse_judge_response(raw)
+                js = JudgeScore(
+                    example_id="",
+                    judge_model=model,
+                    score=score_val,
+                    rationale=rationale,
+                    raw_response=raw,
+                )
+                scores_by_model.setdefault(model, []).append(js)
+
+            result = build_poll_result(scores_by_model, config=poll_config)
+            agg_score = result.scores[0].aggregated_score if result.scores else 0.0
+            return JudgeScore(
+                example_id="",
+                judge_model=f"poll:{','.join(poll_config.panel_models)}",
+                score=agg_score,
+                rationale=f"PoLL aggregate ({poll_config.aggregation})",
+                raw_response="",
+            )
+
+        # Routine mode: single model
+        judge_model = self._config.judge_model
         messages = build_judge_prompt(
             task_type=task_type,
             question=question,
@@ -712,7 +763,7 @@ class EvalRunner:
         score, rationale = parse_judge_response(raw)
         return JudgeScore(
             example_id="",
-            judge_model=JUDGE_MODEL,
+            judge_model=judge_model,
             score=score,
             rationale=rationale,
             raw_response=raw,
@@ -866,8 +917,10 @@ class EvalRunner:
             "total_api_ms": round(first_gen.total_api_ms, 1) if first_gen else 0.0,
             "retry_count": float(first_gen.retry_count) if first_gen else 0.0,
         }
-        # LLM-as-judge sampling: evaluate 2% of trials
-        if trial_index > 0 and trial_index % JUDGE_SAMPLE_RATE == 0:
+        # LLM-as-judge sampling: configurable via EvalRunConfig
+        sample_rate = self._config.judge_sample_rate
+        judge_active = self._config.judge_enabled and trial_index > 0 and trial_index % sample_rate == 0
+        if judge_active:
             try:
                 question = getattr(task.definition, "question", None) or ""
                 judge_result = self._call_judge(

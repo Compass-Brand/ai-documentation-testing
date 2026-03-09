@@ -174,6 +174,26 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         help="Show available datasets with contamination risk",
     )
 
+    # Judge configuration
+    parser.add_argument(
+        "--judge-enabled",
+        action="store_true",
+        default=False,
+        help="Enable LLM-as-judge scoring on sampled trials",
+    )
+    parser.add_argument(
+        "--judge-mode",
+        choices=["routine", "poll"],
+        default="routine",
+        help="Judge evaluation mode: 'routine' (single model) or 'poll' (panel of LLMs)",
+    )
+    parser.add_argument(
+        "--judge-sample-rate",
+        type=int,
+        default=20,
+        help="1-in-N trials are sent to the judge (default: 20 = 5%%)",
+    )
+
     # Taguchi / multi-model configuration
     parser.add_argument(
         "--mode",
@@ -459,6 +479,9 @@ _CONFIG_KEYS: dict[str, type] = {
     "budget": float,
     "model_budgets": str,
     "store_traces": bool,
+    "judge_enabled": bool,
+    "judge_mode": str,
+    "judge_sample_rate": int,
     "resume": str,
     "resume_pipeline": str,
     "dashboard": bool,
@@ -553,6 +576,10 @@ def build_eval_run_config(resolved: dict[str, Any]) -> EvalRunConfig:
         output_format=resolved.get("output_format", "both"),
         display_mode=resolved.get("display", "rich"),
         continue_on_error=resolved.get("continue_on_error", False),
+        judge_enabled=resolved.get("judge_enabled", False),
+        judge_sample_rate=resolved.get("judge_sample_rate", 20),
+        judge_model=resolved.get("judge_model", "openrouter/openai/gpt-4o-mini"),
+        judge_mode=resolved.get("judge_mode", "routine"),
     )
 
 

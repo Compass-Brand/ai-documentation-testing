@@ -427,6 +427,8 @@ class TestResolveConfigFileDefaults:
             "quality_type": "larger_is_better",
             "top_k": 3,
             "alpha": 0.05,
+            "judge_mode": "routine",
+            "judge_sample_rate": 20,
         }
 
     def test_unknown_config_keys_ignored(self) -> None:
