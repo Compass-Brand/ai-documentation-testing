@@ -1,10 +1,12 @@
 """Catalog of standard Taguchi orthogonal arrays with auto-selection.
 
-Provides a library of published Taguchi OAs (L4 through L81) as NumPy arrays,
-plus an auto-selector that picks the smallest array accommodating a given
-factor-level structure.
+Provides a library of published Taguchi OAs (L4 through L81) and
+programmatically generated Bose-construction OAs (L121, L169) as NumPy
+arrays, plus an auto-selector that picks the smallest array accommodating
+a given factor-level structure.
 
 OA sources: Taguchi & Konishi (1987), Hedayat et al. (1999).
+Bose construction: Bose & Bush (1952), using GF(p) for primes p.
 """
 
 from __future__ import annotations
@@ -331,6 +333,52 @@ def _build_l81() -> OrthogonalArray:
     )
 
 
+# ---- Bose construction for prime-order OAs ----
+
+
+def _build_bose_oa(p: int) -> OrthogonalArray:
+    """Build OA(p^2, p^(p+1), 2) using Bose construction over GF(p).
+
+    For a prime p, generates a strength-2 orthogonal array with p^2 runs
+    and p+1 columns, each with p levels.  All pairwise level combinations
+    appear exactly once (perfect balance).
+
+    Columns: col_0 = i, col_1 = j, col_{k+2} = (i + k*j) mod p for k=1..p-1.
+
+    Args:
+        p: A prime number (no primality check -- caller must ensure).
+
+    Returns:
+        OrthogonalArray with name "L{p^2}", p^2 runs, p+1 columns, p levels.
+    """
+    n_runs = p * p
+    n_cols = p + 1
+    rows = []
+    for i in range(p):
+        for j in range(p):
+            row = [i, j] + [(i + k * j) % p for k in range(1, p)]
+            rows.append(row)
+    matrix = np.array(rows, dtype=np.int32)
+    return OrthogonalArray(
+        name=f"L{n_runs}",
+        n_runs=n_runs,
+        n_columns=n_cols,
+        max_levels=p,
+        matrix=matrix,
+        level_structure=(p,) * n_cols,
+    )
+
+
+def _build_l121() -> OrthogonalArray:
+    """L121(11^12): 121 runs, 12 eleven-level columns (Bose, GF(11))."""
+    return _build_bose_oa(11)
+
+
+def _build_l169() -> OrthogonalArray:
+    """L169(13^14): 169 runs, 14 thirteen-level columns (Bose, GF(13))."""
+    return _build_bose_oa(13)
+
+
 # ---- Registry ----
 
 _OA_BUILDERS: dict[str, Callable[[], OrthogonalArray]] = {
@@ -347,6 +395,8 @@ _OA_BUILDERS: dict[str, Callable[[], OrthogonalArray]] = {
     "L54": _build_l54,
     "L64": _build_l64,
     "L81": _build_l81,
+    "L121": _build_l121,
+    "L169": _build_l169,
 }
 
 _oa_cache: dict[str, OrthogonalArray] = {}

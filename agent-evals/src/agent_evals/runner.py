@@ -803,7 +803,7 @@ class EvalRunner:
             response=response,
             rubric=None,
         )
-        raw = self._client.complete(messages).content
+        raw = self._client.complete(messages, model=judge_model).content
         score, rationale = parse_judge_response(raw)
         return JudgeScore(
             example_id="",

@@ -1393,14 +1393,14 @@ class TestTaguchiModeRouting:
             fake_orchestrator_run,
         )
 
-        # L50 supports the 10-axis mixed-level problem (has 5-level columns)
+        # L121 supports the 12-axis problem (11-level columns via Bose GF(11))
         resolved: dict[str, object] = {
             "model": "openrouter/test/model",
             "mode": "taguchi",
-            "oa_type": "L50",
+            "oa_type": "L121",
         }
         _run_evaluation(resolved)
-        assert captured["design"].oa_name == "L50"
+        assert captured["design"].oa_name == "L121"
 
     def test_full_mode_still_uses_eval_runner(
         self, monkeypatch: pytest.MonkeyPatch,
@@ -1850,6 +1850,80 @@ class TestSourceRouting:
 
 
 # ---------------------------------------------------------------------------
+# --judge-model CLI flag (bug #136)
+# ---------------------------------------------------------------------------
+
+
+class TestJudgeModelFlag:
+    """Bug #136: --judge-model flag must be parsed and flow into config."""
+
+    def test_judge_model_flag_is_parsed(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            ["--judge-model", "openrouter/openai/gpt-4o-mini"],
+        )
+        assert args.judge_model == "openrouter/openai/gpt-4o-mini"
+
+    def test_judge_model_default_is_none(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        assert args.judge_model is None
+
+    def test_judge_model_in_config_keys(self) -> None:
+        from agent_evals.cli import _CONFIG_KEYS
+
+        assert "judge_model" in _CONFIG_KEYS
+        assert _CONFIG_KEYS["judge_model"] is str
+
+    def test_judge_model_flows_through_resolve_config(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            ["--judge-model", "openrouter/openai/gpt-4o-mini"],
+        )
+        resolved = resolve_config(args, {})
+        assert resolved["judge_model"] == "openrouter/openai/gpt-4o-mini"
+
+    def test_judge_model_flows_to_eval_run_config(self) -> None:
+        from agent_evals.cli import build_eval_run_config
+
+        resolved = {"judge_model": "openrouter/openai/gpt-4o-mini"}
+        config = build_eval_run_config(resolved)
+        assert config.judge_model == "openrouter/openai/gpt-4o-mini"
+
+    def test_judge_model_default_in_eval_run_config(self) -> None:
+        from agent_evals.cli import build_eval_run_config
+
+        config = build_eval_run_config({})
+        assert config.judge_model == "openrouter/openai/gpt-4o-mini"
+
+    def test_judge_model_from_env_var(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        with patch.dict(
+            "os.environ",
+            {"AGENT_EVALS_JUDGE_MODEL": "openrouter/google/gemini-2.5-flash"},
+        ):
+            resolved = resolve_config(args, {})
+        assert resolved["judge_model"] == "openrouter/google/gemini-2.5-flash"
+
+    def test_judge_model_from_yaml_config(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        config = {"judge_model": "openrouter/meta/llama-3-8b"}
+        resolved = resolve_config(args, config)
+        assert resolved["judge_model"] == "openrouter/meta/llama-3-8b"
+
+    def test_judge_model_cli_overrides_yaml(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            ["--judge-model", "openrouter/openai/gpt-4o-mini"],
+        )
+        config = {"judge_model": "openrouter/meta/llama-3-8b"}
+        resolved = resolve_config(args, config)
+        assert resolved["judge_model"] == "openrouter/openai/gpt-4o-mini"
+
+
+# ---------------------------------------------------------------------------
 # Removed flags (Task 43) -- dead CLI flags must not be recognized
 # ---------------------------------------------------------------------------
 
@@ -1859,7 +1933,6 @@ class TestRemovedFlags:
 
     @pytest.mark.parametrize("flag", [
         "--model-config",
-        "--judge-model",
         "--max-cost",
         "--confirmation-runs",
         "--phase",
@@ -1872,7 +1945,6 @@ class TestRemovedFlags:
 
     @pytest.mark.parametrize("key", [
         "model_config",
-        "judge_model",
         "max_cost",
         "confirmation_runs",
         "phase",

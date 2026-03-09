@@ -193,6 +193,12 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         default=20,
         help="1-in-N trials are sent to the judge (default: 20 = 5%%)",
     )
+    parser.add_argument(
+        "--judge-model",
+        type=str,
+        default=None,
+        help="Model for LLM judge scoring (default: openrouter/openai/gpt-4o-mini)",
+    )
 
     # Taguchi / multi-model configuration
     parser.add_argument(
@@ -481,6 +487,7 @@ _CONFIG_KEYS: dict[str, type] = {
     "store_traces": bool,
     "judge_enabled": bool,
     "judge_mode": str,
+    "judge_model": str,
     "judge_sample_rate": int,
     "resume": str,
     "resume_pipeline": str,

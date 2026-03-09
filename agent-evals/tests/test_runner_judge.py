@@ -78,6 +78,50 @@ class TestJudgeScoreExclusion:
         assert trial.metrics["judge_score"] == 0.6
 
 
+class TestJudgeModelPassthrough:
+    """Bug #136: _call_judge must pass judge_model to client.complete()."""
+
+    @patch(
+        "agent_evals.judge.calibrator.parse_judge_response",
+        return_value=(0.8, "Good"),
+    )
+    @patch(
+        "agent_evals.judge.calibrator.build_judge_prompt",
+        return_value=[{"role": "user", "content": "judge"}],
+    )
+    def test_routine_judge_passes_model_to_complete(
+        self, mock_build_prompt, mock_parse,
+    ):
+        """In routine mode, _call_judge must pass model=judge_model kwarg."""
+        from agent_evals.runner import EvalRunner
+
+        config = EvalRunConfig(
+            judge_enabled=True,
+            judge_model="openrouter/openai/gpt-4o-mini",
+            judge_mode="routine",
+        )
+
+        mock_client = MagicMock()
+        mock_client.complete.return_value = MagicMock(content="SCORE: 0.8")
+
+        runner = EvalRunner.__new__(EvalRunner)
+        runner._config = config
+        runner._client = mock_client
+
+        runner._call_judge(
+            task_type="fact_extraction",
+            question="What is X?",
+            response="X is Y.",
+        )
+
+        # Verify model= kwarg was passed to complete()
+        call_kwargs = mock_client.complete.call_args
+        assert "model" in call_kwargs.kwargs, (
+            "_call_judge() must pass model=judge_model to complete()"
+        )
+        assert call_kwargs.kwargs["model"] == "openrouter/openai/gpt-4o-mini"
+
+
 class TestJudgeSamplingBehavior:
     def test_judge_fires_at_configured_rate(self):
         """Judge is called at the configured sample rate intervals."""

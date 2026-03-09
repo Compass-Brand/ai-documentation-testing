@@ -164,6 +164,43 @@ class TestSelectOA:
         oa = select_oa(levels)
         assert oa.n_columns >= 11
 
+    def test_12_factors_with_max_9_levels(self):
+        """Bug #157: 12 factors (axes 1-12) with max 9 levels must find an OA."""
+        levels = [5, 4, 5, 4, 5, 5, 4, 4, 3, 4, 8, 9]
+        oa = select_oa(levels)
+        assert oa.n_columns >= 12
+        # Verify each column can hold its factor
+        available = sorted(
+            [oa.column_levels(i) for i in range(oa.n_columns)],
+            reverse=True,
+        )
+        needed = sorted(levels, reverse=True)
+        for a, n in zip(available[:12], needed):
+            assert a >= n
+
+    def test_13_factors_with_model_and_max_9_levels(self):
+        """Bug #157: 12 axes + model factor must find an OA."""
+        levels = [5, 4, 5, 4, 5, 5, 4, 4, 3, 4, 8, 9, 3]
+        oa = select_oa(levels)
+        assert oa.n_columns >= 13
+        available = sorted(
+            [oa.column_levels(i) for i in range(oa.n_columns)],
+            reverse=True,
+        )
+        needed = sorted(levels, reverse=True)
+        for a, n in zip(available[:13], needed):
+            assert a >= n
+
+    def test_12_factor_oa_has_sufficient_levels_per_column(self):
+        """The selected OA must have columns supporting >= 9 levels."""
+        levels = [5, 4, 5, 4, 5, 5, 4, 4, 3, 4, 8, 9]
+        oa = select_oa(levels)
+        # At least 2 columns must support 8+ levels (for axes 11 and 12)
+        high_level_cols = sum(
+            1 for i in range(oa.n_columns) if oa.column_levels(i) >= 8
+        )
+        assert high_level_cols >= 2
+
     def test_impossible_request_raises(self):
         with pytest.raises(ValueError, match="No suitable"):
             select_oa([10] * 100)
@@ -177,6 +214,62 @@ class TestSelectOA:
         # 3 models, 10 axes
         oa = select_oa([5, 4, 5, 4, 5, 5, 4, 4, 3, 4, 3])
         assert oa.name in ("L50", "L54", "L64", "L81")
+
+
+class TestNewLargeArrays:
+    """Tests for L121 and L169 arrays added for bug #157."""
+
+    def test_l121_has_121_runs_12_columns(self):
+        oa = get_oa("L121")
+        assert oa.n_runs == 121
+        assert oa.n_columns == 12
+
+    def test_l121_max_levels_is_11(self):
+        oa = get_oa("L121")
+        assert oa.max_levels == 11
+
+    def test_l121_all_columns_have_11_levels(self):
+        oa = get_oa("L121")
+        for col in range(oa.n_columns):
+            assert oa.column_levels(col) == 11
+
+    def test_l169_has_169_runs_14_columns(self):
+        oa = get_oa("L169")
+        assert oa.n_runs == 169
+        assert oa.n_columns == 14
+
+    def test_l169_max_levels_is_13(self):
+        oa = get_oa("L169")
+        assert oa.max_levels == 13
+
+    def test_l169_all_columns_have_13_levels(self):
+        oa = get_oa("L169")
+        for col in range(oa.n_columns):
+            assert oa.column_levels(col) == 13
+
+    def test_l121_pairwise_balance(self):
+        """L121 from GF(11) Bose construction must be perfectly balanced."""
+        oa = get_oa("L121")
+        for c1 in range(oa.n_columns):
+            for c2 in range(c1 + 1, oa.n_columns):
+                pairs = list(zip(oa.matrix[:, c1], oa.matrix[:, c2]))
+                counts = Counter(pairs)
+                freq = list(counts.values())
+                assert len(set(freq)) == 1, (
+                    f"L121 columns ({c1},{c2}) not balanced: {counts}"
+                )
+
+    def test_l169_pairwise_balance(self):
+        """L169 from GF(13) Bose construction must be perfectly balanced."""
+        oa = get_oa("L169")
+        for c1 in range(oa.n_columns):
+            for c2 in range(c1 + 1, oa.n_columns):
+                pairs = list(zip(oa.matrix[:, c1], oa.matrix[:, c2]))
+                counts = Counter(pairs)
+                freq = list(counts.values())
+                assert len(set(freq)) == 1, (
+                    f"L169 columns ({c1},{c2}) not balanced: {counts}"
+                )
 
 
 class TestOrthogonalityProperty:
