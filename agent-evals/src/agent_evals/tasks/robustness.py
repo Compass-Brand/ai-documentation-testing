@@ -1,23 +1,37 @@
 """Robustness task type for evaluating answer stability under perturbation.
 
-Reuses the same scoring logic as FactExtractionTask: exact / alias match
-yields 1.0, fallback computes fraction of non-stopword keywords found.
+Reuses the same scoring cascade as FactExtractionTask: exact / alias match
+yields 1.0, fuzzy match (rapidfuzz) yields 0.9 or 0.7, and keyword fallback
+computes fraction of non-stopword keywords found.
 """
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Any
+
+from rapidfuzz import fuzz, utils as fuzz_utils
 
 from agent_evals.tasks._utils import extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
+
+
+def _strip_diacritics(text: str) -> str:
+    """Normalize Unicode text by removing combining diacritical marks.
+
+    Decomposes characters via NFD then strips combining marks, so that
+    'cafe' becomes 'cafe' and 'resume' becomes 'resume'.
+    """
+    nfd = unicodedata.normalize("NFD", text)
+    return "".join(ch for ch in nfd if unicodedata.category(ch) != "Mn")
 
 
 class RobustnessTask(EvalTask):
     """Task type for evaluating answer stability under input perturbation.
 
     A perturbed version of a base task (e.g. paraphrased, with typos,
-    or reordered).  Scoring is identical to FactExtractionTask: exact
-    or alias match = 1.0, otherwise keyword-fraction fallback.
+    or reordered).  Scoring mirrors FactExtractionTask: exact or alias
+    match = 1.0, fuzzy match = 0.9/0.7, keyword-fraction fallback.
     """
 
     def __init__(self, definition: TaskDefinition) -> None:
@@ -27,6 +41,7 @@ class RobustnessTask(EvalTask):
         self.perturbation_type: str = meta.get("perturbation_type", "")
         self.expected_answer: str = meta.get("expected_answer", "")
         self.answer_aliases: list[str] = meta.get("answer_aliases", [])
+        self._expected_lower: str = self.expected_answer.lower()
 
     def build_prompt(self, index_content: str) -> list[dict[str, str]]:
         """Build messages for robustness evaluation.
@@ -54,10 +69,14 @@ class RobustnessTask(EvalTask):
         ]
 
     def score_response(self, response: str, **kwargs: object) -> float:
-        """Score response using keyword matching against expected answer.
+        """Score response using multi-layer matching against expected answer.
 
-        Checks for exact match of expected_answer or any alias first.
-        Falls back to computing fraction of non-stopword keywords found.
+        Layers (in order of precedence):
+        1. Exact match of expected_answer -> 1.0
+        2. Alias match -> 1.0
+        3. Fuzzy match (token_set_ratio >= 85) -> 0.9
+        4. Fuzzy match (token_set_ratio >= 70) -> 0.7
+        5. Keyword fallback -> fraction of keywords found
 
         Args:
             response: The raw text response from the LLM.
@@ -71,21 +90,39 @@ class RobustnessTask(EvalTask):
 
         response_lower = response.lower()
 
-        # Check exact match of expected answer
-        if self.expected_answer.lower() in response_lower:
+        # Layer 1: Exact match of expected answer
+        if self._expected_lower in response_lower:
             return 1.0
 
-        # Check alias matches
+        # Layer 2: Alias matches
         for alias in self.answer_aliases:
             if alias.lower() in response_lower:
                 return 1.0
 
-        # Fallback: keyword matching
+        # Normalize diacritics for fuzzy and keyword layers
+        norm_expected = _strip_diacritics(self._expected_lower)
+        norm_response = _strip_diacritics(response_lower)
+
+        # Layer 3: Fuzzy matching -- catches paraphrases and abbreviations
+        fuzzy_score = fuzz.token_set_ratio(
+            norm_expected,
+            norm_response,
+            processor=fuzz_utils.default_process,
+        )
+        if fuzzy_score >= 85.0:
+            return 0.9
+        if fuzzy_score >= 70.0:
+            return 0.7
+
+        # Layer 4: Keyword fallback
         keywords = extract_keywords(self.expected_answer)
         if not keywords:
             return 0.0
 
-        matched = sum(1 for kw in keywords if kw.lower() in response_lower)
+        matched = sum(
+            1 for kw in keywords
+            if _strip_diacritics(kw.lower()) in norm_response
+        )
         return max(0.0, min(1.0, matched / len(keywords)))
 
 
