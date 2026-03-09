@@ -6,6 +6,7 @@ MixedSourceLoader for interleaving tasks from multiple adapters.
 
 from __future__ import annotations
 
+from datetime import UTC
 from itertools import zip_longest
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -15,8 +16,9 @@ from agent_evals.datasets.cache import DatasetCache
 from agent_evals.tasks.loader import load_tasks
 
 if TYPE_CHECKING:
-    from agent_evals.tasks.base import EvalTask
     from agent_index.models import DocTree
+
+    from agent_evals.tasks.base import EvalTask
 
 DEFAULT_CACHE_DIR = Path.home() / ".agent-evals" / "datasets"
 
@@ -25,7 +27,7 @@ def load_from_source(
     source: str,
     limit: int | None = None,
     cache_dir: Path | None = None,
-) -> tuple[list["EvalTask"], "DocTree", str] | None:
+) -> tuple[list[EvalTask], DocTree, str] | None:
     """Load tasks and DocTree from a dataset source.
 
     Returns None for 'gold_standard' (caller uses built-in tasks).
@@ -85,7 +87,7 @@ class MixedSourceLoader:
         self._adapters = {name: get_adapter(name) for name in adapter_names}
         self._cache = DatasetCache(cache_dir or DEFAULT_CACHE_DIR)
 
-    def build_merged_doc_tree(self) -> "DocTree":
+    def build_merged_doc_tree(self) -> DocTree:
         """Merge DocTrees from all adapters, namespacing files.
 
         Each file is keyed as {adapter_name}/{original_rel_path} to
@@ -107,7 +109,7 @@ class MixedSourceLoader:
             total_tokens=sum(f.size_bytes for f in merged_files.values()),
         )
 
-    def load_interleaved_tasks(self) -> list["EvalTask"]:
+    def load_interleaved_tasks(self) -> list[EvalTask]:
         """Load tasks from each adapter and interleave round-robin."""
         per_adapter_tasks: list[list] = []
         for name in self._adapter_names:
@@ -130,6 +132,6 @@ class MixedSourceLoader:
 
 
 def _now_iso() -> str:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
