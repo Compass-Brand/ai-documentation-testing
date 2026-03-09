@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from agent_evals.runner import (
     EvalRunner,
     EvalRunResult,
     TrialResult,
+    compute_variant_summary,
 )
 from agent_evals.tasks.base import TaskDefinition
 from agent_evals.variants.base import VariantMetadata
@@ -1827,3 +1829,206 @@ class TestCostMetricsInTrial:
         assert cm["reasoning_tokens"] == 10
         assert cm["provider"] == "Anthropic"
         assert cm["cache_hit_rate"] == pytest.approx(0.8)
+
+
+# ---------------------------------------------------------------------------
+# Hallucination metrics integration
+# ---------------------------------------------------------------------------
+
+
+class TestHallucinationMetricsIntegration:
+    """Verify that hallucination_score flows through TrialResult.metrics."""
+
+    def test_hallucination_score_in_metrics_when_judge_called(self) -> None:
+        result = TrialResult(
+            task_id="test",
+            task_type="retrieval",
+            variant_name="flat",
+            repetition=1,
+            score=0.8,
+            metrics={"hallucination_score": 0.1},
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=0.001,
+            latency_seconds=1.0,
+            response="answer",
+            cached=False,
+        )
+        assert "hallucination_score" in result.metrics
+        assert result.metrics["hallucination_score"] == pytest.approx(0.1)
+
+
+# ---------------------------------------------------------------------------
+# Cache metrics integration
+# ---------------------------------------------------------------------------
+
+
+class TestCacheMetricsIntegration:
+    """Verify that cache_hit_rate flows through strategy_metadata."""
+
+    def test_cache_hit_rate_in_strategy_metadata(self) -> None:
+        result = TrialResult(
+            task_id="test",
+            task_type="retrieval",
+            variant_name="yaml",
+            repetition=1,
+            score=0.8,
+            metrics={},
+            prompt_tokens=1000,
+            completion_tokens=50,
+            total_tokens=1050,
+            cost=0.001,
+            latency_seconds=1.0,
+            response="answer",
+            cached=False,
+            strategy_metadata={"cache_hit_rate": 0.45},
+        )
+        assert result.strategy_metadata["cache_hit_rate"] == 0.45
+
+    def test_strategy_metadata_defaults_to_empty_dict(self) -> None:
+        result = TrialResult(
+            task_id="test",
+            task_type="retrieval",
+            variant_name="yaml",
+            repetition=1,
+            score=0.8,
+            metrics={},
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=0.001,
+            latency_seconds=1.0,
+            response="answer",
+            cached=False,
+        )
+        assert result.strategy_metadata == {}
+
+
+# ---------------------------------------------------------------------------
+# Hallucination rate in variant summary
+# ---------------------------------------------------------------------------
+
+
+class TestHallucinationRateInVariantSummary:
+    """Verify that compute_variant_summary includes hallucination_rate."""
+
+    def test_hallucination_rate_in_variant_summary(self) -> None:
+        trials = [
+            TrialResult(
+                task_id="t1",
+                task_type="retrieval",
+                variant_name="yaml",
+                repetition=1,
+                score=0.9,
+                metrics={"hallucination_score": 0.1},
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+                cost=0.001,
+                latency_seconds=1.0,
+                response="a1",
+                cached=False,
+            ),
+            TrialResult(
+                task_id="t2",
+                task_type="retrieval",
+                variant_name="yaml",
+                repetition=1,
+                score=0.8,
+                metrics={"hallucination_score": 0.3},
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+                cost=0.001,
+                latency_seconds=1.0,
+                response="a2",
+                cached=False,
+            ),
+        ]
+        summary = compute_variant_summary(trials, variant_name="yaml")
+        assert "hallucination_rate" in summary
+        assert summary["hallucination_rate"] == pytest.approx(0.2)
+        assert summary["mean_score"] == pytest.approx(0.85)
+        assert summary["trial_count"] == 2
+
+    def test_variant_summary_without_hallucination_scores(self) -> None:
+        trials = [
+            TrialResult(
+                task_id="t1",
+                task_type="retrieval",
+                variant_name="flat",
+                repetition=1,
+                score=0.7,
+                metrics={},
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+                cost=0.001,
+                latency_seconds=1.0,
+                response="a1",
+                cached=False,
+            ),
+        ]
+        summary = compute_variant_summary(trials, variant_name="flat")
+        assert "hallucination_rate" not in summary
+        assert summary["mean_score"] == pytest.approx(0.7)
+
+    def test_variant_summary_empty_for_unknown_variant(self) -> None:
+        trials = [
+            TrialResult(
+                task_id="t1",
+                task_type="retrieval",
+                variant_name="yaml",
+                repetition=1,
+                score=0.9,
+                metrics={},
+                prompt_tokens=100,
+                completion_tokens=50,
+                total_tokens=150,
+                cost=0.001,
+                latency_seconds=1.0,
+                response="a1",
+                cached=False,
+            ),
+        ]
+        summary = compute_variant_summary(trials, variant_name="nonexistent")
+        assert summary == {}
+
+
+# ---------------------------------------------------------------------------
+# Taguchi hallucination as response variable
+# ---------------------------------------------------------------------------
+
+
+class TestTaguchiHallucinationAsResponseVariable:
+    """Verify hallucination scores can be used as a Taguchi response variable."""
+
+    def test_taguchi_hallucination_as_response_variable(self) -> None:
+        from agent_evals.taguchi.analysis import compute_sn_ratios
+
+        # compute_sn_ratios expects dict[int, list[float]]
+        hallucination_scores = {
+            0: [0.1, 0.3, 0.05, 0.2, 0.15],
+        }
+        sn = compute_sn_ratios(hallucination_scores, "smaller_is_better")
+        # smaller_is_better S/N = -10*log10(mean(y^2)); finite for y in (0,1)
+        assert all(math.isfinite(s) for s in sn.values())
+        # Lower hallucination -> higher S/N (verify direction)
+        low_scores = {0: [0.01, 0.02]}
+        high_scores = {0: [0.8, 0.9]}
+        sn_low = compute_sn_ratios(low_scores, "smaller_is_better")
+        sn_high = compute_sn_ratios(high_scores, "smaller_is_better")
+        assert sn_low[0] > sn_high[0]
+
+    def test_taguchi_hallucination_multiple_rows(self) -> None:
+        from agent_evals.taguchi.analysis import compute_sn_ratios
+
+        hallucination_scores = {
+            1: [0.1, 0.2],
+            2: [0.4, 0.5],
+            3: [0.01, 0.02],
+        }
+        sn = compute_sn_ratios(hallucination_scores, "smaller_is_better")
+        # Row 3 has lowest hallucination -> highest (least negative) S/N
+        assert sn[3] > sn[1] > sn[2]

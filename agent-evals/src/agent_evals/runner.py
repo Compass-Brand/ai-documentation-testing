@@ -187,6 +187,43 @@ class EvalRunResult:
 ProgressCallback = Callable[[int, int, TrialResult], None]
 
 
+def compute_variant_summary(
+    trials: list[TrialResult],
+    variant_name: str,
+) -> dict:
+    """Compute aggregate summary statistics for a single variant.
+
+    Args:
+        trials: List of all trial results.
+        variant_name: Name of the variant to summarise.
+
+    Returns:
+        Dict with variant_name, mean_score, trial_count, and
+        hallucination_rate (if any trial carries a hallucination_score).
+    """
+    variant_trials = [t for t in trials if t.variant_name == variant_name]
+    if not variant_trials:
+        return {}
+
+    scores = [t.score for t in variant_trials]
+    h_scores = [
+        t.metrics["hallucination_score"]
+        for t in variant_trials
+        if "hallucination_score" in t.metrics
+    ]
+
+    summary: dict = {
+        "variant_name": variant_name,
+        "mean_score": sum(scores) / len(scores),
+        "trial_count": len(variant_trials),
+    }
+
+    if h_scores:
+        summary["hallucination_rate"] = sum(h_scores) / len(h_scores)
+
+    return summary
+
+
 class EvalRunner:
     """Orchestrates evaluation runs across tasks and index variants.
 
