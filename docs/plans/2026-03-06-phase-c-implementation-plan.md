@@ -79,13 +79,13 @@ class TestVariantMetadataAxisRange:
         )
         assert meta.axis == 12
 
-    def test_axis_13_invalid(self):
+    def test_axis_14_invalid(self):
         import pytest
         from pydantic import ValidationError
         with pytest.raises(ValidationError):
             VariantMetadata(
                 name="invalid",
-                axis=13,
+                axis=14,
                 category="test",
                 description="Should fail.",
             )
@@ -108,8 +108,10 @@ Expected: FAIL — `axis=11` exceeds current `le=10` constraint.
 axis: int = Field(ge=0, le=10)
 
 # After:
-axis: int = Field(ge=0, le=12)
+axis: int = Field(ge=0, le=13)
 ```
+
+> **Note:** The upper bound is set to `le=13` (not 12) to leave room for future axes. Axis 11 covers both tool description quality and tool set size variants. Axis 12 covers agent instruction verbosity.
 
 ### Step 4: Run tests to verify pass
 
@@ -751,7 +753,66 @@ Expected: ALL PASS
 
 Expected: ALL PASS, no regressions.
 
-### Step 7: Commit
+### Step 7: Add resource metadata ablation tests
+
+**Append to** `agent-evals/tests/test_context_mcp_native.py`:
+
+```python
+class TestResourceMetadataAblation:
+    def test_catalog_with_summaries_vs_without(self):
+        """Compare catalog entries with summaries vs. path-only entries."""
+        from agent_evals.context.mcp_native import MCPNativeStrategy, _build_resource_catalog
+        doc_tree_with_summaries = _make_doc_tree()
+        catalog_with = _build_resource_catalog(doc_tree_with_summaries)
+        # Verify summaries are present
+        for entry in catalog_with:
+            assert entry["description"] != entry["name"]
+            assert len(entry["description"]) > len(entry["name"])
+
+        # Build a tree without summaries
+        doc_tree_without = _make_doc_tree()
+        for doc in doc_tree_without.files.values():
+            doc.summary = None
+        catalog_without = _build_resource_catalog(doc_tree_without)
+        # Without summaries, description falls back to generic
+        for entry in catalog_without:
+            assert "Documentation file:" in entry["description"]
+
+        # Both catalogs have same number of entries
+        assert len(catalog_with) == len(catalog_without)
+
+    def test_catalog_token_overhead(self):
+        """Measure token count of catalog and verify it's tracked in strategy_metadata."""
+        from agent_evals.context.mcp_native import MCPNativeStrategy
+        from tests.conftest import make_mock_task
+        strategy = MCPNativeStrategy()
+        doc_tree = _make_doc_tree()
+        strategy.setup("index", doc_tree)
+        task = make_mock_task()
+        prepared = strategy.prepare("index", task, doc_tree)
+        # catalog_tokens should be tracked in strategy_metadata
+        assert "catalog_tokens" in prepared.strategy_metadata
+        assert prepared.strategy_metadata["catalog_tokens"] > 0
+```
+
+**Implementation note:** Add `catalog_tokens` to `MCPNativeStrategy.prepare()` in `mcp_native.py`:
+
+```python
+# In prepare(), add to strategy_metadata:
+from agent_evals.llm.token_counter import count_tokens
+catalog_summary = json.dumps(self._resource_catalog, indent=2)
+# ...existing code...
+return PreparedContext(
+    messages=messages,
+    tools=list(self._tool_definitions),
+    strategy_metadata={
+        "resource_count": len(self._resource_catalog),
+        "catalog_tokens": count_tokens(catalog_summary),
+    },
+)
+```
+
+### Step 8: Commit
 
 ```bash
 git add agent-evals/src/agent_evals/context/mcp_native.py \
@@ -1058,7 +1119,148 @@ class CompressionStrategy(ContextStrategy):
         return text
 ```
 
-### Step 4: Extend StrategyConfig
+### Step 4: Complete LLM-summarized compression
+
+The current `_compress()` method falls back to algorithmic compression for `llm_summarized`. Complete the implementation.
+
+**Add to tests** in `agent-evals/tests/test_context_compression.py`:
+
+```python
+class TestLLMSummarizedCompressionComplete:
+    def test_llm_summarized_calls_model(self):
+        """LLM-summarized compression should call a cheap model."""
+        from agent_evals.context.compression import CompressionStrategy
+        strategy = CompressionStrategy(
+            method="llm_summarized",
+            summary_model="openrouter/openai/gpt-4o-mini",
+        )
+        assert strategy._summary_model == "openrouter/openai/gpt-4o-mini"
+
+    def test_llm_summarized_reduces_tokens(self):
+        """LLM-summarized compression should reduce token count via model call."""
+        from agent_evals.context.compression import CompressionStrategy
+        from unittest.mock import MagicMock
+
+        strategy = CompressionStrategy(
+            method="llm_summarized",
+            summary_model="openrouter/openai/gpt-4o-mini",
+        )
+        doc_tree = _make_doc_tree()
+        rendered = "# Detailed documentation\n" * 100
+        strategy.setup(rendered, doc_tree)
+
+        # Mock the LLM summarization client
+        mock_client = MagicMock()
+        mock_gen = MagicMock()
+        mock_gen.content = "Condensed summary of documentation."
+        mock_client.complete.return_value = mock_gen
+
+        result = strategy._llm_summarize(rendered, mock_client)
+        mock_client.complete.assert_called_once()
+        assert len(result) < len(rendered)
+
+    def test_execute_calls_llm_summarize_when_client_available(self):
+        """execute() should perform LLM summarization when method=llm_summarized."""
+        from agent_evals.context.compression import CompressionStrategy
+        from tests.conftest import make_mock_task
+        from unittest.mock import MagicMock, patch
+
+        strategy = CompressionStrategy(method="llm_summarized")
+        doc_tree = _make_doc_tree()
+        rendered = "Long documentation content. " * 50
+        strategy.setup(rendered, doc_tree)
+        task = make_mock_task()
+        prepared = strategy.prepare(rendered, task, doc_tree)
+
+        client = MagicMock()
+        # First call: LLM summarization; second call: task completion
+        summary_gen = MagicMock()
+        summary_gen.content = "Compressed doc summary."
+        task_gen = MagicMock()
+        task_gen.content = "The answer."
+        task_gen.prompt_tokens = 20
+        task_gen.completion_tokens = 5
+        task_gen.total_tokens = 25
+        task_gen.cost = 0.001
+        client.complete.side_effect = [summary_gen, task_gen]
+
+        result = strategy.execute(prepared, task, client, 1024, 0.0)
+        assert result.final_response == "The answer."
+```
+
+**Modify** `agent-evals/src/agent_evals/context/compression.py`:
+
+1. Add `summary_model` parameter to constructor:
+
+```python
+def __init__(self, method: str = "algorithmic", summary_model: str = "openrouter/openai/gpt-4o-mini") -> None:
+    self._method = method
+    self._summary_model = summary_model
+    self._rendered_index: str = ""
+```
+
+2. Add `_llm_summarize()` method:
+
+```python
+def _llm_summarize(self, text: str, client: LLMClient) -> str:
+    """Call a cheap LLM to compress documentation text."""
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a documentation compressor. Condense the following "
+                "documentation into the most information-dense format possible. "
+                "Preserve all technical facts, API names, and configuration values. "
+                "Remove redundancy, verbose explanations, and filler text."
+            ),
+        },
+        {"role": "user", "content": text},
+    ]
+    generation = client.complete(
+        messages, max_tokens=len(text) // 2, temperature=0.0,
+    )
+    return generation.content or text
+```
+
+3. Update `execute()` to call LLM summarization when `method="llm_summarized"`:
+
+```python
+def execute(
+    self,
+    prepared: PreparedContext,
+    task: EvalTask,
+    client: LLMClient,
+    max_tokens: int,
+    temperature: float,
+) -> StrategyResult:
+    # If llm_summarized, re-compress via LLM before final completion
+    messages = list(prepared.messages)
+    if self._method == "llm_summarized" and client is not None:
+        # Find and replace the doc content in messages with LLM summary
+        for i, msg in enumerate(messages):
+            if msg["role"] == "system" and len(msg["content"]) > 200:
+                messages[i] = dict(msg)
+                messages[i]["content"] = self._llm_summarize(
+                    msg["content"], client,
+                )
+                break
+
+    generation = client.complete(
+        messages, max_tokens=max_tokens, temperature=temperature,
+    )
+    return StrategyResult(
+        final_response=generation.content,
+        generations=[generation],
+        total_prompt_tokens=generation.prompt_tokens,
+        total_completion_tokens=generation.completion_tokens,
+        total_tokens=generation.total_tokens,
+        total_cost=generation.cost,
+        messages=messages,
+        strategy_metadata=prepared.strategy_metadata,
+    )
+```
+
+### Step 5: Extend StrategyConfig
 
 **Add to** `agent-evals/src/agent_evals/context/base.py` StrategyConfig:
 
@@ -1102,11 +1304,94 @@ Measures compression-accuracy tradeoff directly.
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
+### Step 9: Add compression+cost pairing report
+
+**Purpose:** Show how compression strategy results pair with Phase B cost metrics so users can see the cost-accuracy tradeoff at a glance.
+
+**Add test** to `agent-evals/tests/test_context_compression.py`:
+
+```python
+class TestCompressionTradeoffTable:
+    def test_compression_tradeoff_table(self):
+        """render_compression_tradeoff_table produces a formatted table."""
+        from agent_evals.context.compression import render_compression_tradeoff_table
+        trials = [
+            {
+                "variant_name": "algorithmic",
+                "compression_ratio": 0.6,
+                "accuracy": 0.85,
+                "cost": 0.003,
+                "baseline_cost": 0.005,
+            },
+            {
+                "variant_name": "format_conversion",
+                "compression_ratio": 0.7,
+                "accuracy": 0.82,
+                "cost": 0.0035,
+                "baseline_cost": 0.005,
+            },
+            {
+                "variant_name": "llm_summarized",
+                "compression_ratio": 0.4,
+                "accuracy": 0.78,
+                "cost": 0.004,
+                "baseline_cost": 0.005,
+            },
+        ]
+        table = render_compression_tradeoff_table(trials)
+        assert "VARIANT" in table
+        assert "COMPRESSION_RATIO" in table
+        assert "ACCURACY" in table
+        assert "COST_SAVINGS" in table
+        assert "NET_BENEFIT" in table
+        assert "algorithmic" in table
+        assert "format_conversion" in table
+        assert "llm_summarized" in table
+```
+
+**Add function** to `agent-evals/src/agent_evals/context/compression.py`:
+
+```python
+def render_compression_tradeoff_table(trials: list[dict]) -> str:
+    """Render a table pairing compression results with Phase B cost metrics.
+
+    Each trial dict should contain:
+    - variant_name: str
+    - compression_ratio: float (0-1, lower = more compressed)
+    - accuracy: float (0-1)
+    - cost: float (actual cost)
+    - baseline_cost: float (uncompressed cost)
+
+    Returns a formatted table:
+    VARIANT | COMPRESSION_RATIO | ACCURACY | COST_SAVINGS | NET_BENEFIT
+    """
+    header = f"{'VARIANT':<25} {'COMPRESSION_RATIO':>18} {'ACCURACY':>10} {'COST_SAVINGS':>13} {'NET_BENEFIT':>12}"
+    separator = "-" * len(header)
+    rows = [header, separator]
+
+    for trial in trials:
+        variant = trial.get("variant_name", "unknown")
+        ratio = trial.get("compression_ratio", 1.0)
+        accuracy = trial.get("accuracy", 0.0)
+        cost = trial.get("cost", 0.0)
+        baseline_cost = trial.get("baseline_cost", cost)
+        cost_savings = (baseline_cost - cost) / baseline_cost if baseline_cost > 0 else 0.0
+        # Net benefit: accuracy * cost_savings (higher = better tradeoff)
+        net_benefit = accuracy * cost_savings
+
+        rows.append(
+            f"{variant:<25} {ratio:>18.4f} {accuracy:>10.4f} "
+            f"{cost_savings:>13.4f} {net_benefit:>12.4f}"
+        )
+
+    return "\n".join(rows)
+```
+
 ---
 
 ## Task 4: Tool Description Axis (C3) — Axis 11
 
-**Purpose:** Test how tool description quality and tool set size affect agent performance. Anthropic achieved SOTA on SWE-bench primarily through refined tool descriptions.
+**Purpose:** Test how tool description quality and tool set size affect agent performance. Anthropic achieved SOTA on SWE-bench primarily through refined tool descriptions. This axis is a 2-factor axis covering both description quality (4 variants) and tool set size (4 variants), giving 8 total variants on axis 11.
 
 **Files:**
 - Create: `agent-evals/src/agent_evals/variants/tool_description.py`
@@ -1230,17 +1515,97 @@ class TestToolDescDetailedRender:
         assert len(detailed) > len(minimal)
 
 
+class TestToolSetCore3:
+    def test_tool_set_core3_has_3_tools(self):
+        from agent_evals.variants.tool_description import ToolSetCore3
+        v = ToolSetCore3()
+        result = v.render(_make_doc_tree())
+        # Core 3: list_docs, read_doc, search_docs
+        assert "list_docs" in result
+        assert "read_doc" in result
+        assert "search_docs" in result
+        # Should NOT have extended tools
+        assert "get_metadata" not in result
+        assert "list_sections" not in result
+
+    def test_axis_is_11(self):
+        from agent_evals.variants.tool_description import ToolSetCore3
+        v = ToolSetCore3()
+        assert v.metadata().axis == 11
+        assert v.metadata().category == "tool_description"
+
+
+class TestToolSetExtended5:
+    def test_tool_set_extended5_has_5_tools(self):
+        from agent_evals.variants.tool_description import ToolSetExtended5
+        v = ToolSetExtended5()
+        result = v.render(_make_doc_tree())
+        # Core 3 + get_metadata + list_sections
+        assert "list_docs" in result
+        assert "read_doc" in result
+        assert "search_docs" in result
+        assert "get_metadata" in result
+        assert "list_sections" in result
+
+    def test_axis_is_11(self):
+        from agent_evals.variants.tool_description import ToolSetExtended5
+        v = ToolSetExtended5()
+        assert v.metadata().axis == 11
+
+
+class TestToolSetExtended7:
+    def test_tool_set_extended7_has_7_tools(self):
+        from agent_evals.variants.tool_description import ToolSetExtended7
+        v = ToolSetExtended7()
+        result = v.render(_make_doc_tree())
+        # Core 3 + get_metadata + list_sections + search_by_section + get_related
+        assert "list_docs" in result
+        assert "read_doc" in result
+        assert "search_docs" in result
+        assert "get_metadata" in result
+        assert "list_sections" in result
+        assert "search_by_section" in result
+        assert "get_related" in result
+
+    def test_axis_is_11(self):
+        from agent_evals.variants.tool_description import ToolSetExtended7
+        v = ToolSetExtended7()
+        assert v.metadata().axis == 11
+
+
+class TestToolSetKitchenSink:
+    def test_tool_set_kitchen_sink_has_10_plus_tools(self):
+        from agent_evals.variants.tool_description import ToolSetKitchenSink
+        v = ToolSetKitchenSink()
+        result = v.render(_make_doc_tree())
+        # 10+ tools including overlapping/redundant ones
+        tool_count = sum(
+            1 for line in result.splitlines()
+            if line.startswith("## ") and not line.startswith("## Documentation")
+        )
+        assert tool_count >= 10
+
+    def test_axis_is_11(self):
+        from agent_evals.variants.tool_description import ToolSetKitchenSink
+        v = ToolSetKitchenSink()
+        assert v.metadata().axis == 11
+
+
 class TestToolDescRegistration:
     def test_all_variants_discoverable(self):
         from agent_evals.variants.registry import get_variants_for_axis, load_all
         load_all()
         axis_11 = get_variants_for_axis(11)
-        assert len(axis_11) >= 4
+        assert len(axis_11) >= 8  # 4 description quality + 4 tool set size
         names = {v.metadata().name for v in axis_11}
         assert "tool-desc-minimal" in names
         assert "tool-desc-standard" in names
         assert "tool-desc-detailed" in names
         assert "tool-desc-adversarial" in names
+        assert "tool-set-core3" in names
+        assert "tool-set-extended5" in names
+        assert "tool-set-extended7" in names
+        assert "tool-set-kitchen-sink" in names
 ```
 
 ### Step 2: Run tests to verify they fail
@@ -1256,11 +1621,13 @@ Expected: FAIL — module does not exist.
 **Create** `agent-evals/src/agent_evals/variants/tool_description.py`:
 
 ```python
-"""Axis 11: Tool description quality variants.
+"""Axis 11: Tool description quality and tool set size variants.
 
-Tests how tool description quality affects agent performance.
-Four levels: minimal (name+types), standard (one-line),
-detailed (examples+edge cases), adversarial (vague/misleading).
+Two sub-dimensions on axis 11:
+- Description quality: minimal (name+types), standard (one-line),
+  detailed (examples+edge cases), adversarial (vague/misleading).
+- Tool set size: core3 (list/read/search), extended5 (+metadata/sections),
+  extended7 (+search_by_section/get_related), kitchen_sink (10+ with redundant).
 """
 
 from __future__ import annotations
@@ -1445,6 +1812,108 @@ class ToolDescAdversarial(IndexVariant):
             },
         ]
         return _render_tool_block(tools, doc_tree)
+
+
+# --- Tool Set Size Variants ---
+# These test the SEPARATE dimension of how many tools are available.
+# Each variant renders the core doc index PLUS its tool definitions
+# with standard (one-line) descriptions.
+
+_EXTENDED_TOOLS_5 = [
+    {"name": "get_metadata", "description": "Get metadata for a documentation file (tier, section, token count).", "parameters": "(path: str) -> dict"},
+    {"name": "list_sections", "description": "List all documentation sections with file counts.", "parameters": "() -> str"},
+]
+
+_EXTENDED_TOOLS_7 = _EXTENDED_TOOLS_5 + [
+    {"name": "search_by_section", "description": "Search within a specific documentation section.", "parameters": "(section: str, query: str) -> str"},
+    {"name": "get_related", "description": "Get related documentation files for a given path.", "parameters": "(path: str) -> list[str]"},
+]
+
+_KITCHEN_SINK_TOOLS = _EXTENDED_TOOLS_7 + [
+    {"name": "find_docs", "description": "Find documentation files matching a glob pattern.", "parameters": "(pattern: str) -> list[str]"},
+    {"name": "grep_docs", "description": "Search documentation content with regex.", "parameters": "(regex: str) -> str"},
+    {"name": "get_doc_summary", "description": "Get a summary of a documentation file.", "parameters": "(path: str) -> str"},
+    {"name": "list_all_files", "description": "List all files in the documentation tree.", "parameters": "() -> list[str]"},
+    {"name": "read_section", "description": "Read a specific section from a documentation file.", "parameters": "(path: str, section: str) -> str"},
+    {"name": "search_all", "description": "Search across all documentation (alias for search_docs).", "parameters": "(query: str) -> str"},
+]
+
+_CORE_TOOLS_STANDARD = [
+    {"name": "list_docs", "description": "List all available documentation files.", "parameters": "() -> str"},
+    {"name": "read_doc", "description": "Read a documentation file by path.", "parameters": "(path: str) -> str"},
+    {"name": "search_docs", "description": "Search documentation for a query string.", "parameters": "(query: str) -> str"},
+]
+
+
+@register_variant
+class ToolSetCore3(IndexVariant):
+    """Core 3 tools: list_docs, read_doc, search_docs."""
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name="tool-set-core3",
+            axis=11,
+            category="tool_description",
+            description="Core 3 tools with standard descriptions.",
+            token_estimate=200,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        return _render_tool_block(_CORE_TOOLS_STANDARD, doc_tree)
+
+
+@register_variant
+class ToolSetExtended5(IndexVariant):
+    """Extended 5 tools: core 3 + get_metadata, list_sections."""
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name="tool-set-extended5",
+            axis=11,
+            category="tool_description",
+            description="Extended 5 tools: core 3 + metadata + sections.",
+            token_estimate=350,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        tools = _CORE_TOOLS_STANDARD + _EXTENDED_TOOLS_5
+        return _render_tool_block(tools, doc_tree)
+
+
+@register_variant
+class ToolSetExtended7(IndexVariant):
+    """Extended 7 tools: core 3 + metadata, sections, search_by_section, get_related."""
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name="tool-set-extended7",
+            axis=11,
+            category="tool_description",
+            description="Extended 7 tools: core 3 + metadata + sections + section search + related.",
+            token_estimate=500,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        tools = _CORE_TOOLS_STANDARD + _EXTENDED_TOOLS_7
+        return _render_tool_block(tools, doc_tree)
+
+
+@register_variant
+class ToolSetKitchenSink(IndexVariant):
+    """Kitchen sink 10+ tools: all tools including overlapping/redundant ones."""
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name="tool-set-kitchen-sink",
+            axis=11,
+            category="tool_description",
+            description="Kitchen sink 10+ tools with overlapping/redundant tools.",
+            token_estimate=800,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        tools = _CORE_TOOLS_STANDARD + _KITCHEN_SINK_TOOLS
+        return _render_tool_block(tools, doc_tree)
 ```
 
 ### Step 4: Run tests
@@ -1461,11 +1930,12 @@ Expected: ALL PASS
 ~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -10
 git add agent-evals/src/agent_evals/variants/tool_description.py \
   agent-evals/tests/test_axis_11_tool_description.py
-git commit -m "feat(variants): add axis 11 tool description quality variants
+git commit -m "feat(variants): add axis 11 tool description and tool set size variants
 
-Four levels: minimal (name+types), standard (one-line), detailed
-(examples+edge cases), adversarial (vague/misleading). Tests how
-tool description quality affects agent performance.
+Two sub-dimensions: description quality (4 levels: minimal, standard,
+detailed, adversarial) and tool set size (4 levels: core3, extended5,
+extended7, kitchen-sink). Tests how tool quality and quantity affect
+agent performance.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
@@ -1606,18 +2076,93 @@ class TestInstructionRender:
         assert sizes["standard"] < sizes["verbose"] < sizes["overloaded"]
 
 
+class TestInstructionConventionsOnly:
+    def test_axis_is_12(self):
+        from agent_evals.variants.agent_instruction import InstructionConventionsOnly
+        v = InstructionConventionsOnly()
+        assert v.metadata().axis == 12
+
+    def test_contains_conventions_only(self):
+        from agent_evals.variants.agent_instruction import InstructionConventionsOnly
+        v = InstructionConventionsOnly()
+        result = v.render(_make_doc_tree())
+        instruction_section = result.split("# Documentation Index")[0]
+        assert "convention" in instruction_section.lower() or "naming" in instruction_section.lower()
+        # Should NOT contain architecture or deployment
+        assert "directory structure" not in instruction_section.lower()
+        assert "deployment" not in instruction_section.lower()
+
+    def test_under_40_lines(self):
+        from agent_evals.variants.agent_instruction import InstructionConventionsOnly
+        v = InstructionConventionsOnly()
+        result = v.render(_make_doc_tree())
+        instruction_section = result.split("# Documentation Index")[0]
+        assert instruction_section.count("\n") < 40
+
+
+class TestInstructionArchitectureOnly:
+    def test_axis_is_12(self):
+        from agent_evals.variants.agent_instruction import InstructionArchitectureOnly
+        v = InstructionArchitectureOnly()
+        assert v.metadata().axis == 12
+
+    def test_contains_architecture_only(self):
+        from agent_evals.variants.agent_instruction import InstructionArchitectureOnly
+        v = InstructionArchitectureOnly()
+        result = v.render(_make_doc_tree())
+        instruction_section = result.split("# Documentation Index")[0]
+        assert "architecture" in instruction_section.lower() or "directory" in instruction_section.lower()
+        # Should NOT contain deployment or CI
+        assert "ci/cd" not in instruction_section.lower()
+        assert "rollback" not in instruction_section.lower()
+
+    def test_under_50_lines(self):
+        from agent_evals.variants.agent_instruction import InstructionArchitectureOnly
+        v = InstructionArchitectureOnly()
+        result = v.render(_make_doc_tree())
+        instruction_section = result.split("# Documentation Index")[0]
+        assert instruction_section.count("\n") < 50
+
+
+class TestInstructionDeploymentOnly:
+    def test_axis_is_12(self):
+        from agent_evals.variants.agent_instruction import InstructionDeploymentOnly
+        v = InstructionDeploymentOnly()
+        assert v.metadata().axis == 12
+
+    def test_contains_deployment_only(self):
+        from agent_evals.variants.agent_instruction import InstructionDeploymentOnly
+        v = InstructionDeploymentOnly()
+        result = v.render(_make_doc_tree())
+        instruction_section = result.split("# Documentation Index")[0]
+        assert "deploy" in instruction_section.lower() or "ci" in instruction_section.lower()
+        # Should NOT contain coding conventions
+        assert "pep 8" not in instruction_section.lower()
+        assert "type hints" not in instruction_section.lower()
+
+    def test_under_40_lines(self):
+        from agent_evals.variants.agent_instruction import InstructionDeploymentOnly
+        v = InstructionDeploymentOnly()
+        result = v.render(_make_doc_tree())
+        instruction_section = result.split("# Documentation Index")[0]
+        assert instruction_section.count("\n") < 40
+
+
 class TestInstructionRegistration:
     def test_all_variants_discoverable(self):
         from agent_evals.variants.registry import get_variants_for_axis, load_all
         load_all()
         axis_12 = get_variants_for_axis(12)
-        assert len(axis_12) >= 5
+        assert len(axis_12) >= 8  # 5 verbosity + 3 ablative
         names = {v.metadata().name for v in axis_12}
         assert "instruction-none" in names
         assert "instruction-minimal" in names
         assert "instruction-standard" in names
         assert "instruction-verbose" in names
         assert "instruction-overloaded" in names
+        assert "instruction-conventions-only" in names
+        assert "instruction-architecture-only" in names
+        assert "instruction-deployment-only" in names
 ```
 
 ### Step 2: Run tests to verify they fail
@@ -1865,6 +2410,147 @@ class InstructionOverloaded(IndexVariant):
 
     def render(self, doc_tree: DocTree) -> str:
         return _OVERLOADED_INSTRUCTIONS + "\n" + _render_doc_index(doc_tree)
+
+
+# --- ETH Zurich Failure Mode Ablation Variants ---
+# These isolate individual content types to decompose which
+# content types cause the three ETH Zurich failure modes:
+# (1) excessive context dilution, (2) conflicting instructions,
+# (3) over-specification constraining agent behavior.
+
+_CONVENTIONS_ONLY_INSTRUCTIONS = """\
+# Agent Instructions — Coding Conventions
+
+## Naming Conventions
+- Use type hints on all public functions.
+- Follow PEP 8 naming conventions.
+- Maximum line length: 88 characters (Black formatter).
+- Use dataclasses for data containers.
+- Prefer composition over inheritance.
+
+## Style
+- Use markdown formatting in responses.
+- Write docstrings for all public modules and classes.
+- Constants in UPPER_SNAKE_CASE.
+- Private methods prefixed with underscore.
+
+## Response Format
+- Be concise and direct.
+- Cite source files using [filename] notation.
+- For code questions, include code snippets.
+"""
+
+_ARCHITECTURE_ONLY_INSTRUCTIONS = """\
+# Agent Instructions — Architecture
+
+## Project Architecture
+This is a Python project using UV for package management.
+The codebase follows a modular architecture with clear
+separation of concerns.
+
+## Directory Structure
+```
+project/
+  src/
+    module_a/
+    module_b/
+  tests/
+    test_module_a/
+    test_module_b/
+  docs/
+    guides/
+    api/
+    reference/
+  scripts/
+    setup.sh
+    deploy.sh
+```
+
+## Module Organization
+- Each module has its own directory with tests, source, and config.
+- Public API is exported from __init__.py.
+- Internal implementation in _internal/ subdirectory.
+
+## Documentation Structure
+The documentation is organized into sections:
+- **Guides**: How-to articles and tutorials.
+- **API**: Endpoint references and schemas.
+- **Reference**: Configuration and advanced topics.
+"""
+
+_DEPLOYMENT_ONLY_INSTRUCTIONS = """\
+# Agent Instructions — Deployment & CI
+
+## Deployment
+- CI/CD via GitHub Actions.
+- Staging environment: staging.example.com.
+- Production environment: api.example.com.
+- Deploy on merge to main after tests pass.
+- Rollback procedure: revert merge commit and redeploy.
+
+## Environment Variables
+- `API_KEY`: Required for authentication.
+- `DATABASE_URL`: PostgreSQL connection string.
+- `REDIS_URL`: Cache connection string.
+- `LOG_LEVEL`: DEBUG, INFO, WARNING, ERROR.
+- `ENVIRONMENT`: development, staging, production.
+
+## Git Workflow
+- Use conventional commits: feat, fix, refactor, docs, test.
+- Create feature branches from main.
+- Squash merge into main.
+"""
+
+
+@register_variant
+class InstructionConventionsOnly(IndexVariant):
+    """Ablative variant: coding conventions only (~30 lines)."""
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name="instruction-conventions-only",
+            axis=12,
+            category="agent_instruction",
+            description="Ablative: coding conventions only (~30 lines).",
+            token_estimate=120,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        return _CONVENTIONS_ONLY_INSTRUCTIONS + "\n" + _render_doc_index(doc_tree)
+
+
+@register_variant
+class InstructionArchitectureOnly(IndexVariant):
+    """Ablative variant: architecture/directory structure only (~40 lines)."""
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name="instruction-architecture-only",
+            axis=12,
+            category="agent_instruction",
+            description="Ablative: architecture/directory structure only (~40 lines).",
+            token_estimate=150,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        return _ARCHITECTURE_ONLY_INSTRUCTIONS + "\n" + _render_doc_index(doc_tree)
+
+
+@register_variant
+class InstructionDeploymentOnly(IndexVariant):
+    """Ablative variant: deployment/CI info only (~30 lines)."""
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name="instruction-deployment-only",
+            axis=12,
+            category="agent_instruction",
+            description="Ablative: deployment/CI info only (~30 lines).",
+            token_estimate=120,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        return _DEPLOYMENT_ONLY_INSTRUCTIONS + "\n" + _render_doc_index(doc_tree)
 ```
 
 ### Step 4: Run tests
@@ -1879,11 +2565,12 @@ class InstructionOverloaded(IndexVariant):
 ~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -10
 git add agent-evals/src/agent_evals/variants/agent_instruction.py \
   agent-evals/tests/test_axis_12_agent_instruction.py
-git commit -m "feat(variants): add axis 12 agent instruction verbosity variants
+git commit -m "feat(variants): add axis 12 agent instruction verbosity + ablative variants
 
-Five verbosity levels testing ETH Zurich AGENTS.md findings:
-none, minimal (<60 lines), standard (~150), verbose (300+),
-overloaded (500+). Decomposes which content types help vs hurt.
+Eight variants testing ETH Zurich AGENTS.md findings:
+Five verbosity levels (none, minimal, standard, verbose, overloaded)
+plus three ablative variants (conventions-only, architecture-only,
+deployment-only) to decompose which content types cause failure modes.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
@@ -2360,23 +3047,187 @@ class CompactionModifier(ContextStrategy):
         )
 ```
 
-### Step 4: Run tests
+### Step 4: Add multi-turn task sequence support
+
+**Purpose:** Test how format durability degrades across a sequence of related tasks with compaction between each step.
+
+**Append tests** to `agent-evals/tests/test_compaction_modifier.py`:
+
+```python
+class TestMultiTaskSequence:
+    def test_multi_task_sequence_applies_compaction_between_tasks(self):
+        """run_compacted_sequence runs tasks with compaction between them."""
+        from agent_evals.context.modifiers.compaction import run_compacted_sequence
+        from unittest.mock import MagicMock
+
+        # Create 3 related tasks
+        tasks = []
+        for i in range(3):
+            task = MagicMock()
+            task.definition.question = f"Question {i}"
+            task.build_prompt.return_value = [
+                {"role": "system", "content": "System prompt with docs."},
+                {"role": "user", "content": f"Question {i}"},
+            ]
+            tasks.append(task)
+
+        strategy = MagicMock()
+        strategy.name.return_value = "full_context"
+        strategy.prepare.return_value = MagicMock(
+            messages=[
+                {"role": "system", "content": "System."},
+                {"role": "user", "content": "Q"},
+            ],
+            tools=None,
+            strategy_metadata={},
+        )
+
+        mock_result = MagicMock()
+        mock_result.final_response = "Answer"
+        mock_result.messages = [
+            {"role": "system", "content": "System."},
+            {"role": "user", "content": "Q"},
+            {"role": "assistant", "content": "Answer"},
+        ]
+        mock_result.strategy_metadata = {}
+        mock_result.total_prompt_tokens = 100
+        mock_result.total_completion_tokens = 20
+        mock_result.total_tokens = 120
+        mock_result.total_cost = 0.001
+        mock_result.generations = []
+        strategy.execute.return_value = mock_result
+
+        client = MagicMock()
+
+        results = run_compacted_sequence(
+            tasks, strategy, client, compaction_ratio=0.5,
+        )
+        assert len(results) == 3
+        # Strategy should be called once per task
+        assert strategy.execute.call_count == 3
+
+    def test_format_durability_score(self):
+        """format_durability_score measures accuracy degradation after compaction."""
+        from agent_evals.context.modifiers.compaction import format_durability_score
+
+        # Simulate results with degrading accuracy
+        results = [
+            {"score": 0.9, "position": 0},
+            {"score": 0.7, "position": 1},
+            {"score": 0.5, "position": 2},
+        ]
+        durability = format_durability_score(results)
+        # Durability should be between 0 and 1
+        assert 0.0 <= durability <= 1.0
+        # High degradation = low durability
+        assert durability < 0.8
+```
+
+**Add to** `agent-evals/src/agent_evals/context/modifiers/compaction.py`:
+
+```python
+def run_compacted_sequence(
+    tasks: list[EvalTask],
+    strategy: ContextStrategy,
+    client: LLMClient,
+    compaction_ratio: float = 0.5,
+    max_tokens: int = 1024,
+    temperature: float = 0.0,
+) -> list[StrategyResult]:
+    """Run a sequence of related tasks with compaction between each step.
+
+    Context carries over from task to task, with compaction applied
+    between each step. Measures how much knowledge is retained across
+    the sequence.
+
+    Args:
+        tasks: List of related tasks to run in sequence.
+        strategy: The context strategy to use.
+        client: LLM client for completions.
+        compaction_ratio: Target ratio for compaction (0-1).
+        max_tokens: Max tokens per completion.
+        temperature: Sampling temperature.
+
+    Returns:
+        List of StrategyResult, one per task, with compaction metadata.
+    """
+    results: list[StrategyResult] = []
+    carry_over_messages: list[dict] | None = None
+
+    for i, task in enumerate(tasks):
+        prepared = strategy.prepare("", task, None)
+
+        # If we have carry-over context, apply it
+        if carry_over_messages is not None:
+            prepared.messages = carry_over_messages + prepared.messages[1:]
+
+        result = strategy.execute(
+            prepared, task, client, max_tokens, temperature,
+        )
+
+        # Apply compaction for next iteration
+        carry_over_messages = simulate_compaction(
+            result.messages, compaction_ratio,
+        )
+
+        metadata = dict(result.strategy_metadata)
+        metadata["sequence_position"] = i
+        metadata["compaction_applied"] = i > 0
+        result = StrategyResult(
+            final_response=result.final_response,
+            generations=result.generations,
+            total_prompt_tokens=result.total_prompt_tokens,
+            total_completion_tokens=result.total_completion_tokens,
+            total_tokens=result.total_tokens,
+            total_cost=result.total_cost,
+            messages=result.messages,
+            strategy_metadata=metadata,
+        )
+        results.append(result)
+
+    return results
+
+
+def format_durability_score(results: list[dict]) -> float:
+    """Measure how much accuracy degrades after compaction.
+
+    Args:
+        results: List of dicts with 'score' (0-1) and 'position' (int).
+
+    Returns:
+        Durability score (0-1). 1.0 = no degradation, 0.0 = total loss.
+    """
+    if not results or len(results) < 2:
+        return 1.0
+
+    sorted_results = sorted(results, key=lambda r: r["position"])
+    first_score = sorted_results[0]["score"]
+    if first_score == 0:
+        return 0.0
+
+    # Average ratio of each subsequent score to the first score
+    ratios = [r["score"] / first_score for r in sorted_results[1:]]
+    return sum(ratios) / len(ratios)
+```
+
+### Step 5: Run tests
 
 ```bash
 ~/.local/bin/uv run pytest agent-evals/tests/test_compaction_modifier.py -v
 ```
 
-### Step 5: Run full suite and commit
+### Step 6: Run full suite and commit
 
 ```bash
 ~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -10
 git add agent-evals/src/agent_evals/context/modifiers/__init__.py \
   agent-evals/src/agent_evals/context/modifiers/compaction.py \
   agent-evals/tests/test_compaction_modifier.py
-git commit -m "feat(context): add compaction modifier for multi-session persistence testing
+git commit -m "feat(context): add compaction modifier with multi-task sequence support
 
 Simulates context compaction between task phases. Tests whether
-documentation format survives summarization. Wraps any strategy
+documentation format survives summarization. Includes multi-task
+sequence runner and format durability scoring. Wraps any strategy
 with configurable compaction ratio.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
@@ -2466,6 +3317,43 @@ class TestDynamicToolModes:
         filtered = filter_tools(tools, mode="full")
         assert len(filtered) == 3
 
+    def test_phase_based_explore_phase(self):
+        """During explore phase (first half of max_turns), only list/browse tools."""
+        from agent_evals.context.modifiers.dynamic_tools import filter_tools
+        tools = [
+            {"function": {"name": "list_docs"}},
+            {"function": {"name": "list_resources"}},
+            {"function": {"name": "read_doc"}},
+            {"function": {"name": "read_resource"}},
+            {"function": {"name": "search_docs"}},
+            {"function": {"name": "search_resources"}},
+        ]
+        # Turn 0 out of max_turns=6 -> explore phase (first half)
+        filtered = filter_tools(tools, mode="phase_based", turn=0, max_turns=6)
+        names = [t["function"]["name"] for t in filtered]
+        assert "list_docs" in names
+        assert "list_resources" in names
+        # Read tools available during explore
+        assert "read_doc" in names or "read_resource" in names
+        # Search tools NOT available during explore
+        assert "search_docs" not in names
+        assert "search_resources" not in names
+
+    def test_phase_based_answer_phase(self):
+        """During answer phase (second half of max_turns), all tools available."""
+        from agent_evals.context.modifiers.dynamic_tools import filter_tools
+        tools = [
+            {"function": {"name": "list_docs"}},
+            {"function": {"name": "list_resources"}},
+            {"function": {"name": "read_doc"}},
+            {"function": {"name": "read_resource"}},
+            {"function": {"name": "search_docs"}},
+            {"function": {"name": "search_resources"}},
+        ]
+        # Turn 4 out of max_turns=6 -> answer phase (second half)
+        filtered = filter_tools(tools, mode="phase_based", turn=4, max_turns=6)
+        assert len(filtered) == 6  # All tools available
+
 
 class TestDynamicToolModifier:
     def test_modifier_name(self):
@@ -2497,8 +3385,8 @@ class TestDynamicToolModifier:
 """Dynamic tool availability modifier.
 
 Tests whether good documentation structure compensates for fewer tools.
-Three modes: restricted (remove search), progressive (unlock over turns),
-full (baseline, all tools).
+Four modes: restricted (remove search), progressive (unlock over turns),
+phase_based (explore vs answer phases), full (baseline, all tools).
 """
 
 from __future__ import annotations
@@ -2517,12 +3405,24 @@ if TYPE_CHECKING:
 _PROGRESSIVE_UNLOCK = ["list_docs", "list_resources", "read_doc", "read_resource", "search_docs", "search_resources"]
 
 
+_EXPLORE_PHASE_TOOLS = {"list_docs", "list_resources", "read_doc", "read_resource"}
+
+
 def filter_tools(
     tools: list[dict[str, Any]],
     mode: str = "full",
     turn: int = 0,
+    max_turns: int = 10,
 ) -> list[dict[str, Any]]:
-    """Filter tools based on availability mode and turn number."""
+    """Filter tools based on availability mode and turn number.
+
+    Modes:
+    - full: all tools always available
+    - restricted: remove search tools
+    - progressive: unlock tools one-by-one over turns
+    - phase_based: explore phase (first half) = list/read only;
+                   answer phase (second half) = all tools
+    """
     if mode == "full":
         return list(tools)
 
@@ -2544,6 +3444,17 @@ def filter_tools(
             t for t in tools
             if t.get("function", {}).get("name", "") in allowed
         ]
+
+    if mode == "phase_based":
+        midpoint = max_turns // 2
+        if turn < midpoint:
+            # Explore phase: only list and read tools
+            return [
+                t for t in tools
+                if t.get("function", {}).get("name", "") in _EXPLORE_PHASE_TOOLS
+            ]
+        # Answer phase: all tools available
+        return list(tools)
 
     return list(tools)
 
@@ -2618,8 +3529,9 @@ git add agent-evals/src/agent_evals/context/modifiers/dynamic_tools.py \
   agent-evals/tests/test_dynamic_tools_modifier.py
 git commit -m "feat(context): add dynamic tool availability modifier
 
-Three modes: restricted (no search), progressive (unlock over turns),
-full (baseline). Tests whether doc structure compensates for fewer tools.
+Four modes: restricted (no search), progressive (unlock over turns),
+phase_based (explore vs answer phases), full (baseline). Tests whether
+doc structure compensates for fewer tools.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
@@ -2695,6 +3607,86 @@ class TestCacheAnalysisReport:
         from agent_evals.reports.cache_analysis import build_cache_report
         report = build_cache_report([])
         assert isinstance(report, dict)
+
+
+class TestSequentialCacheTest:
+    def test_sequential_tasks_track_cache_growth(self):
+        """run_sequential_cache_test tracks how cached_tokens grows."""
+        from agent_evals.reports.cache_analysis import run_sequential_cache_test
+        from unittest.mock import MagicMock
+
+        variant = MagicMock()
+        variant.metadata.return_value.name = "yaml"
+
+        tasks = [MagicMock() for _ in range(3)]
+        for i, task in enumerate(tasks):
+            task.definition.question = f"Question {i}"
+
+        client = MagicMock()
+        # Simulate increasing cached_tokens over sequential calls
+        gens = []
+        for i in range(3):
+            gen = MagicMock()
+            gen.content = f"Answer {i}"
+            gen.prompt_tokens = 1000
+            gen.completion_tokens = 50
+            gen.total_tokens = 1050
+            gen.cost = 0.001
+            gen.cached_tokens = 100 * (i + 1)  # 100, 200, 300
+            gens.append(gen)
+        client.complete.side_effect = gens
+
+        results = run_sequential_cache_test(variant, tasks, client)
+        assert len(results) == 3
+        # Each result should have cached_tokens
+        for r in results:
+            assert "cached_tokens" in r
+        # cached_tokens should grow
+        assert results[2]["cached_tokens"] > results[0]["cached_tokens"]
+
+    def test_prefix_stability_score(self):
+        """prefix_stability_score measures consistency of cached_tokens."""
+        from agent_evals.reports.cache_analysis import prefix_stability_score
+
+        # Stable caching: consistent cached_tokens
+        stable_trials = [
+            {"cached_tokens": 500, "prompt_tokens": 1000},
+            {"cached_tokens": 500, "prompt_tokens": 1000},
+            {"cached_tokens": 500, "prompt_tokens": 1000},
+        ]
+        stable_score = prefix_stability_score(stable_trials)
+
+        # Unstable caching: varying cached_tokens
+        unstable_trials = [
+            {"cached_tokens": 100, "prompt_tokens": 1000},
+            {"cached_tokens": 800, "prompt_tokens": 1000},
+            {"cached_tokens": 200, "prompt_tokens": 1000},
+        ]
+        unstable_score = prefix_stability_score(unstable_trials)
+
+        assert stable_score > unstable_score
+        assert 0.0 <= stable_score <= 1.0
+        assert 0.0 <= unstable_score <= 1.0
+
+
+class TestFormatCacheCorrelation:
+    def test_format_cache_correlation(self):
+        """correlate_format_with_cache computes correlations."""
+        from agent_evals.reports.cache_analysis import correlate_format_with_cache
+
+        trials = [
+            {"cached_tokens": 800, "prompt_tokens": 1000, "variant_name": "yaml"},
+            {"cached_tokens": 700, "prompt_tokens": 1000, "variant_name": "yaml"},
+            {"cached_tokens": 200, "prompt_tokens": 1000, "variant_name": "flat"},
+            {"cached_tokens": 150, "prompt_tokens": 1000, "variant_name": "flat"},
+        ]
+        variant_metadata = {
+            "yaml": {"hierarchy_depth": 3, "serialization": "yaml"},
+            "flat": {"hierarchy_depth": 1, "serialization": "plain"},
+        }
+        correlation = correlate_format_with_cache(trials, variant_metadata)
+        assert isinstance(correlation, dict)
+        assert "hierarchy_depth_correlation" in correlation
 ```
 
 ### Step 2: Run tests to verify they fail
@@ -2780,6 +3772,161 @@ def build_cache_report(
         }
 
     return report
+
+
+def run_sequential_cache_test(
+    variant: Any,
+    tasks: list[Any],
+    client: Any,
+    max_tokens: int = 1024,
+    temperature: float = 0.0,
+) -> list[dict]:
+    """Run the same variant against multiple tasks in sequence WITHOUT
+    clearing the conversation, measuring how cached_tokens grows.
+
+    Args:
+        variant: The variant being tested.
+        tasks: List of tasks to run sequentially.
+        client: LLM client for completions.
+        max_tokens: Max tokens per completion.
+        temperature: Sampling temperature.
+
+    Returns:
+        List of dicts with cached_tokens, prompt_tokens, and completion info
+        for each sequential task.
+    """
+    results: list[dict] = []
+    messages: list[dict] = [
+        {"role": "system", "content": "Answer based on documentation."},
+    ]
+
+    for i, task in enumerate(tasks):
+        question = getattr(task.definition, "question", f"Task {i}")
+        messages.append({"role": "user", "content": question})
+
+        generation = client.complete(
+            messages, max_tokens=max_tokens, temperature=temperature,
+        )
+
+        content = generation.content or ""
+        messages.append({"role": "assistant", "content": content})
+
+        results.append({
+            "position": i,
+            "cached_tokens": getattr(generation, "cached_tokens", 0),
+            "prompt_tokens": generation.prompt_tokens,
+            "completion_tokens": generation.completion_tokens,
+            "total_tokens": generation.total_tokens,
+            "variant_name": variant.metadata().name if hasattr(variant, "metadata") else "unknown",
+        })
+
+    return results
+
+
+def prefix_stability_score(trials: list[dict[str, Any]]) -> float:
+    """Measure consistency of cached_tokens across sequential tasks.
+
+    Higher score = more stable prefix = better caching behavior.
+    Uses coefficient of variation (1 - CV) to score stability.
+
+    Args:
+        trials: List of dicts with 'cached_tokens' and 'prompt_tokens'.
+
+    Returns:
+        Stability score between 0.0 and 1.0.
+    """
+    if not trials:
+        return 0.0
+
+    cache_rates = [
+        compute_cache_hit_rate(
+            t.get("cached_tokens", 0),
+            t.get("prompt_tokens", 0),
+        )
+        for t in trials
+    ]
+
+    if not cache_rates:
+        return 0.0
+
+    mean = sum(cache_rates) / len(cache_rates)
+    if mean == 0:
+        return 0.0
+
+    # Coefficient of variation
+    variance = sum((r - mean) ** 2 for r in cache_rates) / len(cache_rates)
+    std_dev = variance ** 0.5
+    cv = std_dev / mean if mean > 0 else 1.0
+
+    # Invert: low CV = high stability
+    return max(0.0, min(1.0, 1.0 - cv))
+
+
+def correlate_format_with_cache(
+    trials: list[dict[str, Any]],
+    variant_metadata: dict[str, dict[str, Any]],
+) -> dict:
+    """Compute correlation between format properties and cache hit rates.
+
+    Args:
+        trials: List of trial dicts with cached_tokens, prompt_tokens, variant_name.
+        variant_metadata: Dict mapping variant_name to format properties
+            (hierarchy_depth, positioning_stability, serialization, etc.)
+
+    Returns:
+        Dict with correlation values for each numeric format property.
+    """
+    if not trials or not variant_metadata:
+        return {}
+
+    # Group cache hit rates by variant
+    variant_rates: dict[str, list[float]] = defaultdict(list)
+    for trial in trials:
+        vname = trial.get("variant_name", "unknown")
+        rate = compute_cache_hit_rate(
+            trial.get("cached_tokens", 0),
+            trial.get("prompt_tokens", 0),
+        )
+        variant_rates[vname].append(rate)
+
+    # Mean cache rate per variant
+    mean_rates: dict[str, float] = {
+        v: sum(rates) / len(rates) for v, rates in variant_rates.items() if rates
+    }
+
+    # Find numeric properties in variant_metadata
+    result: dict[str, float] = {}
+    all_props: set[str] = set()
+    for meta in variant_metadata.values():
+        for k, v in meta.items():
+            if isinstance(v, (int, float)):
+                all_props.add(k)
+
+    for prop in sorted(all_props):
+        # Build paired lists for correlation
+        x_vals: list[float] = []
+        y_vals: list[float] = []
+        for vname, rate in mean_rates.items():
+            if vname in variant_metadata and prop in variant_metadata[vname]:
+                val = variant_metadata[vname][prop]
+                if isinstance(val, (int, float)):
+                    x_vals.append(float(val))
+                    y_vals.append(rate)
+
+        if len(x_vals) >= 2:
+            # Simple Pearson correlation
+            n = len(x_vals)
+            mean_x = sum(x_vals) / n
+            mean_y = sum(y_vals) / n
+            cov = sum((x - mean_x) * (y - mean_y) for x, y in zip(x_vals, y_vals)) / n
+            std_x = (sum((x - mean_x) ** 2 for x in x_vals) / n) ** 0.5
+            std_y = (sum((y - mean_y) ** 2 for y in y_vals) / n) ** 0.5
+            if std_x > 0 and std_y > 0:
+                result[f"{prop}_correlation"] = round(cov / (std_x * std_y), 4)
+            else:
+                result[f"{prop}_correlation"] = 0.0
+
+    return result
 ```
 
 ### Step 4: Run tests
@@ -2794,11 +3941,12 @@ def build_cache_report(
 ~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -10
 git add agent-evals/src/agent_evals/reports/cache_analysis.py \
   agent-evals/tests/test_cache_analysis.py
-git commit -m "feat(reports): add KV-cache friendliness analysis
+git commit -m "feat(reports): add KV-cache analysis with sequential testing and correlation
 
 Tracks cached_tokens and cache_write_tokens from Phase B.
-Computes cache hit rates per variant. Reports format stability
-vs caching cost tradeoffs.
+Computes cache hit rates per variant. Includes sequential cache
+test runner, prefix stability scoring, and format-cache correlation
+analysis.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
@@ -2847,32 +3995,121 @@ class TestCacheMetricsIntegration:
         assert result.strategy_metadata["cache_hit_rate"] == 0.45
 ```
 
-### Step 2: Run and verify tests pass
+### Step 2: Add hallucination rate to VariantSummary
 
-These tests validate the data model supports the fields. The actual wiring of hallucination into `_call_judge()` and cache metrics into `_run_trial()` depends on Phase A judge module and Phase B CostMetrics being present.
-
-**Implementation note:** The wiring changes to `runner.py` lines 867-888 are:
+**Append to** `agent-evals/tests/test_runner.py`:
 
 ```python
-# In _run_trial(), after scoring (line ~880):
-# If hallucination detection enabled and judge called:
-if hallucination_result:
-    metrics["hallucination_score"] = hallucination_result.score
-    metrics["hallucination_type"] = hallucination_result.hallucination_type
+class TestHallucinationRateInVariantSummary:
+    def test_hallucination_rate_in_variant_summary(self):
+        """VariantSummary should include mean hallucination_score per variant."""
+        from agent_evals.runner import TrialResult, compute_variant_summary
 
-# Cache hit rate from Phase B CostMetrics (already in strategy_metadata):
-# No runner change needed — Phase B populates this in GenerationResult
+        trials = [
+            TrialResult(
+                task_id="t1", task_type="retrieval", variant_name="yaml",
+                repetition=1, score=0.9, metrics={"hallucination_score": 0.1},
+                prompt_tokens=100, completion_tokens=50, total_tokens=150,
+                cost=0.001, latency_seconds=1.0, response="a1", cached=False,
+            ),
+            TrialResult(
+                task_id="t2", task_type="retrieval", variant_name="yaml",
+                repetition=1, score=0.8, metrics={"hallucination_score": 0.3},
+                prompt_tokens=100, completion_tokens=50, total_tokens=150,
+                cost=0.001, latency_seconds=1.0, response="a2", cached=False,
+            ),
+        ]
+        summary = compute_variant_summary(trials, variant_name="yaml")
+        assert "hallucination_rate" in summary
+        assert summary["hallucination_rate"] == pytest.approx(0.2)
 ```
 
-### Step 3: Run full suite and commit
+### Step 3: Implement hallucination wiring in runner
+
+**Modify** `agent-evals/src/agent_evals/runner.py`:
+
+1. In `_call_judge()`, add hallucination detection call when enabled:
+
+```python
+# After the existing judge scoring:
+if self._config.get("hallucination_detection", False):
+    from agent_evals.judge.hallucination import (
+        build_hallucination_prompt,
+        parse_hallucination_result,
+    )
+    hallucination_messages = build_hallucination_prompt(
+        response=response,
+        source_docs=rendered_index,
+        question=task.definition.question,
+    )
+    hallucination_gen = self._judge_client.complete(
+        hallucination_messages, max_tokens=512, temperature=0.0,
+    )
+    hallucination_result = parse_hallucination_result(
+        hallucination_gen.content or "",
+    )
+    trial_metrics["hallucination_score"] = hallucination_result.score
+    trial_metrics["hallucination_type"] = hallucination_result.hallucination_type
+```
+
+2. Add `compute_variant_summary()` function (or extend existing aggregator):
+
+```python
+def compute_variant_summary(
+    trials: list[TrialResult],
+    variant_name: str,
+) -> dict:
+    """Compute summary statistics for a variant including hallucination rate."""
+    variant_trials = [t for t in trials if t.variant_name == variant_name]
+    if not variant_trials:
+        return {}
+
+    scores = [t.score for t in variant_trials]
+    h_scores = [
+        t.metrics.get("hallucination_score", 0.0)
+        for t in variant_trials
+        if "hallucination_score" in t.metrics
+    ]
+
+    summary = {
+        "variant_name": variant_name,
+        "mean_score": sum(scores) / len(scores),
+        "trial_count": len(variant_trials),
+    }
+
+    if h_scores:
+        summary["hallucination_rate"] = sum(h_scores) / len(h_scores)
+
+    return summary
+```
+
+3. Add `hallucination_rate` as queryable column in observatory trials table:
+
+```python
+# In observatory/run_manager.py, add to CREATE TABLE trials:
+# hallucination_score REAL DEFAULT NULL,
+# hallucination_type TEXT DEFAULT NULL,
+```
+
+### Step 4: Run and verify tests pass
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_runner.py -k "Hallucination or Cache" -v
+```
+
+### Step 5: Run full suite and commit
 
 ```bash
 ~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -10
-git add agent-evals/tests/test_runner.py
-git commit -m "test(runner): add integration tests for hallucination and cache metrics
+git add agent-evals/src/agent_evals/runner.py \
+  agent-evals/src/agent_evals/observatory/run_manager.py \
+  agent-evals/tests/test_runner.py
+git commit -m "feat(runner): wire hallucination detection as first-class metric
 
-Validates TrialResult data model supports hallucination_score in
-metrics dict and cache_hit_rate in strategy_metadata.
+Add hallucination_score and hallucination_type to trial metrics
+when hallucination detection is enabled. Add hallucination_rate
+to VariantSummary aggregation. Add queryable columns to observatory
+trials table.
 
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
@@ -3045,13 +4282,13 @@ class TestNewAxesDiscovery:
         from agent_evals.variants.registry import get_variants_for_axis, load_all
         load_all()
         variants = get_variants_for_axis(11)
-        assert len(variants) >= 4
+        assert len(variants) >= 8  # 4 description quality + 4 tool set size
 
     def test_axis_12_discovered(self):
         from agent_evals.variants.registry import get_variants_for_axis, load_all
         load_all()
         variants = get_variants_for_axis(12)
-        assert len(variants) >= 5
+        assert len(variants) >= 8  # 5 verbosity + 3 ablative
 
     def test_axes_11_12_in_taguchi_factors(self):
         from agent_evals.taguchi.factors import build_factors_from_axes
@@ -3190,22 +4427,332 @@ ls agent-evals/src/agent_evals/reports/cache_analysis.py
 
 ---
 
+## Task 14: Cross-Strategy Synthesis Report (EXIT CRITERIA)
+
+**Purpose:** Generate the final cross-strategy recommendation by analyzing Taguchi results across all 6 strategies. This is the exit criteria for Phase C -- the deliverable that answers: "For an MCP-based agent reading compressed docs through dynamic tools, use format X with instruction style Y."
+
+**Files:**
+- Create: `agent-evals/src/agent_evals/reports/cross_strategy_synthesis.py`
+- Create: `agent-evals/tests/test_cross_strategy_synthesis.py`
+
+### Step 1: Write failing tests
+
+**Create** `agent-evals/tests/test_cross_strategy_synthesis.py`:
+
+```python
+"""Tests for cross-strategy synthesis report (Phase C exit criteria)."""
+
+from __future__ import annotations
+
+import pytest
+
+
+class TestCrossStrategyRecommendation:
+    def test_cross_strategy_recommendation_generated(self):
+        """generate_cross_strategy_recommendation produces a recommendation string."""
+        from agent_evals.reports.cross_strategy_synthesis import (
+            generate_cross_strategy_recommendation,
+        )
+
+        # Simulate Taguchi results from 6 strategies
+        phase_results_by_strategy = {
+            "full_context": {
+                "optimal_levels": {"axis_1": "yaml", "axis_2": "hierarchical", "axis_11": "tool-desc-detailed"},
+                "factor_rankings": [("axis_1", 0.15), ("axis_2", 0.10), ("axis_11", 0.08)],
+                "mean_score": 0.82,
+            },
+            "system_prompt": {
+                "optimal_levels": {"axis_1": "yaml", "axis_2": "hierarchical", "axis_11": "tool-desc-standard"},
+                "factor_rankings": [("axis_1", 0.12), ("axis_2", 0.11), ("axis_11", 0.05)],
+                "mean_score": 0.78,
+            },
+            "rag": {
+                "optimal_levels": {"axis_1": "json", "axis_2": "flat", "axis_11": "tool-desc-detailed"},
+                "factor_rankings": [("axis_1", 0.18), ("axis_2", 0.06), ("axis_11", 0.09)],
+                "mean_score": 0.75,
+            },
+            "tool_based": {
+                "optimal_levels": {"axis_1": "yaml", "axis_2": "hierarchical", "axis_11": "tool-desc-detailed"},
+                "factor_rankings": [("axis_1", 0.14), ("axis_11", 0.12), ("axis_2", 0.07)],
+                "mean_score": 0.80,
+            },
+            "mcp_native": {
+                "optimal_levels": {"axis_1": "yaml", "axis_2": "hierarchical", "axis_11": "tool-desc-detailed"},
+                "factor_rankings": [("axis_11", 0.16), ("axis_1", 0.13), ("axis_2", 0.09)],
+                "mean_score": 0.79,
+            },
+            "compression": {
+                "optimal_levels": {"axis_1": "yaml", "axis_2": "flat", "axis_11": "tool-desc-standard"},
+                "factor_rankings": [("axis_1", 0.20), ("axis_2", 0.05), ("axis_11", 0.04)],
+                "mean_score": 0.73,
+            },
+        }
+
+        recommendation = generate_cross_strategy_recommendation(
+            phase_results_by_strategy,
+        )
+        assert isinstance(recommendation, str)
+        assert len(recommendation) > 100
+        # Should mention format recommendation
+        assert "format" in recommendation.lower() or "yaml" in recommendation.lower()
+
+    def test_concordance_factors_identified(self):
+        """Factors that agree across strategies should be identified."""
+        from agent_evals.reports.cross_strategy_synthesis import (
+            find_concordant_factors,
+        )
+
+        results = {
+            "strategy_a": {"optimal_levels": {"axis_1": "yaml", "axis_2": "flat"}},
+            "strategy_b": {"optimal_levels": {"axis_1": "yaml", "axis_2": "hierarchical"}},
+            "strategy_c": {"optimal_levels": {"axis_1": "yaml", "axis_2": "flat"}},
+        }
+        concordant = find_concordant_factors(results)
+        # axis_1 agrees across all strategies (all "yaml")
+        assert "axis_1" in concordant
+        assert concordant["axis_1"]["level"] == "yaml"
+        assert concordant["axis_1"]["agreement"] >= 0.66
+
+    def test_disagreement_factors_identified(self):
+        """Factors where strategies disagree should be flagged."""
+        from agent_evals.reports.cross_strategy_synthesis import (
+            find_disagreement_factors,
+        )
+
+        results = {
+            "strategy_a": {"optimal_levels": {"axis_1": "yaml", "axis_2": "flat"}},
+            "strategy_b": {"optimal_levels": {"axis_1": "json", "axis_2": "hierarchical"}},
+            "strategy_c": {"optimal_levels": {"axis_1": "xml", "axis_2": "flat"}},
+        }
+        disagreements = find_disagreement_factors(results)
+        # axis_1 disagrees across strategies
+        assert "axis_1" in disagreements
+```
+
+### Step 2: Run tests to verify they fail
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_cross_strategy_synthesis.py -v
+```
+
+### Step 3: Implement cross-strategy synthesis
+
+**Create** `agent-evals/src/agent_evals/reports/cross_strategy_synthesis.py`:
+
+```python
+"""Cross-strategy synthesis report — Phase C exit criteria.
+
+Analyzes Taguchi results across all strategies and produces the
+final recommendation for optimal documentation format.
+"""
+
+from __future__ import annotations
+
+from collections import Counter, defaultdict
+from typing import Any
+
+
+def find_concordant_factors(
+    results: dict[str, dict[str, Any]],
+    threshold: float = 0.5,
+) -> dict[str, dict[str, Any]]:
+    """Find factors where strategies agree on the optimal level.
+
+    Args:
+        results: Dict mapping strategy_name to result dict with 'optimal_levels'.
+        threshold: Minimum agreement ratio to consider concordant.
+
+    Returns:
+        Dict mapping factor_name to {level, agreement, strategies}.
+    """
+    # Collect all factor->level votes across strategies
+    factor_votes: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for strategy_name, result in results.items():
+        for factor, level in result.get("optimal_levels", {}).items():
+            factor_votes[factor].append((strategy_name, level))
+
+    concordant: dict[str, dict[str, Any]] = {}
+    for factor, votes in factor_votes.items():
+        levels = [level for _, level in votes]
+        counter = Counter(levels)
+        most_common_level, count = counter.most_common(1)[0]
+        agreement = count / len(votes)
+        if agreement >= threshold:
+            concordant[factor] = {
+                "level": most_common_level,
+                "agreement": round(agreement, 4),
+                "strategies": [s for s, l in votes if l == most_common_level],
+                "total_strategies": len(votes),
+            }
+
+    return concordant
+
+
+def find_disagreement_factors(
+    results: dict[str, dict[str, Any]],
+    threshold: float = 0.5,
+) -> dict[str, dict[str, Any]]:
+    """Find factors where strategies disagree on the optimal level.
+
+    Args:
+        results: Dict mapping strategy_name to result dict with 'optimal_levels'.
+        threshold: Maximum agreement ratio to consider disagreement.
+
+    Returns:
+        Dict mapping factor_name to {levels, per_strategy}.
+    """
+    factor_votes: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    for strategy_name, result in results.items():
+        for factor, level in result.get("optimal_levels", {}).items():
+            factor_votes[factor].append((strategy_name, level))
+
+    disagreements: dict[str, dict[str, Any]] = {}
+    for factor, votes in factor_votes.items():
+        levels = [level for _, level in votes]
+        counter = Counter(levels)
+        _, count = counter.most_common(1)[0]
+        agreement = count / len(votes)
+        if agreement < threshold:
+            disagreements[factor] = {
+                "levels": dict(counter),
+                "per_strategy": {s: l for s, l in votes},
+                "agreement": round(agreement, 4),
+            }
+
+    return disagreements
+
+
+def generate_cross_strategy_recommendation(
+    phase_results_by_strategy: dict[str, dict[str, Any]],
+) -> str:
+    """Generate the final cross-strategy recommendation.
+
+    Analyzes Taguchi results across all strategies and produces
+    actionable recommendations.
+
+    Uses:
+    - Kendall's W concordance to find factors that agree across strategies
+    - Per-strategy optimal levels to find where strategies disagree
+
+    Args:
+        phase_results_by_strategy: Dict mapping strategy_name to Taguchi
+            results dict with 'optimal_levels', 'factor_rankings', 'mean_score'.
+
+    Returns:
+        Formatted recommendation string.
+    """
+    concordant = find_concordant_factors(phase_results_by_strategy)
+    disagreements = find_disagreement_factors(phase_results_by_strategy)
+
+    lines: list[str] = [
+        "# Cross-Strategy Synthesis Report",
+        "",
+        f"**Strategies analyzed:** {len(phase_results_by_strategy)}",
+        f"**Strategies:** {', '.join(sorted(phase_results_by_strategy.keys()))}",
+        "",
+    ]
+
+    # Strategy performance summary
+    lines.append("## Strategy Performance")
+    lines.append("")
+    for strategy, result in sorted(
+        phase_results_by_strategy.items(),
+        key=lambda x: x[1].get("mean_score", 0),
+        reverse=True,
+    ):
+        score = result.get("mean_score", 0)
+        lines.append(f"- **{strategy}**: mean_score={score:.4f}")
+    lines.append("")
+
+    # Concordant factors (universal recommendations)
+    lines.append("## Universal Recommendations (agree across strategies)")
+    lines.append("")
+    if concordant:
+        for factor, info in sorted(concordant.items()):
+            agreement_pct = info["agreement"] * 100
+            lines.append(
+                f"- **{factor}**: Use `{info['level']}` "
+                f"({agreement_pct:.0f}% agreement across "
+                f"{info['total_strategies']} strategies)"
+            )
+    else:
+        lines.append("- No factors showed universal agreement.")
+    lines.append("")
+
+    # Disagreement factors (strategy-specific recommendations)
+    lines.append("## Strategy-Specific Recommendations (disagree across strategies)")
+    lines.append("")
+    if disagreements:
+        for factor, info in sorted(disagreements.items()):
+            lines.append(f"- **{factor}**: {info['levels']}")
+            for strategy, level in sorted(info["per_strategy"].items()):
+                lines.append(f"  - {strategy}: `{level}`")
+    else:
+        lines.append("- All factors agree across strategies.")
+    lines.append("")
+
+    # Final recommendation
+    lines.append("## Final Recommendation")
+    lines.append("")
+    if concordant:
+        recs = [
+            f"{factor}=`{info['level']}`"
+            for factor, info in sorted(concordant.items())
+        ]
+        lines.append(
+            f"For an MCP-based agent reading compressed docs through "
+            f"dynamic tools, use: {', '.join(recs)}."
+        )
+    else:
+        lines.append(
+            "No universal format recommendation possible -- "
+            "optimal format depends on the context delivery strategy."
+        )
+
+    return "\n".join(lines)
+```
+
+### Step 4: Run tests
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/test_cross_strategy_synthesis.py -v
+```
+
+### Step 5: Run full suite and commit
+
+```bash
+~/.local/bin/uv run pytest agent-evals/tests/ -v --tb=short 2>&1 | tail -10
+git add agent-evals/src/agent_evals/reports/cross_strategy_synthesis.py \
+  agent-evals/tests/test_cross_strategy_synthesis.py
+git commit -m "feat(reports): add cross-strategy synthesis report (Phase C exit criteria)
+
+Analyzes Taguchi results across all 6 strategies. Finds concordant
+factors (universal recommendations) and disagreement factors
+(strategy-specific). Generates final recommendation for optimal
+documentation format.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
+```
+
+---
+
 ## Summary
 
 | Task | Component | New Tests | Commit |
 |------|-----------|-----------|--------|
 | 0 | Verify baseline | 0 | - |
-| 1 | VariantMetadata axis le=12 | 3 | `feat(variants): extend axis range` |
-| 2 | MCP-native strategy | ~18 | `feat(context): add MCP-native strategy` |
-| 3 | Compression strategy | ~10 | `feat(context): add compression strategy` |
-| 4 | Tool description axis (11) | ~12 | `feat(variants): add axis 11` |
-| 5 | Agent instruction axis (12) | ~10 | `feat(variants): add axis 12` |
+| 1 | VariantMetadata axis le=13 | 3 | `feat(variants): extend axis range` |
+| 2 | MCP-native strategy + resource metadata ablation | ~20 | `feat(context): add MCP-native strategy` |
+| 3 | Compression strategy + LLM-summarized + cost pairing | ~14 | `feat(context): add compression strategy` |
+| 4 | Tool description axis (11) + tool set size (4 variants) | ~20 | `feat(variants): add axis 11` |
+| 5 | Agent instruction axis (12) + ETH Zurich ablative (3 variants) | ~19 | `feat(variants): add axis 12` |
 | 6 | Hallucination detection | ~8 | `feat(judge): add hallucination detection` |
-| 7 | Compaction modifier | ~5 | `feat(context): add compaction modifier` |
-| 8 | Dynamic tools modifier | ~6 | `feat(context): add dynamic tools modifier` |
-| 9 | Cache analysis report | ~4 | `feat(reports): add cache analysis` |
-| 10 | Runner wiring | ~2 | `test(runner): hallucination + cache metrics` |
+| 7 | Compaction modifier + multi-task sequence + durability | ~7 | `feat(context): add compaction modifier` |
+| 8 | Dynamic tools modifier + phase_based mode | ~8 | `feat(context): add dynamic tools modifier` |
+| 9 | Cache analysis + sequential runner + format correlation | ~9 | `feat(reports): add cache analysis` |
+| 10 | Runner wiring + hallucination as first-class metric | ~5 | `feat(runner): wire hallucination + cache metrics` |
 | 11 | CLI wiring | ~2 | `feat(cli): wire Phase C strategies` |
 | 12 | Integration tests | ~8 | `test: Phase C integration tests` |
 | 13 | Final verification | 0 | - |
-| **Total** | | **~88** | **~12 commits** |
+| 14 | Cross-strategy synthesis report (EXIT CRITERIA) | ~3 | `feat(reports): cross-strategy synthesis` |
+| **Total** | | **~126** | **~14 commits** |
