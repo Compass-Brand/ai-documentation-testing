@@ -72,6 +72,27 @@ class TestFixedSizeChunker:
             word_count = len(chunk.split())
             assert word_count <= 60, f"Chunk too large: {word_count} words"
 
+    def test_uses_count_tokens_not_word_count(self):
+        """Fixed-size chunker must use count_tokens() for accurate token budgets."""
+        from agent_evals.context.chunkers import fixed_size_chunks
+
+        # "authentication" is 1 word but multiple tokens in most tokenizers.
+        # With the len//4 fallback, "authentication" = 14 chars // 4 = 3 tokens.
+        # A word-count approach would treat it as 1.
+        # Build text where word count != token count significantly.
+        words = ["authentication"] * 20  # 20 words, ~60 tokens (14*20//4)
+        text = " ".join(words)
+
+        with patch(
+            "agent_evals.context.chunkers.count_tokens",
+            side_effect=lambda t, **kw: len(t) // 4,
+        ) as mock_ct:
+            chunks = fixed_size_chunks(text, chunk_size=10)
+            # count_tokens must have been called (not word counting)
+            assert mock_ct.call_count > 0, (
+                "fixed_size_chunks should use count_tokens(), not word counting"
+            )
+
 
 class TestHeadingBasedChunker:
     """Heading-based chunker splits on # and ## markers."""

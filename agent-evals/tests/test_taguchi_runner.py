@@ -488,6 +488,34 @@ class TestTaguchiRunResult:
         assert isinstance(result.elapsed_seconds, float)
         assert result.elapsed_seconds >= 0
 
+    def test_trials_carry_strategy_fields(self):
+        """Every TaguchiRunner trial must have context_strategy set."""
+        design = _make_simple_design(n_rows=2)
+        axes = {1: ["flat", "2tier", "3tier"]}
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client()
+        config = EvalRunConfig(repetitions=1, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        assert len(result.trials) > 0
+        for trial in result.trials:
+            assert trial.context_strategy == "full_context", (
+                f"Trial {trial.task_id}/{trial.variant_name} missing context_strategy"
+            )
+            assert trial.llm_calls >= 1
+            assert isinstance(trial.strategy_metadata, dict)
+
 
 class TestPhaseMetadata:
     """TaguchiRunner passes phase through to trial metrics."""

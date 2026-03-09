@@ -1,7 +1,7 @@
 """Text chunking strategies for RAG context mode.
 
 Provides:
-- ``fixed_size_chunks``: Split by approximate token count at whitespace.
+- ``fixed_size_chunks``: Split by token count using ``count_tokens()``.
 - ``heading_chunks``: Split on ``#``/``##`` markdown heading markers.
 """
 
@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import re
 
+from agent_evals.llm.token_counter import count_tokens
+
 
 def fixed_size_chunks(text: str, chunk_size: int = 200) -> list[str]:
     """Split *text* into chunks of approximately *chunk_size* tokens.
 
-    Uses whitespace splitting as a proxy for token boundaries
-    (approximately 1 token per whitespace-delimited word).
+    Uses :func:`count_tokens` for accurate token counting.  Splits at
+    whitespace boundaries to avoid breaking words mid-token.
 
     Returns an empty list for blank input.
     """
@@ -24,15 +26,14 @@ def fixed_size_chunks(text: str, chunk_size: int = 200) -> list[str]:
 
     chunks: list[str] = []
     current: list[str] = []
-    current_count = 0
 
     for word in words:
-        current.append(word)
-        current_count += 1
-        if current_count >= chunk_size:
+        candidate = " ".join([*current, word])
+        if current and count_tokens(candidate) > chunk_size:
             chunks.append(" ".join(current))
-            current = []
-            current_count = 0
+            current = [word]
+        else:
+            current.append(word)
 
     if current:
         chunks.append(" ".join(current))

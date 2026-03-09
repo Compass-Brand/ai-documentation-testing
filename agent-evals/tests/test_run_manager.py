@@ -96,6 +96,15 @@ class TestStartRunRequest:
         req = StartRunRequest(model="m", source="repliqa")
         assert req.source == "repliqa"
 
+    def test_no_unused_strategies_fields(self) -> None:
+        """StartRunRequest should not have unused strategies/strategy_reps fields."""
+        assert "strategies" not in StartRunRequest.model_fields, (
+            "strategies field should be removed — not wired to _execute_run"
+        )
+        assert "strategy_reps" not in StartRunRequest.model_fields, (
+            "strategy_reps field should be removed — not wired to _execute_run"
+        )
+
     def test_full_request(self) -> None:
         req = StartRunRequest(
             mode="full",

@@ -1972,3 +1972,68 @@ class TestStrategyResolveConfig:
         args = parser.parse_args([])
         resolved = resolve_config(args, {"context_strategy": "system_prompt"})
         assert resolved["context_strategy"] == "system_prompt"
+
+
+class TestBuildStrategyConfigFromYAML:
+    """_build_strategy_config picks up sub-params from raw YAML."""
+
+    def test_yaml_sub_params_reach_strategy_config(self) -> None:
+        """YAML strategy_config section values should override defaults."""
+        from agent_evals.cli import _build_strategy_config
+
+        resolved = {"context_strategy": "rag"}
+        raw_yaml = {
+            "strategy_config": {
+                "chunk_method": "fixed",
+                "rag_top_k": 10,
+                "embedding_model": "text-embedding-3-large",
+                "token_budget": 2048,
+                "truncation": "priority",
+                "max_turns": 5,
+            },
+        }
+        sc = _build_strategy_config(resolved, raw_yaml=raw_yaml)
+        assert sc.strategy == "rag"
+        assert sc.chunk_method == "fixed"
+        assert sc.rag_top_k == 10
+        assert sc.embedding_model == "text-embedding-3-large"
+        assert sc.token_budget == 2048
+        assert sc.truncation == "priority"
+        assert sc.max_turns == 5
+
+    def test_run_full_passes_raw_yaml_to_build_strategy_config(self) -> None:
+        """_run_full must thread raw_yaml so YAML sub-params are not lost."""
+        from agent_evals.cli import _build_strategy_config, _run_full
+        from agent_evals.runner import EvalRunConfig
+
+        raw_yaml = {
+            "strategy_config": {
+                "rag_top_k": 10,
+                "chunk_method": "fixed",
+            },
+        }
+
+        # Capture the raw_yaml argument received by _build_strategy_config
+        captured: dict = {}
+        original = _build_strategy_config
+
+        def spy(resolved, raw_yaml=None):
+            captured["raw_yaml"] = raw_yaml
+            return original(resolved, raw_yaml=raw_yaml)
+
+        with patch("agent_evals.cli._build_strategy_config", side_effect=spy):
+            # _run_full will fail downstream, but we only care that
+            # _build_strategy_config receives raw_yaml before that.
+            try:
+                _run_full(
+                    {"model": "test", "context_strategy": "rag"},
+                    [], [], None, "fake-key",
+                    EvalRunConfig(repetitions=1, output_format="json"),
+                    raw_yaml=raw_yaml,
+                )
+            except Exception:
+                pass  # Expected — no real orchestrator
+
+        assert "raw_yaml" in captured, "_build_strategy_config should be called"
+        assert captured["raw_yaml"] is raw_yaml
+        assert captured["raw_yaml"]["strategy_config"]["rag_top_k"] == 10

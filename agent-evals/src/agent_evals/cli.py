@@ -583,8 +583,16 @@ def build_eval_run_config(resolved: dict[str, Any]) -> EvalRunConfig:
     )
 
 
-def _run_evaluation(resolved: dict[str, Any]) -> int:
+def _run_evaluation(
+    resolved: dict[str, Any],
+    raw_yaml: dict[str, Any] | None = None,
+) -> int:
     """Execute an evaluation run from resolved configuration.
+
+    Args:
+        resolved: Flattened config after CLI/env/YAML precedence.
+        raw_yaml: Original YAML dict, needed for nested ``strategy_config:``
+            section that is not flattened into *resolved*.
 
     Returns 0 on success, 1 on error.
     """
@@ -803,17 +811,23 @@ def _run_evaluation(resolved: dict[str, Any]) -> int:
         if strategies_str:
             return _run_multi_strategy_pipeline(
                 resolved, tasks, variants, doc_tree, api_key, run_config,
+                raw_yaml=raw_yaml,
             )
         if pipeline_mode:
             return _run_pipeline(
                 resolved, tasks, variants, doc_tree, api_key, run_config,
+                raw_yaml=raw_yaml,
             )
         return _run_taguchi(
             resolved, tasks, variants, doc_tree, api_key, run_config,
+            raw_yaml=raw_yaml,
         )
 
     # Default: full mode via orchestrator (wires strategy_factory)
-    return _run_full(resolved, tasks, variants, doc_tree, api_key, run_config)
+    return _run_full(
+        resolved, tasks, variants, doc_tree, api_key, run_config,
+        raw_yaml=raw_yaml,
+    )
 
 
 def _build_strategy_config(
@@ -871,6 +885,8 @@ def _run_full(
     doc_tree: Any,
     api_key: str,
     run_config: EvalRunConfig,
+    *,
+    raw_yaml: dict[str, Any] | None = None,
 ) -> int:
     """Execute a full-sweep evaluation via EvalOrchestrator.
 
@@ -881,7 +897,7 @@ def _run_full(
     from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
 
     model = str(resolved["model"])
-    strategy_config = _build_strategy_config(resolved)
+    strategy_config = _build_strategy_config(resolved, raw_yaml=raw_yaml)
     model_budgets = _parse_model_budgets(resolved)
 
     orch_config = OrchestratorConfig(
@@ -927,6 +943,8 @@ def _run_taguchi(
     doc_tree: Any,
     api_key: str,
     run_config: EvalRunConfig,
+    *,
+    raw_yaml: dict[str, Any] | None = None,
 ) -> int:
     """Execute a Taguchi DOE evaluation via EvalOrchestrator.
 
@@ -974,7 +992,7 @@ def _run_taguchi(
     variant_lookup = {v.metadata().name: v for v in variants}
 
     model_budgets = _parse_model_budgets(resolved)
-    strategy_config = _build_strategy_config(resolved)
+    strategy_config = _build_strategy_config(resolved, raw_yaml=raw_yaml)
 
     # Create orchestrator
     orch_config = OrchestratorConfig(
@@ -1022,6 +1040,8 @@ def _run_pipeline(
     doc_tree: Any,
     api_key: str,
     run_config: EvalRunConfig,
+    *,
+    raw_yaml: dict[str, Any] | None = None,
 ) -> int:
     """Execute a multi-phase DOE pipeline via DOEPipeline.
 
@@ -1042,7 +1062,7 @@ def _run_pipeline(
         models_list = [model]
 
     model_budgets = _parse_model_budgets(resolved)
-    strategy_config = _build_strategy_config(resolved)
+    strategy_config = _build_strategy_config(resolved, raw_yaml=raw_yaml)
 
     # Build orchestrator
     orch_config = OrchestratorConfig(
@@ -1107,6 +1127,8 @@ def _run_multi_strategy_pipeline(
     doc_tree: Any,
     api_key: str,
     run_config: EvalRunConfig,
+    *,
+    raw_yaml: dict[str, Any] | None = None,
 ) -> int:
     """Execute MultiStrategyPipeline for cross-strategy comparison.
 
@@ -1124,7 +1146,7 @@ def _run_multi_strategy_pipeline(
         models_list = [model]
 
     model_budgets = _parse_model_budgets(resolved)
-    strategy_config = _build_strategy_config(resolved)
+    strategy_config = _build_strategy_config(resolved, raw_yaml=raw_yaml)
     strategy_reps = _parse_strategy_reps(resolved)
 
     # Parse strategies list
@@ -1254,7 +1276,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(config_path)
     resolved = resolve_config(args, config)
 
-    return _run_evaluation(resolved)
+    return _run_evaluation(resolved, raw_yaml=config)
 
 
 def dashboard_main(argv: list[str] | None = None) -> int:

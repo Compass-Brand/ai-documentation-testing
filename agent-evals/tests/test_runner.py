@@ -1458,6 +1458,51 @@ class TestSourceProvenance:
         assert result.trials[0].source == "code-rag-bench"
         assert result.trials[0].error is not None
 
+    def test_successful_trial_carries_strategy_fields(self) -> None:
+        """Success-path TrialResult must include strategy metadata."""
+        client = _make_mock_client()
+        config = EvalRunConfig(
+            repetitions=1, use_cache=False, max_connections=1,
+        )
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner.run([task], [variant], doc_tree)
+
+        assert len(result.trials) == 1
+        trial = result.trials[0]
+        assert trial.context_strategy == "full_context", (
+            "Default strategy should be full_context"
+        )
+        assert trial.llm_calls >= 1, "Should record at least 1 LLM call"
+        assert isinstance(trial.strategy_metadata, dict)
+
+    def test_failed_trial_carries_context_strategy(self) -> None:
+        """Error path TrialResult must include context_strategy, not None."""
+        client = _make_mock_client()
+        client.complete.side_effect = RuntimeError("boom")
+        config = EvalRunConfig(
+            repetitions=1, use_cache=False, max_connections=1,
+            continue_on_error=True,
+        )
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner.run([task], [variant], doc_tree)
+
+        assert len(result.trials) == 1
+        trial = result.trials[0]
+        assert trial.error is not None
+        assert trial.context_strategy == "full_context", (
+            "Error-path TrialResult should include context_strategy"
+        )
+
     def test_source_included_in_json_report(self, tmp_path: Path) -> None:
         """JSON report includes source field in trial dicts."""
         config = EvalRunConfig(

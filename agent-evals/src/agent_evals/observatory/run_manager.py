@@ -63,8 +63,6 @@ class StartRunRequest(BaseModel):
     alpha: float = Field(default=0.05, ge=0.001, le=0.1)
     source: str = "gold_standard"
     context_strategy: str | None = None
-    strategies: str | None = None
-    strategy_reps: str | None = None
 
 
 class HeartbeatThread(threading.Thread):

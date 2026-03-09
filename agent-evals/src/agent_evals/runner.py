@@ -383,10 +383,13 @@ class EvalRunner:
                                 rep,
                                 exc,
                             )
+                            vname = variant.metadata().name
+                            strategy = variant_strategies.get(vname)
+                            strategy_name = strategy.name() if strategy else None
                             trial = TrialResult(
                                 task_id=task.definition.task_id,
                                 task_type=task.definition.type,
-                                variant_name=variant.metadata().name,
+                                variant_name=vname,
                                 repetition=rep,
                                 score=0.0,
                                 metrics={},
@@ -399,6 +402,8 @@ class EvalRunner:
                                 cached=False,
                                 error=str(exc),
                                 source=source,
+                                context_strategy=strategy_name,
+                                llm_calls=0,
                             )
                         trials.append(trial)
                         completed += 1
