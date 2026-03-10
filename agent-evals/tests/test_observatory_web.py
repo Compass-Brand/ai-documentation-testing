@@ -597,3 +597,210 @@ class TestStrategyFiltering:
         """GET /api/runs/nonexistent/strategy-comparison returns 404."""
         response = client.get("/api/runs/nonexistent/strategy-comparison")
         assert response.status_code == 404
+
+
+class TestNewEndpoints:
+    """Tests for Task 7: Dashboard API endpoints for new observatory tables."""
+
+    def test_get_factor_definitions(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """Save factor defs, GET /api/runs/{id}/factors, verify 200 + data."""
+        _store.create_run("run-f1", "taguchi", {})
+        _store.save_factor_definitions("run-f1", [
+            {
+                "factor_name": "heading_style",
+                "axis_id": 1,
+                "level_index": 0,
+                "level_name": "markdown",
+                "description": "Use markdown headings",
+            },
+            {
+                "factor_name": "heading_style",
+                "axis_id": 1,
+                "level_index": 1,
+                "level_name": "plain",
+                "description": "Use plain text headings",
+            },
+        ])
+        response = client.get("/api/runs/run-f1/factors")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["run_id"] == "run-f1"
+        assert len(data["factors"]) == 2
+        assert data["factors"][0]["factor_name"] == "heading_style"
+        assert data["factors"][1]["level_name"] == "plain"
+
+    def test_get_task_metadata(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """Save task metadata, GET /api/tasks, verify 200 + data."""
+        _store.save_task_metadata([
+            {
+                "task_id": "task-1",
+                "task_type": "retrieval",
+                "domain": "docs",
+                "difficulty": "easy",
+                "word_count": 100,
+                "tag_count": 5,
+            },
+        ])
+        response = client.get("/api/tasks")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["tasks"]) == 1
+        assert data["tasks"][0]["task_id"] == "task-1"
+        assert data["tasks"][0]["task_type"] == "retrieval"
+
+    def test_get_task_metadata_with_filter(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """Save 2 types, GET /api/tasks?task_type=retrieval, verify filtered."""
+        _store.save_task_metadata([
+            {
+                "task_id": "task-r1",
+                "task_type": "retrieval",
+                "domain": "docs",
+                "difficulty": "easy",
+                "word_count": 100,
+                "tag_count": 5,
+            },
+            {
+                "task_id": "task-s1",
+                "task_type": "summarization",
+                "domain": "docs",
+                "difficulty": "medium",
+                "word_count": 200,
+                "tag_count": 3,
+            },
+        ])
+        response = client.get("/api/tasks?task_type=retrieval")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["tasks"]) == 1
+        assert data["tasks"][0]["task_type"] == "retrieval"
+
+    def test_list_report_artifacts(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """Save artifact, GET /api/runs/{id}/reports, verify listed."""
+        _store.create_run("run-r1", "taguchi", {})
+        _store.save_report_artifact(
+            "run-r1", "kv_cache_analysis", {"hit_rate": 0.85}
+        )
+        response = client.get("/api/runs/run-r1/reports")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["run_id"] == "run-r1"
+        assert len(data["artifacts"]) == 1
+        assert data["artifacts"][0]["artifact_type"] == "kv_cache_analysis"
+
+    def test_get_report_artifact_by_type(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """Save artifact, GET by type, verify data."""
+        _store.create_run("run-r2", "taguchi", {})
+        _store.save_report_artifact(
+            "run-r2", "concordance", {"kendall_w": 0.72}
+        )
+        response = client.get("/api/runs/run-r2/reports/concordance")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["kendall_w"] == 0.72
+        assert "created_at" in data
+
+    def test_get_report_artifact_not_found(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """GET nonexistent type, verify 404."""
+        _store.create_run("run-r3", "taguchi", {})
+        response = client.get("/api/runs/run-r3/reports/nonexistent")
+        assert response.status_code == 404
+
+    def test_get_llm_call_details(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """Save call details, GET /api/trials/{id}/calls, verify data."""
+        _store.create_run("run-c1", "test", {})
+        trial_id = _store.record_trial(
+            run_id="run-c1",
+            task_id="t1",
+            task_type="retrieval",
+            variant_name="flat",
+            repetition=1,
+            score=0.9,
+            prompt_tokens=500,
+            completion_tokens=100,
+            total_tokens=600,
+            cost=0.02,
+            latency_seconds=1.5,
+            model="claude",
+        )
+        _store.save_llm_call_details(trial_id, [
+            {
+                "call_index": 0,
+                "prompt_tokens": 300,
+                "completion_tokens": 50,
+                "cost": 0.01,
+                "api_call_ms": 450.0,
+                "cached_tokens": 100,
+                "model": "claude-sonnet",
+                "provider": "anthropic",
+            },
+            {
+                "call_index": 1,
+                "prompt_tokens": 200,
+                "completion_tokens": 50,
+                "cost": 0.01,
+                "api_call_ms": 320.0,
+                "cached_tokens": 0,
+                "model": "claude-sonnet",
+                "provider": "anthropic",
+            },
+        ])
+        response = client.get(f"/api/trials/{trial_id}/calls")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["trial_id"] == trial_id
+        assert len(data["calls"]) == 2
+        assert data["calls"][0]["call_index"] == 0
+        assert data["calls"][1]["call_index"] == 1
+
+    def test_get_interaction_effects(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """Save phase results with interactions, GET, verify data."""
+        _store.create_run("run-i1", "taguchi", {})
+        _store.save_phase_results(
+            run_id="run-i1",
+            main_effects={"heading": {"md": 0.8}},
+            anova={"heading": {"p": 0.01}},
+            optimal={"heading": "md"},
+            significant_factors=["heading"],
+            quality_type="larger_is_better",
+            interaction_effects=[
+                {
+                    "factor_a": "heading",
+                    "factor_b": "code_style",
+                    "severity": 0.15,
+                    "p_value": 0.03,
+                },
+            ],
+        )
+        response = client.get("/api/runs/run-i1/interactions")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["run_id"] == "run-i1"
+        assert len(data["interactions"]) == 1
+        assert data["interactions"][0]["factor_a"] == "heading"
+
+    def test_get_interactions_empty(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        """No phase results, GET, verify empty list."""
+        _store.create_run("run-i2", "taguchi", {})
+        response = client.get("/api/runs/run-i2/interactions")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["run_id"] == "run-i2"
+        assert data["interactions"] == []
