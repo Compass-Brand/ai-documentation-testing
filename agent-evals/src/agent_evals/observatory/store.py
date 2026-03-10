@@ -176,6 +176,7 @@ class ObservatoryStore:
             "ALTER TABLE phase_results ADD COLUMN total_cost REAL DEFAULT 0.0",
             "ALTER TABLE phase_results ADD COLUMN total_tokens INTEGER DEFAULT 0",
             "ALTER TABLE phase_results ADD COLUMN elapsed_seconds REAL DEFAULT 0.0",
+            "ALTER TABLE phase_results ADD COLUMN interaction_effects TEXT DEFAULT '[]'",
         ]
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_trials_run_type_variant "
@@ -591,6 +592,7 @@ class ObservatoryStore:
         total_cost: float = 0.0,
         total_tokens: int = 0,
         elapsed_seconds: float = 0.0,
+        interaction_effects: list[dict] | None = None,
     ) -> None:
         """Save Taguchi phase analysis results for a run."""
         now = datetime.now(timezone.utc).isoformat()
@@ -599,8 +601,9 @@ class ObservatoryStore:
                 "INSERT OR REPLACE INTO phase_results "
                 "(run_id, main_effects, anova, optimal, "
                 "significant_factors, quality_type, created_at, "
-                "total_cost, total_tokens, elapsed_seconds) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "total_cost, total_tokens, elapsed_seconds, "
+                "interaction_effects) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     json.dumps(main_effects),
@@ -612,6 +615,7 @@ class ObservatoryStore:
                     total_cost,
                     total_tokens,
                     elapsed_seconds,
+                    json.dumps(interaction_effects or []),
                 ),
             )
 
@@ -645,6 +649,7 @@ class ObservatoryStore:
             "total_cost": row["total_cost"] or 0.0,
             "total_tokens": row["total_tokens"] or 0,
             "elapsed_seconds": row["elapsed_seconds"] or 0.0,
+            "interaction_effects": _safe_json("interaction_effects") or [],
         }
 
     def get_pipeline_runs(self, pipeline_id: str) -> list[RunSummary]:

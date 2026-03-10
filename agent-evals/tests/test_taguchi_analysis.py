@@ -12,7 +12,9 @@ from agent_evals.taguchi.analysis import (
     ANOVAFactorResult,
     ANOVAResult,
     ConfirmationResult,
+    InteractionEffect,
     OptimalPrediction,
+    compute_interactions,
     compute_main_effects,
     compute_sn_ratios,
     predict_optimal,
@@ -633,3 +635,66 @@ class TestValidateConfirmation:
         )
         result = validate_confirmation(prediction, [0.7, 0.8])
         assert isinstance(result, ConfirmationResult)
+
+
+# ---------------------------------------------------------------------------
+# Interaction Effects Tests
+# ---------------------------------------------------------------------------
+
+
+class TestInteractionEffects:
+    """Verify 2-way interaction effect computation from full factorial data."""
+
+    def test_compute_two_way_interactions_basic(self):
+        """2x2 factorial (2 factors, 2 levels each) returns 1 interaction pair."""
+        design_rows = [
+            {"A": "a1", "B": "b1"},
+            {"A": "a1", "B": "b2"},
+            {"A": "a2", "B": "b1"},
+            {"A": "a2", "B": "b2"},
+        ]
+        # Strong interaction: A*B synergy on diagonal
+        sn_ratios = [10.0, 2.0, 2.0, 10.0]
+
+        interactions = compute_interactions(design_rows, sn_ratios)
+
+        assert len(interactions) == 1
+        ie = interactions[0]
+        assert ie.factor1 == "A"
+        assert ie.factor2 == "B"
+        assert ie.ss > 0
+        assert ie.df == 1  # (2-1)*(2-1)
+
+    def test_no_interactions_single_factor(self):
+        """Only 1 factor should return empty list."""
+        design_rows = [
+            {"A": "a1"},
+            {"A": "a2"},
+        ]
+        sn_ratios = [5.0, 10.0]
+
+        interactions = compute_interactions(design_rows, sn_ratios)
+
+        assert interactions == []
+
+    def test_interactions_three_factors(self):
+        """2^3 factorial (3 factors, 2 levels each) returns 3 interaction pairs."""
+        design_rows = [
+            {"A": "a1", "B": "b1", "C": "c1"},
+            {"A": "a1", "B": "b1", "C": "c2"},
+            {"A": "a1", "B": "b2", "C": "c1"},
+            {"A": "a1", "B": "b2", "C": "c2"},
+            {"A": "a2", "B": "b1", "C": "c1"},
+            {"A": "a2", "B": "b1", "C": "c2"},
+            {"A": "a2", "B": "b2", "C": "c1"},
+            {"A": "a2", "B": "b2", "C": "c2"},
+        ]
+        sn_ratios = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+
+        interactions = compute_interactions(design_rows, sn_ratios)
+
+        assert len(interactions) == 3  # C(3,2) = 3
+        pair_names = [(ie.factor1, ie.factor2) for ie in interactions]
+        assert ("A", "B") in pair_names
+        assert ("A", "C") in pair_names
+        assert ("B", "C") in pair_names

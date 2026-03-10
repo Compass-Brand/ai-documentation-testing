@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import defaultdict
 from dataclasses import dataclass, field
+from itertools import combinations
 from typing import TYPE_CHECKING
 
 from scipy import stats as sp_stats
@@ -80,6 +82,19 @@ class ConfirmationResult:
     prediction_interval: tuple[float, float]
     within_interval: bool
     sigma_deviation: float
+
+
+@dataclass
+class InteractionEffect:
+    """Two-factor interaction effect from full factorial analysis."""
+
+    factor1: str  # alphabetically first
+    factor2: str
+    ss: float  # interaction sum of squares
+    df: int  # degrees of freedom: (levels_f1 - 1) * (levels_f2 - 1)
+    ms: float  # mean square: ss / df
+    f_ratio: float
+    p_value: float
 
 
 # ---------------------------------------------------------------------------
@@ -343,6 +358,110 @@ def _apply_bh_correction(factors: list[ANOVAFactorResult]) -> None:
 
     for i in range(m):
         factors[i].corrected_p_value = corrected[i]
+
+
+# ---------------------------------------------------------------------------
+# Interaction Effects
+# ---------------------------------------------------------------------------
+
+
+def compute_interactions(
+    design_rows: list[dict[str, str]],
+    sn_ratios: list[float],
+) -> list[InteractionEffect]:
+    """Compute 2-way interaction effects from full factorial data.
+
+    For each pair of factors (A, B), the interaction SS is:
+        SS_AB = SS_cells(A,B) - SS_A - SS_B
+    where SS_cells is the between-cells sum of squares for the A*B table.
+
+    Args:
+        design_rows: List of dicts mapping factor_name -> level_name.
+        sn_ratios: List of S/N ratios (same length as design_rows).
+
+    Returns:
+        Sorted list of InteractionEffect (sorted by factor pair name).
+    """
+    if not design_rows:
+        return []
+
+    factor_names = sorted(design_rows[0].keys())
+    if len(factor_names) < 2:
+        return []
+
+    n = len(sn_ratios)
+    grand_mean = sum(sn_ratios) / n
+
+    # Pre-compute main-effect SS for each factor
+    main_ss: dict[str, float] = {}
+    for fname in factor_names:
+        groups: dict[str, list[float]] = defaultdict(list)
+        for row, sn in zip(design_rows, sn_ratios):
+            groups[row[fname]].append(sn)
+        ss = 0.0
+        for vals in groups.values():
+            level_mean = sum(vals) / len(vals)
+            ss += len(vals) * (level_mean - grand_mean) ** 2
+        main_ss[fname] = ss
+
+    # Compute interaction effects for each factor pair
+    results: list[InteractionEffect] = []
+
+    for f1, f2 in combinations(factor_names, 2):
+        # Group S/N ratios by (f1_level, f2_level) cells
+        cells: dict[tuple[str, str], list[float]] = defaultdict(list)
+        for row, sn in zip(design_rows, sn_ratios):
+            key = (row[f1], row[f2])
+            cells[key].append(sn)
+
+        # Between-cell SS
+        ss_cells = 0.0
+        for vals in cells.values():
+            cell_mean = sum(vals) / len(vals)
+            ss_cells += len(vals) * (cell_mean - grand_mean) ** 2
+
+        # Interaction SS = SS_cells - SS_f1 - SS_f2
+        ss_interaction = max(0.0, ss_cells - main_ss[f1] - main_ss[f2])
+
+        # Degrees of freedom
+        levels_f1 = len({row[f1] for row in design_rows})
+        levels_f2 = len({row[f2] for row in design_rows})
+        df = (levels_f1 - 1) * (levels_f2 - 1)
+        ms = ss_interaction / df if df > 0 else 0.0
+
+        # Within-cell SS for F-ratio denominator
+        ss_within = 0.0
+        df_within = 0
+        for vals in cells.values():
+            if len(vals) > 1:
+                cell_mean = sum(vals) / len(vals)
+                ss_within += sum((v - cell_mean) ** 2 for v in vals)
+                df_within += len(vals) - 1
+
+        ms_within = ss_within / df_within if df_within > 0 else 0.0
+
+        # F-ratio and p-value
+        if ms_within > 1e-30 and df > 0 and df_within > 0:
+            f_ratio = ms / ms_within
+            p_value = 1.0 - sp_stats.f.cdf(f_ratio, df, df_within)
+        elif ms > 1e-30 and df > 0:
+            f_ratio = float("inf")
+            p_value = 0.0
+        else:
+            f_ratio = 0.0
+            p_value = 1.0
+
+        results.append(InteractionEffect(
+            factor1=f1,
+            factor2=f2,
+            ss=ss_interaction,
+            df=df,
+            ms=ms,
+            f_ratio=f_ratio,
+            p_value=p_value,
+        ))
+
+    return sorted(results, key=lambda ie: (ie.factor1, ie.factor2))
 
 
 # ---------------------------------------------------------------------------

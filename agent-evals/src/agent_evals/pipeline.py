@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from agent_evals.context.base import StrategyConfig
 from agent_evals.taguchi.analysis import (
+    compute_interactions,
     compute_main_effects,
     compute_sn_ratios,
     predict_optimal,
@@ -77,6 +78,7 @@ class PhaseResult:
     significant_factors: list[str] = field(default_factory=list)
     predicted_sn: float | None = None
     confirmation: dict[str, Any] | None = None
+    interaction_effects: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -174,6 +176,19 @@ class DOEPipeline:
             key=lambda f: f.omega_squared,
             reverse=True,
         )
+
+        # Compute 2-way interaction effects from the full factorial data
+        # Only include rows that have S/N data (some may be missing)
+        design_rows = [
+            row.assignments for row in design.rows
+            if row.run_id in sn_ratios
+        ]
+        sn_list = [
+            sn_ratios[row.run_id] for row in design.rows
+            if row.run_id in sn_ratios
+        ]
+        interactions = compute_interactions(design_rows, sn_list)
+
         return {
             "main_effects": main_effects,
             "anova": anova,
@@ -181,6 +196,9 @@ class DOEPipeline:
             "predicted_sn": optimal.predicted_sn,
             "significant_factors": [
                 f.factor_name for f in sig_factors
+            ],
+            "interaction_effects": [
+                asdict(ie) for ie in interactions
             ],
         }
 
@@ -483,6 +501,7 @@ class DOEPipeline:
             optimal=analysis["optimal"],
             predicted_sn=analysis["predicted_sn"],
             significant_factors=analysis["significant_factors"],
+            interaction_effects=analysis.get("interaction_effects", []),
         )
 
         if self._store is not None:
@@ -496,6 +515,7 @@ class DOEPipeline:
                 total_cost=phase_result.total_cost,
                 total_tokens=phase_result.total_tokens,
                 elapsed_seconds=phase_result.elapsed_seconds,
+                interaction_effects=phase_result.interaction_effects,
             )
 
         return phase_result

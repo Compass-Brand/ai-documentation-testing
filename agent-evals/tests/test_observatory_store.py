@@ -1096,6 +1096,72 @@ class TestPhaseResultsCost:
 
 
 # ---------------------------------------------------------------------------
+# TestPhaseResultsInteractions (Task 5)
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseResultsInteractions:
+    """Phase results persist interaction_effects as JSON."""
+
+    def test_save_phase_results_with_interactions(
+        self, tmp_path: Path
+    ) -> None:
+        """Save with interaction_effects list, retrieve, verify round-trip."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-interactions", "taguchi", {})
+        interactions = [
+            {
+                "factor1": "A",
+                "factor2": "B",
+                "ss": 12.5,
+                "df": 1,
+                "ms": 12.5,
+                "f_ratio": 4.2,
+                "p_value": 0.05,
+            },
+            {
+                "factor1": "A",
+                "factor2": "C",
+                "ss": 3.1,
+                "df": 2,
+                "ms": 1.55,
+                "f_ratio": 0.8,
+                "p_value": 0.45,
+            },
+        ]
+        store.save_phase_results(
+            run_id="run-interactions",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={"axis_1": {"p_value": 0.01}},
+            optimal={"axis_1": "flat"},
+            significant_factors=["axis_1"],
+            quality_type="larger_is_better",
+            interaction_effects=interactions,
+        )
+        result = store.get_phase_results("run-interactions")
+        assert result is not None
+        assert result["interaction_effects"] == interactions
+
+    def test_phase_results_interactions_defaults_to_empty(
+        self, tmp_path: Path
+    ) -> None:
+        """Save without interaction_effects (default), retrieve, verify []."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-no-interactions", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-no-interactions",
+            main_effects={"axis_2": {"v1": 8.0}},
+            anova={"axis_2": {"p_value": 0.05}},
+            optimal={"axis_2": "v1"},
+            significant_factors=["axis_2"],
+            quality_type="smaller_is_better",
+        )
+        result = store.get_phase_results("run-no-interactions")
+        assert result is not None
+        assert result["interaction_effects"] == []
+
+
+# ---------------------------------------------------------------------------
 # TestReportArtifacts (Task 4)
 # ---------------------------------------------------------------------------
 
