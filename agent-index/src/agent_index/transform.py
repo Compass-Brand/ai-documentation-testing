@@ -44,7 +44,7 @@ def algorithmic_compress(content: str) -> str:
     # Remove HTML comments (including multiline), but preserve injection
     # markers like <!-- DOCS:START --> and <!-- INDEX:END -->
     content = re.sub(
-        r"<!--(?!\s*\w+:(?:START|END)\s*-->).*?-->", "", content, flags=re.DOTALL
+        r"<!--(?!\s*[\w-]+:(?:START|END)\s*-->).*?-->", "", content, flags=re.DOTALL
     )
 
     # Collapse consecutive blank lines to a single blank line
@@ -135,6 +135,7 @@ class TransformState(BaseModel):
     """
 
     file_hashes: dict[str, str] = Field(default_factory=dict)
+    transformed_content: dict[str, str] = Field(default_factory=dict)
     last_run: datetime | None = None
     transform_config: list[dict] = Field(default_factory=list)
 
@@ -203,8 +204,10 @@ def _resolve_strategy(step: TransformStep) -> tuple[object, str]:
     if strategy_fn is not None:
         return strategy_fn, f"llm/{step.strategy}"
 
-    # Fallback
-    return passthrough, "passthrough"
+    raise ValueError(
+        f"Unrecognized LLM strategy '{step.strategy}'. "
+        f"Valid strategies: {sorted(_STRATEGY_MAP.keys())}"
+    )
 
 
 def _is_llm_step(step: TransformStep) -> bool:
@@ -293,12 +296,22 @@ class TransformPipeline:
         new_files: dict[str, DocFile] = {}
 
         for rel_path, doc in doc_tree.files.items():
-            # Incremental: skip if hash unchanged
+            # Incremental: skip if hash unchanged and we have cached content
             if (
                 rel_path in state.file_hashes
                 and state.file_hashes[rel_path] == doc.content_hash
+                and rel_path in state.transformed_content
             ):
-                new_files[rel_path] = doc
+                cached = state.transformed_content[rel_path]
+                cached_hash = hashlib.sha256(cached.encode("utf-8")).hexdigest()
+                new_doc = doc.model_copy(
+                    update={
+                        "content": cached,
+                        "content_hash": cached_hash,
+                        "size_bytes": len(cached.encode("utf-8")),
+                    },
+                )
+                new_files[rel_path] = new_doc
                 continue
 
             result = self.transform_file(doc)
@@ -320,6 +333,7 @@ class TransformPipeline:
             # Track hash of the *original* content so we can detect
             # future changes to the source file.
             state.file_hashes[rel_path] = doc.content_hash
+            state.transformed_content[rel_path] = result.transformed_content
 
         # Update state metadata
         state.last_run = datetime.now(UTC)

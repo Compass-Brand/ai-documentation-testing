@@ -178,35 +178,92 @@ def _collect_doc_files(
 ) -> list[str]:
     """Collect relative paths of documentation files under root.
 
+    Uses manual directory walking with symlink loop protection instead
+    of ``rglob`` to avoid infinite recursion on symlink cycles.
+
     Args:
         root: Root directory to scan.
         extensions: File extensions to include.
         ignore_dirs: Directory names to skip.
 
     Returns:
-        List of relative paths (using forward slashes).
+        Sorted list of relative paths (using forward slashes).
     """
     results: list[str] = []
 
     if not root.exists() or not root.is_dir():
         return results
 
-    for item in sorted(root.rglob("*")):
-        # Skip ignored directories (use relative path to avoid matching
-        # ancestor directories in the absolute path)
+    visited_dirs: set[str] = set()
+    _walk_doc_files(root, root, extensions, ignore_dirs, results, visited_dirs)
+
+    return sorted(results)
+
+
+def _walk_doc_files(
+    current: Path,
+    root: Path,
+    extensions: set[str],
+    ignore_dirs: set[str],
+    results: list[str],
+    visited_dirs: set[str],
+) -> None:
+    """Recursively walk directories with symlink loop protection.
+
+    Args:
+        current: Current directory being walked.
+        root: Root directory for computing relative paths.
+        extensions: File extensions to include.
+        ignore_dirs: Directory names to skip.
+        results: List to populate with relative paths.
+        visited_dirs: Set of resolved real paths already visited.
+    """
+    try:
+        real_path = str(current.resolve())
+    except OSError:
+        return
+
+    if real_path in visited_dirs:
+        return
+    visited_dirs.add(real_path)
+
+    try:
+        entries = sorted(current.iterdir())
+    except (PermissionError, OSError):
+        return
+
+    for item in entries:
         rel_parts = item.relative_to(root).parts
         if any(part in ignore_dirs for part in rel_parts):
             continue
 
-        if item.is_file() and item.suffix.lower() in extensions:
+        if item.is_symlink():
+            try:
+                target = item.resolve()
+                if not target.exists():
+                    continue
+                if target.is_dir():
+                    _walk_doc_files(item, root, extensions, ignore_dirs, results, visited_dirs)
+                    continue
+                # Symlink to file
+                if item.suffix.lower() in extensions:
+                    rel = item.relative_to(root).as_posix()
+                    results.append(rel)
+            except OSError:
+                continue
+        elif item.is_dir():
+            _walk_doc_files(item, root, extensions, ignore_dirs, results, visited_dirs)
+        elif item.is_file() and item.suffix.lower() in extensions:
             rel = item.relative_to(root).as_posix()
             results.append(rel)
-
-    return results
 
 
 def _classify_file(rel_path: str) -> str:
     """Classify a file path into a tier based on keyword heuristics.
+
+    Filename is checked first so that it takes priority over directory
+    names.  For example ``api/getting-started.md`` is classified as
+    *required* (filename match) rather than *reference* (directory match).
 
     Args:
         rel_path: Relative path of the file (forward slashes).
@@ -214,21 +271,32 @@ def _classify_file(rel_path: str) -> str:
     Returns:
         Tier name: "required", "reference", or "recommended".
     """
-    # Normalize: lowercase, split into path parts and filename stem
+    # Normalize: lowercase, split into path parts
     lower = rel_path.lower()
     parts = lower.replace("\\", "/").split("/")
 
-    for part in parts:
-        # Strip extension for matching
+    # Check filename first (last component), then directory components
+    filename = parts[-1]
+    dirs = parts[:-1]
+
+    def _match_part(part: str) -> str | None:
         stem = Path(part).stem
-
-        # Split stem on word delimiters to get individual words
         stem_words = set(stem.replace("-", "_").split("_"))
-
-        # Exact match against stem OR match any keyword against stem's words
         if stem in _REQUIRED_KEYWORDS or any(kw in stem_words for kw in _REQUIRED_KEYWORDS):
             return "required"
         if stem in _REFERENCE_KEYWORDS or any(kw in stem_words for kw in _REFERENCE_KEYWORDS):
             return "reference"
+        return None
+
+    # Filename takes priority
+    result = _match_part(filename)
+    if result is not None:
+        return result
+
+    # Then check directory components
+    for part in dirs:
+        result = _match_part(part)
+        if result is not None:
+            return result
 
     return "recommended"

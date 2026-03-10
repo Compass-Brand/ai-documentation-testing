@@ -257,3 +257,101 @@ class TestRetrievalPathNormalization:
             f"Score {score} is too high; same extracted path likely matched "
             f"multiple expected files (bug #138)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Bug #144: _FILE_PATH_PATTERN missing many common extensions
+# ---------------------------------------------------------------------------
+
+
+class TestRetrievalExtractionBroadExtensions:
+    """Bug #144: _FILE_PATH_PATTERN should match common programming extensions.
+
+    The original pattern only matched 8 extensions (md|py|yaml|yml|json|toml|
+    txt|rst|html). It must also match ts, tsx, js, jsx, css, scss, go, rs,
+    java, xml, cfg, ini, sh, bash, dockerfile, rb, php, c, cpp, h, and more.
+    """
+
+    def test_extracts_typescript_files(self) -> None:
+        """Pattern matches .ts and .tsx file extensions."""
+        task = _retrieval_task(expected_files=["src/app.ts", "src/App.tsx"])
+        response = "Check src/app.ts and src/App.tsx for the component."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_javascript_files(self) -> None:
+        """Pattern matches .js and .jsx file extensions."""
+        task = _retrieval_task(expected_files=["src/index.js", "src/App.jsx"])
+        response = "Look at src/index.js and src/App.jsx."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_css_files(self) -> None:
+        """Pattern matches .css and .scss file extensions."""
+        task = _retrieval_task(expected_files=["styles/main.css", "styles/theme.scss"])
+        response = "Styles are in styles/main.css and styles/theme.scss."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_systems_language_files(self) -> None:
+        """Pattern matches .go, .rs, .java, .c, .cpp, .h file extensions."""
+        task = _retrieval_task(
+            expected_files=[
+                "pkg/server.go",
+                "src/lib.rs",
+                "src/Main.java",
+                "src/core.c",
+                "src/engine.cpp",
+                "include/header.h",
+            ]
+        )
+        response = (
+            "See pkg/server.go, src/lib.rs, src/Main.java, "
+            "src/core.c, src/engine.cpp, and include/header.h."
+        )
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_config_files(self) -> None:
+        """Pattern matches .xml, .cfg, .ini file extensions."""
+        task = _retrieval_task(
+            expected_files=["config/app.xml", "config/settings.cfg", "config/db.ini"]
+        )
+        response = "Config in config/app.xml, config/settings.cfg, config/db.ini."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_shell_files(self) -> None:
+        """Pattern matches .sh and .bash file extensions."""
+        task = _retrieval_task(expected_files=["scripts/deploy.sh", "scripts/build.bash"])
+        response = "Run scripts/deploy.sh and scripts/build.bash."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_scripting_language_files(self) -> None:
+        """Pattern matches .rb and .php file extensions."""
+        task = _retrieval_task(expected_files=["app/models/user.rb", "src/api.php"])
+        response = "See app/models/user.rb and src/api.php."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_still_extracts_original_extensions(self) -> None:
+        """Original 8 extensions still work after the fix."""
+        task = _retrieval_task(
+            expected_files=[
+                "docs/README.md",
+                "src/main.py",
+                "config.yaml",
+                "config.yml",
+                "data.json",
+                "settings.toml",
+                "notes.txt",
+                "guide.rst",
+            ]
+        )
+        response = (
+            "docs/README.md src/main.py config.yaml config.yml "
+            "data.json settings.toml notes.txt guide.rst"
+        )
+        score = task.score_response(response)
+        assert score == 1.0

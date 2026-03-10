@@ -177,6 +177,31 @@ class TestCustomExtensionsAndIgnores:
         assert result.extra_files == []
 
 
+class TestSymlinkLoopProtection:
+    """Tests for symlink loop protection in _collect_disk_files."""
+
+    def test_symlink_loop_does_not_hang(self, tmp_path: Path) -> None:
+        """A directory symlink loop must not cause infinite recursion."""
+        subdir = tmp_path / "docs"
+        subdir.mkdir()
+        (subdir / "readme.md").write_text("# Hello")
+
+        # Create a symlink loop: docs/loop -> docs
+        loop_link = subdir / "loop"
+        loop_link.symlink_to(subdir)
+
+        doc_tree = DocTree(
+            files={},
+            scanned_at=datetime.now(UTC),
+            source=str(tmp_path),
+        )
+
+        # This should complete without hanging or raising
+        result = validate_index(doc_tree, tmp_path)
+        # The readme.md should be detected as an extra file
+        assert "docs/readme.md" in result.extra_files
+
+
 class TestValidationResult:
     """Tests for the ValidationResult dataclass."""
 

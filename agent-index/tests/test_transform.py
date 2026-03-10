@@ -12,6 +12,7 @@ from agent_index.transform import (
     TransformPipeline,
     TransformResult,
     TransformState,
+    _resolve_strategy,
     algorithmic_compress,
     llm_compress,
     llm_restructure,
@@ -143,6 +144,14 @@ class TestAlgorithmicCompress:
         result = algorithmic_compress(content)
         assert "<!-- INDEX:START -->" in result
         assert "<!-- INDEX:END -->" in result
+
+    def test_preserves_hyphenated_injection_markers(self) -> None:
+        """Hyphenated marker IDs like MY-DOCS:START are preserved."""
+        content = "<!-- MY-DOCS:START -->\nContent\n<!-- MY-DOCS:END -->"
+        result = algorithmic_compress(content)
+        assert "<!-- MY-DOCS:START -->" in result
+        assert "<!-- MY-DOCS:END -->" in result
+        assert "Content" in result
 
     def test_removes_regular_comments_but_keeps_markers(self) -> None:
         """Regular HTML comments are removed while injection markers survive."""
@@ -343,6 +352,30 @@ class TestTransformPipelineErrorHandling:
         assert "fallback" in result.strategy_applied
 
 
+class TestResolveStrategy:
+    """Tests for _resolve_strategy."""
+
+    def test_raises_on_unrecognized_llm_strategy(self) -> None:
+        """Unrecognized LLM strategy raises ValueError instead of silent fallback."""
+        step = TransformStep(type="llm", strategy="nonexistent")
+        with pytest.raises(ValueError, match="nonexistent"):
+            _resolve_strategy(step)
+
+    def test_raises_on_default_llm_strategy(self) -> None:
+        """Default strategy value 'default' on an LLM step raises ValueError."""
+        step = TransformStep(type="llm")  # strategy defaults to 'default'
+        with pytest.raises(ValueError, match="default"):
+            _resolve_strategy(step)
+
+    def test_resolves_known_llm_strategies(self) -> None:
+        """Known LLM strategies resolve correctly."""
+        for strategy_name in ("compressed", "restructured", "tagged"):
+            step = TransformStep(type="llm", strategy=strategy_name)
+            fn, label = _resolve_strategy(step)
+            assert callable(fn)
+            assert strategy_name in label
+
+
 # ===================================================================
 # Tree-level transform tests
 # ===================================================================
@@ -398,20 +431,45 @@ class TestIncrementalTransform:
     """Tests for incremental transform behavior (skipping unchanged files)."""
 
     def test_skips_unchanged_files(self) -> None:
-        """Files whose hash matches state are skipped (content unchanged)."""
+        """Files whose hash matches state are skipped, returning cached transform."""
         doc = _make_docfile("unchanged.md", "# Stable\n")
         tree = _make_doctree({"unchanged.md": doc})
 
-        # Simulate prior state where this file was already processed
+        # Simulate prior state with both source hash and cached transformed content
         prior_state = TransformState(
             file_hashes={"unchanged.md": doc.content_hash},
+            transformed_content={"unchanged.md": "# Stable"},
         )
 
         pipeline = TransformPipeline(steps=[TransformStep(type="algorithmic")])
         new_tree, _ = pipeline.transform_tree(tree, state=prior_state)
 
-        # Content should be the same as original (skipped)
-        assert new_tree.files["unchanged.md"].content == doc.content
+        # Content should be the cached transformed content
+        assert new_tree.files["unchanged.md"].content == "# Stable"
+
+    def test_skip_returns_transformed_content_not_raw(self) -> None:
+        """Incremental skip must return previously-transformed content, not raw source.
+
+        Scenario: first run transforms '#Title' -> '# Title'. Second run with
+        same source should return '# Title', not '#Title'.
+        """
+        raw_content = "#Title\n"
+        doc = _make_docfile("readme.md", raw_content)
+        tree = _make_doctree({"readme.md": doc})
+
+        pipeline = TransformPipeline(steps=[TransformStep(type="algorithmic")])
+
+        # First run: transforms the file and builds state
+        transformed_tree, state = pipeline.transform_tree(tree)
+        assert "# Title" in transformed_tree.files["readme.md"].content
+
+        # Second run: same raw source tree, prior state from first run
+        # The skip path should return the transformed content, not raw
+        fresh_tree = _make_doctree({"readme.md": doc})
+        skipped_tree, _ = pipeline.transform_tree(fresh_tree, state=state)
+
+        # Bug #120: without fix this returns '#Title' (untransformed)
+        assert "# Title" in skipped_tree.files["readme.md"].content
 
     def test_processes_changed_files(self) -> None:
         """Files whose hash differs from state are re-processed."""

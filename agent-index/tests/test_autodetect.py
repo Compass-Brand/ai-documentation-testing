@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 import yaml
-from agent_index.autodetect import _detect_project_name, auto_detect, generate_config_yaml
+from agent_index.autodetect import _classify_file, _detect_project_name, auto_detect, generate_config_yaml
 from agent_index.config import load_config
 from agent_index.models import IndexConfig
 
@@ -109,6 +109,59 @@ class TestAutoDetect:
         # All tiers should have empty patterns
         for tier in config.tiers:
             assert tier.patterns == []
+
+
+class TestSymlinkLoopProtection:
+    """Tests for symlink loop protection in _collect_doc_files."""
+
+    def test_symlink_loop_does_not_hang(self, tmp_path: Path) -> None:
+        """A directory symlink loop must not cause infinite recursion."""
+        subdir = tmp_path / "docs"
+        subdir.mkdir()
+        (subdir / "readme.md").write_text("# Hello")
+
+        # Create a symlink loop: docs/loop -> docs
+        loop_link = subdir / "loop"
+        loop_link.symlink_to(subdir)
+
+        # This should complete without hanging or raising
+        config = auto_detect(tmp_path)
+
+        # readme.md should be found exactly once (not duplicated from the loop)
+        all_patterns = []
+        for tier in config.tiers:
+            all_patterns.extend(tier.patterns)
+
+        readme_count = sum(1 for p in all_patterns if p == "docs/readme.md")
+        assert readme_count == 1
+
+
+class TestClassifyFile:
+    """Tests for _classify_file heuristic."""
+
+    def test_filename_takes_priority_over_directory(self) -> None:
+        """Filename classification should override directory classification.
+
+        'api/getting-started.md' should be 'required' (filename match)
+        not 'reference' (directory match).
+        """
+        assert _classify_file("api/getting-started.md") == "required"
+
+    def test_reference_dir_with_setup_file(self) -> None:
+        """'reference/setup.md' should be 'required' because filename wins."""
+        assert _classify_file("reference/setup.md") == "required"
+
+    def test_api_dir_with_generic_file(self) -> None:
+        """'api/endpoints.md' should be 'reference' (directory, no filename match)."""
+        assert _classify_file("api/endpoints.md") == "reference"
+
+    def test_plain_required_file(self) -> None:
+        """'docs/getting-started.md' should be 'required'."""
+        assert _classify_file("docs/getting-started.md") == "required"
+
+    def test_plain_recommended_file(self) -> None:
+        """'docs/contributing.md' should be 'recommended'."""
+        assert _classify_file("docs/contributing.md") == "recommended"
 
 
 class TestGenerateConfigYaml:

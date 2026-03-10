@@ -2,7 +2,7 @@
 
 After each file entry, adds "See also:" listing up to 3 files from the same
 section AND any files whose content mentions the current file's stem.  Also
-adds "Referenced by:" listing files that this file's content mentions.
+adds "References:" listing files that this file's content mentions (outgoing).
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ class XrefDenseVariant(IndexVariant):
     """Dense cross-references using section matching and content scanning.
 
     Produces both "See also:" (section peers + files mentioning this file's
-    stem) and "Referenced by:" (files whose stems appear in this file's
-    content) sub-items under each entry.
+    stem) and "References:" (files whose stems appear in this file's
+    content, i.e. outgoing references) sub-items under each entry.
     """
 
     def metadata(self) -> VariantMetadata:
@@ -49,7 +49,7 @@ class XrefDenseVariant(IndexVariant):
 
         Returns:
             A bulleted list where each file has indented "See also:" and
-            "Referenced by:" sub-items.
+            "References:" sub-items.
         """
         if not doc_tree.files:
             return ""
@@ -99,13 +99,13 @@ class XrefDenseVariant(IndexVariant):
             if see_also:
                 lines.append(f"  See also: {', '.join(see_also)}")
 
-            # "Referenced by:" = files whose stems appear in this file's content
+            # "References:" = files whose stems appear in this file's content (outgoing)
             content_lower = doc.content.lower()
             referenced = []
             for stem, stem_path in sorted(stem_to_path.items()):
                 if stem_path != rel_path and stem.lower() in content_lower:
                     referenced.append(stem_path)
             if referenced:
-                lines.append(f"  Referenced by: {', '.join(referenced)}")
+                lines.append(f"  References: {', '.join(referenced)}")
 
         return "\n".join(lines)

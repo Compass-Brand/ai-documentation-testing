@@ -898,3 +898,363 @@ def test_pipeline_refinement_applies_refinement_reps():
         )
 
     assert eval_cfg.repetitions == 9
+
+
+# ---------------------------------------------------------------------------
+# Bug #122: Refinement computes 2-way interaction effects
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_refinement_calls_compute_interactions():
+    """Bug #122: Refinement must call compute_interactions for 2-way effects."""
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_3": "c"},
+        significant_factors=["axis_1", "axis_3"],
+    )
+
+    with patch("agent_evals.pipeline.build_design") as mock_build, \
+         patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred, \
+         patch("agent_evals.pipeline.compute_interactions") as mock_interactions:
+
+        mock_row = MagicMock()
+        mock_row.run_id = 1
+        mock_row.assignments = {"axis_1": "a", "axis_3": "c"}
+        mock_row.dummy_factors = set()
+        mock_design = MagicMock()
+        mock_design.rows = [mock_row]
+        mock_design.factors = []
+        mock_build.return_value = mock_design
+
+        mock_sn.return_value = {1: 10.0}
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment={}, predicted_sn=0.0,
+        )
+        mock_interactions.return_value = []
+
+        pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+        mock_interactions.assert_called_once()
+
+
+def test_pipeline_refinement_populates_interaction_effects():
+    """Bug #122: Refinement PhaseResult must contain interaction_effects."""
+    from dataclasses import asdict
+    from agent_evals.taguchi.analysis import InteractionEffect
+
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_3": "c"},
+        significant_factors=["axis_1", "axis_3"],
+    )
+
+    fake_interaction = InteractionEffect(
+        factor1="axis_1", factor2="axis_3",
+        ss=2.5, df=4, ms=0.625, f_ratio=3.1, p_value=0.04,
+    )
+
+    with patch("agent_evals.pipeline.build_design") as mock_build, \
+         patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred, \
+         patch("agent_evals.pipeline.compute_interactions") as mock_interactions:
+
+        mock_row = MagicMock()
+        mock_row.run_id = 1
+        mock_row.assignments = {"axis_1": "a", "axis_3": "c"}
+        mock_row.dummy_factors = set()
+        mock_design = MagicMock()
+        mock_design.rows = [mock_row]
+        mock_design.factors = []
+        mock_build.return_value = mock_design
+
+        mock_sn.return_value = {1: 10.0}
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment={}, predicted_sn=0.0,
+        )
+        mock_interactions.return_value = [fake_interaction]
+
+        result = pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+    assert len(result.interaction_effects) == 1
+    assert result.interaction_effects[0]["factor1"] == "axis_1"
+    assert result.interaction_effects[0]["factor2"] == "axis_3"
+    assert result.interaction_effects[0]["p_value"] == 0.04
+
+
+def test_pipeline_refinement_stores_interactions_to_observatory():
+    """Bug #122: Refinement must persist interaction_effects to the store."""
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    mock_store = MagicMock()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+    pipeline._store = mock_store
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_3": "c"},
+        significant_factors=["axis_1", "axis_3"],
+    )
+
+    with patch("agent_evals.pipeline.build_design") as mock_build, \
+         patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred, \
+         patch("agent_evals.pipeline.compute_interactions") as mock_interactions:
+
+        mock_row = MagicMock()
+        mock_row.run_id = 1
+        mock_row.assignments = {"axis_1": "a", "axis_3": "c"}
+        mock_row.dummy_factors = set()
+        mock_design = MagicMock()
+        mock_design.rows = [mock_row]
+        mock_design.factors = []
+        mock_build.return_value = mock_design
+
+        mock_sn.return_value = {1: 10.0}
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment={}, predicted_sn=0.0,
+        )
+        mock_interactions.return_value = []
+
+        pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+    mock_store.save_phase_results.assert_called_once()
+    call_kwargs = mock_store.save_phase_results.call_args[1]
+    assert "interaction_effects" in call_kwargs
+
+
+# ---------------------------------------------------------------------------
+# Bug #111: Resume loads trial aggregates from store
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_store_for_resume():
+    """Create a mock store with completed pipeline runs and phase results."""
+    store = MagicMock()
+
+    # Three completed runs for the pipeline
+    screening_run = MagicMock()
+    screening_run.run_id = "screen-run-1"
+    screening_run.status = "completed"
+    screening_run.phase = "screening"
+    screening_run.total_trials = 50
+    screening_run.total_cost = 1.25
+
+    confirmation_run = MagicMock()
+    confirmation_run.run_id = "conf-run-1"
+    confirmation_run.status = "completed"
+    confirmation_run.phase = "confirmation"
+    confirmation_run.total_trials = 20
+    confirmation_run.total_cost = 0.50
+
+    refinement_run = MagicMock()
+    refinement_run.run_id = "ref-run-1"
+    refinement_run.status = "completed"
+    refinement_run.phase = "refinement"
+    refinement_run.total_trials = 30
+    refinement_run.total_cost = 0.75
+
+    store.get_pipeline_runs.return_value = [
+        screening_run, confirmation_run, refinement_run,
+    ]
+
+    # Phase results with cost/token data
+    def _get_phase_results(run_id):
+        data = {
+            "screen-run-1": {
+                "main_effects": {"axis_1": {"a": 12.0}},
+                "anova": {},
+                "optimal": {"axis_1": "a"},
+                "significant_factors": ["axis_1"],
+                "total_cost": 1.25,
+                "total_tokens": 50000,
+                "elapsed_seconds": 120.0,
+                "interaction_effects": [],
+            },
+            "conf-run-1": {
+                "main_effects": None,
+                "anova": None,
+                "optimal": None,
+                "significant_factors": [],
+                "total_cost": 0.50,
+                "total_tokens": 20000,
+                "elapsed_seconds": 45.0,
+                "interaction_effects": [],
+            },
+            "ref-run-1": {
+                "main_effects": {"axis_1": {"a": 13.0}},
+                "anova": {},
+                "optimal": {"axis_1": "a"},
+                "significant_factors": ["axis_1"],
+                "total_cost": 0.75,
+                "total_tokens": 30000,
+                "elapsed_seconds": 90.0,
+                "interaction_effects": [],
+            },
+        }
+        return data.get(run_id)
+
+    store.get_phase_results.side_effect = _get_phase_results
+
+    # Run summaries for trial counts
+    def _get_run_summary(run_id):
+        summaries = {
+            "screen-run-1": screening_run,
+            "conf-run-1": confirmation_run,
+            "ref-run-1": refinement_run,
+        }
+        return summaries.get(run_id)
+
+    store.get_run_summary.side_effect = _get_run_summary
+
+    return store
+
+
+def test_pipeline_resume_loads_screening_cost_data():
+    """Bug #111: Resumed screening phase must load cost/token data from store."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    # Screening was completed - its cost data should come from the store
+    assert result.screening.total_cost == 1.25, (
+        f"Expected screening total_cost=1.25, got {result.screening.total_cost}"
+    )
+    assert result.screening.total_tokens == 50000, (
+        f"Expected screening total_tokens=50000, got {result.screening.total_tokens}"
+    )
+    assert result.screening.elapsed_seconds == 120.0, (
+        f"Expected screening elapsed_seconds=120.0, got {result.screening.elapsed_seconds}"
+    )
+
+
+def test_pipeline_resume_loads_confirmation_cost_data():
+    """Bug #111: Resumed confirmation phase must load cost/token data from store."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    assert result.confirmation is not None
+    assert result.confirmation.total_cost == 0.50, (
+        f"Expected confirmation total_cost=0.50, got {result.confirmation.total_cost}"
+    )
+    assert result.confirmation.total_tokens == 20000, (
+        f"Expected confirmation total_tokens=20000, got {result.confirmation.total_tokens}"
+    )
+    assert result.confirmation.elapsed_seconds == 45.0, (
+        f"Expected confirmation elapsed_seconds=45.0, got {result.confirmation.elapsed_seconds}"
+    )
+
+
+def test_pipeline_resume_loads_refinement_cost_data():
+    """Bug #111: Resumed refinement phase must load cost/token data from store."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    assert result.refinement is not None
+    assert result.refinement.total_cost == 0.75, (
+        f"Expected refinement total_cost=0.75, got {result.refinement.total_cost}"
+    )
+    assert result.refinement.total_tokens == 30000, (
+        f"Expected refinement total_tokens=30000, got {result.refinement.total_tokens}"
+    )
+    assert result.refinement.elapsed_seconds == 90.0, (
+        f"Expected refinement elapsed_seconds=90.0, got {result.refinement.elapsed_seconds}"
+    )
+
+
+def test_pipeline_resume_aggregates_total_cost():
+    """Bug #111: PipelineResult totals must reflect all resumed phase costs."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    # Total cost should be sum of all three phases: 1.25 + 0.50 + 0.75 = 2.50
+    assert result.total_cost == pytest.approx(2.50), (
+        f"Expected total_cost=2.50, got {result.total_cost}"
+    )
+    assert result.elapsed_seconds == pytest.approx(255.0), (
+        f"Expected elapsed_seconds=255.0, got {result.elapsed_seconds}"
+    )

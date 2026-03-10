@@ -2032,3 +2032,77 @@ class TestTaguchiHallucinationAsResponseVariable:
         sn = compute_sn_ratios(hallucination_scores, "smaller_is_better")
         # Row 3 has lowest hallucination -> highest (least negative) S/N
         assert sn[3] > sn[1] > sn[2]
+
+
+# ---------------------------------------------------------------------------
+# Bug #129: CostTracker budget enforcement in EvalRunner
+# ---------------------------------------------------------------------------
+
+
+class TestBudgetEnforcement:
+    """Tests for budget-based stopping in EvalRunner.run()."""
+
+    def test_runner_accepts_budget_parameter(self) -> None:
+        """EvalRunConfig accepts a budget field."""
+        config = EvalRunConfig(budget=5.0, use_cache=False)
+        assert config.budget == 5.0
+
+    def test_runner_budget_default_is_none(self) -> None:
+        """EvalRunConfig.budget defaults to None (no budget)."""
+        config = EvalRunConfig()
+        assert config.budget is None
+
+    def test_runner_stops_submitting_when_budget_exceeded(self) -> None:
+        """Bug #129: Runner should stop submitting new work when budget is exceeded.
+
+        With a budget of $0.001 and trials costing $0.002 each,
+        the CostTracker should signal pause after 1-2 trials, causing the
+        runner to stop accepting new work rather than running all 10 trials.
+        """
+        client = _make_mock_client(cost=0.002)
+        config = EvalRunConfig(
+            repetitions=5,
+            use_cache=False,
+            max_connections=1,
+            budget=0.001,
+        )
+        runner = EvalRunner(client=client, config=config)
+
+        tasks = [
+            _make_mock_task(task_id="retrieval_001"),
+            _make_mock_task(task_id="retrieval_002"),
+        ]
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner.run(tasks, [variant], doc_tree)
+
+        # With budget=0.001 and cost=0.002 per trial, the projected cost
+        # after the first trial ($0.002 * 10 = $0.020) far exceeds 2x budget
+        # ($0.002). The runner should have stopped submitting new work.
+        # Total planned = 2 tasks * 1 variant * 5 reps = 10 trials.
+        # We expect significantly fewer than 10 trials.
+        assert len(result.trials) < 10, (
+            f"Budget enforcement failed: got {len(result.trials)} trials "
+            f"but expected fewer than 10 with budget=$0.001"
+        )
+        assert result.graceful_shutdown is True
+
+    def test_runner_completes_all_when_no_budget(self) -> None:
+        """Without a budget, all trials run to completion."""
+        client = _make_mock_client(cost=0.002)
+        config = EvalRunConfig(
+            repetitions=3,
+            use_cache=False,
+            max_connections=1,
+            budget=None,
+        )
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner.run([task], [variant], doc_tree)
+        assert len(result.trials) == 3
+        assert result.graceful_shutdown is False

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import statistics
+
 import pytest
+from scipy.stats import t as t_dist
+
 from agent_evals.reports.aggregator import (
     ReportData,
     VariantSummary,
@@ -318,6 +322,77 @@ class TestVariabilityEstimates:
         ]
         report = aggregate(trials, config=_config())
         assert report.by_variant["flat"].median == pytest.approx(0.8)
+
+
+# ---------------------------------------------------------------------------
+# Bug #101: CI must use t-distribution for small samples
+# ---------------------------------------------------------------------------
+
+
+class TestCIUsesStudentT:
+    """Bug #101: CI calculation must use t-distribution, not z=1.96.
+
+    For small sample sizes, z=1.96 understates the CI width.  The correct
+    critical value is scipy.stats.t.ppf(0.975, df=n-1), which for n=3 is
+    ~4.303 (much wider than 1.96).
+    """
+
+    def test_ci_width_matches_t_distribution_for_small_n(self) -> None:
+        """With n=3, CI should use t(0.975, 2) ~ 4.303, not z=1.96.
+
+        We compute the expected CI manually with the t-distribution and
+        verify the aggregator matches it.
+        """
+        scores = [0.6, 0.8, 1.0]
+        trials = [_trial(variant_name="flat", score=s) for s in scores]
+        report = aggregate(trials, config=_config())
+        summary = report.by_variant["flat"]
+
+        mean = statistics.mean(scores)
+        sd = statistics.stdev(scores)
+        se = sd / (len(scores) ** 0.5)
+        t_crit = t_dist.ppf(0.975, df=len(scores) - 1)
+        expected_lower = mean - t_crit * se
+        expected_upper = mean + t_crit * se
+
+        assert summary.ci_lower == pytest.approx(expected_lower, abs=1e-6)
+        assert summary.ci_upper == pytest.approx(expected_upper, abs=1e-6)
+
+    def test_ci_wider_than_z_based_for_small_n(self) -> None:
+        """For n=3, the t-based CI must be wider than a z=1.96 CI."""
+        scores = [0.6, 0.8, 1.0]
+        trials = [_trial(variant_name="flat", score=s) for s in scores]
+        report = aggregate(trials, config=_config())
+        summary = report.by_variant["flat"]
+
+        mean = statistics.mean(scores)
+        sd = statistics.stdev(scores)
+        se = sd / (len(scores) ** 0.5)
+        z_lower = mean - 1.96 * se
+        z_upper = mean + 1.96 * se
+
+        # t-based CI should be strictly wider than z-based CI
+        assert summary.ci_lower is not None
+        assert summary.ci_upper is not None
+        assert summary.ci_lower < z_lower
+        assert summary.ci_upper > z_upper
+
+    def test_ci_converges_to_z_for_large_n(self) -> None:
+        """With large n, the t-based CI should be close to z=1.96 CI."""
+        scores = [0.7 + 0.01 * i for i in range(100)]
+        trials = [_trial(variant_name="flat", score=s) for s in scores]
+        report = aggregate(trials, config=_config())
+        summary = report.by_variant["flat"]
+
+        mean = statistics.mean(scores)
+        sd = statistics.stdev(scores)
+        se = sd / (len(scores) ** 0.5)
+        z_lower = mean - 1.96 * se
+        z_upper = mean + 1.96 * se
+
+        # With n=100, t(0.975, 99) ~ 1.984, close to 1.96
+        assert summary.ci_lower == pytest.approx(z_lower, abs=0.01)
+        assert summary.ci_upper == pytest.approx(z_upper, abs=0.01)
 
 
 # ---------------------------------------------------------------------------

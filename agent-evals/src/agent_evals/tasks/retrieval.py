@@ -15,9 +15,11 @@ import re
 
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
-# Pattern to match file paths with common extensions (case-insensitive)
+# Pattern to match file paths with common extensions (case-insensitive).
+# Uses a permissive extension pattern (1-10 word chars) so new languages
+# are recognised automatically instead of requiring an allow-list update.
 _FILE_PATH_PATTERN: re.Pattern[str] = re.compile(
-    r"(?:[\w./-]+/)?[\w.-]+\.(?:md|py|yaml|yml|json|toml|txt|rst|html)",
+    r"(?:[\w./-]+/)?[\w.-]+\.\w{1,10}",
     re.IGNORECASE,
 )
 

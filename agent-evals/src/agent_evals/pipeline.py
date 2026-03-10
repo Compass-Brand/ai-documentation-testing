@@ -549,7 +549,7 @@ class DOEPipeline:
 
         # Phase 1: Screening
         if "screening" in completed_phases:
-            # Reconstruct PhaseResult from DB.
+            # Reconstruct PhaseResult from DB, including cost/token aggregates.
             screen_run_id = completed_phases["screening"]
             phase_results = self._store.get_phase_results(screen_run_id)
             screening = PhaseResult(
@@ -560,6 +560,9 @@ class DOEPipeline:
                 anova=phase_results.get("anova") if phase_results else None,
                 optimal=phase_results.get("optimal") if phase_results else None,
                 significant_factors=phase_results.get("significant_factors", []) if phase_results else [],
+                total_cost=phase_results.get("total_cost", 0.0) if phase_results else 0.0,
+                total_tokens=phase_results.get("total_tokens", 0) if phase_results else 0,
+                elapsed_seconds=phase_results.get("elapsed_seconds", 0.0) if phase_results else 0.0,
             )
         elif "screening" in in_progress_phases:
             screening = self.run_screening(
@@ -583,10 +586,14 @@ class DOEPipeline:
         # Phase 2: Confirmation
         if "confirmation" in completed_phases:
             conf_run_id = completed_phases["confirmation"]
+            conf_phase_results = self._store.get_phase_results(conf_run_id)
             confirmation = PhaseResult(
                 run_id=conf_run_id,
                 phase="confirmation",
                 trials=[],
+                total_cost=conf_phase_results.get("total_cost", 0.0) if conf_phase_results else 0.0,
+                total_tokens=conf_phase_results.get("total_tokens", 0) if conf_phase_results else 0,
+                elapsed_seconds=conf_phase_results.get("elapsed_seconds", 0.0) if conf_phase_results else 0.0,
             )
         elif "confirmation" in in_progress_phases:
             confirmation = self.run_confirmation(
@@ -613,10 +620,19 @@ class DOEPipeline:
         # Phase 3: Refinement
         if "refinement" in completed_phases:
             ref_run_id = completed_phases["refinement"]
+            ref_phase_results = self._store.get_phase_results(ref_run_id)
             refinement = PhaseResult(
                 run_id=ref_run_id,
                 phase="refinement",
                 trials=[],
+                main_effects=ref_phase_results.get("main_effects") if ref_phase_results else None,
+                anova=ref_phase_results.get("anova") if ref_phase_results else None,
+                optimal=ref_phase_results.get("optimal") if ref_phase_results else None,
+                significant_factors=ref_phase_results.get("significant_factors", []) if ref_phase_results else [],
+                total_cost=ref_phase_results.get("total_cost", 0.0) if ref_phase_results else 0.0,
+                total_tokens=ref_phase_results.get("total_tokens", 0) if ref_phase_results else 0,
+                elapsed_seconds=ref_phase_results.get("elapsed_seconds", 0.0) if ref_phase_results else 0.0,
+                interaction_effects=ref_phase_results.get("interaction_effects", []) if ref_phase_results else [],
             )
         elif "refinement" in in_progress_phases:
             refinement = self.run_refinement(
