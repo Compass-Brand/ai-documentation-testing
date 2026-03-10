@@ -1229,3 +1229,130 @@ class TestReportArtifacts:
         # Only one row should exist
         artifacts = store.list_report_artifacts("run_001")
         assert len(artifacts) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestLLMCallDetails (Task 6)
+# ---------------------------------------------------------------------------
+
+
+class TestLLMCallDetails:
+    """Per-call LLM metrics for multi-call trials."""
+
+    def test_save_and_get_llm_calls(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Create run, record trial, save 2 call details, retrieve, verify."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id = store.record_trial(**_make_trial_kwargs("run_001"))
+        calls = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "cost": 0.001,
+                "api_call_ms": 350.5,
+                "cached_tokens": 20,
+                "model": "claude-sonnet",
+                "provider": "openrouter",
+            },
+            {
+                "call_index": 1,
+                "prompt_tokens": 200,
+                "completion_tokens": 80,
+                "cost": 0.002,
+                "api_call_ms": 420.0,
+                "cached_tokens": 0,
+                "model": "claude-sonnet",
+                "provider": "openrouter",
+            },
+        ]
+        store.save_llm_call_details(trial_id, calls)
+        result = store.get_llm_call_details(trial_id)
+        assert len(result) == 2
+        # Ordered by call_index
+        assert result[0]["call_index"] == 0
+        assert result[0]["prompt_tokens"] == 100
+        assert result[0]["completion_tokens"] == 50
+        assert result[0]["cost"] == pytest.approx(0.001)
+        assert result[0]["api_call_ms"] == pytest.approx(350.5)
+        assert result[0]["cached_tokens"] == 20
+        assert result[0]["model"] == "claude-sonnet"
+        assert result[0]["provider"] == "openrouter"
+        assert result[1]["call_index"] == 1
+        assert result[1]["prompt_tokens"] == 200
+        assert result[1]["completion_tokens"] == 80
+        assert result[1]["cost"] == pytest.approx(0.002)
+        assert result[1]["api_call_ms"] == pytest.approx(420.0)
+        assert result[1]["cached_tokens"] == 0
+        assert result[1]["model"] == "claude-sonnet"
+        assert result[1]["provider"] == "openrouter"
+
+    def test_get_empty_calls(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Create run, record trial without saving call details, verify empty list."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id = store.record_trial(**_make_trial_kwargs("run_001"))
+        result = store.get_llm_call_details(trial_id)
+        assert result == []
+
+    def test_multiple_trials_independent(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save call details for 2 trials, verify each trial's calls are independent."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id_1 = store.record_trial(
+            **_make_trial_kwargs("run_001", task_id="task_1", repetition=1)
+        )
+        trial_id_2 = store.record_trial(
+            **_make_trial_kwargs("run_001", task_id="task_2", repetition=1)
+        )
+        calls_1 = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "cost": 0.001,
+                "api_call_ms": 300.0,
+                "cached_tokens": 10,
+                "model": "claude-sonnet",
+                "provider": "openrouter",
+            },
+        ]
+        calls_2 = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 200,
+                "completion_tokens": 80,
+                "cost": 0.002,
+                "api_call_ms": 400.0,
+                "cached_tokens": 0,
+                "model": "claude-haiku",
+                "provider": "anthropic",
+            },
+            {
+                "call_index": 1,
+                "prompt_tokens": 150,
+                "completion_tokens": 60,
+                "cost": 0.0015,
+                "api_call_ms": 250.0,
+                "cached_tokens": 50,
+                "model": "claude-haiku",
+                "provider": "anthropic",
+            },
+        ]
+        store.save_llm_call_details(trial_id_1, calls_1)
+        store.save_llm_call_details(trial_id_2, calls_2)
+
+        result_1 = store.get_llm_call_details(trial_id_1)
+        result_2 = store.get_llm_call_details(trial_id_2)
+
+        assert len(result_1) == 1
+        assert result_1[0]["prompt_tokens"] == 100
+        assert result_1[0]["model"] == "claude-sonnet"
+
+        assert len(result_2) == 2
+        assert result_2[0]["prompt_tokens"] == 200
+        assert result_2[0]["model"] == "claude-haiku"
+        assert result_2[1]["prompt_tokens"] == 150

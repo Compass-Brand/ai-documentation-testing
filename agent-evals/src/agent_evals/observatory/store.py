@@ -140,6 +140,19 @@ CREATE TABLE IF NOT EXISTS report_artifacts (
     created_at    TEXT NOT NULL,
     UNIQUE(run_id, artifact_type)
 );
+
+CREATE TABLE IF NOT EXISTS llm_call_details (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    trial_id          INTEGER NOT NULL REFERENCES trials(trial_id),
+    call_index        INTEGER NOT NULL,
+    prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    cost              REAL,
+    api_call_ms       REAL NOT NULL DEFAULT 0.0,
+    cached_tokens     INTEGER NOT NULL DEFAULT 0,
+    model             TEXT NOT NULL DEFAULT '',
+    provider          TEXT
+);
 """
 
 
@@ -191,6 +204,8 @@ class ObservatoryStore:
             "ON factor_definitions (run_id)",
             "CREATE INDEX IF NOT EXISTS idx_report_artifacts_run "
             "ON report_artifacts (run_id)",
+            "CREATE INDEX IF NOT EXISTS idx_llm_calls_trial "
+            "ON llm_call_details (trial_id)",
         ]
         with self._connect() as conn:
             for stmt in migrations:
@@ -906,6 +921,68 @@ class ObservatoryStore:
                 "difficulty": r["difficulty"],
                 "word_count": r["word_count"],
                 "tag_count": r["tag_count"],
+            }
+            for r in rows
+        ]
+
+    def save_llm_call_details(
+        self, trial_id: int, calls: list[dict]
+    ) -> None:
+        """Batch insert per-call LLM details for a trial.
+
+        Args:
+            trial_id: The trial to attach call details to.
+            calls: List of dicts with keys: call_index, prompt_tokens,
+                completion_tokens, cost, api_call_ms, cached_tokens,
+                model, provider.
+        """
+        with self._lock, self._connect() as conn:
+            for c in calls:
+                conn.execute(
+                    "INSERT INTO llm_call_details "
+                    "(trial_id, call_index, prompt_tokens, "
+                    "completion_tokens, cost, api_call_ms, "
+                    "cached_tokens, model, provider) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        trial_id,
+                        c["call_index"],
+                        c.get("prompt_tokens", 0),
+                        c.get("completion_tokens", 0),
+                        c.get("cost"),
+                        c.get("api_call_ms", 0.0),
+                        c.get("cached_tokens", 0),
+                        c.get("model", ""),
+                        c.get("provider"),
+                    ),
+                )
+
+    def get_llm_call_details(self, trial_id: int) -> list[dict]:
+        """Retrieve per-call LLM details for a trial.
+
+        Returns:
+            List of dicts ordered by call_index. Each dict has:
+            call_index, prompt_tokens, completion_tokens, cost,
+            api_call_ms, cached_tokens, model, provider.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT call_index, prompt_tokens, completion_tokens, "
+                "cost, api_call_ms, cached_tokens, model, provider "
+                "FROM llm_call_details WHERE trial_id = ? "
+                "ORDER BY call_index",
+                (trial_id,),
+            ).fetchall()
+        return [
+            {
+                "call_index": r["call_index"],
+                "prompt_tokens": r["prompt_tokens"],
+                "completion_tokens": r["completion_tokens"],
+                "cost": r["cost"],
+                "api_call_ms": r["api_call_ms"],
+                "cached_tokens": r["cached_tokens"],
+                "model": r["model"],
+                "provider": r["provider"],
             }
             for r in rows
         ]
