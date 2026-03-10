@@ -19,7 +19,7 @@ def _make_repliqa_record(
     doc_id: str = "abc12345",
     topic: str = "Small and Medium Enterprises",
     question: str = "What is the revenue?",
-    answer: str = "UNANSWERABLE",
+    answer: str = "The answer is not found in the provided document.",
     long_answer: str = "NA",
     document_extracted: str = "WeTech Solutions was founded in 2020.",
 ) -> dict[str, str]:
@@ -106,7 +106,7 @@ class TestRepliQAConvertTasks:
             _make_repliqa_record(
                 doc_id="doc001",
                 question="What is the revenue?",
-                answer="UNANSWERABLE",
+                answer="The answer is not found in the provided document.",
                 long_answer="NA",
             ),
             _make_repliqa_record(
@@ -118,7 +118,7 @@ class TestRepliQAConvertTasks:
             _make_repliqa_record(
                 doc_id="doc003",
                 question="What is the budget?",
-                answer="UNANSWERABLE",
+                answer="The answer is not found in the provided document.",
                 long_answer="NA",
             ),
         ]
@@ -141,7 +141,7 @@ class TestRepliQAConvertTasks:
             _make_repliqa_record(
                 doc_id="doc001",
                 question="What is the revenue?",
-                answer="UNANSWERABLE",
+                answer="The answer is not found in the provided document.",
                 long_answer="NA",
                 document_extracted="WeTech Solutions: A case study.",
             ),
@@ -172,7 +172,7 @@ class TestRepliQAConvertTasks:
         from agent_evals.datasets.repliqa import RepliQAAdapter
 
         records = [
-            _make_repliqa_record(doc_id=f"doc{i:03d}", answer="UNANSWERABLE")
+            _make_repliqa_record(doc_id=f"doc{i:03d}", answer="The answer is not found in the provided document.")
             for i in range(20)
         ]
         mock_ds = _mock_dataset(records)
@@ -191,7 +191,7 @@ class TestRepliQAConvertTasks:
         from agent_evals.datasets.repliqa import RepliQAAdapter
 
         records = [
-            _make_repliqa_record(doc_id=f"doc{i:03d}", answer="UNANSWERABLE")
+            _make_repliqa_record(doc_id=f"doc{i:03d}", answer="The answer is not found in the provided document.")
             for i in range(3)
         ]
         mock_ds = _mock_dataset(records)

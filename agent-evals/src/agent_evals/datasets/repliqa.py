@@ -51,7 +51,10 @@ class RepliQAAdapter(DatasetAdapter):
         """Download RepLiQA and write unanswerable subset as negative tasks."""
         ds = load_hf_dataset(self.hf_dataset_id(), split="repliqa_0")
 
-        unanswerable = [r for r in ds if r["answer"] == "UNANSWERABLE"]
+        unanswerable = [
+            r for r in ds
+            if r["answer"].lower().startswith("the answer is not found in the")
+        ]
 
         if limit is not None:
             unanswerable = unanswerable[:limit]

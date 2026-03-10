@@ -10,19 +10,26 @@ import yaml
 
 def _make_wikicontradict_record(
     id: int = 1,
-    section_1: str = "Geography",
-    statement_1: str = "The river is 500km long.",
-    section_2: str = "Geography",
-    statement_2: str = "The river spans 300km.",
+    context1: str = "The river is approximately 500km long according to surveys.",
+    context2: str = "Recent measurements show the river spans about 300km.",
+    answer1: str = "The river is 500km long.",
+    answer2: str = "The river spans 300km.",
     article_title: str = "Amazon River",
+    question: str = "How long is the river?",
+    contradict_type: str = "Explicit",
+    ref_answer: str = "500km",
 ) -> dict:
     return {
-        "id": id,
-        "section_1": section_1,
-        "statement_1": statement_1,
-        "section_2": section_2,
-        "statement_2": statement_2,
-        "article_title": article_title,
+        "context1": context1,
+        "context2": context2,
+        "answer1": answer1,
+        "answer2": answer2,
+        "WikipediaArticleTitle": article_title,
+        "question": question,
+        "contradictType": contradict_type,
+        "ref_answer": ref_answer,
+        "merged_context": f"{context1} {context2}",
+        "url": f"https://en.wikipedia.org/wiki/{article_title.replace(' ', '_')}",
     }
 
 

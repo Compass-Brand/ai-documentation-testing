@@ -3,8 +3,11 @@
 Contradicting claims from Wikipedia articles.
 
 HuggingFace: ibm-research/Wikipedia_contradict_benchmark
-License: CC-BY-4.0
+License: MIT
 Contamination risk: HIGH (Wikipedia-derived)
+
+Actual columns: WikipediaArticleTitle, context1, context2, answer1,
+answer2, question, contradictType, ref_answer, merged_context, url
 """
 
 from __future__ import annotations
@@ -40,7 +43,7 @@ class WikiContradictAdapter(DatasetAdapter):
         return "general_knowledge"
 
     def license(self) -> str:
-        return "CC-BY-4.0"
+        return "MIT"
 
     def contamination_risk(self) -> str:
         return "high"
@@ -53,11 +56,13 @@ class WikiContradictAdapter(DatasetAdapter):
             if limit is not None and count >= limit:
                 break
 
-            statement_1 = record.get("statement_1", "")
-            statement_2 = record.get("statement_2", "")
-            section_1 = record.get("section_1", "")
-            section_2 = record.get("section_2", "")
-            article = record.get("article_title", "")
+            context_1 = record.get("context1", "")
+            context_2 = record.get("context2", "")
+            answer_1 = record.get("answer1", "")
+            answer_2 = record.get("answer2", "")
+            article = record.get("WikipediaArticleTitle", "")
+            question = record.get("question", "")
+            contradict_type = record.get("contradictType", "")
 
             task_id = self._generate_task_id("conflicting", count)
             task = {
@@ -65,29 +70,34 @@ class WikiContradictAdapter(DatasetAdapter):
                 "type": "conflicting",
                 "question": (
                     f"The article '{article}' contains contradicting claims: "
-                    f"'{statement_1}' vs '{statement_2}'. Which is correct?"
+                    f"'{answer_1}' vs '{answer_2}'. {question}"
                 ),
                 "domain": self.domain(),
                 "difficulty": "medium",
-                "tags": ["contradiction", "wikipedia"],
+                "tags": ["contradiction", "wikipedia", contradict_type],
                 "metadata": {
                     "sources": [
                         {
-                            "name": f"{article} ({section_1})",
-                            "claim": statement_1,
+                            "name": article,
+                            "claim": answer_1,
+                            "context": context_1,
                             "authority": 5,
                         },
                         {
-                            "name": f"{article} ({section_2})",
-                            "claim": statement_2,
+                            "name": article,
+                            "claim": answer_2,
+                            "context": context_2,
                             "authority": 5,
                         },
                     ],
                     "expected_resolution": (
-                        f"These statements from '{article}' contradict each other "
-                        f"and require verification against authoritative sources."
+                        f"These statements from '{article}' contradict each "
+                        f"other and require verification against authoritative "
+                        f"sources."
                     ),
                     "resolution_strategy": "explicit_flag",
+                    "contradict_type": contradict_type,
+                    "ref_answer": record.get("ref_answer", ""),
                 },
             }
             out_file = output_dir / f"{task_id}.yaml"
@@ -108,22 +118,30 @@ class WikiContradictAdapter(DatasetAdapter):
         for idx, record in enumerate(ds):
             if limit is not None and idx >= limit:
                 break
-            article = record.get("article_title", f"article_{idx}")
-            s1 = record.get("statement_1", "")
-            s2 = record.get("statement_2", "")
+            article = record.get(
+                "WikipediaArticleTitle", f"article_{idx}",
+            )
+            ctx1 = record.get("context1", "")
+            ctx2 = record.get("context2", "")
+            question = record.get("question", "")
 
-            content = f"# {article}\n\n{s1}\n\n{s2}"
-            rel_path = f"wikicontradict/{article.replace(' ', '_')}.md"
-            if rel_path not in files:
-                files[rel_path] = DocFile(
-                    rel_path=rel_path,
-                    content=content,
-                    size_bytes=len(content.encode("utf-8")),
-                    token_count=len(content.split()),
-                    tier="reference",
-                    section="wikipedia",
-                    summary=f"Contradicting claims about {article}",
-                )
+            content = (
+                f"# {article}\n\n"
+                f"## Context 1\n{ctx1}\n\n"
+                f"## Context 2\n{ctx2}\n\n"
+                f"## Question\n{question}"
+            )
+            safe_name = article.replace(" ", "_").replace("/", "_")
+            rel_path = f"wikicontradict/{safe_name}_{idx}.md"
+            files[rel_path] = DocFile(
+                rel_path=rel_path,
+                content=content,
+                size_bytes=len(content.encode("utf-8")),
+                token_count=len(content.split()),
+                tier="reference",
+                section="wikipedia",
+                summary=f"Contradicting claims about {article}",
+            )
 
         return DocTree(
             files=files,

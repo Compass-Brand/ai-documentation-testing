@@ -14,11 +14,19 @@ def _make_ambigqa_record(
     annotations: dict | None = None,
 ) -> dict:
     if annotations is None:
+        # Real HF schema: type/answer/qaPairs are lists; qaPairs contains
+        # one container dict with parallel question[] and answer[][] arrays.
         annotations = {
-            "type": "multipleQAs",
+            "type": ["multipleQAs"],
+            "answer": [[]],
             "qaPairs": [
-                {"question": "When was Super Bowl I?", "answer": ["1967"]},
-                {"question": "When was the first modern Super Bowl?", "answer": ["1967"]},
+                {
+                    "question": [
+                        "When was Super Bowl I?",
+                        "When was the first modern Super Bowl?",
+                    ],
+                    "answer": [["1967"], ["1967"]],
+                },
             ],
         }
     return {"id": id, "question": question, "annotations": annotations}

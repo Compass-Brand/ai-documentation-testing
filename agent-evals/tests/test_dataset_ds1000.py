@@ -11,29 +11,27 @@ from agent_evals.datasets.base import DatasetAdapter
 
 
 def _make_ds1000_record(
-    task_id: int = 0,
     prompt: str = "import numpy as np\ndef solve():\n    # ",
-    canonical_solution: str = "return np.array([1,2,3])",
-    test: str = "assert solve().shape == (3,)",
-    entry_point: str = "solve",
-    library: list[str] | None = None,
+    reference_code: str = "return np.array([1,2,3])",
+    code_context: str = "import numpy as np",
+    library: str = "numpy",
     docs: list[dict] | None = None,
 ) -> dict:
-    if library is None:
-        library = ["numpy"]
     if docs is None:
-        docs = [{"title": "numpy.array", "text": "Create an array."}]
+        docs = [{"title": "numpy.array", "text": "Create an array.", "function": "numpy.array"}]
     return {
-        "task_id": task_id,
         "prompt": prompt,
-        "canonical_solution": canonical_solution,
-        "test_start": "",
-        "test": [test] if isinstance(test, str) else test,
-        "entry_point": entry_point,
-        "intent": prompt,
-        "library": library,
+        "reference_code": reference_code,
+        "code_context": code_context,
+        "metadata": {
+            "problem_id": 0,
+            "library_problem_id": 0,
+            "library": library,
+            "test_case_cnt": 1,
+            "perturbation_type": "Origin",
+            "perturbation_origin_id": 0,
+        },
         "docs": docs,
-        "suffix": "",
     }
 
 
@@ -41,7 +39,6 @@ def _mock_dataset(records: list[dict]) -> MagicMock:
     ds = MagicMock()
     ds.__len__ = lambda self: len(records)
     ds.__iter__ = lambda self: iter(records)
-    ds.filter = lambda fn: _mock_dataset([r for r in records if fn(r)])
     ds.select = lambda indices: _mock_dataset([records[i] for i in indices])
     return ds
 
@@ -73,8 +70,8 @@ class TestDS1000ConvertTasks:
         from agent_evals.datasets.ds1000 import DS1000Adapter
 
         records = [
-            _make_ds1000_record(task_id=0),
-            _make_ds1000_record(task_id=1),
+            _make_ds1000_record(),
+            _make_ds1000_record(library="pandas"),
         ]
         adapter = DS1000Adapter()
         with patch(
@@ -90,11 +87,8 @@ class TestDS1000ConvertTasks:
 
         records = [
             _make_ds1000_record(
-                task_id=0,
                 prompt="import numpy\ndef solve(): ...",
-                canonical_solution="return np.array([1])",
-                test="assert len(solve()) == 1",
-                entry_point="solve",
+                reference_code="return np.array([1])",
             ),
         ]
         adapter = DS1000Adapter()
@@ -113,13 +107,12 @@ class TestDS1000ConvertTasks:
         assert task["domain"] == "library_docs"
         assert "test" in task["metadata"]
         assert "canonical_solution" in task["metadata"]
-        assert "entry_point" in task["metadata"]
         assert "forbidden_patterns" in task["metadata"]
 
     def test_limit_caps_output(self, tmp_path: Path) -> None:
         from agent_evals.datasets.ds1000 import DS1000Adapter
 
-        records = [_make_ds1000_record(task_id=i) for i in range(20)]
+        records = [_make_ds1000_record() for _ in range(20)]
         adapter = DS1000Adapter()
         with patch(
             "agent_evals.datasets.ds1000.load_hf_dataset",
@@ -136,12 +129,10 @@ class TestDS1000BuildDocTree:
 
         records = [
             _make_ds1000_record(
-                task_id=0,
-                docs=[{"title": "numpy.array", "text": "Create an array."}],
+                docs=[{"title": "numpy.array", "text": "Create an array.", "function": "numpy.array"}],
             ),
             _make_ds1000_record(
-                task_id=1,
-                docs=[{"title": "pandas.DataFrame", "text": "2D data structure."}],
+                docs=[{"title": "pandas.DataFrame", "text": "2D data structure.", "function": "pandas.DataFrame"}],
             ),
         ]
         adapter = DS1000Adapter()

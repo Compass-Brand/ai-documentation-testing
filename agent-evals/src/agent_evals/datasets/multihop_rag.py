@@ -46,7 +46,7 @@ class MultiHopRAGAdapter(DatasetAdapter):
         return "moderate"
 
     def convert_tasks(self, output_dir: Path, limit: int | None = None) -> int:
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train")
+        ds = load_hf_dataset(self.hf_dataset_id(), split="train", name="MultiHopRAG")
 
         count = 0
         for record in ds:
@@ -90,7 +90,9 @@ class MultiHopRAGAdapter(DatasetAdapter):
     def build_doc_tree(self, limit: int | None = None) -> DocTree:
         from agent_index.models import DocFile, DocTree
 
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train", limit=limit)
+        ds = load_hf_dataset(
+            self.hf_dataset_id(), split="train", limit=limit, name="MultiHopRAG",
+        )
 
         files: dict[str, DocFile] = {}
         for idx, record in enumerate(ds):

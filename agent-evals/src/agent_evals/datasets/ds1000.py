@@ -54,22 +54,25 @@ class DS1000Adapter(DatasetAdapter):
             if limit is not None and count >= limit:
                 break
 
-            tests = record.get("test", [])
-            test_str = "\n".join(tests) if isinstance(tests, list) else str(tests)
+            ref_code = record.get("reference_code", "")
+            meta = record.get("metadata") or {}
+            library = meta.get("library", "unknown")
 
             task_id = self._generate_task_id("code_generation", count)
             task = {
                 "task_id": task_id,
                 "type": "code_generation",
-                "question": record.get("prompt", record.get("intent", "")),
+                "question": record.get("prompt", ""),
                 "domain": self.domain(),
                 "difficulty": "medium",
-                "tags": ["code", "ds1000"] + (record.get("library", []) or []),
+                "tags": ["code", "ds1000", library],
                 "metadata": {
-                    "test": test_str,
-                    "canonical_solution": record.get("canonical_solution", ""),
-                    "entry_point": record.get("entry_point", ""),
+                    "test": ref_code,
+                    "canonical_solution": ref_code,
+                    "entry_point": "",
                     "forbidden_patterns": ["eval(", "exec("],
+                    "library": library,
+                    "code_context": record.get("code_context", ""),
                 },
             }
             out_file = output_dir / f"{task_id}.yaml"

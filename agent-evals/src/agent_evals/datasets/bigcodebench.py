@@ -45,15 +45,21 @@ class BigCodeBenchAdapter(DatasetAdapter):
     def contamination_risk(self) -> str:
         return "moderate"
 
+    _SPLIT = "v0.1.4"
+
     def convert_tasks(self, output_dir: Path, limit: int | None = None) -> int:
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train")
+        ds = load_hf_dataset(self.hf_dataset_id(), split=self._SPLIT)
 
         count = 0
         for record in ds:
             if limit is not None and count >= limit:
                 break
 
-            libs = record.get("libs") or []
+            libs_raw = record.get("libs", "")
+            if isinstance(libs_raw, list):
+                libs = libs_raw
+            else:
+                libs = [s.strip() for s in libs_raw.split(",")] if libs_raw else []
             prompt = record.get("instruct_prompt") or record.get("complete_prompt", "")
 
             # Generate sub-questions per library
@@ -73,7 +79,7 @@ class BigCodeBenchAdapter(DatasetAdapter):
                 "question": prompt,
                 "domain": self.domain(),
                 "difficulty": "medium",
-                "tags": ["code", "compositional"] + list(libs),
+                "tags": ["code", "compositional"] + libs,
                 "metadata": {
                     "sub_questions": sub_questions,
                     "expected_answers": expected_answers,
@@ -92,13 +98,17 @@ class BigCodeBenchAdapter(DatasetAdapter):
     def build_doc_tree(self, limit: int | None = None) -> DocTree:
         from agent_index.models import DocFile, DocTree
 
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train", limit=limit)
+        ds = load_hf_dataset(self.hf_dataset_id(), split=self._SPLIT, limit=limit)
 
         files: dict[str, DocFile] = {}
         for idx, record in enumerate(ds):
             if limit is not None and idx >= limit:
                 break
-            libs = record.get("libs") or []
+            libs_raw = record.get("libs", "")
+            if isinstance(libs_raw, list):
+                libs = libs_raw
+            else:
+                libs = [s.strip() for s in libs_raw.split(",")] if libs_raw else []
             solution = record.get("canonical_solution", "")
             for lib in libs:
                 rel_path = f"bigcodebench/{lib}/api.md"
