@@ -131,6 +131,15 @@ CREATE TABLE IF NOT EXISTS task_metadata (
     word_count INTEGER NOT NULL DEFAULT 0,
     tag_count  INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS report_artifacts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        TEXT NOT NULL REFERENCES runs(run_id),
+    artifact_type TEXT NOT NULL,
+    data_json     TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    UNIQUE(run_id, artifact_type)
+);
 """
 
 
@@ -179,6 +188,8 @@ class ObservatoryStore:
             "ON trials (context_strategy)",
             "CREATE INDEX IF NOT EXISTS idx_factor_defs_run "
             "ON factor_definitions (run_id)",
+            "CREATE INDEX IF NOT EXISTS idx_report_artifacts_run "
+            "ON report_artifacts (run_id)",
         ]
         with self._connect() as conn:
             for stmt in migrations:
@@ -799,6 +810,71 @@ class ObservatoryStore:
                         m.get("tag_count", 0),
                     ),
                 )
+
+    def save_report_artifact(
+        self, run_id: str, artifact_type: str, data: dict
+    ) -> None:
+        """Save or replace a report artifact.
+
+        Uses INSERT OR REPLACE on the UNIQUE(run_id, artifact_type)
+        constraint so a second save for the same key overwrites.
+
+        Args:
+            run_id: The run this artifact belongs to.
+            artifact_type: Kind of artifact (e.g. "kv_cache_analysis").
+            data: Arbitrary dict payload serialised as JSON.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO report_artifacts "
+                "(run_id, artifact_type, data_json, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (run_id, artifact_type, json.dumps(data), now),
+            )
+
+    def get_report_artifact(
+        self, run_id: str, artifact_type: str
+    ) -> dict | None:
+        """Retrieve a specific report artifact.
+
+        Returns:
+            Dict with ``data`` (parsed JSON) and ``created_at``,
+            or None if no matching artifact exists.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT data_json, created_at FROM report_artifacts "
+                "WHERE run_id = ? AND artifact_type = ?",
+                (run_id, artifact_type),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "data": json.loads(row["data_json"]),
+            "created_at": row["created_at"],
+        }
+
+    def list_report_artifacts(self, run_id: str) -> list[dict]:
+        """List all artifacts for a run.
+
+        Returns:
+            List of ``{"artifact_type": str, "created_at": str}``
+            ordered by artifact_type.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT artifact_type, created_at FROM report_artifacts "
+                "WHERE run_id = ? ORDER BY artifact_type",
+                (run_id,),
+            ).fetchall()
+        return [
+            {
+                "artifact_type": r["artifact_type"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
 
     def get_task_metadata(
         self, *, task_type: str | None = None

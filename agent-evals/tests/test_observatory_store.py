@@ -1093,3 +1093,73 @@ class TestPhaseResultsCost:
         assert result["total_cost"] == pytest.approx(0.0)
         assert result["total_tokens"] == 0
         assert result["elapsed_seconds"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# TestReportArtifacts (Task 4)
+# ---------------------------------------------------------------------------
+
+
+class TestReportArtifacts:
+    """Report artifact persistence for computed report outputs."""
+
+    def test_save_and_get_report_artifact(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save artifact, retrieve by type, verify data matches."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        data = {
+            "kv_cache": {"hit_rate": 0.85, "miss_rate": 0.15},
+            "model": "claude-sonnet",
+        }
+        store.save_report_artifact("run_001", "kv_cache_analysis", data)
+        result = store.get_report_artifact("run_001", "kv_cache_analysis")
+        assert result is not None
+        assert result["data"] == data
+        assert "created_at" in result
+
+    def test_get_nonexistent_artifact(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Verify returns None for missing artifact."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        result = store.get_report_artifact("run_001", "nonexistent_type")
+        assert result is None
+
+    def test_list_report_artifacts(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save 2 artifacts, list them, verify types."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        store.save_report_artifact(
+            "run_001", "hallucination_summary", {"rate": 0.05}
+        )
+        store.save_report_artifact(
+            "run_001", "kv_cache_analysis", {"hit_rate": 0.9}
+        )
+        artifacts = store.list_report_artifacts("run_001")
+        assert len(artifacts) == 2
+        types = [a["artifact_type"] for a in artifacts]
+        # Ordered by artifact_type alphabetically
+        assert types == ["hallucination_summary", "kv_cache_analysis"]
+        for a in artifacts:
+            assert "created_at" in a
+
+    def test_artifact_upsert(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save same (run_id, artifact_type) twice, verify second value wins."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        store.save_report_artifact(
+            "run_001", "synthesis", {"version": 1, "concordance": 0.7}
+        )
+        store.save_report_artifact(
+            "run_001", "synthesis", {"version": 2, "concordance": 0.85}
+        )
+        result = store.get_report_artifact("run_001", "synthesis")
+        assert result is not None
+        assert result["data"]["version"] == 2
+        assert result["data"]["concordance"] == 0.85
+        # Only one row should exist
+        artifacts = store.list_report_artifacts("run_001")
+        assert len(artifacts) == 1
