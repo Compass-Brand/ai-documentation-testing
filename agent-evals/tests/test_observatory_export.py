@@ -177,6 +177,44 @@ class TestRoundTripPreservesData:
         assert artifact_data is not None
         assert artifact_data["data"]["mean_score"] == 0.85
 
+    def test_round_trip_preserves_phase_results(self, tmp_path: Path) -> None:
+        """Phase results should survive export -> import round-trip."""
+        src = ObservatoryStore(db_path=tmp_path / "src.db")
+        src.create_run("run_001", "taguchi", {"model": "claude"})
+        src.record_trial(
+            run_id="run_001", task_id="t1", task_type="retrieval",
+            variant_name="flat", repetition=1, score=0.85,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.001, latency_seconds=1.5, model="claude",
+        )
+        src.save_phase_results(
+            run_id="run_001",
+            main_effects={"structure": {"flat": 2.5, "nested": 1.8}},
+            anova={"factors": [{"name": "structure", "p_value": 0.03}]},
+            optimal={"structure": "flat"},
+            significant_factors=["structure"],
+            quality_type="larger_is_better",
+            total_cost=5.50,
+            total_tokens=250000,
+            elapsed_seconds=1800.0,
+        )
+
+        export_path = tmp_path / "bundle.json"
+        export_run(src, "run_001", export_path)
+
+        dst = ObservatoryStore(db_path=tmp_path / "dst.db")
+        import_run(dst, export_path)
+
+        result = dst.get_phase_results("run_001")
+        assert result is not None
+        assert result["main_effects"] == {"structure": {"flat": 2.5, "nested": 1.8}}
+        assert result["optimal"] == {"structure": "flat"}
+        assert result["significant_factors"] == ["structure"]
+        assert result["quality_type"] == "larger_is_better"
+        assert result["total_cost"] == pytest.approx(5.50)
+        assert result["total_tokens"] == 250000
+        assert result["elapsed_seconds"] == pytest.approx(1800.0)
+
 
 # ---------------------------------------------------------------------------
 # TestImportRejectsDuplicateRun

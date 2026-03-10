@@ -132,6 +132,9 @@ def import_run(
         ValueError: If the run_id already exists and *force* is False.
     """
     data = json.loads(path.read_text(encoding="utf-8"))
+    version = data.get("format_version")
+    if version != FORMAT_VERSION:
+        raise ValueError(f"Unsupported format version: {version} (expected {FORMAT_VERSION})")
     run_data = data["run"]
     run_id = run_data["run_id"]
 
