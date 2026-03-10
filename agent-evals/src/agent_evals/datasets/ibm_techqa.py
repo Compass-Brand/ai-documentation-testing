@@ -87,7 +87,7 @@ class IBMTechQAAdapter(DatasetAdapter):
         if not techqa_dir:
             return {}
 
-        corpus_path = Path(techqa_dir) / "training_technotes.json"
+        corpus_path = Path(techqa_dir) / "training_dev_technotes.json"
         if not corpus_path.exists():
             logger.warning("TechQA corpus not found: %s", corpus_path)
             return {}
@@ -96,14 +96,22 @@ class IBMTechQAAdapter(DatasetAdapter):
             raw = json.load(f)
 
         technotes: dict[str, dict[str, str]] = {}
-        for doc in raw:
-            doc_id = doc.get("_id", "")
-            if doc_id:
+        if isinstance(raw, dict):
+            for doc_id, doc in raw.items():
                 technotes[doc_id] = {
                     "_id": doc_id,
-                    "title": doc.get("title", ""),
-                    "text": doc.get("text", ""),
+                    "title": doc.get("title", "") if isinstance(doc, dict) else "",
+                    "text": doc.get("text", "") if isinstance(doc, dict) else "",
                 }
+        else:
+            for doc in raw:
+                doc_id = doc.get("id", "") or doc.get("_id", "")
+                if doc_id:
+                    technotes[doc_id] = {
+                        "_id": doc_id,
+                        "title": doc.get("title", ""),
+                        "text": doc.get("text", ""),
+                    }
         return technotes
 
     def convert_tasks(self, output_dir: Path, limit: int | None = None) -> int:
@@ -126,9 +134,9 @@ class IBMTechQAAdapter(DatasetAdapter):
             doc = technotes[doc_id]
             doc_text = doc.get("text", "")
 
-            # Extract answer span
-            start = record.get("START_OFFSET", 0)
-            end = record.get("END_OFFSET", 0)
+            # Extract answer span (offsets may be strings)
+            start = int(record.get("START_OFFSET", 0))
+            end = int(record.get("END_OFFSET", 0))
             if 0 <= start < end <= len(doc_text):
                 answer = doc_text[start:end]
             else:
