@@ -122,6 +122,15 @@ CREATE TABLE IF NOT EXISTS factor_definitions (
     level_name   TEXT NOT NULL,
     description  TEXT NOT NULL DEFAULT ''
 );
+
+CREATE TABLE IF NOT EXISTS task_metadata (
+    task_id    TEXT PRIMARY KEY,
+    task_type  TEXT NOT NULL,
+    domain     TEXT NOT NULL DEFAULT '',
+    difficulty TEXT NOT NULL DEFAULT '',
+    word_count INTEGER NOT NULL DEFAULT 0,
+    tag_count  INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -747,6 +756,62 @@ class ObservatoryStore:
                 "level_index": r["level_index"],
                 "level_name": r["level_name"],
                 "description": r["description"],
+            }
+            for r in rows
+        ]
+
+    def save_task_metadata(self, metadata_list: list[dict]) -> None:
+        """Upsert task metadata records.
+
+        Each dict must have keys: task_id, task_type, domain, difficulty,
+        word_count, tag_count. Existing rows with the same task_id are
+        replaced (INSERT OR REPLACE).
+
+        Args:
+            metadata_list: List of task metadata dicts to persist.
+        """
+        with self._lock, self._connect() as conn:
+            for m in metadata_list:
+                conn.execute(
+                    "INSERT OR REPLACE INTO task_metadata "
+                    "(task_id, task_type, domain, difficulty, "
+                    "word_count, tag_count) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        m["task_id"],
+                        m["task_type"],
+                        m.get("domain", ""),
+                        m.get("difficulty", ""),
+                        m.get("word_count", 0),
+                        m.get("tag_count", 0),
+                    ),
+                )
+
+    def get_task_metadata(
+        self, *, task_type: str | None = None
+    ) -> list[dict]:
+        """Retrieve task metadata, optionally filtered by task_type.
+
+        Returns:
+            List of dicts ordered by task_id.
+        """
+        query = "SELECT task_id, task_type, domain, difficulty, word_count, tag_count FROM task_metadata"
+        params: list[str] = []
+        if task_type is not None:
+            query += " WHERE task_type = ?"
+            params.append(task_type)
+        query += " ORDER BY task_id"
+
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            {
+                "task_id": r["task_id"],
+                "task_type": r["task_type"],
+                "domain": r["domain"],
+                "difficulty": r["difficulty"],
+                "word_count": r["word_count"],
+                "tag_count": r["tag_count"],
             }
             for r in rows
         ]

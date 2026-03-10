@@ -931,3 +931,115 @@ class TestFactorDefinitions:
         assert result[0]["factor_name"] == "verbosity"
         assert result[0]["level_name"] == "terse"
         assert result[1]["level_name"] == "verbose"
+
+
+# ---------------------------------------------------------------------------
+# TestTaskMetadata (Task 2)
+# ---------------------------------------------------------------------------
+
+
+class TestTaskMetadata:
+    """Task metadata persistence for slicing trials by task attributes."""
+
+    def test_save_and_get_task_metadata(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save 2 tasks, retrieve, verify count and values (ordered by task_id)."""
+        metadata = [
+            {
+                "task_id": "retrieval_002",
+                "task_type": "retrieval",
+                "domain": "api_docs",
+                "difficulty": "hard",
+                "word_count": 250,
+                "tag_count": 5,
+            },
+            {
+                "task_id": "negative_001",
+                "task_type": "negative",
+                "domain": "security",
+                "difficulty": "easy",
+                "word_count": 80,
+                "tag_count": 2,
+            },
+        ]
+        store.save_task_metadata(metadata)
+        result = store.get_task_metadata()
+        assert len(result) == 2
+        # Ordered by task_id: negative_001 < retrieval_002
+        assert result[0]["task_id"] == "negative_001"
+        assert result[0]["task_type"] == "negative"
+        assert result[0]["domain"] == "security"
+        assert result[0]["difficulty"] == "easy"
+        assert result[0]["word_count"] == 80
+        assert result[0]["tag_count"] == 2
+        assert result[1]["task_id"] == "retrieval_002"
+        assert result[1]["task_type"] == "retrieval"
+        assert result[1]["domain"] == "api_docs"
+        assert result[1]["difficulty"] == "hard"
+        assert result[1]["word_count"] == 250
+        assert result[1]["tag_count"] == 5
+
+    def test_task_metadata_upsert(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save same task_id twice with different values, verify only 1 row with updated values."""
+        original = [
+            {
+                "task_id": "retrieval_001",
+                "task_type": "retrieval",
+                "domain": "api_docs",
+                "difficulty": "easy",
+                "word_count": 100,
+                "tag_count": 3,
+            },
+        ]
+        store.save_task_metadata(original)
+
+        updated = [
+            {
+                "task_id": "retrieval_001",
+                "task_type": "retrieval",
+                "domain": "tutorials",
+                "difficulty": "hard",
+                "word_count": 500,
+                "tag_count": 8,
+            },
+        ]
+        store.save_task_metadata(updated)
+
+        result = store.get_task_metadata()
+        assert len(result) == 1
+        assert result[0]["domain"] == "tutorials"
+        assert result[0]["difficulty"] == "hard"
+        assert result[0]["word_count"] == 500
+        assert result[0]["tag_count"] == 8
+
+    def test_get_task_metadata_by_type(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save 2 tasks of different types, filter by one type, verify only matching returned."""
+        metadata = [
+            {
+                "task_id": "retrieval_001",
+                "task_type": "retrieval",
+                "domain": "api_docs",
+                "difficulty": "easy",
+                "word_count": 100,
+                "tag_count": 3,
+            },
+            {
+                "task_id": "negative_001",
+                "task_type": "negative",
+                "domain": "security",
+                "difficulty": "hard",
+                "word_count": 200,
+                "tag_count": 4,
+            },
+        ]
+        store.save_task_metadata(metadata)
+
+        result = store.get_task_metadata(task_type="negative")
+        assert len(result) == 1
+        assert result[0]["task_id"] == "negative_001"
+        assert result[0]["task_type"] == "negative"
