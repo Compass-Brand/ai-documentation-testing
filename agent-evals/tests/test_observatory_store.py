@@ -832,3 +832,102 @@ class TestStrategySchema:
         assert trials[0].context_strategy == "full_context"
         assert trials[0].llm_calls == 1
         assert trials[0].strategy_metadata is None
+
+
+# ---------------------------------------------------------------------------
+# TestFactorDefinitions (Task 1)
+# ---------------------------------------------------------------------------
+
+
+class TestFactorDefinitions:
+    """Factor definition persistence for axis/level metadata."""
+
+    def test_save_and_get_factor_definitions(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save 3 definitions across 2 factors, retrieve, verify count and values."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        definitions = [
+            {
+                "factor_name": "structure",
+                "axis_id": 1,
+                "level_index": 0,
+                "level_name": "flat",
+                "description": "Flat directory layout",
+            },
+            {
+                "factor_name": "structure",
+                "axis_id": 1,
+                "level_index": 1,
+                "level_name": "nested",
+                "description": "Nested directory layout",
+            },
+            {
+                "factor_name": "verbosity",
+                "axis_id": 3,
+                "level_index": 0,
+                "level_name": "terse",
+                "description": "Minimal prose",
+            },
+        ]
+        store.save_factor_definitions("run_001", definitions)
+        result = store.get_factor_definitions("run_001")
+        assert len(result) == 3
+        # Ordered by axis_id then level_index
+        assert result[0]["factor_name"] == "structure"
+        assert result[0]["axis_id"] == 1
+        assert result[0]["level_index"] == 0
+        assert result[0]["level_name"] == "flat"
+        assert result[0]["description"] == "Flat directory layout"
+        assert result[1]["factor_name"] == "structure"
+        assert result[1]["level_index"] == 1
+        assert result[2]["factor_name"] == "verbosity"
+        assert result[2]["axis_id"] == 3
+
+    def test_get_factor_definitions_empty(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Create run, get definitions with no saves, verify empty list."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        result = store.get_factor_definitions("run_001")
+        assert result == []
+
+    def test_factor_definitions_replaced_on_rewrite(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save once, save again with different data, verify only new data exists."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        original = [
+            {
+                "factor_name": "structure",
+                "axis_id": 1,
+                "level_index": 0,
+                "level_name": "flat",
+                "description": "Original",
+            },
+        ]
+        store.save_factor_definitions("run_001", original)
+        assert len(store.get_factor_definitions("run_001")) == 1
+
+        replacement = [
+            {
+                "factor_name": "verbosity",
+                "axis_id": 3,
+                "level_index": 0,
+                "level_name": "terse",
+                "description": "Replaced",
+            },
+            {
+                "factor_name": "verbosity",
+                "axis_id": 3,
+                "level_index": 1,
+                "level_name": "verbose",
+                "description": "Also replaced",
+            },
+        ]
+        store.save_factor_definitions("run_001", replacement)
+        result = store.get_factor_definitions("run_001")
+        assert len(result) == 2
+        assert result[0]["factor_name"] == "verbosity"
+        assert result[0]["level_name"] == "terse"
+        assert result[1]["level_name"] == "verbose"

@@ -112,6 +112,16 @@ CREATE TABLE IF NOT EXISTS trial_traces (
     response_text TEXT NOT NULL,
     created_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS factor_definitions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       TEXT NOT NULL REFERENCES runs(run_id),
+    factor_name  TEXT NOT NULL,
+    axis_id      INTEGER NOT NULL,
+    level_index  INTEGER NOT NULL,
+    level_name   TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT ''
+);
 """
 
 
@@ -155,6 +165,8 @@ class ObservatoryStore:
             "ON trials (variant_name, repetition)",
             "CREATE INDEX IF NOT EXISTS idx_trials_strategy "
             "ON trials (context_strategy)",
+            "CREATE INDEX IF NOT EXISTS idx_factor_defs_run "
+            "ON factor_definitions (run_id)",
         ]
         with self._connect() as conn:
             for stmt in migrations:
@@ -678,5 +690,63 @@ class ObservatoryStore:
             ).fetchall()
         return [
             {"pipeline_id": r["pipeline_id"], "run_count": r["run_count"]}
+            for r in rows
+        ]
+
+    def save_factor_definitions(
+        self, run_id: str, definitions: list[dict]
+    ) -> None:
+        """Save factor/level definitions for a run.
+
+        Replaces any existing definitions for the run (DELETE + INSERT).
+
+        Args:
+            run_id: The run to attach definitions to.
+            definitions: List of dicts with keys: factor_name, axis_id,
+                level_index, level_name, description.
+        """
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "DELETE FROM factor_definitions WHERE run_id = ?",
+                (run_id,),
+            )
+            for d in definitions:
+                conn.execute(
+                    "INSERT INTO factor_definitions "
+                    "(run_id, factor_name, axis_id, level_index, "
+                    "level_name, description) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        run_id,
+                        d["factor_name"],
+                        d["axis_id"],
+                        d["level_index"],
+                        d["level_name"],
+                        d.get("description", ""),
+                    ),
+                )
+
+    def get_factor_definitions(self, run_id: str) -> list[dict]:
+        """Retrieve factor definitions for a run.
+
+        Returns:
+            List of dicts ordered by axis_id then level_index.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT factor_name, axis_id, level_index, "
+                "level_name, description "
+                "FROM factor_definitions WHERE run_id = ? "
+                "ORDER BY axis_id, level_index",
+                (run_id,),
+            ).fetchall()
+        return [
+            {
+                "factor_name": r["factor_name"],
+                "axis_id": r["axis_id"],
+                "level_index": r["level_index"],
+                "level_name": r["level_name"],
+                "description": r["description"],
+            }
             for r in rows
         ]
