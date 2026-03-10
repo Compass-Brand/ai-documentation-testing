@@ -164,6 +164,9 @@ class ObservatoryStore:
             "ALTER TABLE trials ADD COLUMN context_strategy TEXT DEFAULT 'full_context'",
             "ALTER TABLE trials ADD COLUMN llm_calls INTEGER DEFAULT 1",
             "ALTER TABLE trials ADD COLUMN strategy_metadata TEXT",
+            "ALTER TABLE phase_results ADD COLUMN total_cost REAL DEFAULT 0.0",
+            "ALTER TABLE phase_results ADD COLUMN total_tokens INTEGER DEFAULT 0",
+            "ALTER TABLE phase_results ADD COLUMN elapsed_seconds REAL DEFAULT 0.0",
         ]
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_trials_run_type_variant "
@@ -574,6 +577,9 @@ class ObservatoryStore:
         optimal: dict,
         significant_factors: list[str],
         quality_type: str,
+        total_cost: float = 0.0,
+        total_tokens: int = 0,
+        elapsed_seconds: float = 0.0,
     ) -> None:
         """Save Taguchi phase analysis results for a run."""
         now = datetime.now(timezone.utc).isoformat()
@@ -581,8 +587,9 @@ class ObservatoryStore:
             conn.execute(
                 "INSERT OR REPLACE INTO phase_results "
                 "(run_id, main_effects, anova, optimal, "
-                "significant_factors, quality_type, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "significant_factors, quality_type, created_at, "
+                "total_cost, total_tokens, elapsed_seconds) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     json.dumps(main_effects),
@@ -591,6 +598,9 @@ class ObservatoryStore:
                     json.dumps(significant_factors),
                     quality_type,
                     now,
+                    total_cost,
+                    total_tokens,
+                    elapsed_seconds,
                 ),
             )
 
@@ -621,6 +631,9 @@ class ObservatoryStore:
             "optimal": _safe_json("optimal"),
             "significant_factors": _safe_json("significant_factors"),
             "quality_type": row["quality_type"],
+            "total_cost": row["total_cost"] or 0.0,
+            "total_tokens": row["total_tokens"] or 0,
+            "elapsed_seconds": row["elapsed_seconds"] or 0.0,
         }
 
     def get_pipeline_runs(self, pipeline_id: str) -> list[RunSummary]:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -23,6 +23,17 @@ if TYPE_CHECKING:
     from agent_evals.orchestrator import EvalOrchestrator
 
 logger = logging.getLogger(__name__)
+
+
+def _to_dict(obj: Any) -> Any:
+    """Convert a dataclass instance to a dict, or return the object as-is."""
+    if obj is None:
+        return {}
+    try:
+        fields(obj)  # raises TypeError if not a dataclass instance
+        return asdict(obj)
+    except TypeError:
+        return obj
 
 
 @dataclass
@@ -274,7 +285,7 @@ class DOEPipeline:
             reverse=True,
         )
 
-        return PhaseResult(
+        phase_result = PhaseResult(
             run_id=result.run_id,
             phase="screening",
             trials=result.trials,
@@ -287,6 +298,21 @@ class DOEPipeline:
             predicted_sn=optimal.predicted_sn,
             significant_factors=[f.factor_name for f in sig_factors],
         )
+
+        if self._store is not None:
+            self._store.save_phase_results(
+                run_id=phase_result.run_id,
+                main_effects=_to_dict(phase_result.main_effects),
+                anova=_to_dict(phase_result.anova),
+                optimal=_to_dict(phase_result.optimal),
+                significant_factors=phase_result.significant_factors,
+                quality_type=self.config.quality_type,
+                total_cost=phase_result.total_cost,
+                total_tokens=phase_result.total_tokens,
+                elapsed_seconds=phase_result.elapsed_seconds,
+            )
+
+        return phase_result
 
     def run_confirmation(
         self,
@@ -356,7 +382,7 @@ class DOEPipeline:
             prediction, optimal_scores, self.config.quality_type
         )
 
-        return PhaseResult(
+        phase_result = PhaseResult(
             run_id=result.run_id,
             phase="confirmation",
             trials=result.trials,
@@ -371,6 +397,21 @@ class DOEPipeline:
                 "prediction_interval": conf_result.prediction_interval,
             },
         )
+
+        if self._store is not None:
+            self._store.save_phase_results(
+                run_id=phase_result.run_id,
+                main_effects=_to_dict(phase_result.main_effects),
+                anova=_to_dict(phase_result.anova),
+                optimal=_to_dict(phase_result.optimal),
+                significant_factors=phase_result.significant_factors,
+                quality_type=self.config.quality_type,
+                total_cost=phase_result.total_cost,
+                total_tokens=phase_result.total_tokens,
+                elapsed_seconds=phase_result.elapsed_seconds,
+            )
+
+        return phase_result
 
     def run_refinement(
         self,
@@ -430,7 +471,7 @@ class DOEPipeline:
             filtered_variants, result.trials,
         )
 
-        return PhaseResult(
+        phase_result = PhaseResult(
             run_id=result.run_id,
             phase="refinement",
             trials=result.trials,
@@ -443,6 +484,21 @@ class DOEPipeline:
             predicted_sn=analysis["predicted_sn"],
             significant_factors=analysis["significant_factors"],
         )
+
+        if self._store is not None:
+            self._store.save_phase_results(
+                run_id=phase_result.run_id,
+                main_effects=_to_dict(phase_result.main_effects),
+                anova=_to_dict(phase_result.anova),
+                optimal=_to_dict(phase_result.optimal),
+                significant_factors=phase_result.significant_factors,
+                quality_type=self.config.quality_type,
+                total_cost=phase_result.total_cost,
+                total_tokens=phase_result.total_tokens,
+                elapsed_seconds=phase_result.elapsed_seconds,
+            )
+
+        return phase_result
 
     def run(
         self,

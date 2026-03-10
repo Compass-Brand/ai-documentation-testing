@@ -1043,3 +1043,53 @@ class TestTaskMetadata:
         assert len(result) == 1
         assert result[0]["task_id"] == "negative_001"
         assert result[0]["task_type"] == "negative"
+
+
+# ---------------------------------------------------------------------------
+# TestPhaseResultsCost (Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseResultsCost:
+    """Phase results persist total_cost, total_tokens, and elapsed_seconds."""
+
+    def test_save_phase_results_with_cost(self, tmp_path: Path) -> None:
+        """Save with all 3 cost fields, retrieve, verify values match."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-cost", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-cost",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={"axis_1": {"p_value": 0.01}},
+            optimal={"axis_1": "flat"},
+            significant_factors=["axis_1"],
+            quality_type="larger_is_better",
+            total_cost=1.234,
+            total_tokens=56789,
+            elapsed_seconds=42.5,
+        )
+        result = store.get_phase_results("run-cost")
+        assert result is not None
+        assert result["total_cost"] == pytest.approx(1.234)
+        assert result["total_tokens"] == 56789
+        assert result["elapsed_seconds"] == pytest.approx(42.5)
+
+    def test_phase_results_cost_defaults_to_zero(
+        self, tmp_path: Path
+    ) -> None:
+        """Save without cost fields (using defaults), retrieve, verify 0.0/0/0.0."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-default", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-default",
+            main_effects={"axis_2": {"v1": 8.0}},
+            anova={"axis_2": {"p_value": 0.05}},
+            optimal={"axis_2": "v1"},
+            significant_factors=["axis_2"],
+            quality_type="smaller_is_better",
+        )
+        result = store.get_phase_results("run-default")
+        assert result is not None
+        assert result["total_cost"] == pytest.approx(0.0)
+        assert result["total_tokens"] == 0
+        assert result["elapsed_seconds"] == pytest.approx(0.0)
