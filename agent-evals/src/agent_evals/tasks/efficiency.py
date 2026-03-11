@@ -8,7 +8,7 @@ Token count uses LiteLLM's tokenizer via count_tokens().
 from __future__ import annotations
 
 from agent_evals.llm.token_counter import count_tokens
-from agent_evals.tasks._utils import extract_keywords
+from agent_evals.tasks._utils import contains_text, extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
@@ -74,13 +74,13 @@ class EfficiencyTask(EvalTask):
 
         # Check exact match
         base_score: float
-        if self.expected_answer.lower() in response_lower:
+        if contains_text(self.expected_answer.lower(), response_lower):
             base_score = 1.0
         else:
             # Check alias matches
             alias_matched = False
             for alias in self.answer_aliases:
-                if alias.lower() in response_lower:
+                if contains_text(alias.lower(), response_lower):
                     alias_matched = True
                     break
 
@@ -93,7 +93,8 @@ class EfficiencyTask(EvalTask):
                     base_score = 0.0
                 else:
                     matched = sum(
-                        1 for kw in keywords if kw.lower() in response_lower
+                        1 for kw in keywords
+                        if contains_text(kw.lower(), response_lower)
                     )
                     base_score = matched / len(keywords)
 

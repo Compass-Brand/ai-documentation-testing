@@ -141,28 +141,45 @@ class NegativeTask(EvalTask):
         ]
 
     def score_response(self, response: str, **kwargs: object) -> float:
-        """Score response using tiered rubric for abstention quality.
+        """Score response using continuous tiered rubric for abstention quality.
 
-        Tiers (checked in priority order):
-        - 1.0: Firm refusal (e.g. "cannot be determined")
-        - 0.7: Hedge with caveat (e.g. "I'm not certain")
-        - 0.3: Answer with disclaimer (e.g. "based on limited information")
-        - 0.0: Confident hallucination (no abstention phrases)
+        Base tier scores:
+        - Firm refusal: 0.85 base
+        - Hedge with caveat: 0.55 base
+        - Answer with disclaimer: 0.20 base
+        - Confident hallucination: 0.0
+
+        Within each tier, additional matching phrases add a bonus (up to
+        the tier ceiling) for finer-grained Taguchi discrimination.
 
         Args:
             response: The raw text response from the LLM.
             **kwargs: Additional scoring context (unused).
 
         Returns:
-            Score between 0.0 and 1.0 based on abstention tier.
+            Score between 0.0 and 1.0 based on abstention quality.
         """
         response_lower = response.lower()
-        if any(p in response_lower for p in _FIRM_REFUSAL):
-            return 1.0
-        if any(p in response_lower for p in _HEDGE_WITH_CAVEAT):
-            return 0.7
-        if any(p in response_lower for p in _ANSWER_WITH_DISCLAIMER):
-            return 0.3
+
+        # Count matches in each tier
+        firm_count = sum(1 for p in _FIRM_REFUSAL if p in response_lower)
+        hedge_count = sum(1 for p in _HEDGE_WITH_CAVEAT if p in response_lower)
+        disclaimer_count = sum(
+            1 for p in _ANSWER_WITH_DISCLAIMER if p in response_lower
+        )
+
+        if firm_count > 0:
+            # Base 0.85, bonus up to 0.15 for additional phrases (max at ~5)
+            bonus = min(firm_count - 1, 4) * 0.0375
+            return min(1.0, 0.85 + bonus)
+        if hedge_count > 0:
+            # Base 0.55, bonus up to 0.15 for additional phrases (max at ~4)
+            bonus = min(hedge_count - 1, 3) * 0.05
+            return min(0.7, 0.55 + bonus)
+        if disclaimer_count > 0:
+            # Base 0.20, bonus up to 0.10 for additional phrases
+            bonus = min(disclaimer_count - 1, 2) * 0.05
+            return min(0.3, 0.20 + bonus)
         return 0.0
 
 

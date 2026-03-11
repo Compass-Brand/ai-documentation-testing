@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from agent_evals.tasks._utils import extract_keywords
+from agent_evals.tasks._utils import contains_text, extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
@@ -81,7 +81,7 @@ class ConflictingTask(EvalTask):
             return self._score_alternatives(alternatives, response_lower)
 
         # Check exact match (case-insensitive)
-        if self.expected_resolution.lower() in response_lower:
+        if contains_text(self.expected_resolution.lower(), response_lower):
             return 1.0
 
         # Fallback: keyword matching
@@ -89,7 +89,9 @@ class ConflictingTask(EvalTask):
         if not keywords:
             return 0.0
 
-        matched = sum(1 for kw in keywords if kw.lower() in response_lower)
+        matched = sum(
+            1 for kw in keywords if contains_text(kw.lower(), response_lower)
+        )
         return max(0.0, min(1.0, matched / len(keywords)))
 
     def _score_alternatives(
@@ -112,7 +114,10 @@ class ConflictingTask(EvalTask):
             # Keyword match for longer alternatives
             keywords = extract_keywords(alt)
             if keywords:
-                matched = sum(1 for kw in keywords if kw.lower() in response_lower)
+                matched = sum(
+                    1 for kw in keywords
+                    if contains_text(kw.lower(), response_lower)
+                )
                 score = matched / len(keywords)
                 best = max(best, score)
         return max(0.0, min(1.0, best))

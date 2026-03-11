@@ -134,6 +134,8 @@ class DOEPipeline:
 
         row_scores: dict[int, list[float]] = defaultdict(list)
         for trial in trials:
+            if trial.error is not None:
+                continue
             vname = trial.variant_name
             for rid in name_to_rows.get(vname, set()):
                 row_scores[rid].append(trial.score)
@@ -282,9 +284,12 @@ class DOEPipeline:
             resume_run_id=resume_run_id,
         )
 
-        # 5. Group trial scores by OA row
+        # 5. Group trial scores by OA row (exclude error trials — they are
+        #    not real measurements and would bias S/N and ANOVA with 0.0).
         row_scores: dict[int, list[float]] = defaultdict(list)
         for trial in result.trials:
+            if trial.error is not None:
+                continue
             row_id = trial.metrics["oa_row_id"]
             row_scores[row_id].append(trial.score)
 

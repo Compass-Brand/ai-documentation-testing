@@ -203,7 +203,7 @@ def compute_main_effects(
         result[factor_name] = {}
         for level_name, values in level_data.items():
             result[factor_name][level_name] = (
-                sum(values) / len(values) if values else 0.0
+                sum(values) / len(values) if values else float("nan")
             )
 
     return result
@@ -497,10 +497,15 @@ def predict_optimal(
     Returns:
         OptimalPrediction with assignment, predicted S/N, and optional interval.
     """
-    # 1. Select best level per factor
+    # 1. Select best level per factor (skip NaN — unobserved levels)
     optimal: dict[str, str] = {}
     for factor_name, levels in main_effects.items():
-        best_level = max(levels, key=levels.get)  # type: ignore[arg-type]
+        observed = {k: v for k, v in levels.items() if not math.isnan(v)}
+        if not observed:
+            # All levels unobserved — pick first arbitrarily
+            best_level = next(iter(levels))
+        else:
+            best_level = max(observed, key=observed.get)  # type: ignore[arg-type]
         optimal[factor_name] = best_level
 
     # 2. Compute predicted S/N (additive model)
@@ -508,10 +513,13 @@ def predict_optimal(
         raise ValueError("main_effects is empty; cannot compute prediction.")
     # Use mean-of-factor-means to avoid bias in mixed-level designs
     # where factors have different numbers of levels.
-    factor_means = {
-        name: sum(levels.values()) / len(levels)
-        for name, levels in main_effects.items()
-    }
+    # Skip NaN values (unobserved levels) in the mean calculation.
+    factor_means: dict[str, float] = {}
+    for name, levels in main_effects.items():
+        observed_vals = [v for v in levels.values() if not math.isnan(v)]
+        factor_means[name] = (
+            sum(observed_vals) / len(observed_vals) if observed_vals else 0.0
+        )
     grand_mean = sum(factor_means.values()) / len(factor_means)
 
     predicted = grand_mean
@@ -590,11 +598,13 @@ def _compute_additivity_r_squared(
     R-squared = 1 - SS_residual / SS_total.
     """
     # Use mean-of-factor-means (consistent with predict_optimal) to avoid
-    # bias in mixed-level designs.
-    factor_means = {
-        name: sum(levels.values()) / len(levels)
-        for name, levels in main_effects.items()
-    }
+    # bias in mixed-level designs.  Skip NaN (unobserved) levels.
+    factor_means: dict[str, float] = {}
+    for name, levels in main_effects.items():
+        obs_vals = [v for v in levels.values() if not math.isnan(v)]
+        factor_means[name] = (
+            sum(obs_vals) / len(obs_vals) if obs_vals else 0.0
+        )
     grand_mean = sum(factor_means.values()) / len(factor_means)
 
     observed: list[float] = []
