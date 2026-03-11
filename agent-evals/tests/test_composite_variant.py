@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from agent_evals.variants.base import IndexVariant, VariantMetadata
+from agent_evals.variants.base import IndexVariant, PipelineRole, VariantMetadata
 from agent_evals.variants.composite import CompositeVariant
 
 # ---------------------------------------------------------------------------
@@ -40,6 +40,39 @@ class StubVariant(IndexVariant):
 
     def teardown(self) -> None:
         self.teardown_calls += 1
+
+
+class PostRenderStub(StubVariant):
+    """Stub that always reports POST_RENDER role."""
+
+    def __init__(self, name: str, axis: int, output: str, category: str = "noise") -> None:
+        super().__init__(name=name, axis=axis, output=output)
+        self._category = category
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name=self._name,
+            axis=self._axis,
+            category=self._category,
+            description=f"Post-render stub for axis {self._axis}",
+            token_estimate=50,
+        )
+
+
+class PreRenderStub(StubVariant):
+    """Stub that always reports PRE_RENDER role."""
+
+    def __init__(self, name: str, axis: int, output: str) -> None:
+        super().__init__(name=name, axis=axis, output=output)
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name=self._name,
+            axis=self._axis,
+            category="scale",
+            description=f"Pre-render stub for axis {self._axis}",
+            token_estimate=50,
+        )
 
 
 def _make_doc_tree() -> MagicMock:
@@ -293,3 +326,71 @@ class TestCompositeVariantLifecycle:
         composite = CompositeVariant(components={3: v3, 1: v1})
         composite.setup(doc_tree)
         assert call_order == [1, 3]
+
+
+# ---------------------------------------------------------------------------
+# TestCompositeVariantNoPrimary
+# ---------------------------------------------------------------------------
+
+
+class TestCompositeVariantNoPrimary:
+    """Verify CompositeVariant handles missing PRIMARY components gracefully.
+
+    When the format axis gets a DUMMY_LEVEL in a Taguchi OA row, all
+    remaining components may be PRE_RENDER or POST_RENDER with no PRIMARY.
+    The composite must still render without crashing.
+    """
+
+    def test_render_no_primary_all_post_render(
+        self, doc_tree: MagicMock
+    ) -> None:
+        """Render succeeds when all components are POST_RENDER."""
+        v1 = PostRenderStub(name="noise-low", axis=4, output="noise content")
+        v2 = PostRenderStub(
+            name="xref-inline", axis=8, output="xref content", category="xref"
+        )
+        composite = CompositeVariant(components={4: v1, 8: v2})
+        output = composite.render(doc_tree)
+        assert isinstance(output, str)
+        assert len(output) > 0
+
+    def test_render_no_primary_all_pre_render(
+        self, doc_tree: MagicMock
+    ) -> None:
+        """Render succeeds when all components are PRE_RENDER."""
+        v1 = PreRenderStub(name="scale-small", axis=2, output="scaled content")
+        composite = CompositeVariant(components={2: v1})
+        output = composite.render(doc_tree)
+        assert isinstance(output, str)
+
+    def test_render_no_primary_mixed_non_primary(
+        self, doc_tree: MagicMock
+    ) -> None:
+        """Render succeeds with a mix of PRE_RENDER and POST_RENDER, no PRIMARY."""
+        v_pre = PreRenderStub(name="scale-small", axis=2, output="pre content")
+        v_post = PostRenderStub(name="noise-low", axis=4, output="post content")
+        composite = CompositeVariant(components={2: v_pre, 4: v_post})
+        output = composite.render(doc_tree)
+        assert isinstance(output, str)
+        assert len(output) > 0
+
+    def test_metadata_no_primary_uses_first_component(
+        self, doc_tree: MagicMock
+    ) -> None:
+        """Metadata doesn't crash when no PRIMARY component exists."""
+        v1 = PostRenderStub(name="noise-low", axis=4, output="noise")
+        v2 = PostRenderStub(
+            name="temporal-current", axis=9, output="temporal", category="temporal"
+        )
+        composite = CompositeVariant(components={4: v1, 9: v2})
+        meta = composite.metadata()
+        assert "noise-low" in meta.name
+        assert "temporal-current" in meta.name
+
+    def test_fallback_primary_role_is_primary(self) -> None:
+        """The fallback primary should report PipelineRole.PRIMARY."""
+        v1 = PostRenderStub(name="noise-low", axis=4, output="noise")
+        composite = CompositeVariant(components={4: v1})
+        primary_axis = composite._select_primary()
+        primary_variant = composite._components[primary_axis]
+        assert primary_variant.pipeline_role() == PipelineRole.PRIMARY

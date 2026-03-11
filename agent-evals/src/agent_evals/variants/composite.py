@@ -18,6 +18,31 @@ from agent_evals.variants.base import IndexVariant, PipelineRole, VariantMetadat
 if TYPE_CHECKING:
     from agent_index.models import DocTree
 
+# Sentinel axis for the injected fallback when no PRIMARY component exists.
+_FALLBACK_AXIS = -1
+
+
+class _FallbackPrimaryVariant(IndexVariant):
+    """Passthrough renderer used when no real PRIMARY component is present.
+
+    Renders the DocTree's file paths as a simple listing so that the
+    pipeline always has a PRIMARY to delegate to.
+    """
+
+    def metadata(self) -> VariantMetadata:
+        return VariantMetadata(
+            name="fallback-primary",
+            axis=0,
+            category="format",
+            description="Auto-injected passthrough when no PRIMARY component",
+            token_estimate=0,
+        )
+
+    def render(self, doc_tree: DocTree) -> str:
+        if doc_tree.files:
+            return "\n".join(doc_tree.files.keys())
+        return ""
+
 
 class CompositeVariant(IndexVariant):
     """Variant that delegates to one sub-variant per axis.
@@ -39,7 +64,12 @@ class CompositeVariant(IndexVariant):
         self._classify_components()
 
     def _classify_components(self) -> None:
-        """Sort components into pre-render, primary, and post-render lists."""
+        """Sort components into pre-render, primary, and post-render lists.
+
+        When no component has PRIMARY role (e.g. format axis excluded as
+        DUMMY_LEVEL in Taguchi), injects a ``_FallbackPrimaryVariant`` so
+        the pipeline always has a renderer.
+        """
         self._pre_render: list[int] = []
         self._primary: list[int] = []
         self._post_render: list[int] = []
@@ -53,24 +83,21 @@ class CompositeVariant(IndexVariant):
             else:
                 self._primary.append(axis)
 
+        if not self._primary:
+            self._components[_FALLBACK_AXIS] = _FallbackPrimaryVariant()
+            self._primary.append(_FALLBACK_AXIS)
+
     def _select_primary(self) -> int:
         """Select the single primary renderer axis.
 
         When multiple PRIMARY components exist, picks the first one
         (lowest axis number) to avoid concatenating multiple full renders.
+        A fallback is always injected by ``_classify_components`` when no
+        real PRIMARY exists, so this should never be empty.
 
         Returns:
             The axis number of the selected primary renderer.
-
-        Raises:
-            ValueError: If no PRIMARY components exist.
         """
-        if not self._primary:
-            raise ValueError(
-                "CompositeVariant requires at least one PRIMARY component, "
-                f"but all {len(self._components)} components are "
-                "PRE_RENDER or POST_RENDER"
-            )
         return self._primary[0]
 
     def metadata(self) -> VariantMetadata:
