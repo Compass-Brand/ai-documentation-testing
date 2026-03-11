@@ -57,6 +57,38 @@ class TestCompactionSimulator:
         assert result[0]["role"] == "system"
         assert result[0]["content"] == "You are a helpful assistant."
 
+    def test_handles_none_content_in_messages(self):
+        """Bug #214: Messages with content=None (from tool calls) must not crash."""
+        from agent_evals.context.modifiers.compaction import simulate_compaction
+
+        messages = [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": None},  # tool call, no text
+            {"role": "assistant", "content": "Here is the result " * 20},
+            {"role": "user", "content": "Thanks " * 20},
+        ]
+        # Must not raise TypeError
+        result = simulate_compaction(messages, target_ratio=0.5)
+        assert len(result) > 0
+        # All result messages should have string content
+        for msg in result:
+            assert isinstance(msg["content"], str)
+
+    def test_handles_none_content_with_system_message(self):
+        """Bug #214: None content after system message must not crash."""
+        from agent_evals.context.modifiers.compaction import simulate_compaction
+
+        messages = [
+            {"role": "system", "content": "System prompt"},
+            {"role": "user", "content": "Ask something"},
+            {"role": "assistant", "content": None},
+            {"role": "user", "content": "Follow up " * 30},
+            {"role": "assistant", "content": "Response " * 30},
+        ]
+        result = simulate_compaction(messages, target_ratio=0.5)
+        assert result[0]["role"] == "system"
+        assert len(result) > 1
+
     def test_returns_valid_message_format(self):
         from agent_evals.context.modifiers.compaction import simulate_compaction
 

@@ -35,13 +35,14 @@ def simulate_compaction(
     if not conversation:
         return result
 
-    total_chars = sum(len(m["content"]) for m in conversation)
+    total_chars = sum(len(m["content"] or "") for m in conversation)
     target_chars = int(total_chars * target_ratio)
 
     kept: list[dict[str, str]] = []
     running = 0
     for msg in reversed(conversation):
-        running += len(msg["content"])
+        content = msg["content"] or ""
+        running += len(content)
         if running <= target_chars:
             kept.insert(0, msg)
         else:
@@ -49,7 +50,8 @@ def simulate_compaction(
             if remaining:
                 summary_parts = []
                 for m in remaining:
-                    summary_parts.append(f"[{m['role']}]: {m['content'][:50]}...")
+                    m_content = m["content"] or ""
+                    summary_parts.append(f"[{m['role']}]: {m_content[:50]}...")
                 summary = "Previous conversation summary:\n" + "\n".join(
                     summary_parts,
                 )
