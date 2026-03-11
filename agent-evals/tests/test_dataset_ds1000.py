@@ -169,6 +169,37 @@ class TestDS1000BuildDocTree:
         assert len(doc_tree.files) == 2
 
 
+class TestExtractKeyPatternsTopLevelAssignment:
+    """Bug #185: _extract_key_patterns returns empty for top-level assignment solutions."""
+
+    def test_extracts_from_top_level_assignment(self) -> None:
+        """Top-level `result = expr` should extract the RHS expression."""
+        from agent_evals.datasets.ds1000 import _extract_key_patterns
+
+        code = "result = df.groupby('col').mean()"
+        patterns = _extract_key_patterns(code)
+        assert len(patterns) > 0
+        assert any("groupby" in p for p in patterns)
+
+    def test_extracts_function_calls_from_assignment_rhs(self) -> None:
+        """Assignment RHS with function calls should yield patterns."""
+        from agent_evals.datasets.ds1000 import _extract_key_patterns
+
+        code = "result = np.concatenate([a, b], axis=0)"
+        patterns = _extract_key_patterns(code)
+        assert len(patterns) > 0
+        assert any("concatenate" in p for p in patterns)
+
+    def test_extracts_from_bare_assignment_no_function_def(self) -> None:
+        """Code with just an assignment (no function) should not return empty."""
+        from agent_evals.datasets.ds1000 import _extract_key_patterns
+
+        code = "result = pd.merge(df1, df2, on='key')"
+        patterns = _extract_key_patterns(code)
+        assert len(patterns) > 0
+        assert any("merge" in p for p in patterns)
+
+
 class TestDS1000Registration:
     def test_registered(self) -> None:
         from agent_evals.datasets import DATASET_REGISTRY

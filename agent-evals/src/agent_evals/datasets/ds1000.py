@@ -68,6 +68,18 @@ def _extract_key_patterns(reference_code: str) -> list[str]:
     except SyntaxError:
         pass
 
+    # Try top-level assignments: `result = expr` or `x = expr`
+    if not patterns:
+        try:
+            tree = ast.parse(code)
+            for node in ast.iter_child_nodes(tree):
+                if isinstance(node, ast.Assign):
+                    value = ast.get_source_segment(code, node.value)
+                    if value and value.strip():
+                        patterns.append(value.strip())
+        except SyntaxError:
+            pass
+
     # Fallback: heuristic line extraction if AST found nothing
     if not patterns:
         patterns = _extract_patterns_heuristic(code)
