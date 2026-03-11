@@ -514,6 +514,37 @@ class TestRAGStrategy:
 # ---------------------------------------------------------------------------
 
 
+class TestRAGQueryEmbeddingCache:
+    """Bug #188: RAG strategy recomputes question embedding for each trial."""
+
+    @patch("agent_evals.context.rag.Embedder")
+    def test_same_question_embeds_once(self, MockEmbedder):
+        """Calling prepare() twice with the same task should only embed the question once."""
+        from agent_evals.context.rag import RAGStrategy
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_batch.return_value = [
+            np.array([1.0, 0.0]),
+            np.array([0.0, 1.0]),
+        ]
+        mock_embedder.embed.return_value = np.array([0.9, 0.1])
+        MockEmbedder.return_value = mock_embedder
+
+        strategy = RAGStrategy(top_k=1)
+        strategy.setup("# A\nText A\n# B\nText B", MagicMock())
+
+        task = make_mock_task()
+
+        # Call prepare twice with the same task
+        strategy.prepare("index", task, MagicMock())
+        strategy.prepare("index", task, MagicMock())
+
+        # Embedder.embed should be called only once (cached for same question)
+        assert mock_embedder.embed.call_count == 1, (
+            f"embed() called {mock_embedder.embed.call_count} times, expected 1 (bug #188)"
+        )
+
+
 class TestRAGRegistryIntegration:
     def test_rag_discoverable_via_registry(self):
         from agent_evals.context.registry import get_strategy_by_name, load_all
