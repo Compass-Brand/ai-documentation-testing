@@ -260,9 +260,9 @@ class DOEPipeline:
                 self.config.screening_reps
             )
 
-        # 2. Build the Taguchi experimental design
+        # 2. Build the Taguchi experimental design (axis 0 baselines excluded)
         design = build_design(
-            dict(axes), self.config.models, self.config.oa_override
+            dict(usable_axes), self.config.models, self.config.oa_override
         )
 
         # 3. Build variant lookup

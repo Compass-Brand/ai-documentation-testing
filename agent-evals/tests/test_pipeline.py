@@ -270,6 +270,56 @@ def test_pipeline_screening_rejects_only_baseline_variants():
         pipeline.run_screening(tasks=[], variants=baseline_variants, doc_tree=MagicMock())
 
 
+@patch("agent_evals.pipeline.predict_optimal")
+@patch("agent_evals.pipeline.run_anova")
+@patch("agent_evals.pipeline.compute_main_effects")
+@patch("agent_evals.pipeline.compute_sn_ratios")
+@patch("agent_evals.pipeline.build_design")
+def test_pipeline_screening_excludes_axis_0_from_design(
+    mock_build, mock_sn, mock_me, mock_anova, mock_pred
+):
+    """run_screening must exclude axis 0 baselines from build_design call."""
+    mock_build.return_value = MagicMock()
+    mock_sn.return_value = {0: 10.0}
+    mock_me.return_value = {}
+    mock_anova.return_value = MagicMock(factors=[])
+    mock_pred.return_value = MagicMock(optimal_assignment={})
+
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    # Create variants with axis 0 baselines AND real axes
+    variants = []
+    for name in ["baseline_a", "baseline_b"]:
+        v = MagicMock()
+        m = MagicMock()
+        m.axis = 0
+        m.name = name
+        v.metadata.return_value = m
+        variants.append(v)
+    # Add real axes (1 and 2, 2 levels each)
+    for axis in [1, 2]:
+        for level in ["x", "y"]:
+            v = MagicMock()
+            m = MagicMock()
+            m.axis = axis
+            m.name = f"axis{axis}_{level}"
+            v.metadata.return_value = m
+            variants.append(v)
+
+    pipeline.run_screening(tasks=[], variants=variants, doc_tree=MagicMock())
+
+    # build_design must NOT receive axis 0
+    call_args = mock_build.call_args
+    axes_arg = call_args[0][0]
+    assert 0 not in axes_arg, (
+        f"Axis 0 baselines should be excluded from build_design, got axes: {list(axes_arg.keys())}"
+    )
+    assert 1 in axes_arg
+    assert 2 in axes_arg
+
+
 def test_pipeline_screening_rejects_single_axis_single_level():
     """run_screening raises ValueError when only 1 axis has a single level."""
     config = PipelineConfig(models=["model-a"])
