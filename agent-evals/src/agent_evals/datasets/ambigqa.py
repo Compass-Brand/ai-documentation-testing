@@ -57,6 +57,11 @@ class AmbigQAAdapter(DatasetAdapter):
             ann_type = annotations.get("type", [])
             qa_pairs = annotations.get("qaPairs") or []
 
+            # Skip singleAnswer records -- they have only 1 interpretation,
+            # so the disambiguation scorer trivially returns 1.0 (bug #179).
+            if ann_type and ann_type[0] == "singleAnswer":
+                continue
+
             interpretations = []
 
             # multipleQAs: interpretations are in qaPairs as parallel arrays
@@ -69,16 +74,6 @@ class AmbigQAAdapter(DatasetAdapter):
                     interpretations.append({
                         "label": f"interpretation_{i}",
                         "answer": f"{q}: {answer_str}",
-                    })
-
-            # singleAnswer: answer is in annotations.answer directly
-            if not interpretations:
-                ann_answers = annotations.get("answer", [])
-                if ann_answers and ann_answers[0]:
-                    answer_str = ann_answers[0][0]
-                    interpretations.append({
-                        "label": "interpretation_0",
-                        "answer": f"{record.get('question', '')}: {answer_str}",
                     })
 
             if not interpretations:
