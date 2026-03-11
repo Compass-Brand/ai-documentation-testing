@@ -298,6 +298,62 @@ class TestOrthogonalityProperty:
                 assert len(set(freq)) == 1
 
 
+class TestL54PairwiseBalance:
+    """L54 must have all column pairs pairwise balanced.
+
+    Bug #224: The shifted-column construction creates confounded pairs
+    between base L27 columns and their shifted counterparts.
+    """
+
+    def test_l54_all_column_pairs_balanced(self):
+        """Every pair of columns in L54 must have all level combinations present
+        with uniform frequency (strength-2 orthogonality).
+
+        Bug #224: Shifted-column construction confounds base column k with
+        extended column k — only 6 of 9 pairs appear for 3-level columns.
+        """
+        oa = get_oa("L54")
+        for c1 in range(oa.n_columns):
+            for c2 in range(c1 + 1, oa.n_columns):
+                pairs = list(zip(
+                    oa.matrix[:, c1].tolist(),
+                    oa.matrix[:, c2].tolist(),
+                ))
+                counts = Counter(pairs)
+                # All possible level combinations must appear
+                expected_pairs = (
+                    oa.column_levels(c1) * oa.column_levels(c2)
+                )
+                assert len(counts) == expected_pairs, (
+                    f"L54 columns ({c1},{c2}): only {len(counts)} of "
+                    f"{expected_pairs} pairs observed — confounded"
+                )
+                # Frequencies must be uniform
+                freq = list(counts.values())
+                assert len(set(freq)) == 1, (
+                    f"L54 columns ({c1},{c2}) not balanced: "
+                    f"freq={sorted(set(freq))}"
+                )
+
+    def test_l54_has_at_least_14_columns(self):
+        """L54 must have at least 14 columns (1 two-level + 13 three-level)."""
+        oa = get_oa("L54")
+        assert oa.n_columns >= 14
+
+    def test_l54_first_column_is_two_level(self):
+        """Column 0 should be the 2-level factor."""
+        oa = get_oa("L54")
+        assert oa.column_levels(0) == 2
+
+    def test_l54_remaining_columns_are_three_level(self):
+        """Columns 1+ should be 3-level."""
+        oa = get_oa("L54")
+        for col in range(1, oa.n_columns):
+            assert oa.column_levels(col) == 3, (
+                f"L54 col {col} has {oa.column_levels(col)} levels, expected 3"
+            )
+
+
 class TestAllArraysValidity:
     """Verify all OAs in the catalog have valid matrix values."""
 

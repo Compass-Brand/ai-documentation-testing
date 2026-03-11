@@ -263,21 +263,24 @@ def _build_l50() -> OrthogonalArray:
 
 
 def _build_l54() -> OrthogonalArray:
-    """L54(2^1 x 3^25): 54 runs, 1 two-level + 25 three-level columns."""
+    """L54(2^1 x 3^13): 54 runs, 1 two-level + 13 three-level columns.
+
+    Product of L2 and L27: the 2-level blocking factor is independent
+    of all 13 three-level L27 columns, giving 14 pairwise-balanced
+    columns.  The previous construction added shifted columns
+    ``(base[k] + a) % 3`` which are confounded with their base
+    (only 6 of 9 pairs observed).
+    """
     l27 = _build_l27()
     rows = []
     for a in range(2):
         for row_idx in range(27):
             base = list(l27.matrix[row_idx])
-            extended = [a] + base + [
-                (base[k] + a) % 3 for k in range(min(12, len(base)))
-            ]
-            rows.append(extended[:26])
+            rows.append([a] + base)
     matrix = np.array(rows, dtype=np.int32)
-    n_cols = matrix.shape[1]
     return OrthogonalArray(
-        name="L54", n_runs=54, n_columns=n_cols, max_levels=3,
-        matrix=matrix, level_structure=(2,) + (3,) * (n_cols - 1),
+        name="L54", n_runs=54, n_columns=14, max_levels=3,
+        matrix=matrix, level_structure=(2,) + (3,) * 13,
     )
 
 
