@@ -111,9 +111,21 @@ class RetrievalTask(EvalTask):
         # Exact normalized matches
         exact_matches = expected_norm & extracted_norm
 
-        # Fuzzy: basename matching for unmatched expected files
+        # Suffix matching: an extracted path ending with the expected path
+        # counts as exact (handles dataset-prefix merging like
+        # "code-rag-bench/library-docs/foo.md" matching "library-docs/foo.md")
         unmatched_expected = expected_norm - exact_matches
         unmatched_extracted = extracted_norm - exact_matches
+        suffix_matches: set[str] = set()
+        for exp in list(unmatched_expected):
+            for ext in list(unmatched_extracted):
+                if ext.endswith("/" + exp) or ext == exp:
+                    suffix_matches.add(exp)
+                    unmatched_expected.discard(exp)
+                    unmatched_extracted.discard(ext)
+                    break
+
+        # Fuzzy: basename matching for still-unmatched expected files
         fuzzy_hits = 0.0
         for exp in unmatched_expected:
             exp_basename = os.path.basename(exp)
@@ -123,7 +135,7 @@ class RetrievalTask(EvalTask):
                     unmatched_extracted.discard(ext)
                     break
 
-        true_positives = len(exact_matches) + fuzzy_hits
+        true_positives = len(exact_matches) + len(suffix_matches) + fuzzy_hits
         precision = true_positives / len(extracted_norm) if extracted_norm else 0.0
         recall = true_positives / len(expected_norm) if expected_norm else 0.0
 

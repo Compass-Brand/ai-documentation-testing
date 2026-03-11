@@ -355,3 +355,30 @@ class TestRetrievalExtractionBroadExtensions:
         )
         score = task.score_response(response)
         assert score == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Suffix matching for multi-source merged doc trees
+# ---------------------------------------------------------------------------
+
+
+class TestRetrievalSuffixMatching:
+    """Tests for suffix matching when multi-source merging prefixes paths."""
+
+    def test_dataset_prefixed_path_matches_expected(self) -> None:
+        """Response with dataset-prefixed path matches unprefixed expected file."""
+        task = _retrieval_task(
+            expected_files=["library-docs/has_close_elements.md"],
+        )
+        response = "The relevant file is code-rag-bench/library-docs/has_close_elements.md."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_suffix_match_counts_as_exact(self) -> None:
+        """Suffix match gives full credit, not partial (0.5) fuzzy credit."""
+        task = _retrieval_task(
+            expected_files=["src/auth.py"],
+        )
+        response = "Check dataset-name/src/auth.py for details."
+        score = task.score_response(response)
+        assert score == 1.0
