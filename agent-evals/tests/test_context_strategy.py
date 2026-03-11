@@ -294,8 +294,9 @@ class TestFullContextStrategy:
 
         assert FullContextStrategy().supports_caching() is True
 
-    def test_prepare_appends_doc_content_to_rendered_index(self):
-        """prepare() should pass rendered index + doc content to build_prompt."""
+    def test_prepare_passes_rendered_index_directly(self):
+        """prepare() should pass rendered index directly to build_prompt
+        without appending raw doc content (fixes #193)."""
         from agent_evals.context.full import FullContextStrategy
 
         strategy = FullContextStrategy()
@@ -306,17 +307,14 @@ class TestFullContextStrategy:
 
         prepared = strategy.prepare("rendered index", task, doc_tree)
 
-        # build_prompt should receive index + separator + document content
+        # build_prompt should receive the rendered index as-is
         call_args = task.build_prompt.call_args[0][0]
-        assert call_args.startswith("rendered index")
-        assert "---\n## Document Contents" in call_args
-        assert "### guides/auth.md" in call_args
-        assert "Auth guide content" in call_args
+        assert call_args == "rendered index"
         assert prepared.messages == task.build_prompt.return_value
         assert prepared.tools is None
 
     def test_prepare_with_empty_doc_tree_passes_index_only(self):
-        """When doc_tree has no files, only the rendered index is passed."""
+        """When doc_tree has no files, rendered index is passed as-is."""
         from agent_evals.context.full import FullContextStrategy
 
         strategy = FullContextStrategy()
@@ -327,8 +325,8 @@ class TestFullContextStrategy:
 
         task.build_prompt.assert_called_once_with("rendered index")
 
-    def test_prepare_includes_multiple_files_sorted(self):
-        """Files should be included in sorted order by rel_path."""
+    def test_prepare_passes_rendered_index_as_is(self):
+        """prepare() passes rendered_index directly regardless of doc_tree content."""
         from agent_evals.context.full import FullContextStrategy
 
         strategy = FullContextStrategy()
@@ -339,78 +337,13 @@ class TestFullContextStrategy:
             "guides/auth.md": ("Auth content", 10),
         })
 
-        strategy.prepare("index", task, doc_tree)
+        strategy.prepare("my custom index", task, doc_tree)
 
         call_args = task.build_prompt.call_args[0][0]
-        # Files should appear in sorted order
-        api_pos = call_args.index("### api/endpoints.md")
-        auth_pos = call_args.index("### guides/auth.md")
-        setup_pos = call_args.index("### guides/setup.md")
-        assert api_pos < auth_pos < setup_pos
-
-    def test_prepare_respects_max_content_tokens(self):
-        """Files exceeding the token budget should be excluded."""
-        from agent_evals.context.full import FullContextStrategy
-
-        strategy = FullContextStrategy(max_content_tokens=25)
-        task = make_mock_task()
-        doc_tree = _make_doc_tree({
-            "a.md": ("Small file", 10),
-            "b.md": ("Medium file", 15),
-            "c.md": ("Large file", 20),
-        })
-
-        strategy.prepare("index", task, doc_tree)
-
-        call_args = task.build_prompt.call_args[0][0]
-        # a.md (10 tokens) fits, b.md (15 tokens) would push to 25 -- fits exactly at boundary?
-        # 10 + 15 = 25, which is NOT > 25, so b.md fits
-        assert "### a.md" in call_args
-        assert "### b.md" in call_args
-        # c.md (20 tokens) would push to 45 > 25, excluded
-        assert "### c.md" not in call_args
-
-    def test_prepare_stops_at_first_file_exceeding_budget(self):
-        """Token budget enforcement stops at the first file that would exceed it."""
-        from agent_evals.context.full import FullContextStrategy
-
-        strategy = FullContextStrategy(max_content_tokens=5)
-        task = make_mock_task()
-        doc_tree = _make_doc_tree({
-            "a.md": ("Content A", 10),  # 10 > 5, excluded
-            "b.md": ("Content B", 3),   # Would be fine but a.md broke the loop
-        })
-
-        strategy.prepare("index", task, doc_tree)
-
-        call_args = task.build_prompt.call_args[0][0]
-        # Since files are sorted and a.md (10) > budget (5), it stops
-        assert "### a.md" not in call_args
-        # b.md comes after a.md alphabetically but a.md exceeds budget
-        # so the loop breaks at a.md and b.md is never reached
-        assert "### b.md" not in call_args
-        # Falls back to index only
-        assert call_args == "index"
-
-    def test_prepare_uses_heuristic_when_token_count_is_none(self):
-        """When token_count is None, _estimate_tokens (~4 chars/token) is used."""
-        from agent_evals.context.full import FullContextStrategy
-
-        strategy = FullContextStrategy(max_content_tokens=100)
-        task = make_mock_task()
-        # 20 chars = ~5 tokens via heuristic
-        doc_tree = _make_doc_tree({
-            "a.md": ("twelve chars1234", None),
-        })
-
-        strategy.prepare("index", task, doc_tree)
-
-        call_args = task.build_prompt.call_args[0][0]
-        assert "### a.md" in call_args
-        assert "twelve chars1234" in call_args
+        assert call_args == "my custom index"
 
     def test_prepare_strategy_metadata(self):
-        """strategy_metadata should include content stats."""
+        """strategy_metadata should include index token stats."""
         from agent_evals.context.full import FullContextStrategy
 
         strategy = FullContextStrategy(max_content_tokens=1000)
@@ -423,7 +356,6 @@ class TestFullContextStrategy:
         prepared = strategy.prepare("the index", task, doc_tree)
 
         assert "index_tokens" in prepared.strategy_metadata
-        assert prepared.strategy_metadata["content_files_included"] == 2
         assert prepared.strategy_metadata["max_content_tokens"] == 1000
 
     def test_default_max_content_tokens(self):
@@ -476,9 +408,10 @@ class TestFullContextStrategy:
         assert result.generations[0] is gen
         assert result.messages == messages
 
-    def test_prepare_includes_doc_content_unlike_old_behavior(self):
-        """The fixed prepare() should include doc content that the old
-        pipeline was missing -- this is the core P0 bug fix validation."""
+    def test_prepare_passes_rendered_index_without_raw_content(self):
+        """prepare() uses only the rendered index -- variant-rendered content
+        is the experimental treatment; appending raw doc content would dilute
+        axis effects across variants (#193)."""
         from agent_evals.context.full import FullContextStrategy
 
         strategy = FullContextStrategy()
@@ -492,11 +425,47 @@ class TestFullContextStrategy:
         strategy.prepare(rendered_index, task, doc_tree)
 
         call_args = task.build_prompt.call_args[0][0]
-        # Should contain the index metadata
+        # Should contain the rendered index
         assert "[FILE] guides/auth.md: Auth guide" in call_args
-        # AND the actual document content (the P0 fix)
-        assert "# Authentication\nUse JWT tokens..." in call_args
-        assert "# Users API\nGET /api/users..." in call_args
+        # Should NOT append raw doc content
+        assert "# Authentication\nUse JWT tokens..." not in call_args
+        assert "# Users API\nGET /api/users..." not in call_args
+
+    def test_prepare_uses_only_rendered_index_not_raw_doc_content(self):
+        """prepare() should use only the rendered_index, not append raw doc
+        content from doc_tree.files, because the rendered index IS the
+        variant-specific content. Appending raw docs dilutes axis effects (#193)."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy()
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({
+            "a.md": ("Raw content A", 10),
+            "b.md": ("Raw content B", 10),
+        })
+
+        # Two different rendered indices (simulating different variants)
+        rendered_flat = "FLAT INDEX: a.md, b.md"
+        rendered_nested = "NESTED INDEX:\n  section/\n    a.md\n    b.md"
+
+        strategy.prepare(rendered_flat, task, doc_tree)
+        flat_content = task.build_prompt.call_args[0][0]
+
+        task.reset_mock()
+        strategy.prepare(rendered_nested, task, doc_tree)
+        nested_content = task.build_prompt.call_args[0][0]
+
+        # The two calls should produce DIFFERENT content
+        assert flat_content != nested_content, (
+            "FullContextStrategy should produce different content for different "
+            "rendered indices — raw doc content must not dilute variant effects"
+        )
+        # rendered_index should be included
+        assert "FLAT INDEX" in flat_content
+        assert "NESTED INDEX" in nested_content
+        # Raw doc content should NOT be appended (it's the same for both)
+        assert "Raw content A" not in flat_content
+        assert "Raw content B" not in flat_content
 
     def test_setup_teardown_are_noops(self):
         from agent_evals.context.full import FullContextStrategy
