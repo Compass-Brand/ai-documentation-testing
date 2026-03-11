@@ -504,16 +504,20 @@ def predict_optimal(
         optimal[factor_name] = best_level
 
     # 2. Compute predicted S/N (additive model)
-    all_values = [v for d in main_effects.values() for v in d.values()]
-    if not all_values:
+    if not main_effects:
         raise ValueError("main_effects is empty; cannot compute prediction.")
-    grand_mean = sum(all_values) / len(all_values)
+    # Use mean-of-factor-means to avoid bias in mixed-level designs
+    # where factors have different numbers of levels.
+    factor_means = {
+        name: sum(levels.values()) / len(levels)
+        for name, levels in main_effects.items()
+    }
+    grand_mean = sum(factor_means.values()) / len(factor_means)
 
     predicted = grand_mean
     for factor_name, levels in main_effects.items():
-        factor_mean = sum(levels.values()) / len(levels)
         best_val = levels[optimal[factor_name]]
-        predicted += best_val - factor_mean
+        predicted += best_val - factor_means[factor_name]
 
     # 3. Prediction interval (if S/N ratios provided)
     interval: tuple[float, float] | None = None
@@ -585,13 +589,13 @@ def _compute_additivity_r_squared(
 
     R-squared = 1 - SS_residual / SS_total.
     """
-    all_values = [v for d in main_effects.values() for v in d.values()]
-    grand_mean = sum(all_values) / len(all_values)
-
+    # Use mean-of-factor-means (consistent with predict_optimal) to avoid
+    # bias in mixed-level designs.
     factor_means = {
         name: sum(levels.values()) / len(levels)
         for name, levels in main_effects.items()
     }
+    grand_mean = sum(factor_means.values()) / len(factor_means)
 
     observed: list[float] = []
     predicted_vals: list[float] = []

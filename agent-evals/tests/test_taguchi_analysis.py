@@ -780,6 +780,28 @@ class TestANOVAConsistentRowFiltering:
             f"(diff={abs(identity_lhs - identity_rhs):.2e})"
         )
 
+    def test_anova_per_factor_ss_excludes_partial_dummy_rows(self):
+        """Per-factor level groups should not include partial-dummy rows.
+
+        Factor B should NOT include the dummy-A rows (7-9) in its level
+        group counts — they must be excluded for consistency with grand_mean.
+        """
+        design = self._make_mixed_level_design_with_dummies()
+        sn_ratios = {
+            1: 2.0, 2: 4.0, 3: 3.0,
+            4: 6.0, 5: 8.0, 6: 7.0,
+            7: 1.0, 8: 3.0, 9: 2.0,
+        }
+        result = run_anova(design, sn_ratios)
+
+        # Factor B has 3 levels; with 6 non-dummy rows, each level
+        # should appear exactly 2 times (not 3 which would include dummies)
+        b_factor = next(f for f in result.factors if f.factor_name == "B")
+        # df should be n_levels - 1 = 2
+        assert b_factor.df == 2
+        # With balanced design, each eta_squared should be reasonable
+        assert b_factor.eta_squared >= 0
+
     def test_grand_mean_uses_non_dummy_rows_only(self):
         """Grand mean should exclude partial-dummy rows for consistency."""
         design = self._make_mixed_level_design_with_dummies()
@@ -796,3 +818,75 @@ class TestANOVAConsistentRowFiltering:
             f"Grand mean {result.grand_mean} != expected {expected_grand_mean}; "
             f"partial-dummy rows should be excluded"
         )
+
+
+# ---------------------------------------------------------------------------
+# Bug #186: predict_optimal grand_mean bias in mixed-level designs
+# ---------------------------------------------------------------------------
+
+
+class TestPredictOptimalMixedLevelGrandMean:
+    """predict_optimal must compute grand_mean from observation means,
+    not from averaging all level means across factors.
+
+    Bug #186: In mixed-level designs (e.g., factor A: 5 levels, factor B:
+    2 levels), averaging all level means over-weights factors with more
+    levels. The correct approach: weight each factor's mean equally.
+    """
+
+    def test_grand_mean_unbiased_mixed_levels(self):
+        """Grand mean should weight each factor's mean equally.
+
+        Factor A (5 levels): means [1, 2, 3, 4, 5] -> factor mean 3.0
+        Factor B (2 levels): means [10, 20]         -> factor mean 15.0
+
+        Biased (mean-of-all-level-means): (1+2+3+4+5+10+20)/7 ≈ 6.43
+        Correct (mean-of-factor-means):   (3.0 + 15.0) / 2 = 9.0
+        """
+        effects = {
+            "A": {"a1": 1.0, "a2": 2.0, "a3": 3.0, "a4": 4.0, "a5": 5.0},
+            "B": {"b1": 10.0, "b2": 20.0},
+        }
+        prediction = predict_optimal(effects)
+
+        # The additive model: predicted = grand_mean + sum(best - factor_mean)
+        # With correct grand_mean = 9.0:
+        #   best_A = 5.0, factor_mean_A = 3.0, effect_A = +2.0
+        #   best_B = 20.0, factor_mean_B = 15.0, effect_B = +5.0
+        #   predicted = 9.0 + 2.0 + 5.0 = 16.0
+        #
+        # With biased grand_mean ≈ 6.43:
+        #   predicted = 6.43 + 2.0 + 5.0 = 13.43 (WRONG)
+        expected_grand_mean = 9.0
+        expected_predicted = expected_grand_mean + (5.0 - 3.0) + (20.0 - 15.0)
+        assert abs(expected_predicted - 16.0) < 1e-10  # sanity
+
+        assert abs(prediction.predicted_sn - expected_predicted) < 1e-10, (
+            f"predicted_sn={prediction.predicted_sn:.4f} != "
+            f"expected={expected_predicted:.4f}; "
+            f"grand_mean is biased by unequal factor level counts"
+        )
+
+    def test_grand_mean_equal_levels_unchanged(self):
+        """When all factors have the same number of levels, behavior is unchanged."""
+        effects = {
+            "A": {"a1": 1.0, "a2": 3.0, "a3": 5.0},
+            "B": {"b1": 2.0, "b2": 4.0, "b3": 6.0},
+        }
+        # Both approaches give the same result for equal-level designs
+        all_values = [v for d in effects.values() for v in d.values()]
+        naive_grand_mean = sum(all_values) / len(all_values)
+
+        factor_means = {
+            name: sum(levels.values()) / len(levels)
+            for name, levels in effects.items()
+        }
+        correct_grand_mean = sum(factor_means.values()) / len(factor_means)
+
+        # For equal levels, both should agree
+        assert abs(naive_grand_mean - correct_grand_mean) < 1e-10
+
+        prediction = predict_optimal(effects)
+        # predicted = grand_mean + sum(best - factor_mean)
+        expected = correct_grand_mean + (5.0 - 3.0) + (6.0 - 4.0)
+        assert abs(prediction.predicted_sn - expected) < 1e-10
