@@ -90,11 +90,7 @@ class WikiContradictAdapter(DatasetAdapter):
                             "authority": 5,
                         },
                     ],
-                    "expected_resolution": (
-                        f"These statements from '{article}' contradict each "
-                        f"other and require verification against authoritative "
-                        f"sources."
-                    ),
+                    "expected_resolution": record.get("ref_answer", ""),
                     "resolution_strategy": "explicit_flag",
                     "contradict_type": contradict_type,
                     "ref_answer": record.get("ref_answer", ""),

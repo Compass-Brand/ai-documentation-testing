@@ -87,7 +87,8 @@ class TestWikiContradictConvertTasks:
         assert task["type"] == "conflicting"
         assert task["domain"] == "general_knowledge"
         assert "sources" in task["metadata"]
-        assert "expected_resolution" in task["metadata"]
+        assert task["metadata"]["expected_resolution"] == "500km"
+        assert task["metadata"]["ref_answer"] == "500km"
         assert isinstance(task["metadata"]["sources"], list)
         assert len(task["metadata"]["sources"]) == 2
 

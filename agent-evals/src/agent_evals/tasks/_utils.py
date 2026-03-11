@@ -23,9 +23,9 @@ STOPWORDS: frozenset[str] = frozenset({
 def extract_keywords(text: str) -> list[str]:
     """Extract non-stopword keywords from text.
 
-    Splits on whitespace, strips trailing punctuation from each token,
-    then filters to words with 3+ characters that are not common
-    English stopwords.
+    Splits on whitespace, strips trailing punctuation and quotes from
+    each token, then filters to words with 3+ characters that are not
+    common English stopwords.
 
     Args:
         text: The text to extract keywords from.
@@ -36,7 +36,7 @@ def extract_keywords(text: str) -> list[str]:
     words = text.split()
     cleaned: list[str] = []
     for w in words:
-        w = w.strip(".,:;!?()")
+        w = w.strip(".,:;!?()'\"")
         if len(w) >= 3 and w.lower() not in STOPWORDS:
             cleaned.append(w)
     return cleaned

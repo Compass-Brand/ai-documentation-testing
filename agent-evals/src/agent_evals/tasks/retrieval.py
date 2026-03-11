@@ -64,14 +64,20 @@ class RetrievalTask(EvalTask):
                 "role": "system",
                 "content": (
                     "You are an AI assistant that identifies relevant files "
-                    "from a documentation index. Given a question, list the "
-                    "file paths that are most relevant to answering it.\n\n"
+                    "from a documentation index. Given a question, respond "
+                    "ONLY with the file paths that are most relevant to "
+                    "answering it. List each file path on its own line. "
+                    "Do NOT write code, explanations, or anything else — "
+                    "just the file paths.\n\n"
                     f"{index_content}"
                 ),
             },
             {
                 "role": "user",
-                "content": self.definition.question,
+                "content": (
+                    f"{self.definition.question}\n\n"
+                    "List the relevant file paths, one per line."
+                ),
             },
         ]
 

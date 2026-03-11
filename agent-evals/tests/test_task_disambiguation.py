@@ -5,12 +5,12 @@ Tests cover:
 - Defaults for missing metadata
 - Registration in TASK_TYPES
 - build_prompt returns message list with index content and question
-- score_response: keyword coverage answer match (1.0)
-- score_response: label-only match with underscore normalization (0.5)
-- score_response: no match (0.0)
+- Three-axis scoring: coverage, correctness, awareness
+- Full disambiguation responses score high; single-interpretation responses score lower
 - Case-insensitive matching
-- Continuous keyword coverage scoring
 - Edge cases: empty interpretations, empty expected_interpretation
+- Partial keyword coverage produces proportional scores
+- Scoring produces meaningful variance (no trivial 1.0 for all responses)
 """
 
 from __future__ import annotations
@@ -18,9 +18,12 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
 from agent_evals.tasks.base import TASK_TYPES, TaskDefinition
-from agent_evals.tasks.disambiguation import DisambiguationTask
+from agent_evals.tasks.disambiguation import (
+    _W_CORRECTNESS,
+    _W_COVERAGE,
+    DisambiguationTask,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -119,38 +122,65 @@ class TestDisambiguationTaskBuildPrompt:
         system_content = system_msgs[0]["content"].lower()
         assert "interpret" in system_content or "disambigu" in system_content
 
+    def test_system_message_asks_for_all_interpretations(self) -> None:
+        """build_prompt system message instructs to list ALL interpretations."""
+        task = _disambiguation_task()
+        messages = task.build_prompt("index")
+        system_content = messages[0]["content"].lower()
+        assert "all" in system_content
+
 
 # ---------------------------------------------------------------------------
-# score_response
+# score_response: Three-axis scoring
 # ---------------------------------------------------------------------------
 
 
 class TestDisambiguationTaskScoring:
-    """Tests for DisambiguationTask.score_response."""
+    """Tests for DisambiguationTask.score_response three-axis scoring."""
 
-    def test_answer_match_returns_1(self) -> None:
-        """Response containing the expected interpretation's answer scores 1.0."""
+    def test_full_disambiguation_scores_high(self) -> None:
+        """Response addressing all interpretations and acknowledging ambiguity scores ~1.0."""
+        task = _disambiguation_task()
+        score = task.score_response(
+            "This question is ambiguous and could mean two things. "
+            "Connection pooling for databases is the database_pool interpretation. "
+            "Thread pool for parallel execution is the thread_pool interpretation. "
+            "The correct interpretation is database_pool."
+        )
+        # coverage: 2/2=1.0, correctness: high, awareness: yes
+        assert score >= 0.90
+
+    def test_single_interpretation_no_disambiguation_scores_lower(self) -> None:
+        """Response answering correctly but not disambiguating scores < 0.7."""
         task = _disambiguation_task()
         score = task.score_response(
             "The pool refers to Connection pooling for databases."
         )
-        assert score == 1.0
+        # coverage: 1/2, correctness: 1.0, awareness: 0.0
+        # = 0.4*0.5 + 0.4*1.0 + 0.2*0.0 = 0.60
+        assert score < 0.70
+        assert score > 0.0
 
     def test_answer_match_case_insensitive(self) -> None:
         """Answer matching is case-insensitive."""
         task = _disambiguation_task()
-        score = task.score_response(
+        score1 = task.score_response(
+            "The pool refers to Connection pooling for databases."
+        )
+        score2 = task.score_response(
             "It means connection pooling for databases in this context."
         )
-        assert score == 1.0
+        assert score1 == pytest.approx(score2, abs=0.05)
 
-    def test_label_only_match_returns_half(self) -> None:
-        """Response mentioning only the label (not the answer) scores 0.5."""
+    def test_label_only_match_gives_partial(self) -> None:
+        """Response mentioning only the label scores based on label match."""
         task = _disambiguation_task()
         score = task.score_response(
             "This refers to the database_pool concept."
         )
-        assert score == 0.5
+        # coverage: label hit for database_pool (1/2), correctness: label=0.5
+        # awareness: 0 => 0.4*0.5 + 0.4*0.5 = 0.40
+        assert 0.30 <= score <= 0.50
 
     def test_no_match_returns_0(self) -> None:
         """Response with no matching answer or label scores 0.0."""
@@ -158,13 +188,16 @@ class TestDisambiguationTaskScoring:
         score = task.score_response("I have no relevant information about this.")
         assert score == 0.0
 
-    def test_wrong_interpretation_answer_only(self) -> None:
-        """Response with wrong interpretation's answer but not the expected one scores 0.0."""
+    def test_wrong_interpretation_only_scores_low(self) -> None:
+        """Response with wrong interpretation's answer scores low (coverage but no correctness)."""
         task = _disambiguation_task()
         score = task.score_response(
             "Thread pool for parallel execution is the meaning here."
         )
-        assert score == 0.0
+        # coverage: 1/2=0.5, correctness: 0.0, awareness: 0.0
+        # = 0.4*0.5 + 0.4*0.0 = 0.20
+        assert score < 0.30
+        assert score > 0.0
 
     def test_empty_interpretations_returns_0(self) -> None:
         """Empty interpretations list gives 0.0."""
@@ -181,26 +214,36 @@ class TestDisambiguationTaskScoring:
     def test_label_normalized_underscore_to_space(self) -> None:
         """Label with underscores matches when response uses spaces instead."""
         task = _disambiguation_task()
-        score = task.score_response(
+        score_underscore = task.score_response(
+            "This refers to the database_pool concept."
+        )
+        score_space = task.score_response(
             "This refers to the database pool concept."
         )
-        assert score == 0.5
+        assert score_underscore == pytest.approx(score_space, abs=0.01)
 
-    def test_partial_keyword_coverage_above_threshold(self) -> None:
-        """Response with >= 50% keyword coverage scores proportionally."""
+    def test_partial_keyword_coverage_produces_proportional_score(self) -> None:
+        """Response with partial keyword coverage scores proportionally."""
         task = _disambiguation_task()
         score = task.score_response(
             "It uses connection pooling to manage resources."
         )
-        assert score == pytest.approx(2 / 3, abs=0.01)
+        # coverage: interp0 has 2/3>=0.30 so addressed=1, interp1 not. coverage=0.5
+        # correctness: 2/3=0.667
+        # awareness: 0.0
+        expected = _W_COVERAGE * 0.5 + _W_CORRECTNESS * (2 / 3)
+        assert score == pytest.approx(expected, abs=0.05)
 
-    def test_partial_keyword_coverage_below_threshold(self) -> None:
+    def test_low_keyword_coverage_produces_partial_score(self) -> None:
         """Response with low keyword coverage scores proportionally (continuous)."""
         task = _disambiguation_task()
         score = task.score_response(
             "It opens a connection to the server."
         )
-        assert score == pytest.approx(1 / 3, abs=0.01)
+        # "connection" hits interp0 (1/3=0.33>=0.30 -> addressed). coverage=0.5
+        # correctness: 1/3=0.333
+        # awareness: 0
+        assert 0.0 < score < 0.5
 
     def test_score_clamped_between_0_and_1(self) -> None:
         """Score is always between 0.0 and 1.0."""
@@ -209,9 +252,102 @@ class TestDisambiguationTaskScoring:
             "Connection pooling for databases",
             "nothing relevant",
             "database_pool is the one",
+            "ambiguous: could mean connection pooling for databases "
+            "or thread pool for parallel execution. database_pool is correct.",
         ]:
             score = task.score_response(resp)
             assert 0.0 <= score <= 1.0
+
+    def test_awareness_bonus_increases_score(self) -> None:
+        """Mentioning ambiguity phrases adds awareness bonus."""
+        task = _disambiguation_task()
+        without_awareness = task.score_response(
+            "Connection pooling for databases."
+        )
+        with_awareness = task.score_response(
+            "This is ambiguous. Connection pooling for databases."
+        )
+        assert with_awareness > without_awareness
+
+    def test_both_interpretations_scores_higher_than_one(self) -> None:
+        """Covering both interpretations scores higher than covering one."""
+        task = _disambiguation_task()
+        one_interp = task.score_response(
+            "Connection pooling for databases is the answer."
+        )
+        both_interps = task.score_response(
+            "Connection pooling for databases is one option. "
+            "Thread pool for parallel execution is another."
+        )
+        assert both_interps > one_interp
+
+
+# ---------------------------------------------------------------------------
+# Variance: the core fix
+# ---------------------------------------------------------------------------
+
+
+class TestDisambiguationVariance:
+    """Verify disambiguation scoring produces meaningful variance."""
+
+    def test_different_quality_responses_produce_different_scores(self) -> None:
+        """Responses of varying quality should NOT all score 1.0."""
+        task = _disambiguation_task()
+        scores = [
+            # Excellent: full disambiguation
+            task.score_response(
+                "This question is ambiguous. It could refer to either "
+                "Connection pooling for databases (database_pool) or "
+                "Thread pool for parallel execution (thread_pool). "
+                "The correct interpretation is database_pool."
+            ),
+            # Good: correct answer, no disambiguation
+            task.score_response(
+                "Connection pooling for databases."
+            ),
+            # Partial: wrong interpretation only
+            task.score_response(
+                "Thread pool for parallel execution."
+            ),
+            # Bad: no match
+            task.score_response(
+                "I don't know."
+            ),
+        ]
+        # Must have at least 3 distinct score levels
+        unique_scores = set()
+        for s in scores:
+            unique_scores.add(round(s, 2))
+        assert len(unique_scores) >= 3, (
+            f"Expected >= 3 distinct scores but got {unique_scores}"
+        )
+
+    def test_no_trivial_1_0_for_simple_answer(self) -> None:
+        """A response that just answers without disambiguating should NOT score 1.0."""
+        task = _disambiguation_task()
+        score = task.score_response(
+            "The pool refers to Connection pooling for databases."
+        )
+        assert score < 1.0, (
+            "Simple answer without disambiguation should not score 1.0"
+        )
+
+    def test_monotonic_quality_ordering(self) -> None:
+        """Better disambiguation responses should score higher."""
+        task = _disambiguation_task()
+        no_match = task.score_response("irrelevant text")
+        wrong_only = task.score_response(
+            "Thread pool for parallel execution."
+        )
+        correct_only = task.score_response(
+            "Connection pooling for databases."
+        )
+        full_disambig = task.score_response(
+            "This is ambiguous. Connection pooling for databases is the "
+            "database_pool interpretation. Thread pool for parallel "
+            "execution is the thread_pool interpretation."
+        )
+        assert no_match < wrong_only < correct_only < full_disambig
 
 
 # ---------------------------------------------------------------------------
@@ -238,11 +374,18 @@ class TestDisambiguationDedicatedScorer:
             ],
             expected_interpretation="connection_pool",
         )
-        correct = task.score_response("This uses database connection pooling with 10 max connections.")
+        correct = task.score_response(
+            "This is ambiguous and could mean several things. "
+            "Database connection pooling with 10 max connections (connection_pool). "
+            "Worker thread pool with 4 threads (thread_pool). "
+            "Memory allocation pool for buffers (memory_pool). "
+            "The correct one is connection_pool."
+        )
         wrong = task.score_response("This uses worker thread pool with 4 threads.")
         assert correct > wrong
-        assert correct == 1.0
-        assert wrong == 0.0
+        assert correct >= 0.85
+        # Wrong interpretation alone should score low
+        assert wrong < 0.30
 
 
 def test_49_percent_keyword_coverage_not_binary():
@@ -257,3 +400,20 @@ def test_49_percent_keyword_coverage_not_binary():
     task = DisambiguationTask(defn)
     score = task.score_response("Only alpha is mentioned here.")
     assert 0.0 < score < 1.0, f"Expected partial score for 25% coverage, got {score}"
+
+
+def test_single_interpretation_task_still_works():
+    """Tasks with only 1 interpretation (singleAnswer) still score correctly."""
+    defn = TaskDefinition(
+        task_id="disambiguation_001", type="disambiguation", question="Q",
+        domain="framework_api", difficulty="easy",
+        metadata={"expected_interpretation": "option_a", "interpretations": [
+            {"label": "option_a", "answer": "The quick brown fox jumps"}
+        ]},
+    )
+    task = DisambiguationTask(defn)
+    # With 1 interp, coverage is always 1/1 if keywords match
+    score = task.score_response("The quick brown fox jumps over the lazy dog.")
+    # coverage: 1/1, correctness: 4/4=1.0, awareness: 0
+    # = 0.4*1.0 + 0.4*1.0 = 0.80
+    assert score >= 0.70
