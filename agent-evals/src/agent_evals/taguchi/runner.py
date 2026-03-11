@@ -121,8 +121,12 @@ class TaguchiRunner:
         row_composites: dict[int, CompositeVariant] = {}
         row_strategies: dict[int, ContextStrategy] = {}
         row_rendered: dict[int, str] = {}
+        skipped_rows: set[int] = set()
         for row in self._design.rows:
             composite = self._build_composite(row)
+            if composite is None:
+                skipped_rows.add(row.run_id)
+                continue
             composite.setup(doc_tree)
             row_composites[row.run_id] = composite
             # Pre-render index and create per-row strategy
@@ -132,9 +136,11 @@ class TaguchiRunner:
             strategy.setup(rendered, doc_tree)
             row_strategies[row.run_id] = strategy
 
-        # Build work items: (row, task, repetition)
+        # Build work items: (row, task, repetition) — skip all-dummy rows.
         work_items: list[tuple[TaguchiExperimentRow, EvalTask, int]] = []
         for row in self._design.rows:
+            if row.run_id in skipped_rows:
+                continue
             for task in tasks:
                 for rep in range(1, self._config.repetitions + 1):
                     work_items.append((row, task, rep))
@@ -460,8 +466,11 @@ class TaguchiRunner:
         score, rationale = parse_judge_response(raw)
         return score, rationale
 
-    def _build_composite(self, row: TaguchiExperimentRow) -> CompositeVariant:
-        """Create a CompositeVariant from an OA row's axis assignments."""
+    def _build_composite(self, row: TaguchiExperimentRow) -> CompositeVariant | None:
+        """Create a CompositeVariant from an OA row's axis assignments.
+
+        Returns None when every axis factor in the row is DUMMY_LEVEL.
+        """
         from agent_evals.taguchi.factors import DUMMY_LEVEL
 
         components: dict[int, IndexVariant] = {}
@@ -471,6 +480,9 @@ class TaguchiRunner:
                 if variant_name == DUMMY_LEVEL:
                     continue
                 components[factor.axis] = self._variant_lookup[variant_name]
+        if not components:
+            logger.info("Skipping all-dummy OA row %d", row.run_id)
+            return None
         return CompositeVariant(components)
 
     def _select_client(self, row: TaguchiExperimentRow) -> LLMClient:
