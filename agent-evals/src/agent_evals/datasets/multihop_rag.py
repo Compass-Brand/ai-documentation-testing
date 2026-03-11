@@ -112,10 +112,15 @@ class MultiHopRAGAdapter(DatasetAdapter):
                     continue
                 rel_path = f"news/{source}.md"
                 if rel_path in files:
-                    # Append to existing doc
+                    # Append to existing doc, updating size/token metadata (bug #180)
                     existing = files[rel_path]
+                    new_content = existing.content + "\n\n" + fact
                     files[rel_path] = existing.model_copy(
-                        update={"content": existing.content + "\n\n" + fact},
+                        update={
+                            "content": new_content,
+                            "size_bytes": len(new_content.encode("utf-8")),
+                            "token_count": len(new_content.split()),
+                        },
                     )
                 else:
                     files[rel_path] = DocFile(
