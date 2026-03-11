@@ -255,6 +255,7 @@ class EvalOrchestrator:
         ) -> None:
             trial_oa_row_id = trial.metrics.get("oa_row_id") if trial.metrics else None
             trial_phase = trial.metrics.get("phase") if trial.metrics else None
+            trial_judge_score = trial.metrics.get("judge_score") if trial.metrics else None
 
             # Build per-call LLM details from aggregate trial data.
             # For single-call strategies this produces one entry; for
@@ -299,6 +300,7 @@ class EvalOrchestrator:
                 llm_calls=trial.llm_calls,
                 strategy_metadata=trial.strategy_metadata or None,
                 llm_call_results=llm_call_results,
+                judge_score=trial_judge_score,
             )
 
         # Route to the correct runner.

@@ -106,6 +106,7 @@ class EventTracker:
         llm_calls: int = 1,
         strategy_metadata: dict | None = None,
         llm_call_results: list[dict] | None = None,
+        judge_score: float | None = None,
     ) -> int:
         """Record a trial, persist it, update stats, and notify listeners.
 
@@ -116,6 +117,7 @@ class EventTracker:
                 trials. Each dict has keys: call_index, prompt_tokens,
                 completion_tokens, cost, api_call_ms, cached_tokens,
                 model, provider.
+            judge_score: Optional LLM-as-judge score (0.0-1.0).
 
         Returns:
             The trial_id from the store.
@@ -141,6 +143,7 @@ class EventTracker:
             context_strategy=context_strategy,
             llm_calls=llm_calls,
             strategy_metadata=strategy_metadata,
+            judge_score=judge_score,
         )
 
         # Conditionally store trace.

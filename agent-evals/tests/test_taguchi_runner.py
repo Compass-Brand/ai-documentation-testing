@@ -874,6 +874,121 @@ class TestJudgeWiring:
         for trial in result.trials:
             assert "judge_score" not in trial.metrics
 
+    def test_judge_call_judge_integration(self):
+        """Real _call_judge fires and parses judge response without mocking.
+
+        Verifies the actual _call_judge implementation works end-to-end:
+        mock client returns a parseable judge response, and the judge score
+        appears in trial metrics. This catches bugs where _call_judge is
+        broken but masked by tests that mock it out entirely.
+        """
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=3, axes=axes)
+        variants = _make_variant_lookup(axes)
+
+        # Client that returns a parseable judge response for ALL calls.
+        # The eval task's score_response() is mocked so eval scoring ignores
+        # the response content; only the judge parsing cares about format.
+        client = make_mock_client(
+            content="RATIONALE: Good answer\nSCORE: 0.75",
+        )
+        config = EvalRunConfig(
+            repetitions=1, max_connections=1,
+            judge_enabled=True, judge_sample_rate=1,
+            judge_model="openrouter/test/judge-model",
+        )
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        # Do NOT mock _call_judge — let the real implementation run.
+        tasks = [make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        # 3 trials (3 rows * 1 task * 1 rep).
+        # With sample_rate=1, trial indices 1 and 2 should fire the judge
+        # (index 0 is always skipped).
+        assert len(result.trials) == 3
+        judged = [t for t in result.trials if "judge_score" in t.metrics]
+        assert len(judged) >= 1, (
+            "Expected at least 1 trial with judge_score in metrics, "
+            f"got 0. Trial metrics: {[t.metrics for t in result.trials]}"
+        )
+        assert judged[0].metrics["judge_score"] == 0.75
+        assert "judge_heuristic_delta" in judged[0].metrics
+
+    def test_judge_score_stored_in_observatory(self):
+        """Judge scores are persisted to the observatory via the tracker.
+
+        The orchestrator progress callback must pass judge_score to the
+        EventTracker so that it appears in the observatory database.
+        """
+        from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
+
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=2, axes=axes)
+        variants_map = _make_variant_lookup(axes)
+
+        config = EvalRunConfig(
+            repetitions=1, max_connections=1,
+            judge_enabled=True, judge_sample_rate=1,
+            judge_model="openrouter/test/judge-model",
+        )
+
+        # Create a mock store and tracker to capture what gets recorded.
+        mock_store = MagicMock()
+        mock_store.get_completed_trial_keys.return_value = set()
+        mock_tracker = MagicMock()
+
+        orch_config = OrchestratorConfig(
+            mode="taguchi",
+            models=["mock-model"],
+            api_key="test-key",
+            eval_config=config,
+            store=mock_store,
+            tracker=mock_tracker,
+        )
+        orchestrator = EvalOrchestrator(orch_config)
+
+        # Patch the client pool to return a mock client with judge response.
+        mock_client = make_mock_client(
+            content="RATIONALE: Good\nSCORE: 0.80",
+        )
+        orchestrator.client_pool = MagicMock()
+        orchestrator.client_pool.get_client.return_value = mock_client
+
+        tasks = [make_mock_task()]
+        variants_list = list(variants_map.values())
+
+        result = orchestrator.run(
+            tasks=tasks,
+            variants=variants_list,
+            doc_tree=MagicMock(),
+            design=design,
+            variant_lookup=variants_map,
+        )
+
+        # At least one trial should have judge_score in its metrics.
+        judged = [t for t in result.trials if "judge_score" in t.metrics]
+        assert len(judged) >= 1, "Judge must fire for at least one trial"
+
+        # The tracker must have received judge_score in at least one call.
+        record_calls = mock_tracker.record_trial.call_args_list
+        judge_scores_in_tracker = [
+            call for call in record_calls
+            if call.kwargs.get("judge_score") is not None
+        ]
+        assert len(judge_scores_in_tracker) >= 1, (
+            "Tracker.record_trial must receive judge_score for judged trials. "
+            f"Received kwargs: {[c.kwargs for c in record_calls[:3]]}"
+        )
+
     def test_judge_failure_does_not_abort_trial(self):
         """If judge call fails, the trial still completes with its heuristic score."""
         axes = {1: ["flat", "2tier", "3tier"]}

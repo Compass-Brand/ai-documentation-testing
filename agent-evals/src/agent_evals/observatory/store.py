@@ -41,6 +41,7 @@ class TrialRecord:
     context_strategy: str = "full_context"
     llm_calls: int = 1
     strategy_metadata: dict | None = None
+    judge_score: float | None = None
 
 
 @dataclass
@@ -194,6 +195,7 @@ class ObservatoryStore:
             "ALTER TABLE phase_results ADD COLUMN prediction_interval TEXT",
             "ALTER TABLE phase_results ADD COLUMN se_prediction REAL",
             "ALTER TABLE phase_results ADD COLUMN confirmation TEXT",
+            "ALTER TABLE trials ADD COLUMN judge_score REAL",
         ]
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_trials_run_type_variant "
@@ -318,6 +320,7 @@ class ObservatoryStore:
         context_strategy: str = "full_context",
         llm_calls: int = 1,
         strategy_metadata: dict | None = None,
+        judge_score: float | None = None,
     ) -> int:
         """Record a single trial result.
 
@@ -333,13 +336,14 @@ class ObservatoryStore:
                 "score, prompt_tokens, completion_tokens, total_tokens, "
                 "cost, latency_seconds, model, source, error, created_at, "
                 "oa_row_id, phase, context_strategy, llm_calls, "
-                "strategy_metadata) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "strategy_metadata, judge_score) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id, task_id, task_type, variant_name, repetition,
                     score, prompt_tokens, completion_tokens, total_tokens,
                     cost, latency_seconds, model, source, error, now,
                     oa_row_id, phase, context_strategy, llm_calls, meta_json,
+                    judge_score,
                 ),
             )
             return cursor.lastrowid  # type: ignore[return-value]
@@ -595,6 +599,7 @@ class ObservatoryStore:
                 context_strategy=r["context_strategy"] or "full_context",
                 llm_calls=r["llm_calls"] or 1,
                 strategy_metadata=_parse_metadata(r["strategy_metadata"]),
+                judge_score=r["judge_score"] if "judge_score" in r.keys() else None,
             )
             for r in rows
         ]
