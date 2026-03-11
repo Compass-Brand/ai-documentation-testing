@@ -246,13 +246,12 @@ def run_anova(
     df_factors_sum = 0
 
     for factor in design.factors:
-        # Group S/N ratios by level, excluding dummy rows for this factor
+        # Group S/N ratios by level, using only non-dummy rows
+        # (same row set as grand_mean) for consistent ANOVA identity.
         level_groups: dict[str, list[float]] = {
             level: [] for level in factor.level_names
         }
-        for row in design.rows:
-            if factor.name in row.dummy_factors:
-                continue
+        for row in non_dummy_rows:
             level_name = row.assignments[factor.name]
             level_groups[level_name].append(sn_ratios[row.run_id])
 

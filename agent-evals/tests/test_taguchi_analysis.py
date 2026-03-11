@@ -698,3 +698,101 @@ class TestInteractionEffects:
         assert ("A", "B") in pair_names
         assert ("A", "C") in pair_names
         assert ("B", "C") in pair_names
+
+
+# ---------------------------------------------------------------------------
+# Bug #184: ANOVA consistent row filtering for mixed-level designs
+# ---------------------------------------------------------------------------
+
+
+class TestANOVAConsistentRowFiltering:
+    """ANOVA must use the same row set for grand_mean and per-factor SS.
+
+    Bug #184: grand_mean excludes rows where ALL factors are dummy, but
+    per-factor SS includes rows where SOME (other) factors are dummy.
+    This breaks the ANOVA identity SS_total = sum(SS_factor) + SS_error.
+    """
+
+    @staticmethod
+    def _make_mixed_level_design_with_dummies() -> TaguchiDesign:
+        """Mixed-level design: 2-level factor A, 3-level factor B.
+
+        In a 3-column OA, factor A (2 levels) gets a dummy level on one
+        of the three OA levels. Some rows have partial dummies (only A
+        is dummy) and NO row has ALL factors dummy.
+        """
+        factors = [
+            TaguchiFactorDef(name="A", n_levels=2,
+                             level_names=["a1", "a2"], axis=1),
+            TaguchiFactorDef(name="B", n_levels=3,
+                             level_names=["b1", "b2", "b3"], axis=2),
+        ]
+        rows = [
+            # Rows 1-3: A=a1, B cycles through b1/b2/b3
+            TaguchiExperimentRow(run_id=1, assignments={"A": "a1", "B": "b1"}),
+            TaguchiExperimentRow(run_id=2, assignments={"A": "a1", "B": "b2"}),
+            TaguchiExperimentRow(run_id=3, assignments={"A": "a1", "B": "b3"}),
+            # Rows 4-6: A=a2, B cycles
+            TaguchiExperimentRow(run_id=4, assignments={"A": "a2", "B": "b1"}),
+            TaguchiExperimentRow(run_id=5, assignments={"A": "a2", "B": "b2"}),
+            TaguchiExperimentRow(run_id=6, assignments={"A": "a2", "B": "b3"}),
+            # Rows 7-9: A=dummy, B cycles (partial-dummy rows)
+            TaguchiExperimentRow(
+                run_id=7, assignments={"A": "__dummy__", "B": "b1"},
+                dummy_factors={"A"},
+            ),
+            TaguchiExperimentRow(
+                run_id=8, assignments={"A": "__dummy__", "B": "b2"},
+                dummy_factors={"A"},
+            ),
+            TaguchiExperimentRow(
+                run_id=9, assignments={"A": "__dummy__", "B": "b3"},
+                dummy_factors={"A"},
+            ),
+        ]
+        return TaguchiDesign(
+            oa_name="L9_mixed", n_runs=9, factors=factors, rows=rows,
+            level_counts=[2, 3],
+        )
+
+    def test_anova_identity_holds_with_partial_dummy_rows(self):
+        """SS_total must equal sum(SS_factor) + SS_error.
+
+        With inconsistent row filtering, the identity breaks because
+        grand_mean is computed from a different row set than the per-factor
+        SS contributions.
+        """
+        design = self._make_mixed_level_design_with_dummies()
+        sn_ratios = {
+            1: 2.0, 2: 4.0, 3: 3.0,
+            4: 6.0, 5: 8.0, 6: 7.0,
+            7: 1.0, 8: 3.0, 9: 2.0,  # dummy-A rows
+        }
+        result = run_anova(design, sn_ratios)
+
+        ss_factors_sum = sum(fr.ss for fr in result.factors)
+        identity_lhs = result.ss_total
+        identity_rhs = ss_factors_sum + result.ss_error
+
+        assert abs(identity_lhs - identity_rhs) < 1e-10, (
+            f"ANOVA identity broken: SS_total={identity_lhs:.6f} != "
+            f"sum(SS_factor)+SS_error={identity_rhs:.6f} "
+            f"(diff={abs(identity_lhs - identity_rhs):.2e})"
+        )
+
+    def test_grand_mean_uses_non_dummy_rows_only(self):
+        """Grand mean should exclude partial-dummy rows for consistency."""
+        design = self._make_mixed_level_design_with_dummies()
+        sn_ratios = {
+            1: 2.0, 2: 4.0, 3: 3.0,
+            4: 6.0, 5: 8.0, 6: 7.0,
+            7: 100.0, 8: 100.0, 9: 100.0,  # extreme dummy-A values
+        }
+        result = run_anova(design, sn_ratios)
+
+        # Grand mean of non-dummy rows: (2+4+3+6+8+7)/6 = 5.0
+        expected_grand_mean = 5.0
+        assert abs(result.grand_mean - expected_grand_mean) < 1e-10, (
+            f"Grand mean {result.grand_mean} != expected {expected_grand_mean}; "
+            f"partial-dummy rows should be excluded"
+        )
