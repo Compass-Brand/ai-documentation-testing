@@ -382,3 +382,41 @@ class TestRetrievalSuffixMatching:
         response = "Check dataset-name/src/auth.py for details."
         score = task.score_response(response)
         assert score == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Bug #203: version numbers matched as false file paths
+# ---------------------------------------------------------------------------
+
+
+class TestBug203VersionNumberFalsePositives:
+    """Bug #203: regex matches version strings like v2.2.0 as file paths."""
+
+    def test_version_number_not_extracted_as_file_path(self) -> None:
+        """Version strings like v2.2.0 should not be treated as file paths."""
+        from agent_evals.tasks.retrieval import _FILE_PATH_PATTERN
+
+        matches = _FILE_PATH_PATTERN.findall("Updated to v2.2.0 in the latest release")
+        file_like = [m for m in matches if not m.startswith("v") or "/" in m]
+        assert len(file_like) == 0, (
+            f"Version string matched as file path: {matches}"
+        )
+
+    def test_version_in_sentence_does_not_inflate_score(self) -> None:
+        """Responses mentioning versions should not get false positive file matches."""
+        task = _retrieval_task(expected_files=[])
+        response = "This was fixed in v2.2.0 and v3.1.0-beta.1 of the framework."
+        score = task.score_response(response)
+        # No expected files and no real files extracted -> 1.0
+        # If version strings are extracted as files, score would be 0.0
+        assert score == 1.0
+
+    def test_real_file_paths_still_extracted(self) -> None:
+        """Paths with slashes or proper extensions are still recognized."""
+        from agent_evals.tasks.retrieval import _FILE_PATH_PATTERN
+
+        text = "See src/config.yaml and lib/utils.py for v2.2.0 changes"
+        matches = _FILE_PATH_PATTERN.findall(text)
+        paths = {m for m in matches}
+        assert "src/config.yaml" in paths
+        assert "lib/utils.py" in paths

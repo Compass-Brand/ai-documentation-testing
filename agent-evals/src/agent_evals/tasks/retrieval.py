@@ -16,10 +16,13 @@ import re
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 # Pattern to match file paths with common extensions (case-insensitive).
-# Uses a permissive extension pattern (1-10 word chars) so new languages
-# are recognised automatically instead of requiring an allow-list update.
+# Requires at least one ``/`` so bare dotted tokens like version numbers
+# (``v2.2.0``) are not matched as file paths (bug #203).  Paths without
+# slashes are only matched when the extension is alphabetic (not numeric).
 _FILE_PATH_PATTERN: re.Pattern[str] = re.compile(
-    r"(?:[\w./-]+/)?[\w.-]+\.\w{1,10}",
+    r"(?:[\w./-]+/[\w.-]+\.\w{1,10})"   # path with slash (always matched)
+    r"|"
+    r"(?:[\w.-]+\.[a-zA-Z]\w{0,9})",     # no slash: extension must start with letter
     re.IGNORECASE,
 )
 
