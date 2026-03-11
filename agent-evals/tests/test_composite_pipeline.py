@@ -477,7 +477,7 @@ class TestBackwardCompatibility:
         assert "stub-pre-filter" in meta.name
         assert "stub-post-transform" in meta.name
         assert meta.category == "composite"
-        assert meta.token_estimate == 350  # 200 + 100 + 50
+        assert meta.token_estimate == 200  # primary only (bug #182)
 
 
 # ---------------------------------------------------------------------------

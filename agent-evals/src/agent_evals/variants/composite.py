@@ -79,16 +79,14 @@ class CompositeVariant(IndexVariant):
             self._components[axis].metadata().name
             for axis in self._sorted_axes
         ]
-        estimates = [
-            self._components[axis].metadata().token_estimate
-            for axis in self._sorted_axes
-        ]
+        primary_axis = self._select_primary()
+        primary_estimate = self._components[primary_axis].metadata().token_estimate
         return VariantMetadata(
             name="+".join(names),
             axis=0,
             category="composite",
             description=f"Composite of {len(self._components)} variants",
-            token_estimate=sum(estimates),
+            token_estimate=primary_estimate,
         )
 
     def render(self, doc_tree: DocTree) -> str:
