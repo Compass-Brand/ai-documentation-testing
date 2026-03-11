@@ -60,15 +60,22 @@ class BigCodeBenchAdapter(DatasetAdapter):
                 libs = libs_raw
             else:
                 libs = [s.strip() for s in libs_raw.split(",")] if libs_raw else []
+
+            if not libs:
+                continue
+
             prompt = record.get("instruct_prompt") or record.get("complete_prompt", "")
+            solution = record.get("canonical_solution", "")
 
             # Generate sub-questions per library
             sub_questions = [
                 f"How would you use the {lib} library for this task?"
                 for lib in libs
             ]
+            # Extract meaningful keywords from canonical_solution per library
+            # instead of generic boilerplate (bug #176).
             expected_answers = [
-                f"Use {lib} API as shown in the solution."
+                self._extract_lib_answer(lib, solution)
                 for lib in libs
             ]
 
@@ -94,6 +101,25 @@ class BigCodeBenchAdapter(DatasetAdapter):
             count += 1
 
         return count
+
+    @staticmethod
+    def _extract_lib_answer(lib: str, solution: str) -> str:
+        """Extract lines from *solution* that reference *lib*.
+
+        Returns a compact string of solution lines containing the library name,
+        giving the compositional scorer meaningful keywords to match instead of
+        generic boilerplate text (bug #176).
+        """
+        lib_lower = lib.lower()
+        relevant = [
+            line.strip()
+            for line in solution.splitlines()
+            if lib_lower in line.lower() and line.strip()
+        ]
+        if relevant:
+            return "; ".join(relevant[:5])
+        # Fallback: first non-empty line mentioning import, or just the lib name
+        return f"import {lib}"
 
     def build_doc_tree(self, limit: int | None = None) -> DocTree:
         from agent_index.models import DocFile, DocTree

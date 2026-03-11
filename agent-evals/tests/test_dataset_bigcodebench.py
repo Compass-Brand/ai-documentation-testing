@@ -133,6 +133,106 @@ class TestBigCodeBenchConvertTasks:
         assert count == 5
 
 
+class TestBigCodeBenchFiltersEmptyLibs:
+    """Bug #181: Records with empty libs should be filtered out."""
+
+    def test_skips_records_with_empty_libs(self, tmp_path: Path) -> None:
+        from agent_evals.datasets.bigcodebench import BigCodeBenchAdapter
+
+        records = [
+            _make_bigcodebench_record(task_id="BigCodeBench/0", libs=["pandas", "numpy"]),
+            _make_bigcodebench_record(task_id="BigCodeBench/1", libs=[]),
+            _make_bigcodebench_record(task_id="BigCodeBench/2", libs=["os", "sys"]),
+        ]
+        adapter = BigCodeBenchAdapter()
+        with patch(
+            "agent_evals.datasets.bigcodebench.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 2  # Only the 2 records with non-empty libs
+
+    def test_skips_records_with_empty_string_libs(self, tmp_path: Path) -> None:
+        from agent_evals.datasets.bigcodebench import BigCodeBenchAdapter
+
+        records = [
+            _make_bigcodebench_record(task_id="BigCodeBench/0", libs=["pandas"]),
+        ]
+        # Simulate a record where libs is an empty string
+        records.append({
+            "task_id": "BigCodeBench/1",
+            "instruct_prompt": "Do something.",
+            "canonical_solution": "pass",
+            "test": "assert True",
+            "libs": "",
+            "complete_prompt": "Do something.",
+            "doc_struct": "{}",
+        })
+        adapter = BigCodeBenchAdapter()
+        with patch(
+            "agent_evals.datasets.bigcodebench.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 1  # Only the record with non-empty libs
+
+
+class TestBigCodeBenchExpectedAnswers:
+    """Bug #176: expected_answers are boilerplate, inflating keyword scoring."""
+
+    def test_expected_answers_not_boilerplate(self, tmp_path: Path) -> None:
+        """Expected answers should contain content from the solution, not generic text."""
+        from agent_evals.datasets.bigcodebench import BigCodeBenchAdapter
+
+        records = [
+            _make_bigcodebench_record(
+                task_id="BigCodeBench/0",
+                libs=["pandas", "numpy"],
+                canonical_solution="import pandas as pd\ndef solve(df):\n    return df.groupby('col').mean()",
+            ),
+        ]
+        adapter = BigCodeBenchAdapter()
+        with patch(
+            "agent_evals.datasets.bigcodebench.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            adapter.convert_tasks(tmp_path)
+
+        task = yaml.safe_load(list(tmp_path.glob("*.yaml"))[0].read_text())
+        answers = task["metadata"]["expected_answers"]
+        for answer in answers:
+            assert "as shown in the solution" not in answer, (
+                f"Expected answer is boilerplate: {answer}"
+            )
+
+    def test_expected_answers_contain_solution_keywords(self, tmp_path: Path) -> None:
+        """Expected answers should reference actual code from canonical_solution."""
+        from agent_evals.datasets.bigcodebench import BigCodeBenchAdapter
+
+        records = [
+            _make_bigcodebench_record(
+                task_id="BigCodeBench/0",
+                libs=["pandas"],
+                canonical_solution="import pandas as pd\ndef solve(df):\n    return df.groupby('col').mean()",
+            ),
+        ]
+        adapter = BigCodeBenchAdapter()
+        with patch(
+            "agent_evals.datasets.bigcodebench.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            adapter.convert_tasks(tmp_path)
+
+        task = yaml.safe_load(list(tmp_path.glob("*.yaml"))[0].read_text())
+        answers = task["metadata"]["expected_answers"]
+        combined = " ".join(answers).lower()
+        assert any(kw in combined for kw in ["pandas", "groupby", "mean", "import"]), (
+            f"Expected answers lack solution keywords: {answers}"
+        )
+
+
 class TestBigCodeBenchBuildDocTree:
     def test_builds_doc_tree(self) -> None:
         from agent_evals.datasets.bigcodebench import BigCodeBenchAdapter
