@@ -216,6 +216,10 @@ def import_run(
     # Save phase results
     phase_results = data.get("phase_results")
     if phase_results:
+        # Restore prediction_interval as tuple if stored as list
+        raw_pi = phase_results.get("prediction_interval")
+        pi = tuple(raw_pi) if isinstance(raw_pi, list) and len(raw_pi) == 2 else raw_pi
+
         store.save_phase_results(
             run_id=run_id,
             main_effects=phase_results.get("main_effects", {}),
@@ -227,6 +231,9 @@ def import_run(
             total_tokens=phase_results.get("total_tokens", 0),
             elapsed_seconds=phase_results.get("elapsed_seconds", 0.0),
             interaction_effects=phase_results.get("interaction_effects", []),
+            predicted_sn=phase_results.get("predicted_sn"),
+            prediction_interval=pi,
+            se_prediction=phase_results.get("se_prediction"),
         )
 
     # Save report artifacts

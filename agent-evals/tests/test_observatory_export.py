@@ -215,6 +215,40 @@ class TestRoundTripPreservesData:
         assert result["total_tokens"] == 250000
         assert result["elapsed_seconds"] == pytest.approx(1800.0)
 
+    def test_round_trip_preserves_prediction_fields(self, tmp_path: Path) -> None:
+        """predicted_sn, prediction_interval, se_prediction must survive round-trip."""
+        src = ObservatoryStore(db_path=tmp_path / "src.db")
+        src.create_run("run_001", "taguchi", {"model": "claude"})
+        src.record_trial(
+            run_id="run_001", task_id="t1", task_type="retrieval",
+            variant_name="flat", repetition=1, score=0.85,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.001, latency_seconds=1.5, model="claude",
+        )
+        src.save_phase_results(
+            run_id="run_001",
+            main_effects={"structure": {"flat": 2.5}},
+            anova={},
+            optimal={"structure": "flat"},
+            significant_factors=["structure"],
+            quality_type="larger_is_better",
+            predicted_sn=12.5,
+            prediction_interval=(10.0, 15.0),
+            se_prediction=1.25,
+        )
+
+        export_path = tmp_path / "bundle.json"
+        export_run(src, "run_001", export_path)
+
+        dst = ObservatoryStore(db_path=tmp_path / "dst.db")
+        import_run(dst, export_path)
+
+        result = dst.get_phase_results("run_001")
+        assert result is not None
+        assert result["predicted_sn"] == pytest.approx(12.5)
+        assert result["prediction_interval"] == pytest.approx([10.0, 15.0])
+        assert result["se_prediction"] == pytest.approx(1.25)
+
 
 # ---------------------------------------------------------------------------
 # TestImportRejectsDuplicateRun
