@@ -137,13 +137,29 @@ class TestRunsAPI:
         self, client: TestClient, _store: ObservatoryStore
     ) -> None:
         _store.create_run("run-1", "test", {})
+        _store.record_trial(
+            run_id="run-1", task_id="t1", task_type="retrieval",
+            variant_name="flat", repetition=1, score=0.9,
+            prompt_tokens=100, completion_tokens=50, total_tokens=150,
+            cost=0.001, latency_seconds=1.0, model="claude",
+        )
         response = client.post("/api/runs/run-1/finish")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "completed"
-        # Verify the run is now completed in the store
         summary = _store.get_run_summary("run-1")
         assert summary.status == "completed"
+
+    def test_finish_run_empty(
+        self, client: TestClient, _store: ObservatoryStore
+    ) -> None:
+        _store.create_run("run-1", "test", {})
+        response = client.post("/api/runs/run-1/finish")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "empty"
+        summary = _store.get_run_summary("run-1")
+        assert summary.status == "empty"
 
     def test_finish_run_not_found(self, client: TestClient) -> None:
         response = client.post("/api/runs/nonexistent/finish")

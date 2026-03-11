@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 
 from agent_evals.context.base import StrategyConfig
 from agent_evals.llm.client_pool import LLMClientPool
-from agent_evals.observatory.store import ObservatoryStore
+from agent_evals.observatory.store import ObservatoryStore, extract_provider
 from agent_evals.observatory.tracker import EventTracker, TrackerEvent
 from agent_evals.reports.aggregator import ReportData, aggregate
 from agent_evals.runner import EvalRunConfig, EvalRunResult, EvalRunner, TrialResult
@@ -139,6 +139,25 @@ class EvalOrchestrator:
 
         self._dashboard_thread: threading.Thread | None = None
         self._dashboard_handle: Any = None
+        self._cache_dir: str = (
+            config.eval_config.cache_dir
+            if config.eval_config
+            else ".agent-evals-cache"
+        )
+
+    def clear_cache(self) -> int:
+        """Clear the response cache to prevent cross-phase contamination.
+
+        Called between pipeline phases so that confirmation/refinement
+        trials make fresh API calls instead of replaying screening
+        responses (bug #236).
+
+        Returns the number of cache entries removed.
+        """
+        from agent_evals.llm.cache import ResponseCache
+
+        cache = ResponseCache(cache_dir=self._cache_dir, enabled=True)
+        return cache.clear()
 
     @property
     def runner_type(self) -> str:
@@ -164,6 +183,7 @@ class EvalOrchestrator:
         pipeline_id: str | None = None,
         mode: str | None = None,
         resume_run_id: str | None = None,
+        parent_run_id: str | None = None,
     ) -> OrchestratorResult:
         """Execute a full evaluation run with telemetry and reporting.
 
@@ -190,6 +210,8 @@ class EvalOrchestrator:
             Pipeline phase name (e.g. ``"screening"``, ``"confirmation"``).
         pipeline_id:
             Pipeline run identifier for DOE multi-phase experiments.
+        parent_run_id:
+            Parent run for confirmation/refinement phases in a pipeline.
 
         Returns
         -------
@@ -245,6 +267,7 @@ class EvalOrchestrator:
                 },
                 phase=phase,
                 pipeline_id=pipeline_id,
+                parent_run_id=parent_run_id,
             )
 
         # Wire up telemetry: bridge trial progress to the EventTracker.
@@ -254,7 +277,13 @@ class EvalOrchestrator:
             completed: int, total: int, trial: TrialResult
         ) -> None:
             trial_oa_row_id = trial.metrics.get("oa_row_id") if trial.metrics else None
-            trial_phase = trial.metrics.get("phase") if trial.metrics else None
+            # Fall back to the phase parameter passed to orchestrator.run()
+            # when the trial's own metrics lack it (bug #237: EvalRunner
+            # doesn't set phase in metrics, only TaguchiRunner does).
+            trial_phase = (
+                (trial.metrics.get("phase") if trial.metrics else None)
+                or phase
+            )
             trial_judge_score = trial.metrics.get("judge_score") if trial.metrics else None
 
             # Build per-call LLM details from aggregate trial data.
@@ -272,7 +301,7 @@ class EvalOrchestrator:
                         "api_call_ms": api_call_ms if i == 0 else 0.0,
                         "cached_tokens": 0,
                         "model": getattr(trial, "model", model_name),
-                        "provider": None,
+                        "provider": extract_provider(getattr(trial, "model", model_name)),
                     }
                     for i in range(max(trial.llm_calls, 1))
                 ]

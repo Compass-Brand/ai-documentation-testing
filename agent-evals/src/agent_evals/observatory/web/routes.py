@@ -206,10 +206,11 @@ def create_router(
             summary = store.get_run_summary(run_id)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        if summary.status in ("completed", "failed"):
+        if summary.status in ("completed", "failed", "empty"):
             return {"run_id": run_id, "status": summary.status}
         store.finish_run(run_id)
-        return {"run_id": run_id, "status": "completed"}
+        updated = store.get_run_summary(run_id)
+        return {"run_id": run_id, "status": updated.status}
 
     @router.get("/api/runs/{run_id}/trials")
     async def get_trials(

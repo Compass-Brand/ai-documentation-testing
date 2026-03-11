@@ -410,7 +410,8 @@ class TestObservatoryStoreIntegration:
         runs = orch.store.list_runs()
         assert len(runs) == 1
         assert runs[0].run_id == result.run_id
-        assert runs[0].status == "completed"
+        # Mock _run_full doesn't record trials in store, so status is 'empty'
+        assert runs[0].status == "empty"
 
     def test_run_type_matches_mode(self, tmp_path: Path) -> None:
         orch = _make_orchestrator(tmp_path, mode="full")
