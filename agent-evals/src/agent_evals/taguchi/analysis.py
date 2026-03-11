@@ -145,8 +145,12 @@ def compute_sn_ratios(
 
         elif quality_type == "nominal_is_best":
             # S/N = 10 * log10(mean^2 / variance)
+            # Use sample variance (n-1) per Taguchi's standard formula.
             mean_val = sum(scores) / n
-            variance = sum((y - mean_val) ** 2 for y in scores) / n
+            if n < 2:
+                result[row_id] = 100.0
+                continue
+            variance = sum((y - mean_val) ** 2 for y in scores) / (n - 1)
             if variance < 1e-30:
                 # Near-zero variance -> very high S/N
                 result[row_id] = 100.0
@@ -535,8 +539,12 @@ def predict_optimal(
         n = len(sn_ratios)
 
         if anova_result is not None:
-            # Use ANOVA residual error (excludes factor-effect variance)
-            se = math.sqrt(anova_result.ms_error / n)
+            # Use ANOVA residual error with n_eff (effective replications).
+            # For the additive model the prediction uses 1 + sum(df_i)
+            # estimated parameters, so n_eff = n / (1 + sum(df_i)).
+            sum_dof = sum(f.df for f in anova_result.factors)
+            n_eff = n / (1 + sum_dof)
+            se = math.sqrt(anova_result.ms_error / n_eff)
             df = anova_result.df_error
         else:
             # Fallback: total variance (no ANOVA available)

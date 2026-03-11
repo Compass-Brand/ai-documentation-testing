@@ -112,6 +112,32 @@ class TestComputeSNRatios:
         sn = compute_sn_ratios(scores, quality_type="nominal_is_best")
         assert sn[1] > sn[2]
 
+    def test_nominal_is_best_uses_sample_variance(self):
+        """Bug #228: nominal_is_best should use n-1 (Bessel's correction)."""
+        # With scores [0.4, 0.6]:
+        #   mean = 0.5
+        #   population var (/ n):   (0.01 + 0.01) / 2 = 0.01
+        #   sample var     (/ n-1): (0.01 + 0.01) / 1 = 0.02
+        #   S/N (pop):  10*log10(0.25 / 0.01) = 10*log10(25) ≈ 13.979
+        #   S/N (sample): 10*log10(0.25 / 0.02) = 10*log10(12.5) ≈ 10.969
+        scores = {1: [0.4, 0.6]}
+        sn = compute_sn_ratios(scores, quality_type="nominal_is_best")
+
+        mean_val = 0.5
+        sample_var = sum((y - mean_val) ** 2 for y in [0.4, 0.6]) / 1  # n-1
+        expected_sn = 10.0 * math.log10(mean_val ** 2 / sample_var)
+
+        assert abs(sn[1] - expected_sn) < 0.001, (
+            f"S/N={sn[1]:.4f} doesn't match sample variance formula "
+            f"(expected {expected_sn:.4f}). Likely using population variance."
+        )
+
+    def test_nominal_is_best_single_observation_returns_cap(self):
+        """Bug #228: n=1 should return capped S/N, not divide-by-zero."""
+        scores = {1: [0.7]}
+        sn = compute_sn_ratios(scores, quality_type="nominal_is_best")
+        assert sn[1] == 100.0
+
     def test_invalid_quality_type_raises(self):
         with pytest.raises(ValueError, match="quality_type"):
             compute_sn_ratios({1: [0.5]}, quality_type="invalid")
@@ -489,9 +515,11 @@ class TestPredictOptimal:
             effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
         )
 
-        # Compute expected interval using ms_error and df_error
+        # Compute expected interval using ms_error, n_eff, and df_error
         n = len(sn_ratios)
-        se_expected = math.sqrt(anova.ms_error / n)
+        sum_dof = sum(f.df for f in anova.factors)
+        n_eff = n / (1 + sum_dof)
+        se_expected = math.sqrt(anova.ms_error / n_eff)
         t_val = stats.t.ppf(0.975, anova.df_error)
         margin = t_val * se_expected
         expected_low = prediction.predicted_sn - margin
@@ -890,3 +918,109 @@ class TestPredictOptimalMixedLevelGrandMean:
         # predicted = grand_mean + sum(best - factor_mean)
         expected = correct_grand_mean + (5.0 - 3.0) + (6.0 - 4.0)
         assert abs(prediction.predicted_sn - expected) < 1e-10
+
+
+# ---------------------------------------------------------------------------
+# Bug #225: predict_optimal prediction interval uses n instead of n_eff
+# ---------------------------------------------------------------------------
+
+
+class TestPredictOptimalNeff:
+    """predict_optimal must use n_eff (effective replications) for the
+    prediction interval, not n (total observations).
+
+    Bug #225: For a k-factor additive model the effective sample size is
+    n_eff = n / (1 + sum(df_i)) where df_i = levels_i - 1.  Using plain
+    n makes the interval ~sqrt(1 + sum_DOF) times too narrow, turning
+    confirmation into a rubber stamp.
+    """
+
+    def test_se_uses_n_eff_not_n(self):
+        """SE must be sqrt(ms_error / n_eff), not sqrt(ms_error / n).
+
+        For a 2-factor, 3-level L9 design:
+          n = 9, sum_dof = 2 + 2 = 4, n_eff = 9 / 5 = 1.8
+          SE_correct = sqrt(ms_error / 1.8) ≈ 2.24 × SE_wrong
+        """
+        design = _make_design_2factor()
+        sn_ratios = {
+            1: 0.5, 2: 1.0, 3: 2.5,
+            4: 5.5, 5: 6.0, 6: 6.5,
+            7: 10.0, 8: 11.5, 9: 12.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
+        )
+
+        n = len(sn_ratios)
+        sum_dof = sum(f.df for f in anova.factors)
+        n_eff = n / (1 + sum_dof)
+
+        expected_se = math.sqrt(anova.ms_error / n_eff)
+        wrong_se = math.sqrt(anova.ms_error / n)
+
+        # The correct SE must be larger than n-based SE
+        assert expected_se > wrong_se * 1.5, (
+            "Expected n_eff-based SE to be significantly larger than n-based SE"
+        )
+        assert prediction.se_prediction is not None
+        assert abs(prediction.se_prediction - expected_se) < 1e-10, (
+            f"SE={prediction.se_prediction:.6f} != expected={expected_se:.6f}; "
+            f"likely using n={n} instead of n_eff={n_eff:.2f}"
+        )
+
+    def test_interval_wider_with_n_eff(self):
+        """Prediction interval must be wider when using n_eff.
+
+        With the wrong n, the interval is ~sqrt(1 + sum_DOF) times too narrow.
+        """
+        design = _make_design_2factor()
+        sn_ratios = {
+            1: 0.5, 2: 1.0, 3: 2.5,
+            4: 5.5, 5: 6.0, 6: 6.5,
+            7: 10.0, 8: 11.5, 9: 12.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
+        )
+
+        # Compute the wrong (too narrow) interval for comparison
+        n = len(sn_ratios)
+        wrong_se = math.sqrt(anova.ms_error / n)
+        t_val = stats.t.ppf(0.975, anova.df_error)
+        wrong_margin = t_val * wrong_se
+
+        assert prediction.prediction_interval is not None
+        actual_margin = (
+            prediction.prediction_interval[1]
+            - prediction.prediction_interval[0]
+        ) / 2.0
+
+        # Actual margin must be wider than the wrong margin
+        assert actual_margin > wrong_margin * 1.5, (
+            f"Interval margin {actual_margin:.4f} not wider than wrong "
+            f"margin {wrong_margin:.4f}; likely using n instead of n_eff"
+        )
+
+    def test_n_eff_without_anova_falls_back_to_n(self):
+        """Without ANOVA, fallback uses total variance with n (no n_eff)."""
+        effects = {
+            "axis_1": {"flat": 1.0, "2tier": 3.0, "3tier": 5.0},
+            "axis_2": {"path": 2.0, "summary": 4.0, "tokens": 3.0},
+        }
+        sn = {i + 1: float(i) for i in range(9)}
+        prediction = predict_optimal(effects, sn_ratios=sn)
+
+        # Without ANOVA, should use total variance / n (no n_eff correction)
+        n = len(sn)
+        sn_values = list(sn.values())
+        sn_mean = sum(sn_values) / n
+        residual_var = sum((y - sn_mean) ** 2 for y in sn_values) / (n - 1)
+        expected_se = math.sqrt(residual_var / n)
+
+        assert prediction.se_prediction is not None
+        assert abs(prediction.se_prediction - expected_se) < 1e-10
