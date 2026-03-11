@@ -123,6 +123,7 @@ def load_tasks(directory: Path, *, strict: bool = True) -> list[EvalTask]:
         raise FileNotFoundError(msg)
 
     tasks: list[EvalTask] = []
+    loaded_paths: list[Path] = []
     errors: list[tuple[Path, Exception]] = []
 
     yaml_paths = sorted(
@@ -136,6 +137,7 @@ def load_tasks(directory: Path, *, strict: bool = True) -> list[EvalTask]:
         try:
             task = load_task(yaml_path)
             tasks.append(task)
+            loaded_paths.append(yaml_path)
         except (ValueError, FileNotFoundError) as exc:
             if strict:
                 raise
@@ -150,7 +152,6 @@ def load_tasks(directory: Path, *, strict: bool = True) -> list[EvalTask]:
 
     # Check for duplicate task_ids
     seen_ids: dict[str, Path] = {}
-    loaded_paths = [p for p in yaml_paths if p not in {e[0] for e in errors}]
     for task, yaml_path in zip(tasks, loaded_paths):
         tid = task.definition.task_id
         if tid in seen_ids:

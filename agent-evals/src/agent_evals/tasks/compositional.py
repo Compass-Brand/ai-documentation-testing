@@ -39,9 +39,16 @@ class CompositionalTask(EvalTask):
         else:
             questions = meta.get("sub_questions", [])
             answers = meta.get("expected_answers", [])
+            if len(questions) != len(answers):
+                msg = (
+                    f"sub_questions ({len(questions)}) and "
+                    f"expected_answers ({len(answers)}) must have the "
+                    f"same length"
+                )
+                raise ValueError(msg)
             self.sub_tasks = [
                 {"question": q, "expected_answer": a}
-                for q, a in zip(questions, answers)
+                for q, a in zip(questions, answers, strict=True)
             ]
 
     def build_prompt(self, index_content: str) -> list[dict[str, str]]:

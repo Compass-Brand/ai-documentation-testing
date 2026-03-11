@@ -25,7 +25,8 @@ _AMBIGUITY_PHRASES = (
     "several meanings",
     "two possible",
     "different meanings",
-    "interpret",
+    "can be interpreted as",
+    "different interpretations",
 )
 
 # Weights for the three scoring axes

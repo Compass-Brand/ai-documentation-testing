@@ -94,8 +94,9 @@ def parse_hallucination_result(raw: str) -> HallucinationResult:
         end = raw.rfind("}") + 1
         if start >= 0 and end > start:
             data = json.loads(raw[start:end])
+            raw_score = float(data.get("hallucination_score", 0.5))
             return HallucinationResult(
-                score=float(data.get("hallucination_score", 0.5)),
+                score=max(0.0, min(1.0, raw_score)),
                 hallucination_type=data.get("type", "unknown"),
                 flagged_claims=data.get("flagged_claims", []),
             )

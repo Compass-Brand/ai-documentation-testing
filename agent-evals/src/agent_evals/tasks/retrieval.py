@@ -20,9 +20,9 @@ from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 # (``v2.2.0``) are not matched as file paths (bug #203).  Paths without
 # slashes are only matched when the extension is alphabetic (not numeric).
 _FILE_PATH_PATTERN: re.Pattern[str] = re.compile(
-    r"(?:[\w./-]+/[\w.-]+\.\w{1,10})"   # path with slash (always matched)
+    r"(?:[\w./-]+/[\w.-]+\.[a-zA-Z]\w{0,9})"  # path with slash: extension starts with letter
     r"|"
-    r"(?:[\w.-]+\.[a-zA-Z]\w{0,9})",     # no slash: extension must start with letter
+    r"(?:[\w.-]{2,}\.[a-zA-Z]\w{0,9})",        # no slash: 2+ chars before dot, alphabetic ext
     re.IGNORECASE,
 )
 

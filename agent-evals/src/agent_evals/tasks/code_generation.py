@@ -68,6 +68,22 @@ def _detect_language(response: str) -> str | None:
     return None
 
 
+def _check_syntax_all_blocks(response: str) -> bool:
+    """Check syntax of each code block independently with its own language.
+
+    When multiple fenced code blocks are present, each block is validated
+    using its own language tag instead of concatenating all blocks and
+    detecting the language from only the first block (bug #211).
+    """
+    matches = re.findall(r"```(\w*)\n(.*?)```", response, re.DOTALL)
+    if not matches:
+        return _check_syntax(response)
+    return all(
+        _check_syntax(code, lang.lower() if lang else None)
+        for lang, code in matches
+    )
+
+
 def _check_syntax(code: str, language: str | None = None) -> bool:
     """Check whether the code is syntactically valid.
 
@@ -187,10 +203,8 @@ class CodeGenerationTask(EvalTask):
         else:
             violation_rate = 0.0
 
-        # Syntax validation bonus
-        code = _extract_code_blocks(response)
-        language = _detect_language(response)
-        syntax_bonus = 1.0 if _check_syntax(code, language) else 0.0
+        # Syntax validation bonus (each code block checked independently)
+        syntax_bonus = 1.0 if _check_syntax_all_blocks(response) else 0.0
 
         score = match_rate * 0.7 + (1.0 - violation_rate) * 0.2 + syntax_bonus * 0.1
         return max(0.0, min(1.0, score))
