@@ -231,13 +231,12 @@ def run_anova(
     Returns:
         ANOVAResult with per-factor statistics and error terms.
     """
-    # Exclude rows that have ANY dummy factor from the global S/N pool.
-    # This keeps the grand mean unbiased by incomplete experimental conditions.
-    non_dummy_rows = [
-        row for row in design.rows
-        if not row.dummy_factors
-    ]
-    all_sn = [sn_ratios[row.run_id] for row in non_dummy_rows]
+    # Use ALL rows for grand mean and SS_total.  In Taguchi mixed-level
+    # designs, dummy levels are a bookkeeping device — each OA row is still
+    # a real experimental run whose S/N ratio is a valid observation.
+    # Per-factor SS excludes only rows where THAT SPECIFIC factor is at a
+    # dummy level, so the unmodelled dummy-level variance flows into SS_error.
+    all_sn = [sn_ratios[row.run_id] for row in design.rows]
     n = len(all_sn)
     grand_mean = sum(all_sn) / n
 
@@ -250,12 +249,14 @@ def run_anova(
     df_factors_sum = 0
 
     for factor in design.factors:
-        # Group S/N ratios by level, using only non-dummy rows
-        # (same row set as grand_mean) for consistent ANOVA identity.
+        # Group S/N ratios by level, excluding only rows where THIS
+        # factor is at a dummy level (not all rows with any dummy).
         level_groups: dict[str, list[float]] = {
             level: [] for level in factor.level_names
         }
-        for row in non_dummy_rows:
+        for row in design.rows:
+            if factor.name in row.dummy_factors:
+                continue
             level_name = row.assignments[factor.name]
             level_groups[level_name].append(sn_ratios[row.run_id])
 
@@ -465,6 +466,45 @@ def compute_interactions(
         ))
 
     return sorted(results, key=lambda ie: (ie.factor1, ie.factor2))
+
+
+# ---------------------------------------------------------------------------
+# Factor Ranking by Effect Range
+# ---------------------------------------------------------------------------
+
+
+def rank_factors_by_effect_range(
+    main_effects: dict[str, dict[str, float]],
+    exclude_factors: set[str] | None = None,
+) -> list[str]:
+    """Rank factors by their main effect S/N range (max − min), descending.
+
+    Used by the refinement phase to select the top-K factors for full
+    factorial exploration, instead of relying on ANOVA significance
+    which may not be reliable with noisy LLM data.
+
+    Args:
+        main_effects: ``{factor_name: {level_name: mean_sn}}``.
+        exclude_factors: Factor names to exclude (e.g. ``{"model"}``).
+
+    Returns:
+        Factor names sorted by effect range, largest first.
+        Factors with fewer than 2 observed levels are omitted.
+    """
+    exclude = exclude_factors or set()
+    ranges: list[tuple[str, float]] = []
+
+    for name, levels in main_effects.items():
+        if name in exclude:
+            continue
+        observed = [v for v in levels.values() if not math.isnan(v)]
+        if len(observed) < 2:
+            continue
+        effect_range = max(observed) - min(observed)
+        ranges.append((name, effect_range))
+
+    ranges.sort(key=lambda x: x[1], reverse=True)
+    return [name for name, _ in ranges]
 
 
 # ---------------------------------------------------------------------------

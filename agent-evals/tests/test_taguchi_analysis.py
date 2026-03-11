@@ -544,11 +544,13 @@ class TestPredictOptimal:
             effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
         )
 
-        # With perfectly additive data, ms_error ≈ 0 → se ≈ 0 → no interval
+        # With perfectly additive data, ms_error ~ 0 -> se_prediction = NaN
         assert anova.ms_error < 1e-10
-        # SE should be effectively zero
-        if prediction.se_prediction is not None:
-            assert prediction.se_prediction < 1e-10
+        # SE should be NaN (not 0) to signal undefined error estimate
+        assert prediction.se_prediction is not None
+        assert math.isnan(prediction.se_prediction), (
+            f"se_prediction={prediction.se_prediction}; expected NaN for zero ms_error"
+        )
 
     def test_additivity_r_squared_computed_with_design(self):
         """When design is provided, additivity R-squared should be computed."""
@@ -808,11 +810,12 @@ class TestANOVAConsistentRowFiltering:
             f"(diff={abs(identity_lhs - identity_rhs):.2e})"
         )
 
-    def test_anova_per_factor_ss_excludes_partial_dummy_rows(self):
-        """Per-factor level groups should not include partial-dummy rows.
+    def test_anova_per_factor_ss_uses_factor_specific_filtering(self):
+        """Per-factor SS excludes only rows where THAT factor is dummy.
 
-        Factor B should NOT include the dummy-A rows (7-9) in its level
-        group counts — they must be excluded for consistency with grand_mean.
+        Factor B (no dummy levels) should use ALL 9 rows — including
+        rows 7-9 where A is dummy but B is real.  Factor A should only
+        use rows 1-6 (where A is at a real level).
         """
         design = self._make_mixed_level_design_with_dummies()
         sn_ratios = {
@@ -822,29 +825,36 @@ class TestANOVAConsistentRowFiltering:
         }
         result = run_anova(design, sn_ratios)
 
-        # Factor B has 3 levels; with 6 non-dummy rows, each level
-        # should appear exactly 2 times (not 3 which would include dummies)
         b_factor = next(f for f in result.factors if f.factor_name == "B")
         # df should be n_levels - 1 = 2
         assert b_factor.df == 2
-        # With balanced design, each eta_squared should be reasonable
         assert b_factor.eta_squared >= 0
 
-    def test_grand_mean_uses_non_dummy_rows_only(self):
-        """Grand mean should exclude partial-dummy rows for consistency."""
+        a_factor = next(f for f in result.factors if f.factor_name == "A")
+        # Factor A has 2 levels, df = 1
+        assert a_factor.df == 1
+
+    def test_grand_mean_uses_all_rows(self):
+        """Grand mean must use all rows (including partial-dummy rows).
+
+        In standard Taguchi ANOVA, every OA row is a real experiment.
+        Dummy levels are bookkeeping — the row's S/N is still valid.
+        Per-factor SS excludes only rows where THAT factor is dummy,
+        and unmodelled variance flows into SS_error.
+        """
         design = self._make_mixed_level_design_with_dummies()
         sn_ratios = {
             1: 2.0, 2: 4.0, 3: 3.0,
             4: 6.0, 5: 8.0, 6: 7.0,
-            7: 100.0, 8: 100.0, 9: 100.0,  # extreme dummy-A values
+            7: 1.0, 8: 3.0, 9: 2.0,
         }
         result = run_anova(design, sn_ratios)
 
-        # Grand mean of non-dummy rows: (2+4+3+6+8+7)/6 = 5.0
-        expected_grand_mean = 5.0
+        # Grand mean of ALL 9 rows: (2+4+3+6+8+7+1+3+2)/9 = 36/9 = 4.0
+        expected_grand_mean = 4.0
         assert abs(result.grand_mean - expected_grand_mean) < 1e-10, (
             f"Grand mean {result.grand_mean} != expected {expected_grand_mean}; "
-            f"partial-dummy rows should be excluded"
+            f"should use all rows including partial-dummy rows"
         )
 
 
@@ -1024,3 +1034,343 @@ class TestPredictOptimalNeff:
 
         assert prediction.se_prediction is not None
         assert abs(prediction.se_prediction - expected_se) < 1e-10
+
+
+# ---------------------------------------------------------------------------
+# Bugs #231, #232, #238: ANOVA SS decomposition, df_error, se_prediction
+# ---------------------------------------------------------------------------
+
+
+def _make_design_4factor_many_dummies() -> TaguchiDesign:
+    """4 two-level factors on an L9 OA: most rows have at least one dummy.
+
+    Standard L9(3^4) OA with each factor having 2 real levels and a dummy
+    at OA level 2.  Only rows 1 and 4 have all factors at real levels.
+
+    L9 OA columns:
+    Row | C1 C2 C3 C4    Factor assignments (0→lvl1, 1→lvl2, 2→dummy):
+     1  |  0  0  0  0    A=a1 B=b1 C=c1 D=d1  (no dummy)
+     2  |  0  1  1  2    A=a1 B=b2 C=c2 D=dum  (dummy: D)
+     3  |  0  2  2  1    A=a1 B=dum C=dum D=d2  (dummy: B,C)
+     4  |  1  0  1  1    A=a2 B=b1 C=c2 D=d2  (no dummy)
+     5  |  1  1  2  0    A=a2 B=b2 C=dum D=d1  (dummy: C)
+     6  |  1  2  0  2    A=a2 B=dum C=c1 D=dum  (dummy: B,D)
+     7  |  2  0  2  2    A=dum B=b1 C=dum D=dum  (dummy: A,C,D)
+     8  |  2  1  0  1    A=dum B=b2 C=c1 D=d2  (dummy: A)
+     9  |  2  2  1  0    A=dum B=dum C=c2 D=d1  (dummy: A,B)
+    """
+    factors = [
+        TaguchiFactorDef(name="A", n_levels=2, level_names=["a1", "a2"], axis=1),
+        TaguchiFactorDef(name="B", n_levels=2, level_names=["b1", "b2"], axis=2),
+        TaguchiFactorDef(name="C", n_levels=2, level_names=["c1", "c2"], axis=3),
+        TaguchiFactorDef(name="D", n_levels=2, level_names=["d1", "d2"], axis=4),
+    ]
+    rows = [
+        TaguchiExperimentRow(
+            run_id=1, assignments={"A": "a1", "B": "b1", "C": "c1", "D": "d1"},
+        ),
+        TaguchiExperimentRow(
+            run_id=2, assignments={"A": "a1", "B": "b2", "C": "c2", "D": "__dummy__"},
+            dummy_factors={"D"},
+        ),
+        TaguchiExperimentRow(
+            run_id=3,
+            assignments={"A": "a1", "B": "__dummy__", "C": "__dummy__", "D": "d2"},
+            dummy_factors={"B", "C"},
+        ),
+        TaguchiExperimentRow(
+            run_id=4, assignments={"A": "a2", "B": "b1", "C": "c2", "D": "d2"},
+        ),
+        TaguchiExperimentRow(
+            run_id=5,
+            assignments={"A": "a2", "B": "b2", "C": "__dummy__", "D": "d1"},
+            dummy_factors={"C"},
+        ),
+        TaguchiExperimentRow(
+            run_id=6,
+            assignments={"A": "a2", "B": "__dummy__", "C": "c1", "D": "__dummy__"},
+            dummy_factors={"B", "D"},
+        ),
+        TaguchiExperimentRow(
+            run_id=7,
+            assignments={"A": "__dummy__", "B": "b1", "C": "__dummy__", "D": "__dummy__"},
+            dummy_factors={"A", "C", "D"},
+        ),
+        TaguchiExperimentRow(
+            run_id=8,
+            assignments={"A": "__dummy__", "B": "b2", "C": "c1", "D": "d2"},
+            dummy_factors={"A"},
+        ),
+        TaguchiExperimentRow(
+            run_id=9,
+            assignments={"A": "__dummy__", "B": "__dummy__", "C": "c2", "D": "d1"},
+            dummy_factors={"A", "B"},
+        ),
+    ]
+    return TaguchiDesign(
+        oa_name="L9_4x2", n_runs=9, factors=factors, rows=rows,
+        level_counts=[2, 2, 2, 2],
+    )
+
+
+class TestANOVASSDecomposition:
+    """Bug #231: ANOVA SS decomposition must not give each factor SS = SS_total.
+
+    When only fully-non-dummy rows are used, designs with many dummy factors
+    shrink the row set so far that each factor's levels have ~1 observation
+    each, making SS_factor = SS_total for every factor.
+
+    The fix: use ALL rows for grand_mean/SS_total; for each factor's SS,
+    exclude only rows where THAT SPECIFIC factor is at a dummy level.
+    """
+
+    def test_no_factor_ss_exceeds_ss_total(self):
+        """No individual factor SS should exceed SS_total."""
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        for fr in result.factors:
+            assert fr.ss <= result.ss_total + 1e-10, (
+                f"Factor {fr.factor_name} SS={fr.ss:.4f} exceeds "
+                f"SS_total={result.ss_total:.4f}"
+            )
+
+    def test_ss_factors_sum_lte_ss_total(self):
+        """Sum of all factor SS must not exceed SS_total."""
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        ss_factors_sum = sum(fr.ss for fr in result.factors)
+        assert ss_factors_sum <= result.ss_total + 1e-10, (
+            f"Sum of factor SS ({ss_factors_sum:.4f}) exceeds "
+            f"SS_total ({result.ss_total:.4f})"
+        )
+
+    def test_anova_identity_ss_total_equals_ss_factors_plus_ss_error(self):
+        """ANOVA identity: SS_total = sum(SS_factor) + SS_error."""
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        ss_factors_sum = sum(fr.ss for fr in result.factors)
+        assert abs(result.ss_total - (ss_factors_sum + result.ss_error)) < 1e-10, (
+            f"ANOVA identity broken: SS_total={result.ss_total:.6f} != "
+            f"sum(SS_factor)+SS_error={ss_factors_sum + result.ss_error:.6f}"
+        )
+
+    def test_grand_mean_uses_all_rows(self):
+        """Grand mean must use all N rows, not just fully-non-dummy rows.
+
+        Hand-computed: grand_mean = (2+5+3+8+4+7+1+6+3)/9 = 39/9 ≈ 4.333
+        Buggy (rows 1,4 only): (2+8)/2 = 5.0
+        """
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        expected_grand_mean = 39.0 / 9.0
+        assert abs(result.grand_mean - expected_grand_mean) < 1e-10, (
+            f"Grand mean {result.grand_mean:.6f} != expected {expected_grand_mean:.6f}; "
+            f"likely using only fully-non-dummy rows instead of all rows"
+        )
+
+    def test_ss_total_uses_all_rows(self):
+        """SS_total must be computed from all N rows.
+
+        Hand-computed with grand_mean = 13/3:
+        SS_total = sum((y_i - 13/3)^2) = 396/9 = 44.0
+        Buggy (rows 1,4): (2-5)^2 + (8-5)^2 = 18.0
+        """
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        assert abs(result.ss_total - 44.0) < 1e-10, (
+            f"SS_total={result.ss_total:.6f} != expected 44.0; "
+            f"likely using only fully-non-dummy rows"
+        )
+
+    def test_per_factor_ss_uses_factor_specific_rows(self):
+        """Each factor's SS uses rows where that factor is NOT dummy.
+
+        Factor A (non-dummy rows 1-6):
+          a1: rows 1,2,3 → mean = 10/3
+          a2: rows 4,5,6 → mean = 19/3
+          SS_A = 3*(10/3 - 13/3)^2 + 3*(19/3 - 13/3)^2 = 3+12 = 15.0
+        """
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        a_factor = next(f for f in result.factors if f.factor_name == "A")
+        assert abs(a_factor.ss - 15.0) < 1e-10, (
+            f"Factor A SS={a_factor.ss:.6f} != expected 15.0; "
+            f"should use rows 1-6 (where A is not dummy)"
+        )
+
+
+class TestANOVADfError:
+    """Bug #232: df_error must use total rows N, not non-dummy count.
+
+    With L9 (9 rows) and 4 two-level factors (4 df total):
+      Correct:  df_error = 9 - 1 - 4 = 4
+      Buggy:    df_error = max(2 - 1 - 4, 1) = 1  (only 2 non-dummy rows)
+    """
+
+    def test_df_error_uses_total_rows(self):
+        """df_error = N_total - 1 - sum(df_factor)."""
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        expected_df_error = 9 - 1 - 4  # N - 1 - sum(df_factors)
+        assert result.df_error == expected_df_error, (
+            f"df_error={result.df_error} != expected {expected_df_error}; "
+            f"likely using non-dummy row count instead of total rows"
+        )
+
+    def test_ms_error_nonzero(self):
+        """ms_error must be nonzero when there is residual variance."""
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        # SS_error = 44 - 98/3 = 34/3 ≈ 11.333
+        # ms_error = (34/3) / 4 = 17/6 ≈ 2.833
+        assert result.ms_error > 0, (
+            f"ms_error={result.ms_error}; should be > 0 with residual variance"
+        )
+        expected_ms_error = 17.0 / 6.0
+        assert abs(result.ms_error - expected_ms_error) < 1e-10, (
+            f"ms_error={result.ms_error:.6f} != expected {expected_ms_error:.6f}"
+        )
+
+    def test_f_ratios_finite(self):
+        """F-ratios must be finite when ms_error > 0."""
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        for fr in result.factors:
+            assert math.isfinite(fr.f_ratio), (
+                f"Factor {fr.factor_name} F-ratio={fr.f_ratio}; "
+                f"should be finite when ms_error > 0"
+            )
+
+    def test_p_values_nonzero(self):
+        """p-values must not all be zero when ms_error is proper."""
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        result = run_anova(design, sn)
+
+        # At least some p-values should be > 0 (not all factors are significant)
+        p_values = [fr.p_value for fr in result.factors]
+        assert any(p > 0 for p in p_values), (
+            f"All p-values are 0: {p_values}; ms_error is likely wrong"
+        )
+
+
+class TestANOVASePrediction:
+    """Bug #238: se_prediction=0 when ms_error=0 (downstream of #232).
+
+    When df_error and ms_error are correctly computed, se_prediction
+    should be > 0 for designs with residual variance.
+    """
+
+    def test_se_prediction_nonzero_with_residual_variance(self):
+        """se_prediction must be > 0 when the design has residual error."""
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        effects = compute_main_effects(design, sn)
+        anova = run_anova(design, sn)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn, design=design, anova_result=anova,
+        )
+
+        assert prediction.se_prediction is not None
+        assert prediction.se_prediction > 0, (
+            f"se_prediction={prediction.se_prediction}; "
+            f"should be > 0 when ms_error > 0"
+        )
+
+    def test_prediction_interval_nonzero_width(self):
+        """Prediction interval must have nonzero width."""
+        design = _make_design_4factor_many_dummies()
+        sn = {1: 2.0, 2: 5.0, 3: 3.0, 4: 8.0, 5: 4.0, 6: 7.0, 7: 1.0, 8: 6.0, 9: 3.0}
+
+        effects = compute_main_effects(design, sn)
+        anova = run_anova(design, sn)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn, design=design, anova_result=anova,
+        )
+
+        assert prediction.prediction_interval is not None
+        low, high = prediction.prediction_interval
+        assert high - low > 0, (
+            f"Prediction interval width = {high - low}; should be > 0"
+        )
+
+    def test_se_prediction_nan_when_ms_error_zero(self):
+        """se_prediction must be NaN (not 0) when ms_error is 0 or < 1e-12.
+
+        With perfectly additive data, ms_error=0 -> sqrt(0/n_eff)=0.
+        Returning 0 is misleading because it implies perfect certainty.
+        NaN signals that the error estimate is undefined.
+        """
+        design = _make_design_2factor()
+        # Perfectly additive data: zero residual error
+        sn_ratios = {
+            1: 1.0, 2: 3.0, 3: 2.0,
+            4: 3.0, 5: 5.0, 6: 4.0,
+            7: 5.0, 8: 7.0, 9: 6.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        assert anova.ms_error < 1e-12, "Precondition: ms_error must be ~0"
+
+        prediction = predict_optimal(
+            effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
+        )
+
+        assert prediction.se_prediction is not None, (
+            "se_prediction should be NaN, not None"
+        )
+        assert math.isnan(prediction.se_prediction), (
+            f"se_prediction={prediction.se_prediction}; "
+            f"should be NaN when ms_error < 1e-12, not 0"
+        )
+
+    def test_prediction_interval_none_when_ms_error_zero(self):
+        """prediction_interval must be None when ms_error is 0.
+
+        NaN * t_val = NaN, so no valid interval can be computed.
+        """
+        design = _make_design_2factor()
+        sn_ratios = {
+            1: 1.0, 2: 3.0, 3: 2.0,
+            4: 3.0, 5: 5.0, 6: 4.0,
+            7: 5.0, 8: 7.0, 9: 6.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
+        )
+
+        assert prediction.prediction_interval is None, (
+            f"prediction_interval should be None when se is NaN, "
+            f"got {prediction.prediction_interval}"
+        )
