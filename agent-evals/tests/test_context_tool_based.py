@@ -265,6 +265,35 @@ class TestToolExecution:
         result = strategy._execute_tool("search_docs", {"query": "zzzznonexistentzzzz"})
         assert result == "" or "no match" in result.lower()
 
+    def test_search_docs_caps_results(self):
+        """Bug #219: search_docs should cap results to avoid context overflow."""
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy()
+        # Create a doc_tree with 30 files all matching "common"
+        files = {}
+        for i in range(30):
+            files[f"docs/file_{i:03d}.md"] = DocFile(
+                rel_path=f"docs/file_{i:03d}.md",
+                content=f"# File {i}\nThis contains common content.",
+                size_bytes=40,
+                token_count=10,
+                tier="optional",
+                section="Docs",
+            )
+        doc_tree = DocTree(
+            files=files,
+            scanned_at=datetime(2026, 1, 1),
+            source="/test",
+            total_tokens=300,
+        )
+        strategy.setup("# Index", doc_tree)
+
+        result = strategy._execute_tool("search_docs", {"query": "common"})
+        # Should be capped at a reasonable number (e.g. 20 files)
+        file_matches = [line for line in result.split("\n") if line.startswith("--- ")]
+        assert len(file_matches) <= 20
+
     def test_search_docs_case_insensitive(self):
         from agent_evals.context.tool_based import ToolBasedStrategy
 
@@ -715,6 +744,32 @@ class TestGenerationResultToolCalls:
 # ---------------------------------------------------------------------------
 # Registry Discovery
 # ---------------------------------------------------------------------------
+
+
+class TestTeardown:
+    """Bug #220: teardown() must clear internal state to prevent leaks."""
+
+    def test_teardown_clears_doc_tree(self):
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy()
+        doc_tree = _make_doc_tree()
+        strategy.setup("index", doc_tree)
+        assert strategy._doc_tree is not None
+
+        strategy.teardown()
+        assert strategy._doc_tree is None
+
+    def test_teardown_clears_rendered_index(self):
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy()
+        doc_tree = _make_doc_tree()
+        strategy.setup("my index content", doc_tree)
+        assert strategy._rendered_index == "my index content"
+
+        strategy.teardown()
+        assert strategy._rendered_index == ""
 
 
 class TestRegistryDiscovery:

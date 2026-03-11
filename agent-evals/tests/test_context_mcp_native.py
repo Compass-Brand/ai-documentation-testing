@@ -433,6 +433,39 @@ class TestMCPExecuteTool:
         assert "JWT" in result
         assert "auth.md" in result
 
+    def test_search_resources_returns_matching_lines_not_beginning(self):
+        """Bug #218: _search should return lines containing the query, not first 200 chars."""
+        from agent_evals.context.mcp_native import MCPNativeStrategy
+
+        strategy = MCPNativeStrategy()
+        # Create a doc with the match deep in the content
+        doc_tree = DocTree(
+            files={
+                "guides/large.md": DocFile(
+                    rel_path="guides/large.md",
+                    content=(
+                        "# Large Document\n"
+                        + "This is filler content.\n" * 20
+                        + "The SECRET_KEYWORD is here.\n"
+                        + "More filler content.\n" * 20
+                    ),
+                    size_bytes=1000,
+                    token_count=200,
+                    tier="required",
+                    section="Guides",
+                    summary="Large doc",
+                ),
+            },
+            scanned_at=datetime(2026, 1, 1),
+            source="/test",
+            total_tokens=200,
+        )
+        strategy.setup("# Index", doc_tree)
+
+        result = strategy._execute_tool("search_resources", {"query": "SECRET_KEYWORD"})
+        # The result should contain the actual matching line, not just the first 200 chars
+        assert "SECRET_KEYWORD" in result
+
     def test_search_resources_case_insensitive(self):
         from agent_evals.context.mcp_native import MCPNativeStrategy
 
@@ -454,6 +487,35 @@ class TestMCPExecuteTool:
             "search_resources", {"query": "zzzznonexistentzzzz"}
         )
         assert "no results" in result.lower()
+
+    def test_search_resources_caps_results(self):
+        """Bug #219: search_resources should cap results to avoid context overflow."""
+        from agent_evals.context.mcp_native import MCPNativeStrategy
+
+        strategy = MCPNativeStrategy()
+        files = {}
+        for i in range(30):
+            files[f"docs/file_{i:03d}.md"] = DocFile(
+                rel_path=f"docs/file_{i:03d}.md",
+                content=f"# File {i}\nThis contains common content.",
+                size_bytes=40,
+                token_count=10,
+                tier="optional",
+                section="Docs",
+                summary=f"File {i}",
+            )
+        doc_tree = DocTree(
+            files=files,
+            scanned_at=datetime(2026, 1, 1),
+            source="/test",
+            total_tokens=300,
+        )
+        strategy.setup("# Index", doc_tree)
+
+        result = strategy._execute_tool("search_resources", {"query": "common"})
+        # Should be capped at a reasonable number (e.g. 20 files)
+        file_matches = [line for line in result.split("\n") if line.startswith("docs://")]
+        assert len(file_matches) <= 20
 
     def test_search_resources_empty_query_returns_no_results(self):
         from agent_evals.context.mcp_native import MCPNativeStrategy

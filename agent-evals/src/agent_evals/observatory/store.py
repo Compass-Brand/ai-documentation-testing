@@ -112,6 +112,47 @@ CREATE TABLE IF NOT EXISTS trial_traces (
     response_text TEXT NOT NULL,
     created_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS factor_definitions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id       TEXT NOT NULL REFERENCES runs(run_id),
+    factor_name  TEXT NOT NULL,
+    axis_id      INTEGER NOT NULL,
+    level_index  INTEGER NOT NULL,
+    level_name   TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS task_metadata (
+    task_id    TEXT PRIMARY KEY,
+    task_type  TEXT NOT NULL,
+    domain     TEXT NOT NULL DEFAULT '',
+    difficulty TEXT NOT NULL DEFAULT '',
+    word_count INTEGER NOT NULL DEFAULT 0,
+    tag_count  INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS report_artifacts (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id        TEXT NOT NULL REFERENCES runs(run_id),
+    artifact_type TEXT NOT NULL,
+    data_json     TEXT NOT NULL,
+    created_at    TEXT NOT NULL,
+    UNIQUE(run_id, artifact_type)
+);
+
+CREATE TABLE IF NOT EXISTS llm_call_details (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    trial_id          INTEGER NOT NULL REFERENCES trials(trial_id),
+    call_index        INTEGER NOT NULL,
+    prompt_tokens     INTEGER NOT NULL DEFAULT 0,
+    completion_tokens INTEGER NOT NULL DEFAULT 0,
+    cost              REAL,
+    api_call_ms       REAL NOT NULL DEFAULT 0.0,
+    cached_tokens     INTEGER NOT NULL DEFAULT 0,
+    model             TEXT NOT NULL DEFAULT '',
+    provider          TEXT
+);
 """
 
 
@@ -145,6 +186,14 @@ class ObservatoryStore:
             "ALTER TABLE trials ADD COLUMN context_strategy TEXT DEFAULT 'full_context'",
             "ALTER TABLE trials ADD COLUMN llm_calls INTEGER DEFAULT 1",
             "ALTER TABLE trials ADD COLUMN strategy_metadata TEXT",
+            "ALTER TABLE phase_results ADD COLUMN total_cost REAL DEFAULT 0.0",
+            "ALTER TABLE phase_results ADD COLUMN total_tokens INTEGER DEFAULT 0",
+            "ALTER TABLE phase_results ADD COLUMN elapsed_seconds REAL DEFAULT 0.0",
+            "ALTER TABLE phase_results ADD COLUMN interaction_effects TEXT DEFAULT '[]'",
+            "ALTER TABLE phase_results ADD COLUMN predicted_sn REAL",
+            "ALTER TABLE phase_results ADD COLUMN prediction_interval TEXT",
+            "ALTER TABLE phase_results ADD COLUMN se_prediction REAL",
+            "ALTER TABLE phase_results ADD COLUMN confirmation TEXT",
         ]
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_trials_run_type_variant "
@@ -155,6 +204,12 @@ class ObservatoryStore:
             "ON trials (variant_name, repetition)",
             "CREATE INDEX IF NOT EXISTS idx_trials_strategy "
             "ON trials (context_strategy)",
+            "CREATE INDEX IF NOT EXISTS idx_factor_defs_run "
+            "ON factor_definitions (run_id)",
+            "CREATE INDEX IF NOT EXISTS idx_report_artifacts_run "
+            "ON report_artifacts (run_id)",
+            "CREATE INDEX IF NOT EXISTS idx_llm_calls_trial "
+            "ON llm_call_details (trial_id)",
         ]
         with self._connect() as conn:
             for stmt in migrations:
@@ -553,15 +608,34 @@ class ObservatoryStore:
         optimal: dict,
         significant_factors: list[str],
         quality_type: str,
+        total_cost: float = 0.0,
+        total_tokens: int = 0,
+        elapsed_seconds: float = 0.0,
+        interaction_effects: list[dict] | None = None,
+        predicted_sn: float | None = None,
+        prediction_interval: tuple[float, float] | None = None,
+        se_prediction: float | None = None,
+        confirmation: dict | None = None,
     ) -> None:
         """Save Taguchi phase analysis results for a run."""
         now = datetime.now(timezone.utc).isoformat()
+        interval_json = (
+            json.dumps(list(prediction_interval))
+            if prediction_interval is not None
+            else None
+        )
+        confirmation_json = (
+            json.dumps(confirmation) if confirmation is not None else None
+        )
         with self._lock, self._connect() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO phase_results "
                 "(run_id, main_effects, anova, optimal, "
-                "significant_factors, quality_type, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "significant_factors, quality_type, created_at, "
+                "total_cost, total_tokens, elapsed_seconds, "
+                "interaction_effects, predicted_sn, prediction_interval, "
+                "se_prediction, confirmation) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     json.dumps(main_effects),
@@ -570,6 +644,14 @@ class ObservatoryStore:
                     json.dumps(significant_factors),
                     quality_type,
                     now,
+                    total_cost,
+                    total_tokens,
+                    elapsed_seconds,
+                    json.dumps(interaction_effects or []),
+                    predicted_sn,
+                    interval_json,
+                    se_prediction,
+                    confirmation_json,
                 ),
             )
 
@@ -594,12 +676,32 @@ class ObservatoryStore:
                 )
                 return None
 
+        # Parse prediction_interval JSON (stored as [low, high] or null)
+        raw_interval = row["prediction_interval"] if "prediction_interval" in row.keys() else None
+        prediction_interval = None
+        if raw_interval is not None:
+            try:
+                prediction_interval = json.loads(raw_interval)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "Corrupted JSON in phase_results.prediction_interval for run %s",
+                    run_id,
+                )
+
         return {
             "main_effects": _safe_json("main_effects"),
             "anova": _safe_json("anova"),
             "optimal": _safe_json("optimal"),
             "significant_factors": _safe_json("significant_factors"),
             "quality_type": row["quality_type"],
+            "total_cost": row["total_cost"] or 0.0,
+            "total_tokens": row["total_tokens"] or 0,
+            "elapsed_seconds": row["elapsed_seconds"] or 0.0,
+            "interaction_effects": _safe_json("interaction_effects") or [],
+            "predicted_sn": row["predicted_sn"] if "predicted_sn" in row.keys() else None,
+            "prediction_interval": prediction_interval,
+            "se_prediction": row["se_prediction"] if "se_prediction" in row.keys() else None,
+            "confirmation": _safe_json("confirmation") if "confirmation" in row.keys() else None,
         }
 
     def get_pipeline_runs(self, pipeline_id: str) -> list[RunSummary]:
@@ -678,5 +780,246 @@ class ObservatoryStore:
             ).fetchall()
         return [
             {"pipeline_id": r["pipeline_id"], "run_count": r["run_count"]}
+            for r in rows
+        ]
+
+    def save_factor_definitions(
+        self, run_id: str, definitions: list[dict]
+    ) -> None:
+        """Save factor/level definitions for a run.
+
+        Replaces any existing definitions for the run (DELETE + INSERT).
+
+        Args:
+            run_id: The run to attach definitions to.
+            definitions: List of dicts with keys: factor_name, axis_id,
+                level_index, level_name, description.
+        """
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "DELETE FROM factor_definitions WHERE run_id = ?",
+                (run_id,),
+            )
+            for d in definitions:
+                conn.execute(
+                    "INSERT INTO factor_definitions "
+                    "(run_id, factor_name, axis_id, level_index, "
+                    "level_name, description) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        run_id,
+                        d["factor_name"],
+                        d["axis_id"],
+                        d["level_index"],
+                        d["level_name"],
+                        d.get("description", ""),
+                    ),
+                )
+
+    def get_factor_definitions(self, run_id: str) -> list[dict]:
+        """Retrieve factor definitions for a run.
+
+        Returns:
+            List of dicts ordered by axis_id then level_index.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT factor_name, axis_id, level_index, "
+                "level_name, description "
+                "FROM factor_definitions WHERE run_id = ? "
+                "ORDER BY axis_id, level_index",
+                (run_id,),
+            ).fetchall()
+        return [
+            {
+                "factor_name": r["factor_name"],
+                "axis_id": r["axis_id"],
+                "level_index": r["level_index"],
+                "level_name": r["level_name"],
+                "description": r["description"],
+            }
+            for r in rows
+        ]
+
+    def save_task_metadata(self, metadata_list: list[dict]) -> None:
+        """Upsert task metadata records.
+
+        Each dict must have keys: task_id, task_type, domain, difficulty,
+        word_count, tag_count. Existing rows with the same task_id are
+        replaced (INSERT OR REPLACE).
+
+        Args:
+            metadata_list: List of task metadata dicts to persist.
+        """
+        with self._lock, self._connect() as conn:
+            for m in metadata_list:
+                conn.execute(
+                    "INSERT OR REPLACE INTO task_metadata "
+                    "(task_id, task_type, domain, difficulty, "
+                    "word_count, tag_count) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        m["task_id"],
+                        m["task_type"],
+                        m.get("domain", ""),
+                        m.get("difficulty", ""),
+                        m.get("word_count", 0),
+                        m.get("tag_count", 0),
+                    ),
+                )
+
+    def save_report_artifact(
+        self, run_id: str, artifact_type: str, data: dict
+    ) -> None:
+        """Save or replace a report artifact.
+
+        Uses INSERT OR REPLACE on the UNIQUE(run_id, artifact_type)
+        constraint so a second save for the same key overwrites.
+
+        Args:
+            run_id: The run this artifact belongs to.
+            artifact_type: Kind of artifact (e.g. "kv_cache_analysis").
+            data: Arbitrary dict payload serialised as JSON.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._connect() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO report_artifacts "
+                "(run_id, artifact_type, data_json, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (run_id, artifact_type, json.dumps(data), now),
+            )
+
+    def get_report_artifact(
+        self, run_id: str, artifact_type: str
+    ) -> dict | None:
+        """Retrieve a specific report artifact.
+
+        Returns:
+            Dict with ``data`` (parsed JSON) and ``created_at``,
+            or None if no matching artifact exists.
+        """
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT data_json, created_at FROM report_artifacts "
+                "WHERE run_id = ? AND artifact_type = ?",
+                (run_id, artifact_type),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "data": json.loads(row["data_json"]),
+            "created_at": row["created_at"],
+        }
+
+    def list_report_artifacts(self, run_id: str) -> list[dict]:
+        """List all artifacts for a run.
+
+        Returns:
+            List of ``{"artifact_type": str, "created_at": str}``
+            ordered by artifact_type.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT artifact_type, created_at FROM report_artifacts "
+                "WHERE run_id = ? ORDER BY artifact_type",
+                (run_id,),
+            ).fetchall()
+        return [
+            {
+                "artifact_type": r["artifact_type"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
+
+    def get_task_metadata(
+        self, *, task_type: str | None = None
+    ) -> list[dict]:
+        """Retrieve task metadata, optionally filtered by task_type.
+
+        Returns:
+            List of dicts ordered by task_id.
+        """
+        query = "SELECT task_id, task_type, domain, difficulty, word_count, tag_count FROM task_metadata"
+        params: list[str] = []
+        if task_type is not None:
+            query += " WHERE task_type = ?"
+            params.append(task_type)
+        query += " ORDER BY task_id"
+
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            {
+                "task_id": r["task_id"],
+                "task_type": r["task_type"],
+                "domain": r["domain"],
+                "difficulty": r["difficulty"],
+                "word_count": r["word_count"],
+                "tag_count": r["tag_count"],
+            }
+            for r in rows
+        ]
+
+    def save_llm_call_details(
+        self, trial_id: int, calls: list[dict]
+    ) -> None:
+        """Batch insert per-call LLM details for a trial.
+
+        Args:
+            trial_id: The trial to attach call details to.
+            calls: List of dicts with keys: call_index, prompt_tokens,
+                completion_tokens, cost, api_call_ms, cached_tokens,
+                model, provider.
+        """
+        with self._lock, self._connect() as conn:
+            for c in calls:
+                conn.execute(
+                    "INSERT INTO llm_call_details "
+                    "(trial_id, call_index, prompt_tokens, "
+                    "completion_tokens, cost, api_call_ms, "
+                    "cached_tokens, model, provider) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        trial_id,
+                        c["call_index"],
+                        c.get("prompt_tokens", 0),
+                        c.get("completion_tokens", 0),
+                        c.get("cost"),
+                        c.get("api_call_ms", 0.0),
+                        c.get("cached_tokens", 0),
+                        c.get("model", ""),
+                        c.get("provider"),
+                    ),
+                )
+
+    def get_llm_call_details(self, trial_id: int) -> list[dict]:
+        """Retrieve per-call LLM details for a trial.
+
+        Returns:
+            List of dicts ordered by call_index. Each dict has:
+            call_index, prompt_tokens, completion_tokens, cost,
+            api_call_ms, cached_tokens, model, provider.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT call_index, prompt_tokens, completion_tokens, "
+                "cost, api_call_ms, cached_tokens, model, provider "
+                "FROM llm_call_details WHERE trial_id = ? "
+                "ORDER BY call_index",
+                (trial_id,),
+            ).fetchall()
+        return [
+            {
+                "call_index": r["call_index"],
+                "prompt_tokens": r["prompt_tokens"],
+                "completion_tokens": r["completion_tokens"],
+                "cost": r["cost"],
+                "api_call_ms": r["api_call_ms"],
+                "cached_tokens": r["cached_tokens"],
+                "model": r["model"],
+                "provider": r["provider"],
+            }
             for r in rows
         ]

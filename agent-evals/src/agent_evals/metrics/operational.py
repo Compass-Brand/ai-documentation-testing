@@ -97,7 +97,11 @@ def aggregate_turn_metrics(turns: list[TurnMetrics]) -> CostMetrics:
         reasoning_tokens=0,
         cached_tokens=0,
         cache_write_tokens=0,
-        total_cost_usd=sum(t.cost_usd for t in turns if t.cost_usd),
+        total_cost_usd=(
+            sum(c for c in (t.cost_usd for t in turns) if c is not None)
+            if any(t.cost_usd is not None for t in turns)
+            else None
+        ),
         cache_discount_usd=None,
         latency_ms=sum(t.api_call_ms for t in turns),
         generation_time_ms=None,

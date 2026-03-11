@@ -5,12 +5,13 @@ from __future__ import annotations
 import copy
 import logging
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from agent_evals.context.base import StrategyConfig
 from agent_evals.taguchi.analysis import (
+    compute_interactions,
     compute_main_effects,
     compute_sn_ratios,
     predict_optimal,
@@ -23,6 +24,17 @@ if TYPE_CHECKING:
     from agent_evals.orchestrator import EvalOrchestrator
 
 logger = logging.getLogger(__name__)
+
+
+def _to_dict(obj: Any) -> Any:
+    """Convert a dataclass instance to a dict, or return the object as-is."""
+    if obj is None:
+        return {}
+    try:
+        fields(obj)  # raises TypeError if not a dataclass instance
+        return asdict(obj)
+    except TypeError:
+        return obj
 
 
 @dataclass
@@ -65,7 +77,11 @@ class PhaseResult:
     optimal: dict[str, str] | None = None
     significant_factors: list[str] = field(default_factory=list)
     predicted_sn: float | None = None
+    prediction_interval: tuple[float, float] | list[float] | None = None
+    se_prediction: float | None = None
     confirmation: dict[str, Any] | None = None
+    interaction_effects: list[dict] = field(default_factory=list)
+    trial_count: int | None = None
 
 
 @dataclass
@@ -100,28 +116,100 @@ class DOEPipeline:
         self._pipeline_id = pipeline_id or uuid4().hex[:12]
         self._store = orchestrator.store
 
+    def _phase_trial_count(self, phase: PhaseResult) -> int:
+        """Return trial count for a phase, using the store for resumed phases."""
+        if phase.trials:
+            return len(phase.trials)
+        if phase.trial_count is not None:
+            return phase.trial_count
+        if self._store:
+            try:
+                summary = self._store.get_run_summary(phase.run_id)
+                return summary.total_trials
+            except ValueError:
+                return 0
+        return 0
+
     @staticmethod
     def _group_refinement_scores(
         trials: list[Any],
         design: Any,
     ) -> dict[int, list[float]]:
-        """Group full-mode trial scores into design-row buckets.
+        """Group trial scores into design-row buckets by exact match.
 
-        In refinement, trials run in full mode (one variant per trial).
-        Each design row assigns a level per factor; we match a trial's
-        ``variant_name`` to any row that includes it, then collect
-        scores per row.  Trials matching no row are skipped.
+        Matches each trial to the OA row whose full factor combination
+        matches the trial's variant name.  Composite names (``"a+b+c"``)
+        are split on ``"+"`` and matched against the row's sorted
+        assignment values.  Single-variant names are matched when only
+        one factor uses that level name (unambiguous).
+
+        Trials with ``oa_row_id`` in metrics are mapped directly.
+        Trials matching no row are skipped.
         """
-        name_to_rows: dict[str, set[int]] = defaultdict(set)
+        # Build row signature -> row_id for exact combination matching.
+        # Signature = tuple of level names sorted by factor name.
+        sig_to_row: dict[tuple[str, ...], int] = {}
+        factor_names_sorted = sorted(f.name for f in design.factors)
         for row in design.rows:
-            for level_name in row.assignments.values():
-                name_to_rows[level_name].add(row.run_id)
+            sig = tuple(row.assignments[f] for f in factor_names_sorted)
+            sig_to_row[sig] = row.run_id
+
+        # Build single-level-name -> factor_name for unambiguous
+        # single-variant matching.  None marks ambiguous names.
+        level_to_factor: dict[str, str | None] = {}
+        for factor in design.factors:
+            for level_name in factor.level_names:
+                if level_name in level_to_factor:
+                    # Ambiguous — appears in multiple factors
+                    level_to_factor[level_name] = None
+                else:
+                    level_to_factor[level_name] = factor.name
 
         row_scores: dict[int, list[float]] = defaultdict(list)
         for trial in trials:
+            if trial.error is not None:
+                continue
+
+            # Fast path: direct oa_row_id from Taguchi runner
+            oa_row_id = (
+                trial.metrics.get("oa_row_id")
+                if hasattr(trial, "metrics") and trial.metrics
+                else None
+            )
+            if oa_row_id is not None:
+                row_scores[int(oa_row_id)].append(trial.score)
+                continue
+
             vname = trial.variant_name
-            for rid in name_to_rows.get(vname, set()):
-                row_scores[rid].append(trial.score)
+
+            # Try composite name match: "level1+level2+..." -> exact row
+            if "+" in vname:
+                parts = vname.split("+")
+                # Try all permutations against row signatures
+                sig = tuple(parts)
+                if sig in sig_to_row:
+                    row_scores[sig_to_row[sig]].append(trial.score)
+                    continue
+                # Also try matching by sorted factor order
+                # (composite names are sorted by axis in CompositeVariant)
+                # Fall through to row-by-row matching
+                for row in design.rows:
+                    vals = tuple(
+                        row.assignments[f] for f in factor_names_sorted
+                    )
+                    if set(parts) == set(vals) and len(parts) == len(vals):
+                        row_scores[row.run_id].append(trial.score)
+                        break
+                continue
+
+            # Single-variant name: map to rows where this level's
+            # specific factor matches.  Skip if ambiguous.
+            factor_name = level_to_factor.get(vname)
+            if factor_name is None:
+                continue  # ambiguous or unknown level name
+            for row in design.rows:
+                if row.assignments.get(factor_name) == vname:
+                    row_scores[row.run_id].append(trial.score)
 
         return dict(row_scores)
 
@@ -163,6 +251,19 @@ class DOEPipeline:
             key=lambda f: f.omega_squared,
             reverse=True,
         )
+
+        # Compute 2-way interaction effects from the full factorial data
+        # Only include rows that have S/N data (some may be missing)
+        design_rows = [
+            row.assignments for row in design.rows
+            if row.run_id in sn_ratios
+        ]
+        sn_list = [
+            sn_ratios[row.run_id] for row in design.rows
+            if row.run_id in sn_ratios
+        ]
+        interactions = compute_interactions(design_rows, sn_list)
+
         return {
             "main_effects": main_effects,
             "anova": anova,
@@ -170,6 +271,9 @@ class DOEPipeline:
             "predicted_sn": optimal.predicted_sn,
             "significant_factors": [
                 f.factor_name for f in sig_factors
+            ],
+            "interaction_effects": [
+                asdict(ie) for ie in interactions
             ],
         }
 
@@ -231,9 +335,9 @@ class DOEPipeline:
                 self.config.screening_reps
             )
 
-        # 2. Build the Taguchi experimental design
+        # 2. Build the Taguchi experimental design (axis 0 baselines excluded)
         design = build_design(
-            dict(axes), self.config.models, self.config.oa_override
+            dict(usable_axes), self.config.models, self.config.oa_override
         )
 
         # 3. Build variant lookup
@@ -251,9 +355,12 @@ class DOEPipeline:
             resume_run_id=resume_run_id,
         )
 
-        # 5. Group trial scores by OA row
+        # 5. Group trial scores by OA row (exclude error trials — they are
+        #    not real measurements and would bias S/N and ANOVA with 0.0).
         row_scores: dict[int, list[float]] = defaultdict(list)
         for trial in result.trials:
+            if trial.error is not None:
+                continue
             row_id = trial.metrics["oa_row_id"]
             row_scores[row_id].append(trial.score)
 
@@ -274,7 +381,7 @@ class DOEPipeline:
             reverse=True,
         )
 
-        return PhaseResult(
+        phase_result = PhaseResult(
             run_id=result.run_id,
             phase="screening",
             trials=result.trials,
@@ -285,8 +392,28 @@ class DOEPipeline:
             anova=anova,
             optimal=optimal.optimal_assignment,
             predicted_sn=optimal.predicted_sn,
+            prediction_interval=optimal.prediction_interval,
+            se_prediction=optimal.se_prediction,
             significant_factors=[f.factor_name for f in sig_factors],
         )
+
+        if self._store is not None:
+            self._store.save_phase_results(
+                run_id=phase_result.run_id,
+                main_effects=_to_dict(phase_result.main_effects),
+                anova=_to_dict(phase_result.anova),
+                optimal=_to_dict(phase_result.optimal),
+                significant_factors=phase_result.significant_factors,
+                quality_type=self.config.quality_type,
+                total_cost=phase_result.total_cost,
+                total_tokens=phase_result.total_tokens,
+                elapsed_seconds=phase_result.elapsed_seconds,
+                predicted_sn=phase_result.predicted_sn,
+                prediction_interval=phase_result.prediction_interval,
+                se_prediction=phase_result.se_prediction,
+            )
+
+        return phase_result
 
     def run_confirmation(
         self,
@@ -346,9 +473,16 @@ class DOEPipeline:
         # Build an OptimalPrediction from screening results for validation
         from agent_evals.taguchi.analysis import OptimalPrediction
 
+        # Reconstruct prediction_interval as tuple if stored as list
+        pi = screening_result.prediction_interval
+        if isinstance(pi, list) and len(pi) == 2:
+            pi = (pi[0], pi[1])
+
         prediction = OptimalPrediction(
             optimal_assignment=screening_result.optimal or {},
             predicted_sn=screening_result.predicted_sn or 0.0,
+            prediction_interval=pi,
+            se_prediction=screening_result.se_prediction,
         )
 
         # Validate observed against prediction
@@ -356,7 +490,7 @@ class DOEPipeline:
             prediction, optimal_scores, self.config.quality_type
         )
 
-        return PhaseResult(
+        phase_result = PhaseResult(
             run_id=result.run_id,
             phase="confirmation",
             trials=result.trials,
@@ -371,6 +505,22 @@ class DOEPipeline:
                 "prediction_interval": conf_result.prediction_interval,
             },
         )
+
+        if self._store is not None:
+            self._store.save_phase_results(
+                run_id=phase_result.run_id,
+                main_effects=_to_dict(phase_result.main_effects),
+                anova=_to_dict(phase_result.anova),
+                optimal=_to_dict(phase_result.optimal),
+                significant_factors=phase_result.significant_factors,
+                quality_type=self.config.quality_type,
+                total_cost=phase_result.total_cost,
+                total_tokens=phase_result.total_tokens,
+                elapsed_seconds=phase_result.elapsed_seconds,
+                confirmation=phase_result.confirmation,
+            )
+
+        return phase_result
 
     def run_refinement(
         self,
@@ -430,7 +580,7 @@ class DOEPipeline:
             filtered_variants, result.trials,
         )
 
-        return PhaseResult(
+        phase_result = PhaseResult(
             run_id=result.run_id,
             phase="refinement",
             trials=result.trials,
@@ -442,7 +592,24 @@ class DOEPipeline:
             optimal=analysis["optimal"],
             predicted_sn=analysis["predicted_sn"],
             significant_factors=analysis["significant_factors"],
+            interaction_effects=analysis.get("interaction_effects", []),
         )
+
+        if self._store is not None:
+            self._store.save_phase_results(
+                run_id=phase_result.run_id,
+                main_effects=_to_dict(phase_result.main_effects),
+                anova=_to_dict(phase_result.anova),
+                optimal=_to_dict(phase_result.optimal),
+                significant_factors=phase_result.significant_factors,
+                quality_type=self.config.quality_type,
+                total_cost=phase_result.total_cost,
+                total_tokens=phase_result.total_tokens,
+                elapsed_seconds=phase_result.elapsed_seconds,
+                interaction_effects=phase_result.interaction_effects,
+            )
+
+        return phase_result
 
     def run(
         self,
@@ -473,9 +640,10 @@ class DOEPipeline:
 
         # Phase 1: Screening
         if "screening" in completed_phases:
-            # Reconstruct PhaseResult from DB.
+            # Reconstruct PhaseResult from DB, including cost/token aggregates.
             screen_run_id = completed_phases["screening"]
             phase_results = self._store.get_phase_results(screen_run_id)
+            screen_summary = self._store.get_run_summary(screen_run_id)
             screening = PhaseResult(
                 run_id=screen_run_id,
                 phase="screening",
@@ -484,6 +652,13 @@ class DOEPipeline:
                 anova=phase_results.get("anova") if phase_results else None,
                 optimal=phase_results.get("optimal") if phase_results else None,
                 significant_factors=phase_results.get("significant_factors", []) if phase_results else [],
+                total_cost=phase_results.get("total_cost", 0.0) if phase_results else 0.0,
+                total_tokens=phase_results.get("total_tokens", 0) if phase_results else 0,
+                elapsed_seconds=phase_results.get("elapsed_seconds", 0.0) if phase_results else 0.0,
+                predicted_sn=phase_results.get("predicted_sn") if phase_results else None,
+                prediction_interval=phase_results.get("prediction_interval") if phase_results else None,
+                se_prediction=phase_results.get("se_prediction") if phase_results else None,
+                trial_count=screen_summary.total_trials,
             )
         elif "screening" in in_progress_phases:
             screening = self.run_screening(
@@ -499,7 +674,7 @@ class DOEPipeline:
                 return PipelineResult(
                     pipeline_id=self._pipeline_id,
                     screening=screening,
-                    total_trials=len(screening.trials),
+                    total_trials=self._phase_trial_count(screening),
                     total_cost=screening.total_cost,
                     elapsed_seconds=screening.elapsed_seconds,
                 )
@@ -507,10 +682,17 @@ class DOEPipeline:
         # Phase 2: Confirmation
         if "confirmation" in completed_phases:
             conf_run_id = completed_phases["confirmation"]
+            conf_phase_results = self._store.get_phase_results(conf_run_id)
+            conf_summary = self._store.get_run_summary(conf_run_id)
             confirmation = PhaseResult(
                 run_id=conf_run_id,
                 phase="confirmation",
                 trials=[],
+                total_cost=conf_phase_results.get("total_cost", 0.0) if conf_phase_results else 0.0,
+                total_tokens=conf_phase_results.get("total_tokens", 0) if conf_phase_results else 0,
+                elapsed_seconds=conf_phase_results.get("elapsed_seconds", 0.0) if conf_phase_results else 0.0,
+                confirmation=conf_phase_results.get("confirmation") if conf_phase_results else None,
+                trial_count=conf_summary.total_trials,
             )
         elif "confirmation" in in_progress_phases:
             confirmation = self.run_confirmation(
@@ -529,7 +711,7 @@ class DOEPipeline:
                     pipeline_id=self._pipeline_id,
                     screening=screening,
                     confirmation=confirmation,
-                    total_trials=len(screening.trials) + len(confirmation.trials),
+                    total_trials=self._phase_trial_count(screening) + self._phase_trial_count(confirmation),
                     total_cost=screening.total_cost + confirmation.total_cost,
                     elapsed_seconds=screening.elapsed_seconds + confirmation.elapsed_seconds,
                 )
@@ -537,10 +719,21 @@ class DOEPipeline:
         # Phase 3: Refinement
         if "refinement" in completed_phases:
             ref_run_id = completed_phases["refinement"]
+            ref_phase_results = self._store.get_phase_results(ref_run_id)
+            ref_summary = self._store.get_run_summary(ref_run_id)
             refinement = PhaseResult(
                 run_id=ref_run_id,
                 phase="refinement",
                 trials=[],
+                main_effects=ref_phase_results.get("main_effects") if ref_phase_results else None,
+                anova=ref_phase_results.get("anova") if ref_phase_results else None,
+                optimal=ref_phase_results.get("optimal") if ref_phase_results else None,
+                significant_factors=ref_phase_results.get("significant_factors", []) if ref_phase_results else [],
+                total_cost=ref_phase_results.get("total_cost", 0.0) if ref_phase_results else 0.0,
+                total_tokens=ref_phase_results.get("total_tokens", 0) if ref_phase_results else 0,
+                elapsed_seconds=ref_phase_results.get("elapsed_seconds", 0.0) if ref_phase_results else 0.0,
+                interaction_effects=ref_phase_results.get("interaction_effects", []) if ref_phase_results else [],
+                trial_count=ref_summary.total_trials,
             )
         elif "refinement" in in_progress_phases:
             refinement = self.run_refinement(
@@ -555,9 +748,9 @@ class DOEPipeline:
         # Aggregate final results
         final_optimal = refinement.optimal or screening.optimal or {}
         total_trials = (
-            len(screening.trials)
-            + len(confirmation.trials)
-            + len(refinement.trials)
+            self._phase_trial_count(screening)
+            + self._phase_trial_count(confirmation)
+            + self._phase_trial_count(refinement)
         )
         total_cost = (
             screening.total_cost + confirmation.total_cost + refinement.total_cost

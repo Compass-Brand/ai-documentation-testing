@@ -105,12 +105,17 @@ class EventTracker:
         context_strategy: str = "full_context",
         llm_calls: int = 1,
         strategy_metadata: dict | None = None,
+        llm_call_results: list[dict] | None = None,
     ) -> int:
         """Record a trial, persist it, update stats, and notify listeners.
 
         Args:
             prompt_messages: Optional prompt messages for trace storage.
             response_text: Optional response text for trace storage.
+            llm_call_results: Optional per-call LLM details for multi-call
+                trials. Each dict has keys: call_index, prompt_tokens,
+                completion_tokens, cost, api_call_ms, cached_tokens,
+                model, provider.
 
         Returns:
             The trial_id from the store.
@@ -145,6 +150,10 @@ class EventTracker:
                 prompt_json=prompt_messages,
                 response_text=response_text or "",
             )
+
+        # Persist per-call LLM details for multi-call trials.
+        if llm_call_results:
+            self._store.save_llm_call_details(trial_id, llm_call_results)
 
         trial_cost = cost or 0.0
         now = time.monotonic()

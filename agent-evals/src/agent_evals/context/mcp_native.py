@@ -217,9 +217,8 @@ class MCPNativeStrategy(ContextStrategy):
         total_prompt = sum(g.prompt_tokens for g in generations)
         total_completion = sum(g.completion_tokens for g in generations)
         total_tokens = sum(g.total_tokens for g in generations)
-        total_cost = (
-            sum(g.cost for g in generations if g.cost is not None) or None
-        )
+        known_costs = [g.cost for g in generations if g.cost is not None]
+        total_cost = sum(known_costs) if known_costs else None
 
         return StrategyResult(
             final_response=final_text,
@@ -255,6 +254,8 @@ class MCPNativeStrategy(ContextStrategy):
 
         return f"Error: unknown tool '{name}'"
 
+    _MAX_SEARCH_RESULTS = 20
+
     def _search(self, query: str) -> str:
         if not self._doc_tree or not query:
             return "No results."
@@ -263,8 +264,16 @@ class MCPNativeStrategy(ContextStrategy):
         results: list[str] = []
         for rel_path, doc in sorted(self._doc_tree.files.items()):
             if query_lower in doc.content.lower():
-                snippet = doc.content[:200]
-                results.append(f"docs://{rel_path}: {snippet}")
+                lines = doc.content.split("\n")
+                matches = [
+                    line.strip()
+                    for line in lines
+                    if query_lower in line.lower()
+                ]
+                snippet = "\n".join(matches[:5])
+                results.append(f"docs://{rel_path}:\n{snippet}")
+                if len(results) >= self._MAX_SEARCH_RESULTS:
+                    break
 
         return "\n---\n".join(results) if results else "No results."
 

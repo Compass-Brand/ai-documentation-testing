@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 from agent_evals.context.base import ContextStrategy, StrategyResult
 from agent_evals.context.full import FullContextStrategy
+from agent_evals.cost import CostTracker
 from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.llm.cache import ResponseCache
 from agent_evals.llm.client import GenerationResult, LLMClient
@@ -129,6 +130,7 @@ class EvalRunConfig:
     poll_models: list[str] | None = None
     fetch_generation_stats: bool = False
     generation_stats_rate: float = 1.0
+    budget: float | None = None
 
     _VALID_OUTPUT_FORMATS = frozenset({"json", "csv", "both"})
     _VALID_DISPLAY_MODES = frozenset({"rich", "plain", "none"})
@@ -391,13 +393,21 @@ class EvalRunner:
         )
         tracker.start()
 
+        # Budget tracking: wire CostTracker to stop new submissions
+        # when the projected cost exceeds 2x the budget.
+        cost_tracker = CostTracker(budget=self._config.budget)
+
         try:
             if total > 0:
                 with ThreadPoolExecutor(
                     max_workers=self._config.max_connections,
                 ) as executor:
-                    future_to_item = {}
-                    for idx, (task, variant, rep) in enumerate(work_items, 1):
+                    future_to_item: dict = {}
+                    work_iter = iter(enumerate(work_items, 1))
+                    max_inflight = self._config.max_connections
+
+                    # Seed the executor with an initial batch of work.
+                    for idx, (task, variant, rep) in work_iter:
                         if shutdown_requested.is_set():
                             break
                         vname = variant.metadata().name
@@ -407,56 +417,98 @@ class EvalRunner:
                             trial_index=idx, strategy=strat,
                         )
                         future_to_item[future] = (task, variant, rep)
+                        if len(future_to_item) >= max_inflight:
+                            break
 
-                    for future in as_completed(future_to_item):
-                        try:
-                            trial = future.result()
-                        except Exception as exc:
-                            if not self._config.continue_on_error:
-                                raise
-                            task, variant, rep = future_to_item[future]
-                            logger.warning(
-                                "Trial failed (%s/%s rep %d): %s",
-                                task.definition.task_id,
-                                variant.metadata().name,
-                                rep,
-                                exc,
+                    while future_to_item:
+                        # Wait for all currently-inflight futures to complete.
+                        done_futures = set()
+                        for future in as_completed(future_to_item):
+                            done_futures.add(future)
+                            try:
+                                trial = future.result()
+                            except Exception as exc:
+                                if not self._config.continue_on_error:
+                                    raise
+                                task, variant, rep = future_to_item[future]
+                                logger.warning(
+                                    "Trial failed (%s/%s rep %d): %s",
+                                    task.definition.task_id,
+                                    variant.metadata().name,
+                                    rep,
+                                    exc,
+                                )
+                                vname = variant.metadata().name
+                                strategy = variant_strategies.get(vname)
+                                strategy_name = strategy.name() if strategy else None
+                                trial = TrialResult(
+                                    task_id=task.definition.task_id,
+                                    task_type=task.definition.type,
+                                    variant_name=vname,
+                                    repetition=rep,
+                                    score=0.0,
+                                    metrics={},
+                                    prompt_tokens=0,
+                                    completion_tokens=0,
+                                    total_tokens=0,
+                                    cost=None,
+                                    latency_seconds=0.0,
+                                    response="",
+                                    cached=False,
+                                    error=str(exc),
+                                    source=source,
+                                    context_strategy=strategy_name,
+                                    llm_calls=0,
+                                )
+                            trials.append(trial)
+                            completed += 1
+                            cost_tracker.record(trial.cost or 0.0)
+                            tracker.record_trial(
+                                tokens=trial.total_tokens,
+                                cost=trial.cost,
+                                retries=int(trial.metrics.get("retry_count", 0)),
+                                api_ms=trial.metrics.get("api_call_ms", 0.0),
+                                trial_ms=trial.latency_seconds * 1000,
+                                error=trial.error is not None,
+                                rate_limited=False,
                             )
-                            vname = variant.metadata().name
-                            strategy = variant_strategies.get(vname)
-                            strategy_name = strategy.name() if strategy else None
-                            trial = TrialResult(
-                                task_id=task.definition.task_id,
-                                task_type=task.definition.type,
-                                variant_name=vname,
-                                repetition=rep,
-                                score=0.0,
-                                metrics={},
-                                prompt_tokens=0,
-                                completion_tokens=0,
-                                total_tokens=0,
-                                cost=None,
-                                latency_seconds=0.0,
-                                response="",
-                                cached=False,
-                                error=str(exc),
-                                source=source,
-                                context_strategy=strategy_name,
-                                llm_calls=0,
-                            )
-                        trials.append(trial)
-                        completed += 1
-                        tracker.record_trial(
-                            tokens=trial.total_tokens,
-                            cost=trial.cost,
-                            retries=int(trial.metrics.get("retry_count", 0)),
-                            api_ms=trial.metrics.get("api_call_ms", 0.0),
-                            trial_ms=trial.latency_seconds * 1000,
-                            error=trial.error is not None,
-                            rate_limited=False,
-                        )
-                        if progress_callback is not None:
-                            progress_callback(completed, total, trial)
+                            if progress_callback is not None:
+                                progress_callback(completed, total, trial)
+
+                            # Check budget after each completed trial.
+                            if cost_tracker.should_pause(original_total):
+                                logger.info(
+                                    "Budget exceeded: accumulated $%.4f, "
+                                    "projected $%.4f > 2x budget $%.4f. "
+                                    "Stopping new submissions.",
+                                    cost_tracker.total_cost,
+                                    cost_tracker.projected_cost(original_total),
+                                    (self._config.budget or 0) * 2,
+                                )
+                                shutdown_requested.set()
+                                break
+
+                        # Remove completed futures.
+                        for f in done_futures:
+                            del future_to_item[f]
+
+                        # Submit more work if budget/shutdown allow.
+                        if not shutdown_requested.is_set():
+                            slots = max_inflight - len(future_to_item)
+                            for _ in range(slots):
+                                try:
+                                    idx, (task, variant, rep) = next(work_iter)
+                                except StopIteration:
+                                    break
+                                if shutdown_requested.is_set():
+                                    break
+                                vname = variant.metadata().name
+                                strat = variant_strategies.get(vname)
+                                future = executor.submit(
+                                    self._run_trial, task, variant, doc_tree, rep,
+                                    source, trial_index=idx, strategy=strat,
+                                )
+                                future_to_item[future] = (task, variant, rep)
 
         finally:
             tracker.stop()

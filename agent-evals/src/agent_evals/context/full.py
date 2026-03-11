@@ -1,8 +1,8 @@
-"""Full context strategy -- injects entire rendered index into the prompt.
+"""Full context strategy -- passes rendered index directly to the LLM.
 
-This is the default strategy and produces identical results to the
-pre-strategy pipeline: variant.render() -> task.build_prompt(index) ->
-client.complete(messages).
+The rendered index IS the variant-specific content produced by the
+variant pipeline. Using it directly (rather than appending raw doc
+content) ensures that Taguchi axis effects are preserved.
 """
 
 from __future__ import annotations
@@ -17,9 +17,14 @@ if TYPE_CHECKING:
     from agent_evals.llm.client import LLMClient
     from agent_evals.tasks.base import EvalTask
 
+DEFAULT_MAX_CONTENT_TOKENS = 50_000
+
 
 class FullContextStrategy(ContextStrategy):
-    """Stuffs the entire rendered index into the prompt (current behavior)."""
+    """Passes the variant-rendered index directly to the LLM."""
+
+    def __init__(self, max_content_tokens: int = DEFAULT_MAX_CONTENT_TOKENS) -> None:
+        self._max_content_tokens = max_content_tokens
 
     def name(self) -> str:
         return "full_context"
@@ -27,12 +32,23 @@ class FullContextStrategy(ContextStrategy):
     def prepare(
         self, rendered_index: str, task: EvalTask, doc_tree: DocTree,
     ) -> PreparedContext:
+        # Use the rendered index directly — it IS the variant-specific content.
+        # Appending raw doc_tree content would be identical for all variants,
+        # diluting Taguchi axis effects.
         messages = task.build_prompt(rendered_index)
         return PreparedContext(
             messages=messages,
             tools=None,
-            strategy_metadata={},
+            strategy_metadata={
+                "index_tokens": self._estimate_tokens(rendered_index),
+                "max_content_tokens": self._max_content_tokens,
+            },
         )
+
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        """Cheap ~4 chars/token heuristic to avoid litellm dependency."""
+        return len(text) // 4
 
     def execute(
         self,

@@ -202,46 +202,47 @@ def _build_l27() -> OrthogonalArray:
 
 
 def _build_l36() -> OrthogonalArray:
-    """L36(2^11 x 3^12): 36 runs, mixed 2/3-level columns.
+    """L36(2^3 x 3^4): 36 runs, mixed 2/3-level columns.
 
-    Workhorse array for mixed-level experiments.
-    23 columns total: 11 at 2 levels, 12 at 3 levels.
+    Kronecker product of L4(2^3) and L9(3^4).  Produces 7 columns
+    (3 two-level + 4 three-level) with guaranteed strength-2
+    pairwise orthogonality.
     """
-    l4_base = np.array(list(np.ndindex(*(2,) * 2)), dtype=np.int32)
-    l9_base = np.array(list(np.ndindex(*(3,) * 2)), dtype=np.int32)
+    l4 = np.array([
+        [0, 0, 0],
+        [0, 1, 1],
+        [1, 0, 1],
+        [1, 1, 0],
+    ], dtype=np.int32)
+    l9 = np.array([
+        [0, 0, 0, 0],
+        [0, 1, 1, 1],
+        [0, 2, 2, 2],
+        [1, 0, 1, 2],
+        [1, 1, 2, 0],
+        [1, 2, 0, 1],
+        [2, 0, 2, 1],
+        [2, 1, 0, 2],
+        [2, 2, 1, 0],
+    ], dtype=np.int32)
 
     rows = []
     for i in range(4):
         for j in range(9):
-            a, b = int(l4_base[i, 0]), int(l4_base[i, 1])
-            c, d = int(l9_base[j, 0]), int(l9_base[j, 1])
-            extra_2 = [
-                (a + b) % 2,
-                a, b, (a + b) % 2,
-                a, b, (a + b) % 2,
-                a, b,
-            ]
-            extra_3 = [
-                c, d, (c + d) % 3, (c + 2 * d) % 3,
-                (c + d) % 3, (c + 2 * d) % 3,
-                c, d, (c + d) % 3, (c + 2 * d) % 3,
-            ]
-            full_row = [a, b] + extra_2 + [c, d] + extra_3
-            rows.append(full_row)
-
+            rows.append(list(l4[i]) + list(l9[j]))
     matrix = np.array(rows, dtype=np.int32)
-    n_cols = matrix.shape[1]
-    level_structure = tuple(
-        2 if i < 11 else 3 for i in range(n_cols)
-    )
     return OrthogonalArray(
-        name="L36", n_runs=36, n_columns=n_cols, max_levels=3,
-        matrix=matrix, level_structure=level_structure,
+        name="L36", n_runs=36, n_columns=7, max_levels=3,
+        matrix=matrix, level_structure=(2, 2, 2, 3, 3, 3, 3),
     )
 
 
 def _build_l50() -> OrthogonalArray:
-    """L50(2^1 x 5^11): 50 runs, 1 two-level + 11 five-level columns."""
+    """L50(2^1 x 5^6): 50 runs, 1 two-level + 6 five-level columns.
+
+    Kronecker product of L2 and L25(5^6) via Bose GF(5).  All 7 columns
+    are pairwise balanced (strength-2 orthogonality verified).
+    """
     rows = []
     for a in range(2):
         for i in range(5):
@@ -250,34 +251,34 @@ def _build_l50() -> OrthogonalArray:
                     a, i, j,
                     (i + j) % 5, (i + 2 * j) % 5,
                     (i + 3 * j) % 5, (i + 4 * j) % 5,
-                    (i + a) % 5, (j + a) % 5,
-                    (i + j + a) % 5, (i + 2 * j + a) % 5,
-                    (i + 3 * j + a) % 5,
                 ]
                 rows.append(row)
     matrix = np.array(rows, dtype=np.int32)
     return OrthogonalArray(
-        name="L50", n_runs=50, n_columns=12, max_levels=5,
-        matrix=matrix, level_structure=(2,) + (5,) * 11,
+        name="L50", n_runs=50, n_columns=7, max_levels=5,
+        matrix=matrix, level_structure=(2,) + (5,) * 6,
     )
 
 
 def _build_l54() -> OrthogonalArray:
-    """L54(2^1 x 3^25): 54 runs, 1 two-level + 25 three-level columns."""
+    """L54(2^1 x 3^13): 54 runs, 1 two-level + 13 three-level columns.
+
+    Product of L2 and L27: the 2-level blocking factor is independent
+    of all 13 three-level L27 columns, giving 14 pairwise-balanced
+    columns.  The previous construction added shifted columns
+    ``(base[k] + a) % 3`` which are confounded with their base
+    (only 6 of 9 pairs observed).
+    """
     l27 = _build_l27()
     rows = []
     for a in range(2):
         for row_idx in range(27):
             base = list(l27.matrix[row_idx])
-            extended = [a] + base + [
-                (base[k] + a) % 3 for k in range(min(12, len(base)))
-            ]
-            rows.append(extended[:26])
+            rows.append([a] + base)
     matrix = np.array(rows, dtype=np.int32)
-    n_cols = matrix.shape[1]
     return OrthogonalArray(
-        name="L54", n_runs=54, n_columns=n_cols, max_levels=3,
-        matrix=matrix, level_structure=(2,) + (3,) * (n_cols - 1),
+        name="L54", n_runs=54, n_columns=14, max_levels=3,
+        matrix=matrix, level_structure=(2,) + (3,) * 13,
     )
 
 

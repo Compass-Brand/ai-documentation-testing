@@ -12,8 +12,10 @@ from typing import Any
 from agent_evals.metrics.base import Metric, MetricContext
 
 # Tool name patterns that indicate a file read operation.
+# Uses word-boundary anchors so that "file" in "write_file" or
+# "delete_file" does not match (bug #212).
 _READ_TOOL_PATTERN: re.Pattern[str] = re.compile(
-    r"read|open|file|get", re.IGNORECASE
+    r"\bread|\bopen|\bget|\bfile", re.IGNORECASE
 )
 
 # Argument keys where file paths are commonly found.

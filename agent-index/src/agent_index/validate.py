@@ -119,15 +119,69 @@ def _collect_disk_files(
     if not root.exists() or not root.is_dir():
         return results
 
-    for item in root.rglob("*"):
+    visited_dirs: set[str] = set()
+    _walk_disk_files(root, root, extensions, ignore_dirs, results, visited_dirs)
+
+    return results
+
+
+def _walk_disk_files(
+    current: Path,
+    root: Path,
+    extensions: set[str],
+    ignore_dirs: set[str],
+    results: set[str],
+    visited_dirs: set[str],
+) -> None:
+    """Recursively walk directories with symlink loop protection.
+
+    Args:
+        current: Current directory being walked.
+        root: Root directory for computing relative paths.
+        extensions: File extensions to include.
+        ignore_dirs: Directory names to skip.
+        results: Set to populate with relative paths.
+        visited_dirs: Set of resolved real paths already visited.
+    """
+    try:
+        real_path = str(current.resolve())
+    except OSError:
+        return
+
+    if real_path in visited_dirs:
+        return
+    visited_dirs.add(real_path)
+
+    try:
+        entries = list(current.iterdir())
+    except (PermissionError, OSError):
+        return
+
+    for item in entries:
         rel_parts = item.relative_to(root).parts
         if any(part in ignore_dirs for part in rel_parts):
             continue
-        if item.is_file() and item.suffix.lower() in extensions:
+
+        if item.is_symlink():
+            try:
+                target = item.resolve()
+                if not target.exists():
+                    continue
+                if target.is_dir():
+                    # Follow symlinked directories with loop protection
+                    _walk_disk_files(item, root, extensions, ignore_dirs, results, visited_dirs)
+                    continue
+                # Symlink to file
+                if item.suffix.lower() in extensions:
+                    rel = item.relative_to(root).as_posix()
+                    results.add(rel)
+            except OSError:
+                continue
+        elif item.is_dir():
+            _walk_disk_files(item, root, extensions, ignore_dirs, results, visited_dirs)
+        elif item.is_file() and item.suffix.lower() in extensions:
             rel = item.relative_to(root).as_posix()
             results.add(rel)
-
-    return results
 
 
 def _compute_file_hash(path: Path) -> str | None:

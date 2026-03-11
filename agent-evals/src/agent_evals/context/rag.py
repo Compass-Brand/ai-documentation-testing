@@ -37,6 +37,7 @@ class RAGStrategy(ContextStrategy):
         self._embedder: Embedder | None = None
         self._store: InMemoryVectorStore | None = None
         self._total_chunks: int = 0
+        self._query_cache: dict[str, np.ndarray] = {}  # bug #188: cache query embeddings
 
     def name(self) -> str:
         return "rag"
@@ -62,6 +63,7 @@ class RAGStrategy(ContextStrategy):
         self._store = None
         self._embedder = None
         self._total_chunks = 0
+        self._query_cache.clear()
 
     def prepare(
         self, rendered_index: str, task: EvalTask, doc_tree: DocTree,
@@ -78,9 +80,13 @@ class RAGStrategy(ContextStrategy):
                 },
             )
 
-        # Embed the task question
+        # Embed the task question (cached to avoid recomputing per trial, bug #188)
         question = self._extract_question(task)
-        query_vec = self._embedder.embed(question)
+        if question in self._query_cache:
+            query_vec = self._query_cache[question]
+        else:
+            query_vec = self._embedder.embed(question)
+            self._query_cache[question] = query_vec
 
         # Retrieve top-K chunks
         results = self._store.search(query_vec, top_k=self._top_k)

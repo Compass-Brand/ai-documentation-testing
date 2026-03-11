@@ -183,6 +183,6 @@ class CompressionStrategy(ContextStrategy):
             {"role": "user", "content": text},
         ]
         generation = client.complete(
-            messages, max_tokens=len(text) // 2, temperature=0.0,
+            messages, max_tokens=len(text) // 4 // 2, temperature=0.0,
         )
         return generation.content or text

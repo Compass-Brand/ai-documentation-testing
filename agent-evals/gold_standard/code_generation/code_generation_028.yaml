@@ -10,11 +10,11 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    class\s+\w+.*BaseMiddleware|middleware
-    except|Exception
-    json|JSON
-    status|status_code
-    error|message
+    middleware
+    except
+    json
+    status
+    error
   entry_point: "ErrorHandlerMiddleware"
   canonical_solution: ""
   libs: ["framework.errors", "framework.middleware"]

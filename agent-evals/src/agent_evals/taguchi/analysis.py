@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import logging
 import math
+from collections import defaultdict
 from dataclasses import dataclass, field
+from itertools import combinations
 from typing import TYPE_CHECKING
 
 from scipy import stats as sp_stats
@@ -82,6 +84,19 @@ class ConfirmationResult:
     sigma_deviation: float
 
 
+@dataclass
+class InteractionEffect:
+    """Two-factor interaction effect from full factorial analysis."""
+
+    factor1: str  # alphabetically first
+    factor2: str
+    ss: float  # interaction sum of squares
+    df: int  # degrees of freedom: (levels_f1 - 1) * (levels_f2 - 1)
+    ms: float  # mean square: ss / df
+    f_ratio: float
+    p_value: float
+
+
 # ---------------------------------------------------------------------------
 # S/N Ratio
 # ---------------------------------------------------------------------------
@@ -130,8 +145,12 @@ def compute_sn_ratios(
 
         elif quality_type == "nominal_is_best":
             # S/N = 10 * log10(mean^2 / variance)
+            # Use sample variance (n-1) per Taguchi's standard formula.
             mean_val = sum(scores) / n
-            variance = sum((y - mean_val) ** 2 for y in scores) / n
+            if n < 2:
+                result[row_id] = 100.0
+                continue
+            variance = sum((y - mean_val) ** 2 for y in scores) / (n - 1)
             if variance < 1e-30:
                 # Near-zero variance -> very high S/N
                 result[row_id] = 100.0
@@ -188,7 +207,7 @@ def compute_main_effects(
         result[factor_name] = {}
         for level_name, values in level_data.items():
             result[factor_name][level_name] = (
-                sum(values) / len(values) if values else 0.0
+                sum(values) / len(values) if values else float("nan")
             )
 
     return result
@@ -231,13 +250,12 @@ def run_anova(
     df_factors_sum = 0
 
     for factor in design.factors:
-        # Group S/N ratios by level, excluding dummy rows for this factor
+        # Group S/N ratios by level, using only non-dummy rows
+        # (same row set as grand_mean) for consistent ANOVA identity.
         level_groups: dict[str, list[float]] = {
             level: [] for level in factor.level_names
         }
-        for row in design.rows:
-            if factor.name in row.dummy_factors:
-                continue
+        for row in non_dummy_rows:
             level_name = row.assignments[factor.name]
             level_groups[level_name].append(sn_ratios[row.run_id])
 
@@ -346,6 +364,110 @@ def _apply_bh_correction(factors: list[ANOVAFactorResult]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Interaction Effects
+# ---------------------------------------------------------------------------
+
+
+def compute_interactions(
+    design_rows: list[dict[str, str]],
+    sn_ratios: list[float],
+) -> list[InteractionEffect]:
+    """Compute 2-way interaction effects from full factorial data.
+
+    For each pair of factors (A, B), the interaction SS is:
+        SS_AB = SS_cells(A,B) - SS_A - SS_B
+    where SS_cells is the between-cells sum of squares for the A*B table.
+
+    Args:
+        design_rows: List of dicts mapping factor_name -> level_name.
+        sn_ratios: List of S/N ratios (same length as design_rows).
+
+    Returns:
+        Sorted list of InteractionEffect (sorted by factor pair name).
+    """
+    if not design_rows:
+        return []
+
+    factor_names = sorted(design_rows[0].keys())
+    if len(factor_names) < 2:
+        return []
+
+    n = len(sn_ratios)
+    grand_mean = sum(sn_ratios) / n
+
+    # Pre-compute main-effect SS for each factor
+    main_ss: dict[str, float] = {}
+    for fname in factor_names:
+        groups: dict[str, list[float]] = defaultdict(list)
+        for row, sn in zip(design_rows, sn_ratios):
+            groups[row[fname]].append(sn)
+        ss = 0.0
+        for vals in groups.values():
+            level_mean = sum(vals) / len(vals)
+            ss += len(vals) * (level_mean - grand_mean) ** 2
+        main_ss[fname] = ss
+
+    # Compute interaction effects for each factor pair
+    results: list[InteractionEffect] = []
+
+    for f1, f2 in combinations(factor_names, 2):
+        # Group S/N ratios by (f1_level, f2_level) cells
+        cells: dict[tuple[str, str], list[float]] = defaultdict(list)
+        for row, sn in zip(design_rows, sn_ratios):
+            key = (row[f1], row[f2])
+            cells[key].append(sn)
+
+        # Between-cell SS
+        ss_cells = 0.0
+        for vals in cells.values():
+            cell_mean = sum(vals) / len(vals)
+            ss_cells += len(vals) * (cell_mean - grand_mean) ** 2
+
+        # Interaction SS = SS_cells - SS_f1 - SS_f2
+        ss_interaction = max(0.0, ss_cells - main_ss[f1] - main_ss[f2])
+
+        # Degrees of freedom
+        levels_f1 = len({row[f1] for row in design_rows})
+        levels_f2 = len({row[f2] for row in design_rows})
+        df = (levels_f1 - 1) * (levels_f2 - 1)
+        ms = ss_interaction / df if df > 0 else 0.0
+
+        # Within-cell SS for F-ratio denominator
+        ss_within = 0.0
+        df_within = 0
+        for vals in cells.values():
+            if len(vals) > 1:
+                cell_mean = sum(vals) / len(vals)
+                ss_within += sum((v - cell_mean) ** 2 for v in vals)
+                df_within += len(vals) - 1
+
+        ms_within = ss_within / df_within if df_within > 0 else 0.0
+
+        # F-ratio and p-value
+        if ms_within > 1e-30 and df > 0 and df_within > 0:
+            f_ratio = ms / ms_within
+            p_value = 1.0 - sp_stats.f.cdf(f_ratio, df, df_within)
+        elif ms > 1e-30 and df > 0:
+            f_ratio = float("inf")
+            p_value = 0.0
+        else:
+            f_ratio = 0.0
+            p_value = 1.0
+
+        results.append(InteractionEffect(
+            factor1=f1,
+            factor2=f2,
+            ss=ss_interaction,
+            df=df,
+            ms=ms,
+            f_ratio=f_ratio,
+            p_value=p_value,
+        ))
+
+    return sorted(results, key=lambda ie: (ie.factor1, ie.factor2))
+
+
+# ---------------------------------------------------------------------------
 # Optimal Prediction
 # ---------------------------------------------------------------------------
 
@@ -379,23 +501,35 @@ def predict_optimal(
     Returns:
         OptimalPrediction with assignment, predicted S/N, and optional interval.
     """
-    # 1. Select best level per factor
+    # 1. Select best level per factor (skip NaN — unobserved levels)
     optimal: dict[str, str] = {}
     for factor_name, levels in main_effects.items():
-        best_level = max(levels, key=levels.get)  # type: ignore[arg-type]
+        observed = {k: v for k, v in levels.items() if not math.isnan(v)}
+        if not observed:
+            # All levels unobserved — pick first arbitrarily
+            best_level = next(iter(levels))
+        else:
+            best_level = max(observed, key=observed.get)  # type: ignore[arg-type]
         optimal[factor_name] = best_level
 
     # 2. Compute predicted S/N (additive model)
-    all_values = [v for d in main_effects.values() for v in d.values()]
-    if not all_values:
+    if not main_effects:
         raise ValueError("main_effects is empty; cannot compute prediction.")
-    grand_mean = sum(all_values) / len(all_values)
+    # Use mean-of-factor-means to avoid bias in mixed-level designs
+    # where factors have different numbers of levels.
+    # Skip NaN values (unobserved levels) in the mean calculation.
+    factor_means: dict[str, float] = {}
+    for name, levels in main_effects.items():
+        observed_vals = [v for v in levels.values() if not math.isnan(v)]
+        factor_means[name] = (
+            sum(observed_vals) / len(observed_vals) if observed_vals else 0.0
+        )
+    grand_mean = sum(factor_means.values()) / len(factor_means)
 
     predicted = grand_mean
     for factor_name, levels in main_effects.items():
-        factor_mean = sum(levels.values()) / len(levels)
         best_val = levels[optimal[factor_name]]
-        predicted += best_val - factor_mean
+        predicted += best_val - factor_means[factor_name]
 
     # 3. Prediction interval (if S/N ratios provided)
     interval: tuple[float, float] | None = None
@@ -405,8 +539,12 @@ def predict_optimal(
         n = len(sn_ratios)
 
         if anova_result is not None:
-            # Use ANOVA residual error (excludes factor-effect variance)
-            se = math.sqrt(anova_result.ms_error / n)
+            # Use ANOVA residual error with n_eff (effective replications).
+            # For the additive model the prediction uses 1 + sum(df_i)
+            # estimated parameters, so n_eff = n / (1 + sum(df_i)).
+            sum_dof = sum(f.df for f in anova_result.factors)
+            n_eff = n / (1 + sum_dof)
+            se = math.sqrt(anova_result.ms_error / n_eff)
             df = anova_result.df_error
         else:
             # Fallback: total variance (no ANOVA available)
@@ -467,13 +605,15 @@ def _compute_additivity_r_squared(
 
     R-squared = 1 - SS_residual / SS_total.
     """
-    all_values = [v for d in main_effects.values() for v in d.values()]
-    grand_mean = sum(all_values) / len(all_values)
-
-    factor_means = {
-        name: sum(levels.values()) / len(levels)
-        for name, levels in main_effects.items()
-    }
+    # Use mean-of-factor-means (consistent with predict_optimal) to avoid
+    # bias in mixed-level designs.  Skip NaN (unobserved) levels.
+    factor_means: dict[str, float] = {}
+    for name, levels in main_effects.items():
+        obs_vals = [v for v in levels.values() if not math.isnan(v)]
+        factor_means[name] = (
+            sum(obs_vals) / len(obs_vals) if obs_vals else 0.0
+        )
+    grand_mean = sum(factor_means.values()) / len(factor_means)
 
     observed: list[float] = []
     predicted_vals: list[float] = []

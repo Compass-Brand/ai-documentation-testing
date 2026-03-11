@@ -2,7 +2,7 @@
 
 Questions with multiple valid interpretations from Wikipedia context.
 
-HuggingFace: din0s/ambig_qa
+HuggingFace: sewon/ambig_qa (light config)
 License: CC-BY-SA-3.0
 Contamination risk: HIGH (Wikipedia-derived)
 """
@@ -31,7 +31,7 @@ class AmbigQAAdapter(DatasetAdapter):
         return "ambigqa"
 
     def hf_dataset_id(self) -> str | None:
-        return "din0s/ambig_qa"
+        return "sewon/ambig_qa"
 
     def task_type(self) -> str:
         return "disambiguation"
@@ -46,7 +46,7 @@ class AmbigQAAdapter(DatasetAdapter):
         return "high"
 
     def convert_tasks(self, output_dir: Path, limit: int | None = None) -> int:
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train")
+        ds = load_hf_dataset(self.hf_dataset_id(), split="train", name="light")
 
         count = 0
         for record in ds:
@@ -54,16 +54,27 @@ class AmbigQAAdapter(DatasetAdapter):
                 break
 
             annotations = record.get("annotations", {})
+            ann_type = annotations.get("type", [])
             qa_pairs = annotations.get("qaPairs") or []
 
+            # Skip singleAnswer records -- they have only 1 interpretation,
+            # so the disambiguation scorer trivially returns 1.0 (bug #179).
+            if ann_type and ann_type[0] == "singleAnswer":
+                continue
+
             interpretations = []
-            for i, pair in enumerate(qa_pairs):
-                answers = pair.get("answer", [])
-                answer_str = answers[0] if answers else "unknown"
-                interpretations.append({
-                    "label": f"interpretation_{i}",
-                    "answer": f"{pair.get('question', '')}: {answer_str}",
-                })
+
+            # multipleQAs: interpretations are in qaPairs as parallel arrays
+            if ann_type and ann_type[0] == "multipleQAs" and qa_pairs:
+                container = qa_pairs[0]
+                questions = container.get("question", [])
+                answers = container.get("answer", [])
+                for i, (q, ans_list) in enumerate(zip(questions, answers)):
+                    answer_str = ans_list[0] if ans_list else "unknown"
+                    interpretations.append({
+                        "label": f"interpretation_{i}",
+                        "answer": f"{q}: {answer_str}",
+                    })
 
             if not interpretations:
                 continue
@@ -93,7 +104,9 @@ class AmbigQAAdapter(DatasetAdapter):
     def build_doc_tree(self, limit: int | None = None) -> DocTree:
         from agent_index.models import DocFile, DocTree
 
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train", limit=limit)
+        ds = load_hf_dataset(
+            self.hf_dataset_id(), split="train", limit=limit, name="light",
+        )
 
         files: dict[str, DocFile] = {}
         for idx, record in enumerate(ds):
@@ -104,11 +117,21 @@ class AmbigQAAdapter(DatasetAdapter):
             qa_pairs = annotations.get("qaPairs") or []
 
             content_parts = [f"# {question}\n"]
-            for pair in qa_pairs:
-                answers = pair.get("answer", [])
-                content_parts.append(
-                    f"- {pair.get('question', '')}: {', '.join(answers)}"
-                )
+            if qa_pairs:
+                container = qa_pairs[0]
+                questions = container.get("question", [])
+                answers = container.get("answer", [])
+                for q, ans_list in zip(questions, answers):
+                    content_parts.append(
+                        f"- {q}: {', '.join(ans_list)}"
+                    )
+
+            # Fallback to annotations.answer for singleAnswer
+            if len(content_parts) == 1:
+                ann_answers = annotations.get("answer", [])
+                if ann_answers and ann_answers[0]:
+                    content_parts.append(f"- {', '.join(ann_answers[0])}")
+
             content = "\n".join(content_parts)
 
             rid = record.get("id", f"q{idx}")
@@ -126,6 +149,6 @@ class AmbigQAAdapter(DatasetAdapter):
         return DocTree(
             files=files,
             scanned_at=datetime.now(tz=UTC),
-            source="din0s/ambig_qa",
+            source="sewon/ambig_qa",
             total_tokens=sum(f.token_count or 0 for f in files.values()),
         )

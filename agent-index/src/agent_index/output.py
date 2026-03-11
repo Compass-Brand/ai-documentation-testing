@@ -336,10 +336,11 @@ def inject_into_file(
 
     # Both markers must exist for replacement
     if start_pos == -1 or end_pos == -1 or end_pos <= start_pos:
-        # Append to end if markers don't exist or are incomplete
+        # Append to end with markers if markers don't exist or are incomplete
         if existing and not existing.endswith("\n"):
             existing += "\n"
-        new_content = existing + content
+        wrapped = f"{start_marker}\n{content}\n{end_marker}\n"
+        new_content = existing + wrapped
         target_path.write_text(new_content, encoding="utf-8")
         return
 

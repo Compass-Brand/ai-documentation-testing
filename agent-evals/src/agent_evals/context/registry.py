@@ -36,6 +36,19 @@ def get_strategy_by_name(name: str) -> ContextStrategy | None:
     return None
 
 
+def create_strategy_by_name(name: str) -> ContextStrategy | None:
+    """Create a **new** strategy instance by name.
+
+    Unlike ``get_strategy_by_name`` (which returns the cached singleton),
+    this always instantiates a fresh object so that callers do not share
+    mutable state.  Used by strategy factories that need per-row isolation.
+    """
+    for cls, strategy in _registry.items():
+        if strategy.name() == name:
+            return cls()
+    return None
+
+
 def clear_registry() -> None:
     """Remove all registered strategies."""
     _registry.clear()

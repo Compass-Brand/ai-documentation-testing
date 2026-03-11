@@ -35,13 +35,14 @@ def simulate_compaction(
     if not conversation:
         return result
 
-    total_chars = sum(len(m["content"]) for m in conversation)
+    total_chars = sum(len(m["content"] or "") for m in conversation)
     target_chars = int(total_chars * target_ratio)
 
     kept: list[dict[str, str]] = []
     running = 0
     for msg in reversed(conversation):
-        running += len(msg["content"])
+        content = msg["content"] or ""
+        running += len(content)
         if running <= target_chars:
             kept.insert(0, msg)
         else:
@@ -49,7 +50,8 @@ def simulate_compaction(
             if remaining:
                 summary_parts = []
                 for m in remaining:
-                    summary_parts.append(f"[{m['role']}]: {m['content'][:50]}...")
+                    m_content = m["content"] or ""
+                    summary_parts.append(f"[{m['role']}]: {m_content[:50]}...")
                 summary = "Previous conversation summary:\n" + "\n".join(
                     summary_parts,
                 )
@@ -126,6 +128,7 @@ def run_compacted_sequence(
     compaction_ratio: float = 0.5,
     max_tokens: int = 1024,
     temperature: float = 0.0,
+    doc_tree: DocTree | None = None,
 ) -> list[StrategyResult]:
     """Run a sequence of tasks with compaction applied between each.
 
@@ -136,7 +139,7 @@ def run_compacted_sequence(
     carry_over_messages: list[dict[str, str]] | None = None
 
     for i, task in enumerate(tasks):
-        prepared = strategy.prepare("", task, None)
+        prepared = strategy.prepare("", task, doc_tree)
 
         if carry_over_messages is not None:
             prepared.messages = carry_over_messages + prepared.messages[1:]

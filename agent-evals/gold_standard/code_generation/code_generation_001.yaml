@@ -9,7 +9,7 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
+    create_jwt_config
     JWTConfig
     HS256
   entry_point: "create_jwt_config"

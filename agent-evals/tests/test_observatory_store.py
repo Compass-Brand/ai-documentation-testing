@@ -832,3 +832,607 @@ class TestStrategySchema:
         assert trials[0].context_strategy == "full_context"
         assert trials[0].llm_calls == 1
         assert trials[0].strategy_metadata is None
+
+
+# ---------------------------------------------------------------------------
+# TestFactorDefinitions (Task 1)
+# ---------------------------------------------------------------------------
+
+
+class TestFactorDefinitions:
+    """Factor definition persistence for axis/level metadata."""
+
+    def test_save_and_get_factor_definitions(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save 3 definitions across 2 factors, retrieve, verify count and values."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        definitions = [
+            {
+                "factor_name": "structure",
+                "axis_id": 1,
+                "level_index": 0,
+                "level_name": "flat",
+                "description": "Flat directory layout",
+            },
+            {
+                "factor_name": "structure",
+                "axis_id": 1,
+                "level_index": 1,
+                "level_name": "nested",
+                "description": "Nested directory layout",
+            },
+            {
+                "factor_name": "verbosity",
+                "axis_id": 3,
+                "level_index": 0,
+                "level_name": "terse",
+                "description": "Minimal prose",
+            },
+        ]
+        store.save_factor_definitions("run_001", definitions)
+        result = store.get_factor_definitions("run_001")
+        assert len(result) == 3
+        # Ordered by axis_id then level_index
+        assert result[0]["factor_name"] == "structure"
+        assert result[0]["axis_id"] == 1
+        assert result[0]["level_index"] == 0
+        assert result[0]["level_name"] == "flat"
+        assert result[0]["description"] == "Flat directory layout"
+        assert result[1]["factor_name"] == "structure"
+        assert result[1]["level_index"] == 1
+        assert result[2]["factor_name"] == "verbosity"
+        assert result[2]["axis_id"] == 3
+
+    def test_get_factor_definitions_empty(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Create run, get definitions with no saves, verify empty list."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        result = store.get_factor_definitions("run_001")
+        assert result == []
+
+    def test_factor_definitions_replaced_on_rewrite(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save once, save again with different data, verify only new data exists."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        original = [
+            {
+                "factor_name": "structure",
+                "axis_id": 1,
+                "level_index": 0,
+                "level_name": "flat",
+                "description": "Original",
+            },
+        ]
+        store.save_factor_definitions("run_001", original)
+        assert len(store.get_factor_definitions("run_001")) == 1
+
+        replacement = [
+            {
+                "factor_name": "verbosity",
+                "axis_id": 3,
+                "level_index": 0,
+                "level_name": "terse",
+                "description": "Replaced",
+            },
+            {
+                "factor_name": "verbosity",
+                "axis_id": 3,
+                "level_index": 1,
+                "level_name": "verbose",
+                "description": "Also replaced",
+            },
+        ]
+        store.save_factor_definitions("run_001", replacement)
+        result = store.get_factor_definitions("run_001")
+        assert len(result) == 2
+        assert result[0]["factor_name"] == "verbosity"
+        assert result[0]["level_name"] == "terse"
+        assert result[1]["level_name"] == "verbose"
+
+
+# ---------------------------------------------------------------------------
+# TestTaskMetadata (Task 2)
+# ---------------------------------------------------------------------------
+
+
+class TestTaskMetadata:
+    """Task metadata persistence for slicing trials by task attributes."""
+
+    def test_save_and_get_task_metadata(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save 2 tasks, retrieve, verify count and values (ordered by task_id)."""
+        metadata = [
+            {
+                "task_id": "retrieval_002",
+                "task_type": "retrieval",
+                "domain": "api_docs",
+                "difficulty": "hard",
+                "word_count": 250,
+                "tag_count": 5,
+            },
+            {
+                "task_id": "negative_001",
+                "task_type": "negative",
+                "domain": "security",
+                "difficulty": "easy",
+                "word_count": 80,
+                "tag_count": 2,
+            },
+        ]
+        store.save_task_metadata(metadata)
+        result = store.get_task_metadata()
+        assert len(result) == 2
+        # Ordered by task_id: negative_001 < retrieval_002
+        assert result[0]["task_id"] == "negative_001"
+        assert result[0]["task_type"] == "negative"
+        assert result[0]["domain"] == "security"
+        assert result[0]["difficulty"] == "easy"
+        assert result[0]["word_count"] == 80
+        assert result[0]["tag_count"] == 2
+        assert result[1]["task_id"] == "retrieval_002"
+        assert result[1]["task_type"] == "retrieval"
+        assert result[1]["domain"] == "api_docs"
+        assert result[1]["difficulty"] == "hard"
+        assert result[1]["word_count"] == 250
+        assert result[1]["tag_count"] == 5
+
+    def test_task_metadata_upsert(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save same task_id twice with different values, verify only 1 row with updated values."""
+        original = [
+            {
+                "task_id": "retrieval_001",
+                "task_type": "retrieval",
+                "domain": "api_docs",
+                "difficulty": "easy",
+                "word_count": 100,
+                "tag_count": 3,
+            },
+        ]
+        store.save_task_metadata(original)
+
+        updated = [
+            {
+                "task_id": "retrieval_001",
+                "task_type": "retrieval",
+                "domain": "tutorials",
+                "difficulty": "hard",
+                "word_count": 500,
+                "tag_count": 8,
+            },
+        ]
+        store.save_task_metadata(updated)
+
+        result = store.get_task_metadata()
+        assert len(result) == 1
+        assert result[0]["domain"] == "tutorials"
+        assert result[0]["difficulty"] == "hard"
+        assert result[0]["word_count"] == 500
+        assert result[0]["tag_count"] == 8
+
+    def test_get_task_metadata_by_type(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save 2 tasks of different types, filter by one type, verify only matching returned."""
+        metadata = [
+            {
+                "task_id": "retrieval_001",
+                "task_type": "retrieval",
+                "domain": "api_docs",
+                "difficulty": "easy",
+                "word_count": 100,
+                "tag_count": 3,
+            },
+            {
+                "task_id": "negative_001",
+                "task_type": "negative",
+                "domain": "security",
+                "difficulty": "hard",
+                "word_count": 200,
+                "tag_count": 4,
+            },
+        ]
+        store.save_task_metadata(metadata)
+
+        result = store.get_task_metadata(task_type="negative")
+        assert len(result) == 1
+        assert result[0]["task_id"] == "negative_001"
+        assert result[0]["task_type"] == "negative"
+
+
+# ---------------------------------------------------------------------------
+# TestPhaseResultsCost (Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseResultsCost:
+    """Phase results persist total_cost, total_tokens, and elapsed_seconds."""
+
+    def test_save_phase_results_with_cost(self, tmp_path: Path) -> None:
+        """Save with all 3 cost fields, retrieve, verify values match."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-cost", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-cost",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={"axis_1": {"p_value": 0.01}},
+            optimal={"axis_1": "flat"},
+            significant_factors=["axis_1"],
+            quality_type="larger_is_better",
+            total_cost=1.234,
+            total_tokens=56789,
+            elapsed_seconds=42.5,
+        )
+        result = store.get_phase_results("run-cost")
+        assert result is not None
+        assert result["total_cost"] == pytest.approx(1.234)
+        assert result["total_tokens"] == 56789
+        assert result["elapsed_seconds"] == pytest.approx(42.5)
+
+    def test_phase_results_cost_defaults_to_zero(
+        self, tmp_path: Path
+    ) -> None:
+        """Save without cost fields (using defaults), retrieve, verify 0.0/0/0.0."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-default", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-default",
+            main_effects={"axis_2": {"v1": 8.0}},
+            anova={"axis_2": {"p_value": 0.05}},
+            optimal={"axis_2": "v1"},
+            significant_factors=["axis_2"],
+            quality_type="smaller_is_better",
+        )
+        result = store.get_phase_results("run-default")
+        assert result is not None
+        assert result["total_cost"] == pytest.approx(0.0)
+        assert result["total_tokens"] == 0
+        assert result["elapsed_seconds"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# TestPhaseResultsInteractions (Task 5)
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseResultsInteractions:
+    """Phase results persist interaction_effects as JSON."""
+
+    def test_save_phase_results_with_interactions(
+        self, tmp_path: Path
+    ) -> None:
+        """Save with interaction_effects list, retrieve, verify round-trip."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-interactions", "taguchi", {})
+        interactions = [
+            {
+                "factor1": "A",
+                "factor2": "B",
+                "ss": 12.5,
+                "df": 1,
+                "ms": 12.5,
+                "f_ratio": 4.2,
+                "p_value": 0.05,
+            },
+            {
+                "factor1": "A",
+                "factor2": "C",
+                "ss": 3.1,
+                "df": 2,
+                "ms": 1.55,
+                "f_ratio": 0.8,
+                "p_value": 0.45,
+            },
+        ]
+        store.save_phase_results(
+            run_id="run-interactions",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={"axis_1": {"p_value": 0.01}},
+            optimal={"axis_1": "flat"},
+            significant_factors=["axis_1"],
+            quality_type="larger_is_better",
+            interaction_effects=interactions,
+        )
+        result = store.get_phase_results("run-interactions")
+        assert result is not None
+        assert result["interaction_effects"] == interactions
+
+    def test_phase_results_interactions_defaults_to_empty(
+        self, tmp_path: Path
+    ) -> None:
+        """Save without interaction_effects (default), retrieve, verify []."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-no-interactions", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-no-interactions",
+            main_effects={"axis_2": {"v1": 8.0}},
+            anova={"axis_2": {"p_value": 0.05}},
+            optimal={"axis_2": "v1"},
+            significant_factors=["axis_2"],
+            quality_type="smaller_is_better",
+        )
+        result = store.get_phase_results("run-no-interactions")
+        assert result is not None
+        assert result["interaction_effects"] == []
+
+
+# ---------------------------------------------------------------------------
+# Bug #205: predicted_sn persistence in phase_results
+# Bug #189: prediction_interval and se_prediction persistence
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseResultsPredictionPersistence:
+    """Phase results must persist predicted_sn, prediction_interval, and se_prediction."""
+
+    def test_save_and_get_predicted_sn(self, tmp_path: Path) -> None:
+        """predicted_sn round-trips through SQLite (bug #205)."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-sn", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-sn",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={"axis_1": {"p_value": 0.01}},
+            optimal={"axis_1": "flat"},
+            significant_factors=["axis_1"],
+            quality_type="larger_is_better",
+            predicted_sn=7.42,
+        )
+        result = store.get_phase_results("run-sn")
+        assert result is not None
+        assert result["predicted_sn"] == pytest.approx(7.42)
+
+    def test_predicted_sn_defaults_to_none(self, tmp_path: Path) -> None:
+        """predicted_sn defaults to None when not provided."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-no-sn", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-no-sn",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={},
+            optimal={},
+            significant_factors=[],
+            quality_type="larger_is_better",
+        )
+        result = store.get_phase_results("run-no-sn")
+        assert result is not None
+        assert result["predicted_sn"] is None
+
+    def test_save_and_get_prediction_interval(self, tmp_path: Path) -> None:
+        """prediction_interval round-trips through SQLite (bug #189)."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-pi", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-pi",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={},
+            optimal={},
+            significant_factors=[],
+            quality_type="larger_is_better",
+            predicted_sn=7.42,
+            prediction_interval=(5.1, 9.7),
+            se_prediction=1.15,
+        )
+        result = store.get_phase_results("run-pi")
+        assert result is not None
+        assert result["prediction_interval"] == pytest.approx([5.1, 9.7])
+        assert result["se_prediction"] == pytest.approx(1.15)
+
+    def test_prediction_interval_defaults_to_none(self, tmp_path: Path) -> None:
+        """prediction_interval and se_prediction default to None."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-no-pi", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-no-pi",
+            main_effects={},
+            anova={},
+            optimal={},
+            significant_factors=[],
+            quality_type="larger_is_better",
+        )
+        result = store.get_phase_results("run-no-pi")
+        assert result is not None
+        assert result["prediction_interval"] is None
+        assert result["se_prediction"] is None
+
+
+# ---------------------------------------------------------------------------
+# TestReportArtifacts (Task 4)
+# ---------------------------------------------------------------------------
+
+
+class TestReportArtifacts:
+    """Report artifact persistence for computed report outputs."""
+
+    def test_save_and_get_report_artifact(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save artifact, retrieve by type, verify data matches."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        data = {
+            "kv_cache": {"hit_rate": 0.85, "miss_rate": 0.15},
+            "model": "claude-sonnet",
+        }
+        store.save_report_artifact("run_001", "kv_cache_analysis", data)
+        result = store.get_report_artifact("run_001", "kv_cache_analysis")
+        assert result is not None
+        assert result["data"] == data
+        assert "created_at" in result
+
+    def test_get_nonexistent_artifact(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Verify returns None for missing artifact."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        result = store.get_report_artifact("run_001", "nonexistent_type")
+        assert result is None
+
+    def test_list_report_artifacts(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save 2 artifacts, list them, verify types."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        store.save_report_artifact(
+            "run_001", "hallucination_summary", {"rate": 0.05}
+        )
+        store.save_report_artifact(
+            "run_001", "kv_cache_analysis", {"hit_rate": 0.9}
+        )
+        artifacts = store.list_report_artifacts("run_001")
+        assert len(artifacts) == 2
+        types = [a["artifact_type"] for a in artifacts]
+        # Ordered by artifact_type alphabetically
+        assert types == ["hallucination_summary", "kv_cache_analysis"]
+        for a in artifacts:
+            assert "created_at" in a
+
+    def test_artifact_upsert(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save same (run_id, artifact_type) twice, verify second value wins."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        store.save_report_artifact(
+            "run_001", "synthesis", {"version": 1, "concordance": 0.7}
+        )
+        store.save_report_artifact(
+            "run_001", "synthesis", {"version": 2, "concordance": 0.85}
+        )
+        result = store.get_report_artifact("run_001", "synthesis")
+        assert result is not None
+        assert result["data"]["version"] == 2
+        assert result["data"]["concordance"] == 0.85
+        # Only one row should exist
+        artifacts = store.list_report_artifacts("run_001")
+        assert len(artifacts) == 1
+
+
+# ---------------------------------------------------------------------------
+# TestLLMCallDetails (Task 6)
+# ---------------------------------------------------------------------------
+
+
+class TestLLMCallDetails:
+    """Per-call LLM metrics for multi-call trials."""
+
+    def test_save_and_get_llm_calls(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Create run, record trial, save 2 call details, retrieve, verify."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id = store.record_trial(**_make_trial_kwargs("run_001"))
+        calls = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "cost": 0.001,
+                "api_call_ms": 350.5,
+                "cached_tokens": 20,
+                "model": "claude-sonnet",
+                "provider": "openrouter",
+            },
+            {
+                "call_index": 1,
+                "prompt_tokens": 200,
+                "completion_tokens": 80,
+                "cost": 0.002,
+                "api_call_ms": 420.0,
+                "cached_tokens": 0,
+                "model": "claude-sonnet",
+                "provider": "openrouter",
+            },
+        ]
+        store.save_llm_call_details(trial_id, calls)
+        result = store.get_llm_call_details(trial_id)
+        assert len(result) == 2
+        # Ordered by call_index
+        assert result[0]["call_index"] == 0
+        assert result[0]["prompt_tokens"] == 100
+        assert result[0]["completion_tokens"] == 50
+        assert result[0]["cost"] == pytest.approx(0.001)
+        assert result[0]["api_call_ms"] == pytest.approx(350.5)
+        assert result[0]["cached_tokens"] == 20
+        assert result[0]["model"] == "claude-sonnet"
+        assert result[0]["provider"] == "openrouter"
+        assert result[1]["call_index"] == 1
+        assert result[1]["prompt_tokens"] == 200
+        assert result[1]["completion_tokens"] == 80
+        assert result[1]["cost"] == pytest.approx(0.002)
+        assert result[1]["api_call_ms"] == pytest.approx(420.0)
+        assert result[1]["cached_tokens"] == 0
+        assert result[1]["model"] == "claude-sonnet"
+        assert result[1]["provider"] == "openrouter"
+
+    def test_get_empty_calls(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Create run, record trial without saving call details, verify empty list."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id = store.record_trial(**_make_trial_kwargs("run_001"))
+        result = store.get_llm_call_details(trial_id)
+        assert result == []
+
+    def test_multiple_trials_independent(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Save call details for 2 trials, verify each trial's calls are independent."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id_1 = store.record_trial(
+            **_make_trial_kwargs("run_001", task_id="task_1", repetition=1)
+        )
+        trial_id_2 = store.record_trial(
+            **_make_trial_kwargs("run_001", task_id="task_2", repetition=1)
+        )
+        calls_1 = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "cost": 0.001,
+                "api_call_ms": 300.0,
+                "cached_tokens": 10,
+                "model": "claude-sonnet",
+                "provider": "openrouter",
+            },
+        ]
+        calls_2 = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 200,
+                "completion_tokens": 80,
+                "cost": 0.002,
+                "api_call_ms": 400.0,
+                "cached_tokens": 0,
+                "model": "claude-haiku",
+                "provider": "anthropic",
+            },
+            {
+                "call_index": 1,
+                "prompt_tokens": 150,
+                "completion_tokens": 60,
+                "cost": 0.0015,
+                "api_call_ms": 250.0,
+                "cached_tokens": 50,
+                "model": "claude-haiku",
+                "provider": "anthropic",
+            },
+        ]
+        store.save_llm_call_details(trial_id_1, calls_1)
+        store.save_llm_call_details(trial_id_2, calls_2)
+
+        result_1 = store.get_llm_call_details(trial_id_1)
+        result_2 = store.get_llm_call_details(trial_id_2)
+
+        assert len(result_1) == 1
+        assert result_1[0]["prompt_tokens"] == 100
+        assert result_1[0]["model"] == "claude-sonnet"
+
+        assert len(result_2) == 2
+        assert result_2[0]["prompt_tokens"] == 200
+        assert result_2[0]["model"] == "claude-haiku"
+        assert result_2[1]["prompt_tokens"] == 150

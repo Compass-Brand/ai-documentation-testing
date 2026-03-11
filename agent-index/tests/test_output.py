@@ -254,7 +254,7 @@ Old generated content
         assert "<!-- DOCS:END -->" in result
 
     def test_appends_if_no_markers(self, tmp_path: Path) -> None:
-        """inject_into_file appends content if no markers exist."""
+        """inject_into_file appends content wrapped with markers if no markers exist."""
         target = tmp_path / "AGENTS.md"
         original = "# Existing content\n"
         target.write_text(original)
@@ -265,8 +265,9 @@ Old generated content
         result = target.read_text()
         assert "# Existing content" in result
         assert "Generated content" in result
-        # Content should be at the end
-        assert result.endswith(("Generated content\n", "Generated content"))
+        # Appended content should be wrapped with markers for idempotency
+        assert "<!-- DOCS:START -->" in result
+        assert "<!-- DOCS:END -->" in result
 
     def test_custom_marker_id(self, tmp_path: Path) -> None:
         """inject_into_file uses custom marker ID."""
@@ -350,7 +351,7 @@ old
         assert "Line 1\nLine 2\nLine 3" in result
 
     def test_only_start_marker_appends(self, tmp_path: Path) -> None:
-        """If only start marker exists, treat as no markers (append)."""
+        """If only start marker exists, treat as no markers (append with markers)."""
         target = tmp_path / "AGENTS.md"
         original = """# Header
 
@@ -366,6 +367,35 @@ incomplete
         # Should append since markers are incomplete
         assert "# Header" in result
         assert "New content" in result
+        # Bug #117: appended content must be wrapped with markers
+        assert result.count("<!-- DOCS:START -->") >= 2 or "<!-- DOCS:END -->" in result
+
+    def test_append_wraps_with_markers_for_idempotency(self, tmp_path: Path) -> None:
+        """Bug #117: appending to file without markers must wrap with START/END markers."""
+        target = tmp_path / "EXISTING.md"
+        target.write_text("# Existing content\n")
+        new_content = "Generated content"
+
+        inject_into_file(target, new_content)
+
+        result = target.read_text()
+        assert "# Existing content" in result
+        assert "<!-- DOCS:START -->" in result
+        assert "<!-- DOCS:END -->" in result
+        assert "Generated content" in result
+
+    def test_append_idempotent_on_second_run(self, tmp_path: Path) -> None:
+        """Bug #117: after appending with markers, second run replaces (not duplicates)."""
+        target = tmp_path / "EXISTING.md"
+        target.write_text("# Existing content\n")
+
+        inject_into_file(target, "first version")
+        inject_into_file(target, "second version")
+
+        result = target.read_text()
+        assert result.count("second version") == 1
+        assert "first version" not in result
+        assert "# Existing content" in result
 
     def test_new_file_includes_markers(self, tmp_path: Path) -> None:
         """New file creation wraps content in START/END markers for idempotency."""

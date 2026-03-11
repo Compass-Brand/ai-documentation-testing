@@ -9,10 +9,10 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    class\s+\w+.*BaseMiddleware
+    BaseMiddleware
     process_response
     X-Request-Time
-    def\s+process_response
+    RequestTimeMiddleware
   entry_point: "RequestTimeMiddleware"
   canonical_solution: ""
   libs: ["framework.middleware"]

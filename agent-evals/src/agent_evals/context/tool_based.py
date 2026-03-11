@@ -100,6 +100,10 @@ class ToolBasedStrategy(ContextStrategy):
         self._rendered_index = rendered_index
         self._doc_tree = doc_tree
 
+    def teardown(self) -> None:
+        self._doc_tree = None
+        self._rendered_index = ""
+
     def prepare(
         self, rendered_index: str, task: EvalTask, doc_tree: DocTree,
     ) -> PreparedContext:
@@ -184,7 +188,8 @@ class ToolBasedStrategy(ContextStrategy):
         total_prompt = sum(g.prompt_tokens for g in generations)
         total_completion = sum(g.completion_tokens for g in generations)
         total_tokens = sum(g.total_tokens for g in generations)
-        total_cost = sum(g.cost for g in generations if g.cost is not None) or None
+        costs = [g.cost for g in generations if g.cost is not None]
+        total_cost = sum(costs) if costs else None
 
         return StrategyResult(
             final_response=final_text,
@@ -218,6 +223,8 @@ class ToolBasedStrategy(ContextStrategy):
 
         return f"Error: unknown tool '{name}'"
 
+    _MAX_SEARCH_RESULTS = 20
+
     def _search(self, query: str) -> str:
         """Substring search across all DocTree file contents."""
         if not self._doc_tree or not query:
@@ -226,10 +233,9 @@ class ToolBasedStrategy(ContextStrategy):
         query_lower = query.lower()
         results: list[str] = []
 
-        for path, doc_file in self._doc_tree.files.items():
+        for path, doc_file in sorted(self._doc_tree.files.items()):
             content = doc_file.content
             if query_lower in content.lower():
-                # Find matching lines for context
                 lines = content.split("\n")
                 matches = [
                     line.strip()
@@ -238,6 +244,8 @@ class ToolBasedStrategy(ContextStrategy):
                 ]
                 snippet = "\n".join(matches[:5])
                 results.append(f"--- {path} ---\n{snippet}")
+                if len(results) >= self._MAX_SEARCH_RESULTS:
+                    break
 
         if not results:
             return "No matches found."

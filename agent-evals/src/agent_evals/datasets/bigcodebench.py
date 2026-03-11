@@ -45,24 +45,37 @@ class BigCodeBenchAdapter(DatasetAdapter):
     def contamination_risk(self) -> str:
         return "moderate"
 
+    _SPLIT = "v0.1.4"
+
     def convert_tasks(self, output_dir: Path, limit: int | None = None) -> int:
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train")
+        ds = load_hf_dataset(self.hf_dataset_id(), split=self._SPLIT)
 
         count = 0
         for record in ds:
             if limit is not None and count >= limit:
                 break
 
-            libs = record.get("libs") or []
+            libs_raw = record.get("libs", "")
+            if isinstance(libs_raw, list):
+                libs = libs_raw
+            else:
+                libs = [s.strip() for s in libs_raw.split(",")] if libs_raw else []
+
+            if not libs:
+                continue
+
             prompt = record.get("instruct_prompt") or record.get("complete_prompt", "")
+            solution = record.get("canonical_solution", "")
 
             # Generate sub-questions per library
             sub_questions = [
                 f"How would you use the {lib} library for this task?"
                 for lib in libs
             ]
+            # Extract meaningful keywords from canonical_solution per library
+            # instead of generic boilerplate (bug #176).
             expected_answers = [
-                f"Use {lib} API as shown in the solution."
+                self._extract_lib_answer(lib, solution)
                 for lib in libs
             ]
 
@@ -73,7 +86,7 @@ class BigCodeBenchAdapter(DatasetAdapter):
                 "question": prompt,
                 "domain": self.domain(),
                 "difficulty": "medium",
-                "tags": ["code", "compositional"] + list(libs),
+                "tags": ["code", "compositional"] + libs,
                 "metadata": {
                     "sub_questions": sub_questions,
                     "expected_answers": expected_answers,
@@ -89,16 +102,39 @@ class BigCodeBenchAdapter(DatasetAdapter):
 
         return count
 
+    @staticmethod
+    def _extract_lib_answer(lib: str, solution: str) -> str:
+        """Extract lines from *solution* that reference *lib*.
+
+        Returns a compact string of solution lines containing the library name,
+        giving the compositional scorer meaningful keywords to match instead of
+        generic boilerplate text (bug #176).
+        """
+        lib_lower = lib.lower()
+        relevant = [
+            line.strip()
+            for line in solution.splitlines()
+            if lib_lower in line.lower() and line.strip()
+        ]
+        if relevant:
+            return "; ".join(relevant[:5])
+        # Fallback: first non-empty line mentioning import, or just the lib name
+        return f"import {lib}"
+
     def build_doc_tree(self, limit: int | None = None) -> DocTree:
         from agent_index.models import DocFile, DocTree
 
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train", limit=limit)
+        ds = load_hf_dataset(self.hf_dataset_id(), split=self._SPLIT, limit=limit)
 
         files: dict[str, DocFile] = {}
         for idx, record in enumerate(ds):
             if limit is not None and idx >= limit:
                 break
-            libs = record.get("libs") or []
+            libs_raw = record.get("libs", "")
+            if isinstance(libs_raw, list):
+                libs = libs_raw
+            else:
+                libs = [s.strip() for s in libs_raw.split(",")] if libs_raw else []
             solution = record.get("canonical_solution", "")
             for lib in libs:
                 rel_path = f"bigcodebench/{lib}/api.md"

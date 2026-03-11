@@ -105,14 +105,18 @@ class DynamicToolModifier(ContextStrategy):
         task: EvalTask,
         doc_tree: DocTree,
     ) -> PreparedContext:
-        prepared = self._inner.prepare(rendered_index, task, doc_tree)
-        if prepared.tools:
-            prepared.tools = filter_tools(prepared.tools, self._mode, turn=0)
-        metadata = dict(prepared.strategy_metadata)
+        original = self._inner.prepare(rendered_index, task, doc_tree)
+        tools = list(original.tools) if original.tools else original.tools
+        if tools:
+            tools = filter_tools(tools, self._mode, turn=0)
+        metadata = dict(original.strategy_metadata)
         metadata["dynamic_tools_mode"] = self._mode
-        metadata["initial_tools_available"] = len(prepared.tools or [])
-        prepared.strategy_metadata = metadata
-        return prepared
+        metadata["initial_tools_available"] = len(tools or [])
+        return PreparedContext(
+            messages=list(original.messages),
+            tools=tools,
+            strategy_metadata=metadata,
+        )
 
     def execute(
         self,
@@ -187,7 +191,10 @@ class DynamicToolModifier(ContextStrategy):
                 except (json.JSONDecodeError, TypeError):
                     fn_args = {}
 
-                tool_result = self._inner._execute_tool(fn_name, fn_args)
+                if hasattr(self._inner, "_execute_tool"):
+                    tool_result = self._inner._execute_tool(fn_name, fn_args)
+                else:
+                    tool_result = f"Error: inner strategy '{self._inner.name()}' does not support tool execution"
                 tools_used.add(fn_name)
                 total_tool_calls += 1
 
@@ -204,9 +211,8 @@ class DynamicToolModifier(ContextStrategy):
         total_prompt = sum(g.prompt_tokens for g in generations)
         total_completion = sum(g.completion_tokens for g in generations)
         total_tokens = sum(g.total_tokens for g in generations)
-        total_cost = (
-            sum(g.cost for g in generations if g.cost is not None) or None
-        )
+        known_costs = [g.cost for g in generations if g.cost is not None]
+        total_cost = sum(known_costs) if known_costs else None
 
         return StrategyResult(
             final_response=final_text,

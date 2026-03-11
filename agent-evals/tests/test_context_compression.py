@@ -704,3 +704,44 @@ class TestStrategyConfigCompressionField:
 
         cfg = StrategyConfig(compression_method="llm_summarized")
         assert cfg.compression_method == "llm_summarized"
+
+
+class TestLLMSummarizeMaxTokens:
+    """Bug #221: _llm_summarize should use token count, not character count."""
+
+    def test_max_tokens_uses_token_estimate_not_char_count(self):
+        """max_tokens should be ~len(text)//4//2 (token estimate / 2), not len(text)//2."""
+        from unittest.mock import MagicMock
+
+        from agent_evals.context.compression import CompressionStrategy
+        from agent_evals.llm.client import GenerationResult
+
+        strategy = CompressionStrategy(method="llm_summarized")
+
+        # 1000 chars -> ~250 tokens -> max_tokens should be ~125
+        # Bug: len(text)//2 = 500 (way too high)
+        text = "x" * 1000
+        mock_client = MagicMock()
+        mock_client.complete.return_value = GenerationResult(
+            content="summary",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=0.01,
+            model="test",
+            generation_id="test-id",
+        )
+
+        strategy._llm_summarize(text, mock_client)
+
+        call_kwargs = mock_client.complete.call_args
+        actual_max_tokens = call_kwargs.kwargs.get(
+            "max_tokens", call_kwargs[1].get("max_tokens")
+        )
+        # With the bug: max_tokens = 1000 // 2 = 500
+        # After fix: max_tokens = 1000 // 4 // 2 = 125
+        # The value should be well below 250 (half of char-based estimate)
+        assert actual_max_tokens < 250, (
+            f"max_tokens={actual_max_tokens} is based on character count, "
+            f"not token count. Should be ~125, not 500."
+        )

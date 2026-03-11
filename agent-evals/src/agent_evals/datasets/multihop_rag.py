@@ -46,7 +46,7 @@ class MultiHopRAGAdapter(DatasetAdapter):
         return "moderate"
 
     def convert_tasks(self, output_dir: Path, limit: int | None = None) -> int:
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train")
+        ds = load_hf_dataset(self.hf_dataset_id(), split="train", name="MultiHopRAG")
 
         count = 0
         for record in ds:
@@ -55,6 +55,12 @@ class MultiHopRAGAdapter(DatasetAdapter):
 
             evidence = record.get("evidence_list") or []
             reasoning_chain = [e.get("fact", "") for e in evidence if e.get("fact")]
+
+            # Skip records with empty reasoning_chain -- the multi-hop scorer
+            # returns 1.0 unconditionally when there are no steps (bug #177).
+            if not reasoning_chain:
+                continue
+
             question_decomposition = [
                 f"Evidence from {e.get('source', 'unknown')}: {e.get('fact', '')}"
                 for e in evidence
@@ -90,7 +96,9 @@ class MultiHopRAGAdapter(DatasetAdapter):
     def build_doc_tree(self, limit: int | None = None) -> DocTree:
         from agent_index.models import DocFile, DocTree
 
-        ds = load_hf_dataset(self.hf_dataset_id(), split="train", limit=limit)
+        ds = load_hf_dataset(
+            self.hf_dataset_id(), split="train", limit=limit, name="MultiHopRAG",
+        )
 
         files: dict[str, DocFile] = {}
         for idx, record in enumerate(ds):
@@ -104,10 +112,15 @@ class MultiHopRAGAdapter(DatasetAdapter):
                     continue
                 rel_path = f"news/{source}.md"
                 if rel_path in files:
-                    # Append to existing doc
+                    # Append to existing doc, updating size/token metadata (bug #180)
                     existing = files[rel_path]
+                    new_content = existing.content + "\n\n" + fact
                     files[rel_path] = existing.model_copy(
-                        update={"content": existing.content + "\n\n" + fact},
+                        update={
+                            "content": new_content,
+                            "size_bytes": len(new_content.encode("utf-8")),
+                            "token_count": len(new_content.split()),
+                        },
                     )
                 else:
                     files[rel_path] = DocFile(

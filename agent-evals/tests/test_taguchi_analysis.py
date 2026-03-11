@@ -12,7 +12,9 @@ from agent_evals.taguchi.analysis import (
     ANOVAFactorResult,
     ANOVAResult,
     ConfirmationResult,
+    InteractionEffect,
     OptimalPrediction,
+    compute_interactions,
     compute_main_effects,
     compute_sn_ratios,
     predict_optimal,
@@ -109,6 +111,32 @@ class TestComputeSNRatios:
         }
         sn = compute_sn_ratios(scores, quality_type="nominal_is_best")
         assert sn[1] > sn[2]
+
+    def test_nominal_is_best_uses_sample_variance(self):
+        """Bug #228: nominal_is_best should use n-1 (Bessel's correction)."""
+        # With scores [0.4, 0.6]:
+        #   mean = 0.5
+        #   population var (/ n):   (0.01 + 0.01) / 2 = 0.01
+        #   sample var     (/ n-1): (0.01 + 0.01) / 1 = 0.02
+        #   S/N (pop):  10*log10(0.25 / 0.01) = 10*log10(25) ≈ 13.979
+        #   S/N (sample): 10*log10(0.25 / 0.02) = 10*log10(12.5) ≈ 10.969
+        scores = {1: [0.4, 0.6]}
+        sn = compute_sn_ratios(scores, quality_type="nominal_is_best")
+
+        mean_val = 0.5
+        sample_var = sum((y - mean_val) ** 2 for y in [0.4, 0.6]) / 1  # n-1
+        expected_sn = 10.0 * math.log10(mean_val ** 2 / sample_var)
+
+        assert abs(sn[1] - expected_sn) < 0.001, (
+            f"S/N={sn[1]:.4f} doesn't match sample variance formula "
+            f"(expected {expected_sn:.4f}). Likely using population variance."
+        )
+
+    def test_nominal_is_best_single_observation_returns_cap(self):
+        """Bug #228: n=1 should return capped S/N, not divide-by-zero."""
+        scores = {1: [0.7]}
+        sn = compute_sn_ratios(scores, quality_type="nominal_is_best")
+        assert sn[1] == 100.0
 
     def test_invalid_quality_type_raises(self):
         with pytest.raises(ValueError, match="quality_type"):
@@ -487,9 +515,11 @@ class TestPredictOptimal:
             effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
         )
 
-        # Compute expected interval using ms_error and df_error
+        # Compute expected interval using ms_error, n_eff, and df_error
         n = len(sn_ratios)
-        se_expected = math.sqrt(anova.ms_error / n)
+        sum_dof = sum(f.df for f in anova.factors)
+        n_eff = n / (1 + sum_dof)
+        se_expected = math.sqrt(anova.ms_error / n_eff)
         t_val = stats.t.ppf(0.975, anova.df_error)
         margin = t_val * se_expected
         expected_low = prediction.predicted_sn - margin
@@ -633,3 +663,364 @@ class TestValidateConfirmation:
         )
         result = validate_confirmation(prediction, [0.7, 0.8])
         assert isinstance(result, ConfirmationResult)
+
+
+# ---------------------------------------------------------------------------
+# Interaction Effects Tests
+# ---------------------------------------------------------------------------
+
+
+class TestInteractionEffects:
+    """Verify 2-way interaction effect computation from full factorial data."""
+
+    def test_compute_two_way_interactions_basic(self):
+        """2x2 factorial (2 factors, 2 levels each) returns 1 interaction pair."""
+        design_rows = [
+            {"A": "a1", "B": "b1"},
+            {"A": "a1", "B": "b2"},
+            {"A": "a2", "B": "b1"},
+            {"A": "a2", "B": "b2"},
+        ]
+        # Strong interaction: A*B synergy on diagonal
+        sn_ratios = [10.0, 2.0, 2.0, 10.0]
+
+        interactions = compute_interactions(design_rows, sn_ratios)
+
+        assert len(interactions) == 1
+        ie = interactions[0]
+        assert ie.factor1 == "A"
+        assert ie.factor2 == "B"
+        assert ie.ss > 0
+        assert ie.df == 1  # (2-1)*(2-1)
+
+    def test_no_interactions_single_factor(self):
+        """Only 1 factor should return empty list."""
+        design_rows = [
+            {"A": "a1"},
+            {"A": "a2"},
+        ]
+        sn_ratios = [5.0, 10.0]
+
+        interactions = compute_interactions(design_rows, sn_ratios)
+
+        assert interactions == []
+
+    def test_interactions_three_factors(self):
+        """2^3 factorial (3 factors, 2 levels each) returns 3 interaction pairs."""
+        design_rows = [
+            {"A": "a1", "B": "b1", "C": "c1"},
+            {"A": "a1", "B": "b1", "C": "c2"},
+            {"A": "a1", "B": "b2", "C": "c1"},
+            {"A": "a1", "B": "b2", "C": "c2"},
+            {"A": "a2", "B": "b1", "C": "c1"},
+            {"A": "a2", "B": "b1", "C": "c2"},
+            {"A": "a2", "B": "b2", "C": "c1"},
+            {"A": "a2", "B": "b2", "C": "c2"},
+        ]
+        sn_ratios = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+
+        interactions = compute_interactions(design_rows, sn_ratios)
+
+        assert len(interactions) == 3  # C(3,2) = 3
+        pair_names = [(ie.factor1, ie.factor2) for ie in interactions]
+        assert ("A", "B") in pair_names
+        assert ("A", "C") in pair_names
+        assert ("B", "C") in pair_names
+
+
+# ---------------------------------------------------------------------------
+# Bug #184: ANOVA consistent row filtering for mixed-level designs
+# ---------------------------------------------------------------------------
+
+
+class TestANOVAConsistentRowFiltering:
+    """ANOVA must use the same row set for grand_mean and per-factor SS.
+
+    Bug #184: grand_mean excludes rows where ALL factors are dummy, but
+    per-factor SS includes rows where SOME (other) factors are dummy.
+    This breaks the ANOVA identity SS_total = sum(SS_factor) + SS_error.
+    """
+
+    @staticmethod
+    def _make_mixed_level_design_with_dummies() -> TaguchiDesign:
+        """Mixed-level design: 2-level factor A, 3-level factor B.
+
+        In a 3-column OA, factor A (2 levels) gets a dummy level on one
+        of the three OA levels. Some rows have partial dummies (only A
+        is dummy) and NO row has ALL factors dummy.
+        """
+        factors = [
+            TaguchiFactorDef(name="A", n_levels=2,
+                             level_names=["a1", "a2"], axis=1),
+            TaguchiFactorDef(name="B", n_levels=3,
+                             level_names=["b1", "b2", "b3"], axis=2),
+        ]
+        rows = [
+            # Rows 1-3: A=a1, B cycles through b1/b2/b3
+            TaguchiExperimentRow(run_id=1, assignments={"A": "a1", "B": "b1"}),
+            TaguchiExperimentRow(run_id=2, assignments={"A": "a1", "B": "b2"}),
+            TaguchiExperimentRow(run_id=3, assignments={"A": "a1", "B": "b3"}),
+            # Rows 4-6: A=a2, B cycles
+            TaguchiExperimentRow(run_id=4, assignments={"A": "a2", "B": "b1"}),
+            TaguchiExperimentRow(run_id=5, assignments={"A": "a2", "B": "b2"}),
+            TaguchiExperimentRow(run_id=6, assignments={"A": "a2", "B": "b3"}),
+            # Rows 7-9: A=dummy, B cycles (partial-dummy rows)
+            TaguchiExperimentRow(
+                run_id=7, assignments={"A": "__dummy__", "B": "b1"},
+                dummy_factors={"A"},
+            ),
+            TaguchiExperimentRow(
+                run_id=8, assignments={"A": "__dummy__", "B": "b2"},
+                dummy_factors={"A"},
+            ),
+            TaguchiExperimentRow(
+                run_id=9, assignments={"A": "__dummy__", "B": "b3"},
+                dummy_factors={"A"},
+            ),
+        ]
+        return TaguchiDesign(
+            oa_name="L9_mixed", n_runs=9, factors=factors, rows=rows,
+            level_counts=[2, 3],
+        )
+
+    def test_anova_identity_holds_with_partial_dummy_rows(self):
+        """SS_total must equal sum(SS_factor) + SS_error.
+
+        With inconsistent row filtering, the identity breaks because
+        grand_mean is computed from a different row set than the per-factor
+        SS contributions.
+        """
+        design = self._make_mixed_level_design_with_dummies()
+        sn_ratios = {
+            1: 2.0, 2: 4.0, 3: 3.0,
+            4: 6.0, 5: 8.0, 6: 7.0,
+            7: 1.0, 8: 3.0, 9: 2.0,  # dummy-A rows
+        }
+        result = run_anova(design, sn_ratios)
+
+        ss_factors_sum = sum(fr.ss for fr in result.factors)
+        identity_lhs = result.ss_total
+        identity_rhs = ss_factors_sum + result.ss_error
+
+        assert abs(identity_lhs - identity_rhs) < 1e-10, (
+            f"ANOVA identity broken: SS_total={identity_lhs:.6f} != "
+            f"sum(SS_factor)+SS_error={identity_rhs:.6f} "
+            f"(diff={abs(identity_lhs - identity_rhs):.2e})"
+        )
+
+    def test_anova_per_factor_ss_excludes_partial_dummy_rows(self):
+        """Per-factor level groups should not include partial-dummy rows.
+
+        Factor B should NOT include the dummy-A rows (7-9) in its level
+        group counts — they must be excluded for consistency with grand_mean.
+        """
+        design = self._make_mixed_level_design_with_dummies()
+        sn_ratios = {
+            1: 2.0, 2: 4.0, 3: 3.0,
+            4: 6.0, 5: 8.0, 6: 7.0,
+            7: 1.0, 8: 3.0, 9: 2.0,
+        }
+        result = run_anova(design, sn_ratios)
+
+        # Factor B has 3 levels; with 6 non-dummy rows, each level
+        # should appear exactly 2 times (not 3 which would include dummies)
+        b_factor = next(f for f in result.factors if f.factor_name == "B")
+        # df should be n_levels - 1 = 2
+        assert b_factor.df == 2
+        # With balanced design, each eta_squared should be reasonable
+        assert b_factor.eta_squared >= 0
+
+    def test_grand_mean_uses_non_dummy_rows_only(self):
+        """Grand mean should exclude partial-dummy rows for consistency."""
+        design = self._make_mixed_level_design_with_dummies()
+        sn_ratios = {
+            1: 2.0, 2: 4.0, 3: 3.0,
+            4: 6.0, 5: 8.0, 6: 7.0,
+            7: 100.0, 8: 100.0, 9: 100.0,  # extreme dummy-A values
+        }
+        result = run_anova(design, sn_ratios)
+
+        # Grand mean of non-dummy rows: (2+4+3+6+8+7)/6 = 5.0
+        expected_grand_mean = 5.0
+        assert abs(result.grand_mean - expected_grand_mean) < 1e-10, (
+            f"Grand mean {result.grand_mean} != expected {expected_grand_mean}; "
+            f"partial-dummy rows should be excluded"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug #186: predict_optimal grand_mean bias in mixed-level designs
+# ---------------------------------------------------------------------------
+
+
+class TestPredictOptimalMixedLevelGrandMean:
+    """predict_optimal must compute grand_mean from observation means,
+    not from averaging all level means across factors.
+
+    Bug #186: In mixed-level designs (e.g., factor A: 5 levels, factor B:
+    2 levels), averaging all level means over-weights factors with more
+    levels. The correct approach: weight each factor's mean equally.
+    """
+
+    def test_grand_mean_unbiased_mixed_levels(self):
+        """Grand mean should weight each factor's mean equally.
+
+        Factor A (5 levels): means [1, 2, 3, 4, 5] -> factor mean 3.0
+        Factor B (2 levels): means [10, 20]         -> factor mean 15.0
+
+        Biased (mean-of-all-level-means): (1+2+3+4+5+10+20)/7 ≈ 6.43
+        Correct (mean-of-factor-means):   (3.0 + 15.0) / 2 = 9.0
+        """
+        effects = {
+            "A": {"a1": 1.0, "a2": 2.0, "a3": 3.0, "a4": 4.0, "a5": 5.0},
+            "B": {"b1": 10.0, "b2": 20.0},
+        }
+        prediction = predict_optimal(effects)
+
+        # The additive model: predicted = grand_mean + sum(best - factor_mean)
+        # With correct grand_mean = 9.0:
+        #   best_A = 5.0, factor_mean_A = 3.0, effect_A = +2.0
+        #   best_B = 20.0, factor_mean_B = 15.0, effect_B = +5.0
+        #   predicted = 9.0 + 2.0 + 5.0 = 16.0
+        #
+        # With biased grand_mean ≈ 6.43:
+        #   predicted = 6.43 + 2.0 + 5.0 = 13.43 (WRONG)
+        expected_grand_mean = 9.0
+        expected_predicted = expected_grand_mean + (5.0 - 3.0) + (20.0 - 15.0)
+        assert abs(expected_predicted - 16.0) < 1e-10  # sanity
+
+        assert abs(prediction.predicted_sn - expected_predicted) < 1e-10, (
+            f"predicted_sn={prediction.predicted_sn:.4f} != "
+            f"expected={expected_predicted:.4f}; "
+            f"grand_mean is biased by unequal factor level counts"
+        )
+
+    def test_grand_mean_equal_levels_unchanged(self):
+        """When all factors have the same number of levels, behavior is unchanged."""
+        effects = {
+            "A": {"a1": 1.0, "a2": 3.0, "a3": 5.0},
+            "B": {"b1": 2.0, "b2": 4.0, "b3": 6.0},
+        }
+        # Both approaches give the same result for equal-level designs
+        all_values = [v for d in effects.values() for v in d.values()]
+        naive_grand_mean = sum(all_values) / len(all_values)
+
+        factor_means = {
+            name: sum(levels.values()) / len(levels)
+            for name, levels in effects.items()
+        }
+        correct_grand_mean = sum(factor_means.values()) / len(factor_means)
+
+        # For equal levels, both should agree
+        assert abs(naive_grand_mean - correct_grand_mean) < 1e-10
+
+        prediction = predict_optimal(effects)
+        # predicted = grand_mean + sum(best - factor_mean)
+        expected = correct_grand_mean + (5.0 - 3.0) + (6.0 - 4.0)
+        assert abs(prediction.predicted_sn - expected) < 1e-10
+
+
+# ---------------------------------------------------------------------------
+# Bug #225: predict_optimal prediction interval uses n instead of n_eff
+# ---------------------------------------------------------------------------
+
+
+class TestPredictOptimalNeff:
+    """predict_optimal must use n_eff (effective replications) for the
+    prediction interval, not n (total observations).
+
+    Bug #225: For a k-factor additive model the effective sample size is
+    n_eff = n / (1 + sum(df_i)) where df_i = levels_i - 1.  Using plain
+    n makes the interval ~sqrt(1 + sum_DOF) times too narrow, turning
+    confirmation into a rubber stamp.
+    """
+
+    def test_se_uses_n_eff_not_n(self):
+        """SE must be sqrt(ms_error / n_eff), not sqrt(ms_error / n).
+
+        For a 2-factor, 3-level L9 design:
+          n = 9, sum_dof = 2 + 2 = 4, n_eff = 9 / 5 = 1.8
+          SE_correct = sqrt(ms_error / 1.8) ≈ 2.24 × SE_wrong
+        """
+        design = _make_design_2factor()
+        sn_ratios = {
+            1: 0.5, 2: 1.0, 3: 2.5,
+            4: 5.5, 5: 6.0, 6: 6.5,
+            7: 10.0, 8: 11.5, 9: 12.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
+        )
+
+        n = len(sn_ratios)
+        sum_dof = sum(f.df for f in anova.factors)
+        n_eff = n / (1 + sum_dof)
+
+        expected_se = math.sqrt(anova.ms_error / n_eff)
+        wrong_se = math.sqrt(anova.ms_error / n)
+
+        # The correct SE must be larger than n-based SE
+        assert expected_se > wrong_se * 1.5, (
+            "Expected n_eff-based SE to be significantly larger than n-based SE"
+        )
+        assert prediction.se_prediction is not None
+        assert abs(prediction.se_prediction - expected_se) < 1e-10, (
+            f"SE={prediction.se_prediction:.6f} != expected={expected_se:.6f}; "
+            f"likely using n={n} instead of n_eff={n_eff:.2f}"
+        )
+
+    def test_interval_wider_with_n_eff(self):
+        """Prediction interval must be wider when using n_eff.
+
+        With the wrong n, the interval is ~sqrt(1 + sum_DOF) times too narrow.
+        """
+        design = _make_design_2factor()
+        sn_ratios = {
+            1: 0.5, 2: 1.0, 3: 2.5,
+            4: 5.5, 5: 6.0, 6: 6.5,
+            7: 10.0, 8: 11.5, 9: 12.0,
+        }
+        effects = compute_main_effects(design, sn_ratios)
+        anova = run_anova(design, sn_ratios)
+        prediction = predict_optimal(
+            effects, sn_ratios=sn_ratios, design=design, anova_result=anova,
+        )
+
+        # Compute the wrong (too narrow) interval for comparison
+        n = len(sn_ratios)
+        wrong_se = math.sqrt(anova.ms_error / n)
+        t_val = stats.t.ppf(0.975, anova.df_error)
+        wrong_margin = t_val * wrong_se
+
+        assert prediction.prediction_interval is not None
+        actual_margin = (
+            prediction.prediction_interval[1]
+            - prediction.prediction_interval[0]
+        ) / 2.0
+
+        # Actual margin must be wider than the wrong margin
+        assert actual_margin > wrong_margin * 1.5, (
+            f"Interval margin {actual_margin:.4f} not wider than wrong "
+            f"margin {wrong_margin:.4f}; likely using n instead of n_eff"
+        )
+
+    def test_n_eff_without_anova_falls_back_to_n(self):
+        """Without ANOVA, fallback uses total variance with n (no n_eff)."""
+        effects = {
+            "axis_1": {"flat": 1.0, "2tier": 3.0, "3tier": 5.0},
+            "axis_2": {"path": 2.0, "summary": 4.0, "tokens": 3.0},
+        }
+        sn = {i + 1: float(i) for i in range(9)}
+        prediction = predict_optimal(effects, sn_ratios=sn)
+
+        # Without ANOVA, should use total variance / n (no n_eff correction)
+        n = len(sn)
+        sn_values = list(sn.values())
+        sn_mean = sum(sn_values) / n
+        residual_var = sum((y - sn_mean) ** 2 for y in sn_values) / (n - 1)
+        expected_se = math.sqrt(residual_var / n)
+
+        assert prediction.se_prediction is not None
+        assert abs(prediction.se_prediction - expected_se) < 1e-10

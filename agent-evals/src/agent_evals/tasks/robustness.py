@@ -12,7 +12,7 @@ from typing import Any
 
 from rapidfuzz import fuzz, utils as fuzz_utils
 
-from agent_evals.tasks._utils import extract_keywords
+from agent_evals.tasks._utils import contains_text, extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
@@ -91,12 +91,12 @@ class RobustnessTask(EvalTask):
         response_lower = response.lower()
 
         # Layer 1: Exact match of expected answer
-        if self._expected_lower in response_lower:
+        if contains_text(self._expected_lower, response_lower):
             return 1.0
 
         # Layer 2: Alias matches
         for alias in self.answer_aliases:
-            if alias.lower() in response_lower:
+            if contains_text(alias.lower(), response_lower):
                 return 1.0
 
         # Normalize diacritics for fuzzy and keyword layers
@@ -121,7 +121,7 @@ class RobustnessTask(EvalTask):
 
         matched = sum(
             1 for kw in keywords
-            if _strip_diacritics(kw.lower()) in norm_response
+            if contains_text(_strip_diacritics(kw.lower()), norm_response)
         )
         return max(0.0, min(1.0, matched / len(keywords)))
 

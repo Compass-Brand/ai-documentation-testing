@@ -9,10 +9,10 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    services|service
+    service
     app
     depends_on
-    db|postgres
+    db
     redis
   entry_point: "docker_compose_app"
   canonical_solution: ""

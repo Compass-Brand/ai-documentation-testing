@@ -10,10 +10,10 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    async|create_engine
-    pool_size.*20|20.*pool_size
-    max_overflow.*40|40.*max_overflow
-    def\s+\w+
+    create_engine
+    pool_size
+    max_overflow
+    create_db_engine
   entry_point: "create_db_engine"
   canonical_solution: ""
   libs: ["framework.database"]

@@ -15,9 +15,14 @@ import re
 
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
-# Pattern to match file paths with common extensions (case-insensitive)
+# Pattern to match file paths with common extensions (case-insensitive).
+# Requires at least one ``/`` so bare dotted tokens like version numbers
+# (``v2.2.0``) are not matched as file paths (bug #203).  Paths without
+# slashes are only matched when the extension is alphabetic (not numeric).
 _FILE_PATH_PATTERN: re.Pattern[str] = re.compile(
-    r"(?:[\w./-]+/)?[\w.-]+\.(?:md|py|yaml|yml|json|toml|txt|rst|html)",
+    r"(?:[\w./-]+/[\w.-]+\.[a-zA-Z]\w{0,9})"  # path with slash: extension starts with letter
+    r"|"
+    r"(?:[\w.-]{2,}\.[a-zA-Z]\w{0,9})",        # no slash: 2+ chars before dot, alphabetic ext
     re.IGNORECASE,
 )
 
@@ -62,14 +67,20 @@ class RetrievalTask(EvalTask):
                 "role": "system",
                 "content": (
                     "You are an AI assistant that identifies relevant files "
-                    "from a documentation index. Given a question, list the "
-                    "file paths that are most relevant to answering it.\n\n"
+                    "from a documentation index. Given a question, respond "
+                    "ONLY with the file paths that are most relevant to "
+                    "answering it. List each file path on its own line. "
+                    "Do NOT write code, explanations, or anything else — "
+                    "just the file paths.\n\n"
                     f"{index_content}"
                 ),
             },
             {
                 "role": "user",
-                "content": self.definition.question,
+                "content": (
+                    f"{self.definition.question}\n\n"
+                    "List the relevant file paths, one per line."
+                ),
             },
         ]
 
@@ -103,9 +114,21 @@ class RetrievalTask(EvalTask):
         # Exact normalized matches
         exact_matches = expected_norm & extracted_norm
 
-        # Fuzzy: basename matching for unmatched expected files
+        # Suffix matching: an extracted path ending with the expected path
+        # counts as exact (handles dataset-prefix merging like
+        # "code-rag-bench/library-docs/foo.md" matching "library-docs/foo.md")
         unmatched_expected = expected_norm - exact_matches
         unmatched_extracted = extracted_norm - exact_matches
+        suffix_matches: set[str] = set()
+        for exp in list(unmatched_expected):
+            for ext in list(unmatched_extracted):
+                if ext.endswith("/" + exp) or ext == exp:
+                    suffix_matches.add(exp)
+                    unmatched_expected.discard(exp)
+                    unmatched_extracted.discard(ext)
+                    break
+
+        # Fuzzy: basename matching for still-unmatched expected files
         fuzzy_hits = 0.0
         for exp in unmatched_expected:
             exp_basename = os.path.basename(exp)
@@ -115,7 +138,7 @@ class RetrievalTask(EvalTask):
                     unmatched_extracted.discard(ext)
                     break
 
-        true_positives = len(exact_matches) + fuzzy_hits
+        true_positives = len(exact_matches) + len(suffix_matches) + fuzzy_hits
         precision = true_positives / len(extracted_norm) if extracted_norm else 0.0
         recall = true_positives / len(expected_norm) if expected_norm else 0.0
 

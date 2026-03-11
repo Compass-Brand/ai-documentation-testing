@@ -490,4 +490,52 @@ def create_router(
     async def approve_pipeline(pipeline_id: str) -> dict[str, Any]:
         return {"pipeline_id": pipeline_id, "approved": True}
 
+    # ------------------------------------------------------------------
+    # New Observatory Table Endpoints (Task 7)
+    # ------------------------------------------------------------------
+
+    @router.get("/api/runs/{run_id}/factors")
+    async def get_factor_definitions(run_id: str) -> dict[str, Any]:
+        factors = store.get_factor_definitions(run_id)
+        return {"run_id": run_id, "factors": factors}
+
+    @router.get("/api/tasks")
+    async def get_task_metadata(
+        task_type: str | None = Query(None),
+    ) -> dict[str, Any]:
+        tasks = store.get_task_metadata(task_type=task_type)
+        return {"tasks": tasks}
+
+    @router.get("/api/runs/{run_id}/reports/{artifact_type}")
+    async def get_report_artifact(
+        run_id: str, artifact_type: str
+    ) -> dict[str, Any]:
+        artifact = store.get_report_artifact(run_id, artifact_type)
+        if artifact is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact '{artifact_type}' not found for run '{run_id}'",
+            )
+        return artifact
+
+    @router.get("/api/runs/{run_id}/reports")
+    async def list_report_artifacts(run_id: str) -> dict[str, Any]:
+        artifacts = store.list_report_artifacts(run_id)
+        return {"run_id": run_id, "artifacts": artifacts}
+
+    @router.get("/api/trials/{trial_id}/calls")
+    async def get_llm_call_details(trial_id: int) -> dict[str, Any]:
+        calls = store.get_llm_call_details(trial_id)
+        return {"trial_id": trial_id, "calls": calls}
+
+    @router.get("/api/runs/{run_id}/interactions")
+    async def get_interaction_effects(run_id: str) -> dict[str, Any]:
+        results = store.get_phase_results(run_id)
+        if results is None:
+            return {"run_id": run_id, "interactions": []}
+        return {
+            "run_id": run_id,
+            "interactions": results.get("interaction_effects", []),
+        }
+
     return router

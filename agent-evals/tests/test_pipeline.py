@@ -270,6 +270,56 @@ def test_pipeline_screening_rejects_only_baseline_variants():
         pipeline.run_screening(tasks=[], variants=baseline_variants, doc_tree=MagicMock())
 
 
+@patch("agent_evals.pipeline.predict_optimal")
+@patch("agent_evals.pipeline.run_anova")
+@patch("agent_evals.pipeline.compute_main_effects")
+@patch("agent_evals.pipeline.compute_sn_ratios")
+@patch("agent_evals.pipeline.build_design")
+def test_pipeline_screening_excludes_axis_0_from_design(
+    mock_build, mock_sn, mock_me, mock_anova, mock_pred
+):
+    """run_screening must exclude axis 0 baselines from build_design call."""
+    mock_build.return_value = MagicMock()
+    mock_sn.return_value = {0: 10.0}
+    mock_me.return_value = {}
+    mock_anova.return_value = MagicMock(factors=[])
+    mock_pred.return_value = MagicMock(optimal_assignment={})
+
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    # Create variants with axis 0 baselines AND real axes
+    variants = []
+    for name in ["baseline_a", "baseline_b"]:
+        v = MagicMock()
+        m = MagicMock()
+        m.axis = 0
+        m.name = name
+        v.metadata.return_value = m
+        variants.append(v)
+    # Add real axes (1 and 2, 2 levels each)
+    for axis in [1, 2]:
+        for level in ["x", "y"]:
+            v = MagicMock()
+            m = MagicMock()
+            m.axis = axis
+            m.name = f"axis{axis}_{level}"
+            v.metadata.return_value = m
+            variants.append(v)
+
+    pipeline.run_screening(tasks=[], variants=variants, doc_tree=MagicMock())
+
+    # build_design must NOT receive axis 0
+    call_args = mock_build.call_args
+    axes_arg = call_args[0][0]
+    assert 0 not in axes_arg, (
+        f"Axis 0 baselines should be excluded from build_design, got axes: {list(axes_arg.keys())}"
+    )
+    assert 1 in axes_arg
+    assert 2 in axes_arg
+
+
 def test_pipeline_screening_rejects_single_axis_single_level():
     """run_screening raises ValueError when only 1 axis has a single level."""
     config = PipelineConfig(models=["model-a"])
@@ -898,3 +948,762 @@ def test_pipeline_refinement_applies_refinement_reps():
         )
 
     assert eval_cfg.repetitions == 9
+
+
+# ---------------------------------------------------------------------------
+# Bug #122: Refinement computes 2-way interaction effects
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_refinement_calls_compute_interactions():
+    """Bug #122: Refinement must call compute_interactions for 2-way effects."""
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_3": "c"},
+        significant_factors=["axis_1", "axis_3"],
+    )
+
+    with patch("agent_evals.pipeline.build_design") as mock_build, \
+         patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred, \
+         patch("agent_evals.pipeline.compute_interactions") as mock_interactions:
+
+        mock_row = MagicMock()
+        mock_row.run_id = 1
+        mock_row.assignments = {"axis_1": "a", "axis_3": "c"}
+        mock_row.dummy_factors = set()
+        mock_design = MagicMock()
+        mock_design.rows = [mock_row]
+        mock_design.factors = []
+        mock_build.return_value = mock_design
+
+        mock_sn.return_value = {1: 10.0}
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment={}, predicted_sn=0.0,
+        )
+        mock_interactions.return_value = []
+
+        pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+        mock_interactions.assert_called_once()
+
+
+def test_pipeline_refinement_populates_interaction_effects():
+    """Bug #122: Refinement PhaseResult must contain interaction_effects."""
+    from dataclasses import asdict
+    from agent_evals.taguchi.analysis import InteractionEffect
+
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_3": "c"},
+        significant_factors=["axis_1", "axis_3"],
+    )
+
+    fake_interaction = InteractionEffect(
+        factor1="axis_1", factor2="axis_3",
+        ss=2.5, df=4, ms=0.625, f_ratio=3.1, p_value=0.04,
+    )
+
+    with patch("agent_evals.pipeline.build_design") as mock_build, \
+         patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred, \
+         patch("agent_evals.pipeline.compute_interactions") as mock_interactions:
+
+        mock_row = MagicMock()
+        mock_row.run_id = 1
+        mock_row.assignments = {"axis_1": "a", "axis_3": "c"}
+        mock_row.dummy_factors = set()
+        mock_design = MagicMock()
+        mock_design.rows = [mock_row]
+        mock_design.factors = []
+        mock_build.return_value = mock_design
+
+        mock_sn.return_value = {1: 10.0}
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment={}, predicted_sn=0.0,
+        )
+        mock_interactions.return_value = [fake_interaction]
+
+        result = pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+    assert len(result.interaction_effects) == 1
+    assert result.interaction_effects[0]["factor1"] == "axis_1"
+    assert result.interaction_effects[0]["factor2"] == "axis_3"
+    assert result.interaction_effects[0]["p_value"] == 0.04
+
+
+def test_pipeline_refinement_stores_interactions_to_observatory():
+    """Bug #122: Refinement must persist interaction_effects to the store."""
+    config = PipelineConfig(models=["model-a"], top_k=2)
+    orch = _make_mock_orchestrator()
+    mock_store = MagicMock()
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+    pipeline._store = mock_store
+
+    screening = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=[],
+        optimal={"axis_1": "a", "axis_3": "c"},
+        significant_factors=["axis_1", "axis_3"],
+    )
+
+    with patch("agent_evals.pipeline.build_design") as mock_build, \
+         patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+         patch("agent_evals.pipeline.run_anova") as mock_anova, \
+         patch("agent_evals.pipeline.predict_optimal") as mock_pred, \
+         patch("agent_evals.pipeline.compute_interactions") as mock_interactions:
+
+        mock_row = MagicMock()
+        mock_row.run_id = 1
+        mock_row.assignments = {"axis_1": "a", "axis_3": "c"}
+        mock_row.dummy_factors = set()
+        mock_design = MagicMock()
+        mock_design.rows = [mock_row]
+        mock_design.factors = []
+        mock_build.return_value = mock_design
+
+        mock_sn.return_value = {1: 10.0}
+        mock_me.return_value = {}
+        mock_anova.return_value = MagicMock(factors=[])
+        mock_pred.return_value = MagicMock(
+            optimal_assignment={}, predicted_sn=0.0,
+        )
+        mock_interactions.return_value = []
+
+        pipeline.run_refinement(
+            screening_result=screening,
+            tasks=[],
+            variants=_make_variants(),
+            doc_tree=MagicMock(),
+        )
+
+    mock_store.save_phase_results.assert_called_once()
+    call_kwargs = mock_store.save_phase_results.call_args[1]
+    assert "interaction_effects" in call_kwargs
+
+
+# ---------------------------------------------------------------------------
+# Bug #111: Resume loads trial aggregates from store
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_store_for_resume():
+    """Create a mock store with completed pipeline runs and phase results."""
+    store = MagicMock()
+
+    # Three completed runs for the pipeline
+    screening_run = MagicMock()
+    screening_run.run_id = "screen-run-1"
+    screening_run.status = "completed"
+    screening_run.phase = "screening"
+    screening_run.total_trials = 50
+    screening_run.total_cost = 1.25
+
+    confirmation_run = MagicMock()
+    confirmation_run.run_id = "conf-run-1"
+    confirmation_run.status = "completed"
+    confirmation_run.phase = "confirmation"
+    confirmation_run.total_trials = 20
+    confirmation_run.total_cost = 0.50
+
+    refinement_run = MagicMock()
+    refinement_run.run_id = "ref-run-1"
+    refinement_run.status = "completed"
+    refinement_run.phase = "refinement"
+    refinement_run.total_trials = 30
+    refinement_run.total_cost = 0.75
+
+    store.get_pipeline_runs.return_value = [
+        screening_run, confirmation_run, refinement_run,
+    ]
+
+    # Phase results with cost/token data
+    def _get_phase_results(run_id):
+        data = {
+            "screen-run-1": {
+                "main_effects": {"axis_1": {"a": 12.0}},
+                "anova": {},
+                "optimal": {"axis_1": "a"},
+                "significant_factors": ["axis_1"],
+                "total_cost": 1.25,
+                "total_tokens": 50000,
+                "elapsed_seconds": 120.0,
+                "interaction_effects": [],
+            },
+            "conf-run-1": {
+                "main_effects": None,
+                "anova": None,
+                "optimal": None,
+                "significant_factors": [],
+                "total_cost": 0.50,
+                "total_tokens": 20000,
+                "elapsed_seconds": 45.0,
+                "interaction_effects": [],
+            },
+            "ref-run-1": {
+                "main_effects": {"axis_1": {"a": 13.0}},
+                "anova": {},
+                "optimal": {"axis_1": "a"},
+                "significant_factors": ["axis_1"],
+                "total_cost": 0.75,
+                "total_tokens": 30000,
+                "elapsed_seconds": 90.0,
+                "interaction_effects": [],
+            },
+        }
+        return data.get(run_id)
+
+    store.get_phase_results.side_effect = _get_phase_results
+
+    # Run summaries for trial counts
+    def _get_run_summary(run_id):
+        summaries = {
+            "screen-run-1": screening_run,
+            "conf-run-1": confirmation_run,
+            "ref-run-1": refinement_run,
+        }
+        return summaries.get(run_id)
+
+    store.get_run_summary.side_effect = _get_run_summary
+
+    return store
+
+
+def test_pipeline_resume_loads_screening_cost_data():
+    """Bug #111: Resumed screening phase must load cost/token data from store."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    # Screening was completed - its cost data should come from the store
+    assert result.screening.total_cost == 1.25, (
+        f"Expected screening total_cost=1.25, got {result.screening.total_cost}"
+    )
+    assert result.screening.total_tokens == 50000, (
+        f"Expected screening total_tokens=50000, got {result.screening.total_tokens}"
+    )
+    assert result.screening.elapsed_seconds == 120.0, (
+        f"Expected screening elapsed_seconds=120.0, got {result.screening.elapsed_seconds}"
+    )
+
+
+def test_pipeline_resume_loads_confirmation_cost_data():
+    """Bug #111: Resumed confirmation phase must load cost/token data from store."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    assert result.confirmation is not None
+    assert result.confirmation.total_cost == 0.50, (
+        f"Expected confirmation total_cost=0.50, got {result.confirmation.total_cost}"
+    )
+    assert result.confirmation.total_tokens == 20000, (
+        f"Expected confirmation total_tokens=20000, got {result.confirmation.total_tokens}"
+    )
+    assert result.confirmation.elapsed_seconds == 45.0, (
+        f"Expected confirmation elapsed_seconds=45.0, got {result.confirmation.elapsed_seconds}"
+    )
+
+
+def test_pipeline_resume_loads_refinement_cost_data():
+    """Bug #111: Resumed refinement phase must load cost/token data from store."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    assert result.refinement is not None
+    assert result.refinement.total_cost == 0.75, (
+        f"Expected refinement total_cost=0.75, got {result.refinement.total_cost}"
+    )
+    assert result.refinement.total_tokens == 30000, (
+        f"Expected refinement total_tokens=30000, got {result.refinement.total_tokens}"
+    )
+    assert result.refinement.elapsed_seconds == 90.0, (
+        f"Expected refinement elapsed_seconds=90.0, got {result.refinement.elapsed_seconds}"
+    )
+
+
+def test_pipeline_resume_aggregates_total_cost():
+    """Bug #111: PipelineResult totals must reflect all resumed phase costs."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    # Total cost should be sum of all three phases: 1.25 + 0.50 + 0.75 = 2.50
+    assert result.total_cost == pytest.approx(2.50), (
+        f"Expected total_cost=2.50, got {result.total_cost}"
+    )
+    assert result.elapsed_seconds == pytest.approx(255.0), (
+        f"Expected elapsed_seconds=255.0, got {result.elapsed_seconds}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Bug #205: Pipeline resume must restore predicted_sn from store
+# Bug #189: Pipeline resume must restore prediction_interval and se_prediction
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_store_for_resume_with_predictions():
+    """Create a mock store with predicted_sn, prediction_interval, se_prediction."""
+    store = MagicMock()
+
+    screening_run = MagicMock()
+    screening_run.run_id = "screen-run-1"
+    screening_run.status = "completed"
+    screening_run.phase = "screening"
+
+    confirmation_run = MagicMock()
+    confirmation_run.run_id = "conf-run-1"
+    confirmation_run.status = "completed"
+    confirmation_run.phase = "confirmation"
+
+    refinement_run = MagicMock()
+    refinement_run.run_id = "ref-run-1"
+    refinement_run.status = "completed"
+    refinement_run.phase = "refinement"
+
+    store.get_pipeline_runs.return_value = [
+        screening_run, confirmation_run, refinement_run,
+    ]
+
+    def _get_phase_results(run_id):
+        data = {
+            "screen-run-1": {
+                "main_effects": {"axis_1": {"a": 12.0}},
+                "anova": {},
+                "optimal": {"axis_1": "a"},
+                "significant_factors": ["axis_1"],
+                "total_cost": 1.25,
+                "total_tokens": 50000,
+                "elapsed_seconds": 120.0,
+                "interaction_effects": [],
+                "predicted_sn": 7.42,
+                "prediction_interval": [5.1, 9.7],
+                "se_prediction": 1.15,
+            },
+            "conf-run-1": {
+                "main_effects": None,
+                "anova": None,
+                "optimal": None,
+                "significant_factors": [],
+                "total_cost": 0.50,
+                "total_tokens": 20000,
+                "elapsed_seconds": 45.0,
+                "interaction_effects": [],
+                "predicted_sn": None,
+                "prediction_interval": None,
+                "se_prediction": None,
+            },
+            "ref-run-1": {
+                "main_effects": {"axis_1": {"a": 13.0}},
+                "anova": {},
+                "optimal": {"axis_1": "a"},
+                "significant_factors": ["axis_1"],
+                "total_cost": 0.75,
+                "total_tokens": 30000,
+                "elapsed_seconds": 90.0,
+                "interaction_effects": [],
+                "predicted_sn": 8.1,
+                "prediction_interval": None,
+                "se_prediction": None,
+            },
+        }
+        return data.get(run_id)
+
+    store.get_phase_results.side_effect = _get_phase_results
+    store.get_run_summary.side_effect = lambda rid: {
+        "screen-run-1": screening_run,
+        "conf-run-1": confirmation_run,
+        "ref-run-1": refinement_run,
+    }.get(rid)
+
+    return store
+
+
+def test_pipeline_resume_restores_predicted_sn():
+    """Bug #205: predicted_sn must be restored from DB on pipeline resume."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume_with_predictions()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    assert result.screening.predicted_sn == pytest.approx(7.42), (
+        f"Expected predicted_sn=7.42, got {result.screening.predicted_sn}"
+    )
+
+
+def test_pipeline_resume_restores_prediction_interval():
+    """Bug #189: prediction_interval and se_prediction must be restored on resume."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume_with_predictions()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    assert result.screening.prediction_interval == pytest.approx([5.1, 9.7]), (
+        f"Expected prediction_interval=[5.1, 9.7], got {result.screening.prediction_interval}"
+    )
+    assert result.screening.se_prediction == pytest.approx(1.15), (
+        f"Expected se_prediction=1.15, got {result.screening.se_prediction}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Resume trial count and confirmation persistence
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_resume_aggregates_total_trials():
+    """Resumed pipeline must report correct total_trials from DB, not len([])."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    # Mock store has screening=50, confirmation=20, refinement=30 total_trials
+    assert result.total_trials == 100, (
+        f"Expected total_trials=100, got {result.total_trials}"
+    )
+
+
+def test_pipeline_resume_populates_trial_count_field():
+    """Bug #227: Resumed PhaseResult must have trial_count set from DB."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    # Resumed phases have trials=[] but trial_count should be populated
+    assert result.screening.trials == []
+    assert result.screening.trial_count == 50, (
+        f"Expected trial_count=50, got {result.screening.trial_count}"
+    )
+    assert result.confirmation.trial_count == 20
+    assert result.refinement.trial_count == 30
+
+
+def test_phase_result_trial_count_defaults_to_none():
+    """PhaseResult.trial_count defaults to None for fresh phases."""
+    result = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=["t1", "t2", "t3"],
+    )
+    assert result.trial_count is None
+
+
+def test_confirmation_phase_persists_confirmation_dict():
+    """Confirmation dict (within_interval, sigma_deviation) must be persisted."""
+    from pathlib import Path
+    import tempfile
+    from agent_evals.observatory.store import ObservatoryStore
+
+    with tempfile.TemporaryDirectory() as td:
+        store = ObservatoryStore(db_path=Path(td) / "test.db")
+        store.create_run("run_001", "taguchi", {})
+
+        confirmation = {
+            "within_interval": True,
+            "sigma_deviation": 0.3,
+            "observed_sn": 7.5,
+            "predicted_sn": 7.42,
+            "prediction_interval": [5.1, 9.7],
+        }
+
+        store.save_phase_results(
+            run_id="run_001",
+            main_effects={},
+            anova={},
+            optimal={},
+            significant_factors=[],
+            quality_type="larger_is_better",
+            confirmation=confirmation,
+        )
+
+        result = store.get_phase_results("run_001")
+        assert result is not None
+        assert result["confirmation"] is not None
+        assert result["confirmation"]["within_interval"] is True
+        assert result["confirmation"]["sigma_deviation"] == pytest.approx(0.3)
+        assert result["confirmation"]["observed_sn"] == pytest.approx(7.5)
+
+
+# ---------------------------------------------------------------------------
+# Bug #226: _group_refinement_scores maps to ALL matching OA rows
+# ---------------------------------------------------------------------------
+
+
+class TestGroupRefinementScoresBug226:
+    """_group_refinement_scores must map each trial to only the exact
+    OA row matching the trial's full factor combination.
+
+    Bug #226: The current code maps a trial's score to ALL rows that
+    contain the trial's variant_name in any factor position.  When
+    two factors share a level name (or a composite name partially
+    matches), scores are attributed to the wrong rows.
+    """
+
+    @staticmethod
+    def _make_trial(variant_name: str, score: float):
+        """Create a minimal trial mock."""
+        trial = MagicMock()
+        trial.variant_name = variant_name
+        trial.score = score
+        trial.error = None
+        trial.metrics = {}
+        return trial
+
+    @staticmethod
+    def _make_design_with_shared_level_names():
+        """Design where two factors share the level name 'verbose'.
+
+        Row 1: {axis_1: verbose,  axis_2: short}
+        Row 2: {axis_1: verbose,  axis_2: verbose}
+        Row 3: {axis_1: concise,  axis_2: short}
+        Row 4: {axis_1: concise,  axis_2: verbose}
+        """
+        from agent_evals.taguchi.factors import (
+            TaguchiDesign,
+            TaguchiExperimentRow,
+            TaguchiFactorDef,
+        )
+
+        factors = [
+            TaguchiFactorDef(
+                name="axis_1", n_levels=2,
+                level_names=["verbose", "concise"], axis=1,
+            ),
+            TaguchiFactorDef(
+                name="axis_2", n_levels=2,
+                level_names=["short", "verbose"], axis=2,
+            ),
+        ]
+        rows = [
+            TaguchiExperimentRow(
+                run_id=1,
+                assignments={"axis_1": "verbose", "axis_2": "short"},
+            ),
+            TaguchiExperimentRow(
+                run_id=2,
+                assignments={"axis_1": "verbose", "axis_2": "verbose"},
+            ),
+            TaguchiExperimentRow(
+                run_id=3,
+                assignments={"axis_1": "concise", "axis_2": "short"},
+            ),
+            TaguchiExperimentRow(
+                run_id=4,
+                assignments={"axis_1": "concise", "axis_2": "verbose"},
+            ),
+        ]
+        return TaguchiDesign(
+            oa_name="L4", n_runs=4, factors=factors, rows=rows,
+            level_counts=[2, 2],
+        )
+
+    def test_composite_trial_maps_to_exact_row(self):
+        """A composite trial 'verbose+short' must map ONLY to row 1.
+
+        Bug: old code can't handle composite names at all (maps to empty).
+        """
+        design = self._make_design_with_shared_level_names()
+        trial = self._make_trial("verbose+short", score=0.9)
+
+        scores = DOEPipeline._group_refinement_scores([trial], design)
+
+        # Must map to ONLY row 1 (exact match for verbose+short)
+        assert 1 in scores, "Composite 'verbose+short' should match row 1"
+        assert scores[1] == [0.9]
+        # Must NOT map to other rows
+        assert 2 not in scores, "Score leaked to row 2 (verbose+verbose)"
+        assert 3 not in scores, "Score leaked to row 3 (concise+short)"
+        assert 4 not in scores, "Score leaked to row 4 (concise+verbose)"
+
+    def test_shared_level_name_no_cross_factor_contamination(self):
+        """'verbose' appears in both axis_1 and axis_2.
+
+        Old code maps 'verbose' to ALL rows containing it (rows 1,2,4).
+        Correct: a single variant matches no exact row when ambiguous.
+        """
+        design = self._make_design_with_shared_level_names()
+        trial = self._make_trial("verbose", score=0.7)
+
+        scores = DOEPipeline._group_refinement_scores([trial], design)
+
+        mapped_rows = set(scores.keys())
+        # Must NOT map to 3+ rows (cross-factor contamination)
+        assert len(mapped_rows) <= 2, (
+            f"Single-variant 'verbose' mapped to {len(mapped_rows)} rows "
+            f"instead of ≤2; cross-factor contamination"
+        )
+
+    @staticmethod
+    def _make_unique_level_design():
+        """Design with unique level names across factors.
+
+        Row 1: {axis_1: flat,   axis_2: path}
+        Row 2: {axis_1: flat,   axis_2: summary}
+        Row 3: {axis_1: nested, axis_2: path}
+        Row 4: {axis_1: nested, axis_2: summary}
+        """
+        from agent_evals.taguchi.factors import (
+            TaguchiDesign,
+            TaguchiExperimentRow,
+            TaguchiFactorDef,
+        )
+
+        factors = [
+            TaguchiFactorDef(
+                name="axis_1", n_levels=2,
+                level_names=["flat", "nested"], axis=1,
+            ),
+            TaguchiFactorDef(
+                name="axis_2", n_levels=2,
+                level_names=["path", "summary"], axis=2,
+            ),
+        ]
+        rows = [
+            TaguchiExperimentRow(
+                run_id=1,
+                assignments={"axis_1": "flat", "axis_2": "path"},
+            ),
+            TaguchiExperimentRow(
+                run_id=2,
+                assignments={"axis_1": "flat", "axis_2": "summary"},
+            ),
+            TaguchiExperimentRow(
+                run_id=3,
+                assignments={"axis_1": "nested", "axis_2": "path"},
+            ),
+            TaguchiExperimentRow(
+                run_id=4,
+                assignments={"axis_1": "nested", "axis_2": "summary"},
+            ),
+        ]
+        return TaguchiDesign(
+            oa_name="L4", n_runs=4, factors=factors, rows=rows,
+            level_counts=[2, 2],
+        )
+
+    def test_composite_name_exact_match_unique_levels(self):
+        """Composite trial 'flat+path' maps to exactly row 1."""
+        design = self._make_unique_level_design()
+        trials = [
+            self._make_trial("flat+path", score=0.8),
+            self._make_trial("nested+summary", score=0.6),
+        ]
+
+        scores = DOEPipeline._group_refinement_scores(trials, design)
+
+        assert scores.get(1) == [0.8], "flat+path -> row 1"
+        assert scores.get(4) == [0.6], "nested+summary -> row 4"
+        assert 2 not in scores
+        assert 3 not in scores

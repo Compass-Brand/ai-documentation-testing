@@ -11,9 +11,9 @@ metadata:
   expected_answer: ""
   test: |
     Pipeline
-    parallel|Parallel
-    validat|Validator|Schema
-    dedup|Dedup|unique
+    parallel
+    validat
+    dedup
     id
   entry_point: "parallel_validated_pipeline"
   canonical_solution: ""

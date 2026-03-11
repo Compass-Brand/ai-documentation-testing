@@ -125,49 +125,15 @@ class SystemPromptStrategy(ContextStrategy):
     def _priority_truncate(
         self, rendered_index: str, budget: int, doc_tree: DocTree,
     ) -> tuple[str, int, int]:
-        """Truncate using tier-priority ordering from sort_files_bluf."""
-        from agent_index.models import TierConfig
-        from agent_index.tiers import sort_files_bluf
+        """Truncate the rendered index using hard cutoff.
 
-        original_tokens = count_tokens(rendered_index)
-        if original_tokens <= budget:
-            return rendered_index, original_tokens, original_tokens
+        Priority ordering is the responsibility of the variant renderer
+        (which already sorts by tier/priority via sort_files_bluf). The
+        strategy simply truncates the variant-rendered text to fit the
+        budget, preserving whatever ordering the variant applied.
 
-        # Build default tier configs for ordering
-        tier_configs = [
-            TierConfig(name="required", instruction="Required files."),
-            TierConfig(name="recommended", instruction="Recommended files."),
-            TierConfig(name="reference", instruction="Reference files."),
-        ]
-
-        files = list(doc_tree.files.values())
-        sorted_files = sort_files_bluf(files, tier_configs)
-
-        # Assemble content in priority order up to budget
-        parts: list[str] = []
-        used_tokens = 0
-        for doc_file in sorted_files:
-            file_tokens = count_tokens(doc_file.content)
-            if used_tokens + file_tokens <= budget:
-                parts.append(doc_file.content)
-                used_tokens += file_tokens
-            else:
-                # Try to fit a partial chunk of this file
-                remaining = budget - used_tokens
-                if remaining > 0:
-                    truncated_content, _, partial_tokens = self._hard_truncate(
-                        doc_file.content, remaining,
-                    )
-                    if truncated_content:
-                        parts.append(truncated_content)
-                        used_tokens += partial_tokens
-                break
-
-        assembled = "\n".join(parts) if parts else ""
-        assembled_tokens = count_tokens(assembled)
-
-        # Joining may add separator tokens that push over budget; re-truncate
-        if assembled_tokens > budget:
-            assembled, _, assembled_tokens = self._hard_truncate(assembled, budget)
-
-        return assembled, original_tokens, assembled_tokens
+        Previous implementation assembled raw doc_tree content instead
+        of truncating the rendered index, which meant all variants got
+        identical content regardless of their axis settings (#183).
+        """
+        return self._hard_truncate(rendered_index, budget)

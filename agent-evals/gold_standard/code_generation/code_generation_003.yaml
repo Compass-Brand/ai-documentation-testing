@@ -9,10 +9,10 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
+    get_database_url
     DATABASE_URL
     ConfigError
-    os\.environ|os\.getenv
+    os.environ
   entry_point: "get_database_url"
   canonical_solution: ""
   libs: ["framework.config"]

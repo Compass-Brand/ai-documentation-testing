@@ -257,3 +257,166 @@ class TestRetrievalPathNormalization:
             f"Score {score} is too high; same extracted path likely matched "
             f"multiple expected files (bug #138)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Bug #144: _FILE_PATH_PATTERN missing many common extensions
+# ---------------------------------------------------------------------------
+
+
+class TestRetrievalExtractionBroadExtensions:
+    """Bug #144: _FILE_PATH_PATTERN should match common programming extensions.
+
+    The original pattern only matched 8 extensions (md|py|yaml|yml|json|toml|
+    txt|rst|html). It must also match ts, tsx, js, jsx, css, scss, go, rs,
+    java, xml, cfg, ini, sh, bash, dockerfile, rb, php, c, cpp, h, and more.
+    """
+
+    def test_extracts_typescript_files(self) -> None:
+        """Pattern matches .ts and .tsx file extensions."""
+        task = _retrieval_task(expected_files=["src/app.ts", "src/App.tsx"])
+        response = "Check src/app.ts and src/App.tsx for the component."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_javascript_files(self) -> None:
+        """Pattern matches .js and .jsx file extensions."""
+        task = _retrieval_task(expected_files=["src/index.js", "src/App.jsx"])
+        response = "Look at src/index.js and src/App.jsx."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_css_files(self) -> None:
+        """Pattern matches .css and .scss file extensions."""
+        task = _retrieval_task(expected_files=["styles/main.css", "styles/theme.scss"])
+        response = "Styles are in styles/main.css and styles/theme.scss."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_systems_language_files(self) -> None:
+        """Pattern matches .go, .rs, .java, .c, .cpp, .h file extensions."""
+        task = _retrieval_task(
+            expected_files=[
+                "pkg/server.go",
+                "src/lib.rs",
+                "src/Main.java",
+                "src/core.c",
+                "src/engine.cpp",
+                "include/header.h",
+            ]
+        )
+        response = (
+            "See pkg/server.go, src/lib.rs, src/Main.java, "
+            "src/core.c, src/engine.cpp, and include/header.h."
+        )
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_config_files(self) -> None:
+        """Pattern matches .xml, .cfg, .ini file extensions."""
+        task = _retrieval_task(
+            expected_files=["config/app.xml", "config/settings.cfg", "config/db.ini"]
+        )
+        response = "Config in config/app.xml, config/settings.cfg, config/db.ini."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_shell_files(self) -> None:
+        """Pattern matches .sh and .bash file extensions."""
+        task = _retrieval_task(expected_files=["scripts/deploy.sh", "scripts/build.bash"])
+        response = "Run scripts/deploy.sh and scripts/build.bash."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_extracts_scripting_language_files(self) -> None:
+        """Pattern matches .rb and .php file extensions."""
+        task = _retrieval_task(expected_files=["app/models/user.rb", "src/api.php"])
+        response = "See app/models/user.rb and src/api.php."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_still_extracts_original_extensions(self) -> None:
+        """Original 8 extensions still work after the fix."""
+        task = _retrieval_task(
+            expected_files=[
+                "docs/README.md",
+                "src/main.py",
+                "config.yaml",
+                "config.yml",
+                "data.json",
+                "settings.toml",
+                "notes.txt",
+                "guide.rst",
+            ]
+        )
+        response = (
+            "docs/README.md src/main.py config.yaml config.yml "
+            "data.json settings.toml notes.txt guide.rst"
+        )
+        score = task.score_response(response)
+        assert score == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Suffix matching for multi-source merged doc trees
+# ---------------------------------------------------------------------------
+
+
+class TestRetrievalSuffixMatching:
+    """Tests for suffix matching when multi-source merging prefixes paths."""
+
+    def test_dataset_prefixed_path_matches_expected(self) -> None:
+        """Response with dataset-prefixed path matches unprefixed expected file."""
+        task = _retrieval_task(
+            expected_files=["library-docs/has_close_elements.md"],
+        )
+        response = "The relevant file is code-rag-bench/library-docs/has_close_elements.md."
+        score = task.score_response(response)
+        assert score == 1.0
+
+    def test_suffix_match_counts_as_exact(self) -> None:
+        """Suffix match gives full credit, not partial (0.5) fuzzy credit."""
+        task = _retrieval_task(
+            expected_files=["src/auth.py"],
+        )
+        response = "Check dataset-name/src/auth.py for details."
+        score = task.score_response(response)
+        assert score == 1.0
+
+
+# ---------------------------------------------------------------------------
+# Bug #203: version numbers matched as false file paths
+# ---------------------------------------------------------------------------
+
+
+class TestBug203VersionNumberFalsePositives:
+    """Bug #203: regex matches version strings like v2.2.0 as file paths."""
+
+    def test_version_number_not_extracted_as_file_path(self) -> None:
+        """Version strings like v2.2.0 should not be treated as file paths."""
+        from agent_evals.tasks.retrieval import _FILE_PATH_PATTERN
+
+        matches = _FILE_PATH_PATTERN.findall("Updated to v2.2.0 in the latest release")
+        file_like = [m for m in matches if not m.startswith("v") or "/" in m]
+        assert len(file_like) == 0, (
+            f"Version string matched as file path: {matches}"
+        )
+
+    def test_version_in_sentence_does_not_inflate_score(self) -> None:
+        """Responses mentioning versions should not get false positive file matches."""
+        task = _retrieval_task(expected_files=[])
+        response = "This was fixed in v2.2.0 and v3.1.0-beta.1 of the framework."
+        score = task.score_response(response)
+        # No expected files and no real files extracted -> 1.0
+        # If version strings are extracted as files, score would be 0.0
+        assert score == 1.0
+
+    def test_real_file_paths_still_extracted(self) -> None:
+        """Paths with slashes or proper extensions are still recognized."""
+        from agent_evals.tasks.retrieval import _FILE_PATH_PATTERN
+
+        text = "See src/config.yaml and lib/utils.py for v2.2.0 changes"
+        matches = _FILE_PATH_PATTERN.findall(text)
+        paths = {m for m in matches}
+        assert "src/config.yaml" in paths
+        assert "lib/utils.py" in paths

@@ -11,9 +11,9 @@ metadata:
   test: |
     bump2version
     minor
-    release|branch
+    release
     develop
-    tag|git.*tag
+    tag
   entry_point: "automate_release"
   canonical_solution: ""
   libs: []

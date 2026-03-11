@@ -9,7 +9,7 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
+    create_redis_cache
     RedisBackend
     CacheConfig
     120

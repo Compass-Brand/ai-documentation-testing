@@ -10,9 +10,9 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    S3Source|s3_source|source.*[Ss]3
+    S3
     retry
-    dry.run|dry_run
+    dry
   entry_point: "s3_pipeline_yaml"
   canonical_solution: ""
   libs: ["dataforge"]

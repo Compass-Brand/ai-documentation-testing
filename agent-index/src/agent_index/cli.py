@@ -155,6 +155,7 @@ def run(args: Namespace) -> int:
 
     # --validate: check index against disk
     if args.validate:
+        from agent_index.models import DocTree
         from agent_index.validate import validate_index
 
         # Need a config to know what to validate
@@ -172,25 +173,41 @@ def run(args: Namespace) -> int:
             return 1
 
         scan_path = Path(args.local) if args.local else Path.cwd() / config.root_path
-        try:
-            doc_tree = scan_local(
-                scan_path,
-                file_extensions=config.file_extensions,
-                ignore_patterns=config.ignore_patterns,
-            )
-        except (FileNotFoundError, NotADirectoryError) as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
 
-        doc_tree = assign_tiers(doc_tree, config.tiers)
-        sorted_files = sort_files_bluf(list(doc_tree.files.values()), config.tiers)
-        index_content = render_index(
-            sorted_files,
-            config.tiers,
-            instruction=config.instruction,
+        # Bug #115: Load a previously saved tree snapshot instead of rescanning
+        # fresh. A fresh scan would always match disk, making missing_files
+        # /stale_entries impossible to detect. The tree snapshot is saved by
+        # the main workflow to .agent-index-tree.json (separate from the
+        # transform pipeline's .agent-index-state.json).
+        tree_path = config_path.parent / ".agent-index-tree.json"
+        if tree_path.exists():
+            try:
+                doc_tree = DocTree.model_validate_json(
+                    tree_path.read_text(encoding="utf-8")
+                )
+            except Exception as e:
+                print(f"Error loading saved index: {e}", file=sys.stderr)
+                return 1
+        else:
+            # Fallback: scan fresh if no saved index exists (first run)
+            try:
+                doc_tree = scan_local(
+                    scan_path,
+                    file_extensions=config.file_extensions,
+                    ignore_patterns=config.ignore_patterns,
+                )
+            except (FileNotFoundError, NotADirectoryError) as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return 1
+            doc_tree = assign_tiers(doc_tree, config.tiers)
+
+        # Bug #118: Forward file_extensions and ignore_patterns to validate_index
+        result = validate_index(
+            doc_tree,
+            scan_path,
+            file_extensions=config.file_extensions,
+            ignore_patterns=config.ignore_patterns,
         )
-
-        result = validate_index(doc_tree, scan_path)
         if result.valid:
             print("Validation passed: index matches docs on disk.")
             return 0
@@ -262,6 +279,14 @@ def run(args: Namespace) -> int:
 
     # Step 4: Assign tiers
     doc_tree = assign_tiers(doc_tree, config.tiers)
+
+    # Step 4b: Save tree snapshot for --validate drift detection
+    config_path = Path(args.config) if args.config else find_config()
+    tree_snapshot_dir = config_path.parent if config_path else Path.cwd()
+    tree_snapshot_path = tree_snapshot_dir / ".agent-index-tree.json"
+    tree_snapshot_path.write_text(
+        doc_tree.model_dump_json(indent=2), encoding="utf-8"
+    )
 
     # Step 5: Sort BLUF
     sorted_files = sort_files_bluf(list(doc_tree.files.values()), config.tiers)

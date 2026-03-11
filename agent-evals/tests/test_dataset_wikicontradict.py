@@ -10,19 +10,26 @@ import yaml
 
 def _make_wikicontradict_record(
     id: int = 1,
-    section_1: str = "Geography",
-    statement_1: str = "The river is 500km long.",
-    section_2: str = "Geography",
-    statement_2: str = "The river spans 300km.",
+    context1: str = "The river is approximately 500km long according to surveys.",
+    context2: str = "Recent measurements show the river spans about 300km.",
+    answer1: str = "The river is 500km long.",
+    answer2: str = "The river spans 300km.",
     article_title: str = "Amazon River",
+    question: str = "How long is the river?",
+    contradict_type: str = "Explicit",
+    ref_answer: str = "500km",
 ) -> dict:
     return {
-        "id": id,
-        "section_1": section_1,
-        "statement_1": statement_1,
-        "section_2": section_2,
-        "statement_2": statement_2,
-        "article_title": article_title,
+        "context1": context1,
+        "context2": context2,
+        "answer1": answer1,
+        "answer2": answer2,
+        "WikipediaArticleTitle": article_title,
+        "question": question,
+        "contradictType": contradict_type,
+        "ref_answer": ref_answer,
+        "merged_context": f"{context1} {context2}",
+        "url": f"https://en.wikipedia.org/wiki/{article_title.replace(' ', '_')}",
     }
 
 
@@ -80,7 +87,8 @@ class TestWikiContradictConvertTasks:
         assert task["type"] == "conflicting"
         assert task["domain"] == "general_knowledge"
         assert "sources" in task["metadata"]
-        assert "expected_resolution" in task["metadata"]
+        assert task["metadata"]["expected_resolution"] == "500km"
+        assert task["metadata"]["ref_answer"] == "500km"
         assert isinstance(task["metadata"]["sources"], list)
         assert len(task["metadata"]["sources"]) == 2
 
@@ -95,6 +103,43 @@ class TestWikiContradictConvertTasks:
         ):
             count = adapter.convert_tasks(tmp_path, limit=5)
         assert count == 5
+
+
+class TestWikiContradictFiltersEmptyRefAnswer:
+    """Bug #192: Records with empty ref_answer should be filtered out."""
+
+    def test_skips_records_with_empty_ref_answer(self, tmp_path: Path) -> None:
+        from agent_evals.datasets.wikicontradict import WikiContradictAdapter
+
+        records = [
+            _make_wikicontradict_record(ref_answer="500km"),
+            _make_wikicontradict_record(ref_answer=""),
+            _make_wikicontradict_record(ref_answer="300km"),
+        ]
+        adapter = WikiContradictAdapter()
+        with patch(
+            "agent_evals.datasets.wikicontradict.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 2  # Only the 2 records with non-empty ref_answer
+
+    def test_skips_records_with_whitespace_only_ref_answer(self, tmp_path: Path) -> None:
+        from agent_evals.datasets.wikicontradict import WikiContradictAdapter
+
+        records = [
+            _make_wikicontradict_record(ref_answer="500km"),
+            _make_wikicontradict_record(ref_answer="   "),
+        ]
+        adapter = WikiContradictAdapter()
+        with patch(
+            "agent_evals.datasets.wikicontradict.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 1
 
 
 class TestWikiContradictRegistration:

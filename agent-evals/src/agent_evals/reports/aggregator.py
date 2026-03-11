@@ -12,6 +12,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from scipy.stats import t as t_dist
+
 from agent_evals.runner import EvalRunConfig, TrialResult
 
 
@@ -66,8 +68,9 @@ def _summarize(trials: list[TrialResult]) -> VariantSummary:
 
     if count >= 2:
         se = std_dev / (count ** 0.5)
-        ci_lower = mean_score - 1.96 * se
-        ci_upper = mean_score + 1.96 * se
+        t_crit = float(t_dist.ppf(0.975, df=count - 1))
+        ci_lower = mean_score - t_crit * se
+        ci_upper = mean_score + t_crit * se
     else:
         ci_lower = None
         ci_upper = None

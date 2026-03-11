@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from agent_evals.datasets import register_dataset
-from agent_evals.datasets._hf_utils import load_hf_dataset
 from agent_evals.datasets.base import DatasetAdapter
 
 if TYPE_CHECKING:
@@ -52,41 +51,68 @@ class IBMTechQAAdapter(DatasetAdapter):
     def _load_qa_records(self) -> list[dict[str, Any]]:
         """Load QA records from the TechQA dataset.
 
-        Attempts HuggingFace load first, falls back to direct download.
-        Returns a list of dicts with QUESTION_ID, QUESTION_TITLE, etc.
+        PrimeQA/TechQA is distributed as a 3GB tar.gz archive, not in
+        standard HuggingFace parquet/arrow format.  ``load_dataset`` will
+        hang trying to download it.  Users must manually download and
+        extract TechQA.tar.gz, then set the ``TECHQA_DIR`` environment
+        variable to the extracted directory path.
         """
-        try:
-            ds = load_hf_dataset(self.hf_dataset_id(), split="train")
-            return list(ds)
-        except Exception as exc:
+        import os
+
+        techqa_dir = os.environ.get("TECHQA_DIR")
+        if not techqa_dir:
             logger.warning(
-                "Could not load TechQA from HuggingFace; "
-                "dataset may require manual download: %s",
-                exc,
+                "TechQA requires manual download. Set TECHQA_DIR to the "
+                "extracted TechQA directory. See: "
+                "https://huggingface.co/datasets/PrimeQA/TechQA"
             )
             return []
 
+        qa_path = Path(techqa_dir) / "training_Q_A.json"
+        if not qa_path.exists():
+            logger.warning("TechQA QA file not found: %s", qa_path)
+            return []
+
+        import json
+
+        with qa_path.open(encoding="utf-8") as f:
+            return json.load(f)
+
     def _load_technotes(self) -> dict[str, dict[str, str]]:
         """Load technote corpus. Returns {doc_id: {_id, title, text}}."""
-        try:
-            ds = load_hf_dataset(self.hf_dataset_id(), split="train")
-            # If HF provides a flat format, try to extract technotes
-            technotes: dict[str, dict[str, str]] = {}
-            for record in ds:
-                doc_id = record.get("DOCUMENT") or record.get("_id", "")
-                if doc_id and "text" in record:
+        import json
+        import os
+
+        techqa_dir = os.environ.get("TECHQA_DIR")
+        if not techqa_dir:
+            return {}
+
+        corpus_path = Path(techqa_dir) / "training_dev_technotes.json"
+        if not corpus_path.exists():
+            logger.warning("TechQA corpus not found: %s", corpus_path)
+            return {}
+
+        with corpus_path.open(encoding="utf-8") as f:
+            raw = json.load(f)
+
+        technotes: dict[str, dict[str, str]] = {}
+        if isinstance(raw, dict):
+            for doc_id, doc in raw.items():
+                technotes[doc_id] = {
+                    "_id": doc_id,
+                    "title": doc.get("title", "") if isinstance(doc, dict) else "",
+                    "text": doc.get("text", "") if isinstance(doc, dict) else "",
+                }
+        else:
+            for doc in raw:
+                doc_id = doc.get("id", "") or doc.get("_id", "")
+                if doc_id:
                     technotes[doc_id] = {
                         "_id": doc_id,
-                        "title": record.get("title", ""),
-                        "text": record["text"],
+                        "title": doc.get("title", ""),
+                        "text": doc.get("text", ""),
                     }
-            return technotes
-        except Exception as exc:
-            logger.warning(
-                "Could not load TechQA technotes from HuggingFace: %s",
-                exc,
-            )
-            return {}
+        return technotes
 
     def convert_tasks(self, output_dir: Path, limit: int | None = None) -> int:
         """Convert TechQA QA pairs into fact_extraction task YAMLs."""
@@ -108,9 +134,9 @@ class IBMTechQAAdapter(DatasetAdapter):
             doc = technotes[doc_id]
             doc_text = doc.get("text", "")
 
-            # Extract answer span
-            start = record.get("START_OFFSET", 0)
-            end = record.get("END_OFFSET", 0)
+            # Extract answer span (offsets may be strings)
+            start = int(record.get("START_OFFSET", 0))
+            end = int(record.get("END_OFFSET", 0))
             if 0 <= start < end <= len(doc_text):
                 answer = doc_text[start:end]
             else:

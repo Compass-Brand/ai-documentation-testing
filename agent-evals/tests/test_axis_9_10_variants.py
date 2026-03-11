@@ -258,11 +258,11 @@ class TestXrefDenseRender:
         result = XrefDenseVariant().render(doc_tree)
         assert "See also:" in result
 
-    def test_render_has_referenced_by(self, doc_tree: MagicMock) -> None:
-        """Dense xref adds Referenced by entries for content-based mentions."""
+    def test_render_has_references(self, doc_tree: MagicMock) -> None:
+        """Dense xref adds References entries for content-based outgoing mentions."""
         result = XrefDenseVariant().render(doc_tree)
         # api/auth.md content mentions "caching", so it should reference api/caching.md
-        assert "Referenced by:" in result
+        assert "References:" in result
 
     def test_render_see_also_includes_content_mentions(self, doc_tree: MagicMock) -> None:
         """See also includes files whose content mentions the current file's stem."""
@@ -284,17 +284,17 @@ class TestXrefDenseRender:
                 assert "guides/setup.md" in see_also_line
                 break
 
-    def test_render_referenced_by_reflects_content(self, doc_tree: MagicMock) -> None:
-        """Referenced by lists files whose stems appear in the current file's content."""
+    def test_render_references_reflects_content(self, doc_tree: MagicMock) -> None:
+        """References lists files whose stems appear in the current file's content."""
         result = XrefDenseVariant().render(doc_tree)
         lines = result.splitlines()
-        # api/auth.md content mentions "caching", so Referenced by should list api/caching.md
+        # api/auth.md content mentions "caching", so References should list api/caching.md
         for i, line in enumerate(lines):
             if line.startswith("- api/auth.md"):
-                # Look for Referenced by line (may be i+1 or i+2 depending on See also)
+                # Look for References line (may be i+1 or i+2 depending on See also)
                 ref_lines = []
                 for j in range(i + 1, min(i + 4, len(lines))):
-                    if lines[j].strip().startswith("Referenced by:"):
+                    if lines[j].strip().startswith("References:"):
                         ref_lines.append(lines[j])
                 assert len(ref_lines) == 1
                 assert "api/caching.md" in ref_lines[0]
@@ -302,6 +302,18 @@ class TestXrefDenseRender:
 
     def test_render_empty_tree(self) -> None:
         assert XrefDenseVariant().render(_empty_tree()) == ""
+
+    def test_render_outgoing_refs_use_references_label(self, doc_tree: MagicMock) -> None:
+        """Bug #133: Outgoing references must be labelled 'References:', not 'Referenced by:'.
+
+        The 'Referenced by:' section finds files whose stems appear in the current
+        file's content — those are outgoing references (this file references them),
+        not incoming references (they reference this file). The label should be
+        'References:' to accurately describe the relationship direction.
+        """
+        result = XrefDenseVariant().render(doc_tree)
+        assert "References:" in result
+        assert "Referenced by:" not in result
 
 
 # ===========================================================================

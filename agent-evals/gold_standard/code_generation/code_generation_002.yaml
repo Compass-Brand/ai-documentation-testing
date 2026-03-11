@@ -11,7 +11,7 @@ metadata:
   test: |
     @cached
     ttl=600
-    def\s+\w+
+    get_cached_data
   entry_point: "get_cached_data"
   canonical_solution: ""
   libs: ["framework.caching"]

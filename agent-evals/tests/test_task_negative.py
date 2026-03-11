@@ -5,10 +5,16 @@ Tests cover:
 - Defaults for missing metadata
 - Registration in TASK_TYPES
 - build_prompt returns message list with index content and question
-- score_response: abstention phrases detected (1.0)
+- score_response: abstention phrases detected (continuous tiered scoring)
 - score_response: no abstention (0.0)
 - All recognized abstention phrases
 - Edge cases and score bounding
+
+Note: score_response uses continuous tiered scoring where base scores are:
+- Firm refusal: 0.85 (with bonus up to 1.0 for additional phrases)
+- Hedge with caveat: 0.55 (with bonus up to 0.70)
+- Disclaimer: 0.20 (with bonus up to 0.30)
+- Hallucination: 0.0
 """
 
 from __future__ import annotations
@@ -124,58 +130,58 @@ class TestNegativeTaskScoring:
     """Tests for NegativeTask.score_response."""
 
     def test_abstention_phrase_cannot_be_determined(self) -> None:
-        """Response with 'cannot be determined' scores 1.0."""
+        """Response with 'cannot be determined' scores in firm refusal tier."""
         task = _negative_task()
         score = task.score_response("This cannot be determined from the docs.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_abstention_phrase_not_available(self) -> None:
-        """Response with 'not available' scores 1.0."""
+        """Response with 'not available' scores in firm refusal tier."""
         task = _negative_task()
         score = task.score_response("That information is not available.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_abstention_phrase_no_information(self) -> None:
-        """Response with 'no information' scores 1.0."""
+        """Response with 'no information' scores in firm refusal tier."""
         task = _negative_task()
         score = task.score_response("There is no information about this topic.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_abstention_phrase_not_found(self) -> None:
-        """Response with 'not found' scores 1.0."""
+        """Response with 'not found' scores in firm refusal tier."""
         task = _negative_task()
         score = task.score_response("The answer was not found in the docs.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_abstention_phrase_dont_know(self) -> None:
-        """Response with "don't know" scores 1.0."""
+        """Response with "don't know" scores in firm refusal tier."""
         task = _negative_task()
         score = task.score_response("I don't know the answer to that.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_abstention_phrase_unable_to_find(self) -> None:
-        """Response with 'unable to find' scores 1.0."""
+        """Response with 'unable to find' scores in firm refusal tier."""
         task = _negative_task()
         score = task.score_response("I am unable to find that information.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_abstention_phrase_not_in_documentation(self) -> None:
-        """Response with 'not in the documentation' scores 1.0."""
+        """Response with 'not in the documentation' scores in firm refusal tier."""
         task = _negative_task()
         score = task.score_response("This is not in the documentation.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_abstention_phrase_unanswerable(self) -> None:
-        """Response with 'unanswerable' scores 1.0."""
+        """Response with 'unanswerable' scores in firm refusal tier."""
         task = _negative_task()
         score = task.score_response("This question is unanswerable.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_abstention_phrase_cannot_answer(self) -> None:
-        """Response with 'cannot answer' scores 1.0."""
+        """Response with 'cannot answer' scores in firm refusal tier."""
         task = _negative_task()
         score = task.score_response("I cannot answer this question.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_no_abstention_returns_0(self) -> None:
         """Response without abstention phrases scores 0.0."""
@@ -187,7 +193,7 @@ class TestNegativeTaskScoring:
         """Abstention phrase matching is case-insensitive."""
         task = _negative_task()
         score = task.score_response("CANNOT BE DETERMINED from the provided info.")
-        assert score == 1.0
+        assert score >= 0.85
 
     def test_empty_response_returns_0(self) -> None:
         """Empty response scores 0.0."""
@@ -195,25 +201,27 @@ class TestNegativeTaskScoring:
         score = task.score_response("")
         assert score == 0.0
 
-    def test_hedge_with_caveat_scores_exactly_0_7(self) -> None:
-        """'I'm not certain...' must score exactly 0.7 (hedge tier)."""
+    def test_hedge_with_caveat_scores_in_hedge_tier(self) -> None:
+        """'I'm not certain...' must score in hedge tier (0.55-0.70)."""
         task = _negative_task()
         score = task.score_response("I'm not certain about this, but it might be X.")
-        assert score == 0.7, f"Expected 0.7 for hedge tier, got {score}"
+        assert 0.55 <= score <= 0.70, f"Expected hedge tier [0.55, 0.70], got {score}"
 
-    def test_answer_with_disclaimer_scores_0_3(self) -> None:
-        """'based on limited information' must score exactly 0.3 (disclaimer tier)."""
+    def test_answer_with_disclaimer_scores_in_disclaimer_tier(self) -> None:
+        """'based on limited information' must score in disclaimer tier (0.20-0.30)."""
         task = _negative_task()
         score = task.score_response("Based on limited information, it might be X.")
-        assert score == 0.3, f"Expected 0.3 for disclaimer tier, got {score}"
+        assert 0.20 <= score <= 0.30, f"Expected disclaimer tier [0.20, 0.30], got {score}"
 
     def test_confident_hallucination_scores_zero(self) -> None:
         task = _negative_task()
         assert task.score_response("The answer is definitely 42.") == 0.0
 
-    def test_firm_refusal_scores_one(self) -> None:
+    def test_firm_refusal_with_multiple_phrases_scores_higher(self) -> None:
         task = _negative_task()
-        assert task.score_response("I cannot answer — no information available.") == 1.0
+        # Two firm phrases → base 0.85 + bonus
+        score = task.score_response("I cannot answer — no information available.")
+        assert score > 0.85
 
     def test_confident_answer_not_scored_as_abstention(self) -> None:
         """'Based on the available documentation, the answer is X' must NOT score 1.0."""
@@ -271,89 +279,93 @@ class TestNegativeTaskMetadataFields:
         assert task.nearest_content == ""
 
     def test_firm_refusal_i_dont_have_access_to(self) -> None:
-        """Modern refusal 'I don't have access to' scores 1.0."""
+        """Modern refusal 'I don't have access to' scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("I don't have access to that information.") == 1.0
+        assert task.score_response("I don't have access to that information.") >= 0.85
 
     def test_firm_refusal_i_do_not_have_access_to(self) -> None:
-        """Modern refusal 'I do not have access to' scores 1.0."""
+        """Modern refusal 'I do not have access to' scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("I do not have access to those details.") == 1.0
+        assert task.score_response("I do not have access to those details.") >= 0.85
 
     def test_firm_refusal_im_unable_to_provide(self) -> None:
-        """Modern refusal \"I'm unable to provide\" scores 1.0."""
+        """Modern refusal \"I'm unable to provide\" scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("I'm unable to provide that answer.") == 1.0
+        assert task.score_response("I'm unable to provide that answer.") >= 0.85
 
     def test_firm_refusal_i_am_unable_to_provide(self) -> None:
-        """Modern refusal 'I am unable to provide' scores 1.0."""
+        """Modern refusal 'I am unable to provide' scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("I am unable to provide a definitive answer.") == 1.0
+        assert task.score_response("I am unable to provide a definitive answer.") >= 0.85
 
     def test_firm_refusal_i_cant_determine(self) -> None:
-        """Modern refusal \"I can't determine\" scores 1.0."""
+        """Modern refusal \"I can't determine\" scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("I can't determine the answer from the docs.") == 1.0
+        assert task.score_response("I can't determine the answer from the docs.") >= 0.85
 
     def test_firm_refusal_no_reliable_information(self) -> None:
-        """Modern refusal 'no reliable information' scores 1.0."""
+        """Modern refusal 'no reliable information' scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("There is no reliable information on this.") == 1.0
+        assert task.score_response("There is no reliable information on this.") >= 0.85
 
     def test_firm_refusal_doesnt_appear(self) -> None:
-        """Modern refusal \"doesn't appear\" scores 1.0."""
+        """Modern refusal \"doesn't appear\" scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("This doesn't appear in the documentation.") == 1.0
+        assert task.score_response("This doesn't appear in the documentation.") >= 0.85
 
     def test_firm_refusal_does_not_appear(self) -> None:
-        """Modern refusal 'does not appear' scores 1.0."""
+        """Modern refusal 'does not appear' scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("This information does not appear in the docs.") == 1.0
+        assert task.score_response("This information does not appear in the docs.") >= 0.85
 
     def test_firm_refusal_not_included_in(self) -> None:
-        """Modern refusal 'not included in' scores 1.0."""
+        """Modern refusal 'not included in' scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("That detail is not included in the docs.") == 1.0
+        assert task.score_response("That detail is not included in the docs.") >= 0.85
 
     def test_firm_refusal_outside_the_scope(self) -> None:
-        """Modern refusal 'outside the scope' scores 1.0."""
+        """Modern refusal 'outside the scope' scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("This is outside the scope of the provided docs.") == 1.0
+        assert task.score_response("This is outside the scope of the provided docs.") >= 0.85
 
     def test_firm_refusal_beyond_what_is_provided(self) -> None:
-        """Modern refusal 'beyond what is provided' scores 1.0."""
+        """Modern refusal 'beyond what is provided' scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("That's beyond what is provided in the docs.") == 1.0
+        assert task.score_response("That's beyond what is provided in the docs.") >= 0.85
 
     def test_firm_refusal_i_dont_have_information(self) -> None:
-        """Modern refusal \"I don't have information\" scores 1.0."""
+        """Modern refusal \"I don't have information\" scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("I don't have information about that topic.") == 1.0
+        assert task.score_response("I don't have information about that topic.") >= 0.85
 
     def test_firm_refusal_i_do_not_have_information(self) -> None:
-        """Modern refusal 'I do not have information' scores 1.0."""
+        """Modern refusal 'I do not have information' scores in firm tier."""
         task = _negative_task()
-        assert task.score_response("I do not have information on that.") == 1.0
+        assert task.score_response("I do not have information on that.") >= 0.85
 
     def test_hedge_its_not_clear(self) -> None:
-        """Modern hedge \"it's not clear\" scores 0.7."""
+        """Modern hedge \"it's not clear\" scores in hedge tier."""
         task = _negative_task()
-        assert task.score_response("It's not clear whether this is supported.") == 0.7
+        score = task.score_response("It's not clear whether this is supported.")
+        assert 0.55 <= score <= 0.70
 
     def test_hedge_difficult_to_determine(self) -> None:
-        """Modern hedge 'difficult to determine' scores 0.7."""
+        """Modern hedge 'difficult to determine' scores in hedge tier."""
         task = _negative_task()
-        assert task.score_response("It is difficult to determine from the docs.") == 0.7
+        score = task.score_response("It is difficult to determine from the docs.")
+        assert 0.55 <= score <= 0.70
 
     def test_hedge_hard_to_say(self) -> None:
-        """Modern hedge 'hard to say' scores 0.7."""
+        """Modern hedge 'hard to say' scores in hedge tier."""
         task = _negative_task()
-        assert task.score_response("It's hard to say based on the available docs.") == 0.7
+        score = task.score_response("It's hard to say based on the available docs.")
+        assert 0.55 <= score <= 0.70
 
     def test_hedge_cannot_say_for_certain(self) -> None:
-        """Modern hedge 'cannot say for certain' scores 0.7."""
+        """Modern hedge 'cannot say for certain' scores in hedge tier."""
         task = _negative_task()
-        assert task.score_response("I cannot say for certain from these docs.") == 0.7
+        score = task.score_response("I cannot say for certain from these docs.")
+        assert 0.55 <= score <= 0.70
 
     def test_backward_compat_answerable_still_works(self) -> None:
         """NegativeTask still supports legacy answerable/distractor_files fields."""

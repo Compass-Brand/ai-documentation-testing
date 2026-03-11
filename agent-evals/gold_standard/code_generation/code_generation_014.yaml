@@ -9,9 +9,9 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
+    invalidate_user_cache
     invalidate
-    user_\*|user_
+    user_
     pattern
   entry_point: "invalidate_user_cache"
   canonical_solution: ""

@@ -1,10 +1,12 @@
 """Shared utilities for task scoring.
 
-Provides stopword filtering and keyword extraction used by multiple
-task types for keyword-based response scoring.
+Provides stopword filtering, keyword extraction, and short-string
+matching used by multiple task types for keyword-based response scoring.
 """
 
 from __future__ import annotations
+
+import re
 
 # Common English stopwords to exclude from keyword matching.
 STOPWORDS: frozenset[str] = frozenset({
@@ -23,9 +25,9 @@ STOPWORDS: frozenset[str] = frozenset({
 def extract_keywords(text: str) -> list[str]:
     """Extract non-stopword keywords from text.
 
-    Splits on whitespace, strips trailing punctuation from each token,
-    then filters to words with 3+ characters that are not common
-    English stopwords.
+    Splits on whitespace, strips trailing punctuation and quotes from
+    each token, then filters to words with 3+ characters that are not
+    common English stopwords.
 
     Args:
         text: The text to extract keywords from.
@@ -36,7 +38,28 @@ def extract_keywords(text: str) -> list[str]:
     words = text.split()
     cleaned: list[str] = []
     for w in words:
-        w = w.strip(".,:;!?()")
+        w = w.strip(".,:;!?()'\"")
         if len(w) >= 3 and w.lower() not in STOPWORDS:
             cleaned.append(w)
     return cleaned
+
+
+# Threshold below which strings are matched with word boundaries
+# instead of plain substring containment to avoid false positives
+# (e.g., "yes" matching inside "yesterday").
+_SHORT_STRING_THRESHOLD = 4
+
+
+def contains_text(needle: str, haystack: str) -> bool:
+    """Check if *needle* appears in *haystack*, case-sensitive.
+
+    For short needles (<=4 chars), uses word-boundary matching to prevent
+    false positives when the needle appears as a substring of a longer
+    word.  For longer needles, plain ``in`` is used.
+
+    Both *needle* and *haystack* should already be lowercased by the
+    caller if case-insensitive matching is desired.
+    """
+    if len(needle) <= _SHORT_STRING_THRESHOLD:
+        return bool(re.search(r"\b" + re.escape(needle) + r"\b", haystack))
+    return needle in haystack

@@ -27,8 +27,9 @@ def load_tasks_for_source(source: str = DEFAULT_SOURCE) -> list[Any]:
     """Load evaluation tasks for the given *source*.
 
     Args:
-        source: ``"gold_standard"`` for built-in fixtures, or a dataset
-            adapter name (e.g. ``"repliqa"``).
+        source: ``"gold_standard"`` for built-in fixtures, a dataset
+            adapter name (e.g. ``"repliqa"``), or a comma-separated
+            list of dataset names (e.g. ``"repliqa,ambigqa"``).
 
     Returns:
         List of loaded ``EvalTask`` objects.
@@ -46,27 +47,36 @@ def load_tasks_for_source(source: str = DEFAULT_SOURCE) -> list[Any]:
             )
         return load_tasks(_GOLD_STANDARD_DIR)
 
+    names = [n.strip() for n in source.split(",")]
+
     from agent_evals.datasets import load_all as _load_all_datasets
     from agent_evals.datasets.cache import DatasetCache
 
     _load_all_datasets()
     cache = DatasetCache()
-    if not cache.is_prepared(source):
-        raise SourceNotPreparedError(
-            f"Dataset \'{source}\' has not been prepared. "
-            f"Run: agent-evals --prepare-datasets {source}"
-        )
-    return load_tasks(cache.task_dir(source))
+
+    all_tasks: list[Any] = []
+    for name in names:
+        if not cache.is_prepared(name):
+            raise SourceNotPreparedError(
+                f"Dataset \'{name}\' has not been prepared. "
+                f"Run: agent-evals --prepare-datasets {name}"
+            )
+        all_tasks.extend(load_tasks(cache.task_dir(name)))
+
+    return all_tasks
 
 
 def load_doc_tree_for_source(source: str = DEFAULT_SOURCE) -> Any:
     """Load the doc_tree for the given *source*.
 
     For ``"gold_standard"`` returns the built-in sample doc tree.
-    For other sources reads the cached JSON doc tree.
+    For other sources reads the cached JSON doc tree.  When *source*
+    is a comma-separated list, doc trees are merged.
 
     Args:
-        source: ``"gold_standard"`` or a dataset adapter name.
+        source: ``"gold_standard"``, a dataset adapter name, or a
+            comma-separated list of dataset names.
 
     Returns:
         A ``DocTree`` instance.
@@ -76,12 +86,35 @@ def load_doc_tree_for_source(source: str = DEFAULT_SOURCE) -> Any:
 
         return load_sample_doc_tree()
 
+    from datetime import UTC, datetime
+
     from agent_evals.datasets import load_all as _load_all_datasets
     from agent_evals.datasets.cache import DatasetCache
     from agent_index.models import DocTree
 
     _load_all_datasets()
     cache = DatasetCache()
-    return DocTree.model_validate_json(
-        cache.doc_tree_path(source).read_text(encoding="utf-8")
+
+    names = [n.strip() for n in source.split(",")]
+
+    if len(names) == 1:
+        return DocTree.model_validate_json(
+            cache.doc_tree_path(names[0]).read_text(encoding="utf-8")
+        )
+
+    merged_files: dict[str, Any] = {}
+    total_tokens = 0
+    for name in names:
+        dt = DocTree.model_validate_json(
+            cache.doc_tree_path(name).read_text(encoding="utf-8")
+        )
+        for rel_path, doc_file in dt.files.items():
+            merged_files[f"{name}/{rel_path}"] = doc_file
+        total_tokens += dt.total_tokens or 0
+
+    return DocTree(
+        files=merged_files,
+        scanned_at=datetime.now(tz=UTC),
+        source=",".join(names),
+        total_tokens=total_tokens,
     )

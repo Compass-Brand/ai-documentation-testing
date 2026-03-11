@@ -306,48 +306,32 @@ class TestTechQABuildDocTree:
 
 
 class TestTechQALoadErrorHandling:
-    """Verify load methods log warnings with error context on failure."""
+    """Verify load methods log warnings when TECHQA_DIR is not set."""
 
-    def test_load_qa_records_logs_warning_with_exception(self) -> None:
-        """_load_qa_records logs a WARNING that includes the exception message."""
-        import logging
-
+    def test_load_qa_records_warns_when_no_env_var(self) -> None:
+        """_load_qa_records logs a WARNING when TECHQA_DIR is unset."""
         from agent_evals.datasets.ibm_techqa import IBMTechQAAdapter
 
         adapter = IBMTechQAAdapter()
-        with patch(
-            "agent_evals.datasets.ibm_techqa.load_hf_dataset",
-            side_effect=RuntimeError("connection timed out"),
-        ), patch(
+        with patch.dict("os.environ", {}, clear=True), patch(
             "agent_evals.datasets.ibm_techqa.logger",
         ) as mock_logger:
             result = adapter._load_qa_records()
 
         assert result == []
         mock_logger.warning.assert_called_once()
-        call_args = mock_logger.warning.call_args
-        # The warning message should include the exception info
-        full_msg = str(call_args)
-        assert "connection timed out" in full_msg
+        full_msg = str(mock_logger.warning.call_args)
+        assert "TECHQA_DIR" in full_msg
 
-    def test_load_technotes_logs_warning_on_failure(self) -> None:
-        """_load_technotes logs a WARNING (not silent) when load fails."""
+    def test_load_technotes_returns_empty_when_no_env_var(self) -> None:
+        """_load_technotes returns {} when TECHQA_DIR is unset."""
         from agent_evals.datasets.ibm_techqa import IBMTechQAAdapter
 
         adapter = IBMTechQAAdapter()
-        with patch(
-            "agent_evals.datasets.ibm_techqa.load_hf_dataset",
-            side_effect=RuntimeError("auth required"),
-        ), patch(
-            "agent_evals.datasets.ibm_techqa.logger",
-        ) as mock_logger:
+        with patch.dict("os.environ", {}, clear=True):
             result = adapter._load_technotes()
 
         assert result == {}
-        mock_logger.warning.assert_called_once()
-        call_args = mock_logger.warning.call_args
-        full_msg = str(call_args)
-        assert "auth required" in full_msg
 
 
 # ---------------------------------------------------------------------------

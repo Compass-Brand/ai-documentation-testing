@@ -2,7 +2,8 @@
 
 Tests cover:
 - ContextStrategy ABC interface enforcement
-- FullContextStrategy.prepare() produces correct messages
+- FullContextStrategy.prepare() appends doc content to rendered index
+- FullContextStrategy.prepare() respects max_content_tokens budget
 - FullContextStrategy.execute() wraps client response correctly
 - FullContextStrategy.supports_caching() returns True
 - StrategyConfig defaults
@@ -12,10 +13,43 @@ Tests cover:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
 from conftest import make_mock_client, make_mock_task
+
+
+def _make_doc_tree(
+    files: dict[str, tuple[str, int | None]],
+):
+    """Build a DocTree for testing.
+
+    Args:
+        files: Mapping of rel_path -> (content, token_count).
+            token_count may be None to test the heuristic fallback.
+    """
+    from agent_index.models import DocFile, DocTree
+
+    doc_files = {}
+    for rel_path, (content, token_count) in files.items():
+        doc_files[rel_path] = DocFile(
+            rel_path=rel_path,
+            content=content,
+            size_bytes=len(content.encode()),
+            token_count=token_count,
+            tier="recommended",
+            section="General",
+        )
+
+    return DocTree(
+        files=doc_files,
+        scanned_at=datetime.now(tz=timezone.utc),
+        source="/test",
+        total_tokens=sum(
+            tc for _, (_, tc) in files.items() if tc is not None
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -260,19 +294,77 @@ class TestFullContextStrategy:
 
         assert FullContextStrategy().supports_caching() is True
 
-    def test_prepare_calls_build_prompt(self):
+    def test_prepare_passes_rendered_index_directly(self):
+        """prepare() should pass rendered index directly to build_prompt
+        without appending raw doc content (fixes #193)."""
         from agent_evals.context.full import FullContextStrategy
 
         strategy = FullContextStrategy()
         task = make_mock_task()
-        doc_tree = MagicMock()
+        doc_tree = _make_doc_tree({
+            "guides/auth.md": ("Auth guide content", 10),
+        })
 
         prepared = strategy.prepare("rendered index", task, doc_tree)
 
-        task.build_prompt.assert_called_once_with("rendered index")
+        # build_prompt should receive the rendered index as-is
+        call_args = task.build_prompt.call_args[0][0]
+        assert call_args == "rendered index"
         assert prepared.messages == task.build_prompt.return_value
         assert prepared.tools is None
-        assert prepared.strategy_metadata == {}
+
+    def test_prepare_with_empty_doc_tree_passes_index_only(self):
+        """When doc_tree has no files, rendered index is passed as-is."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy()
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({})
+
+        strategy.prepare("rendered index", task, doc_tree)
+
+        task.build_prompt.assert_called_once_with("rendered index")
+
+    def test_prepare_passes_rendered_index_as_is(self):
+        """prepare() passes rendered_index directly regardless of doc_tree content."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy()
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({
+            "guides/setup.md": ("Setup content", 10),
+            "api/endpoints.md": ("API content", 10),
+            "guides/auth.md": ("Auth content", 10),
+        })
+
+        strategy.prepare("my custom index", task, doc_tree)
+
+        call_args = task.build_prompt.call_args[0][0]
+        assert call_args == "my custom index"
+
+    def test_prepare_strategy_metadata(self):
+        """strategy_metadata should include index token stats."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy(max_content_tokens=1000)
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({
+            "a.md": ("Content", 50),
+            "b.md": ("More content", 60),
+        })
+
+        prepared = strategy.prepare("the index", task, doc_tree)
+
+        assert "index_tokens" in prepared.strategy_metadata
+        assert prepared.strategy_metadata["max_content_tokens"] == 1000
+
+    def test_default_max_content_tokens(self):
+        """Default max_content_tokens should be 50000."""
+        from agent_evals.context.full import DEFAULT_MAX_CONTENT_TOKENS, FullContextStrategy
+
+        strategy = FullContextStrategy()
+        assert strategy._max_content_tokens == DEFAULT_MAX_CONTENT_TOKENS
+        assert DEFAULT_MAX_CONTENT_TOKENS == 50_000
 
     def test_execute_calls_client_complete(self):
         from agent_evals.context.base import PreparedContext
@@ -316,47 +408,64 @@ class TestFullContextStrategy:
         assert result.generations[0] is gen
         assert result.messages == messages
 
-    def test_execute_produces_identical_results_to_current_behavior(self):
-        """FullContextStrategy must produce the same output as the old
-        render → build_prompt → complete pipeline."""
-        from agent_evals.context.base import PreparedContext
+    def test_prepare_passes_rendered_index_without_raw_content(self):
+        """prepare() uses only the rendered index -- variant-rendered content
+        is the experimental treatment; appending raw doc content would dilute
+        axis effects across variants (#193)."""
         from agent_evals.context.full import FullContextStrategy
-        from agent_evals.llm.client import GenerationResult
 
         strategy = FullContextStrategy()
         task = make_mock_task()
-        doc_tree = MagicMock()
-        client = make_mock_client()
+        doc_tree = _make_doc_tree({
+            "guides/auth.md": ("# Authentication\nUse JWT tokens...", 20),
+            "api/users.md": ("# Users API\nGET /api/users...", 15),
+        })
 
-        gen = GenerationResult(
-            content="LLM answer",
-            prompt_tokens=200,
-            completion_tokens=100,
-            total_tokens=300,
-            cost=0.01,
-            model="test-model",
-            generation_id="gen-2",
+        rendered_index = "[FILE] guides/auth.md: Auth guide\n[FILE] api/users.md: Users API"
+        strategy.prepare(rendered_index, task, doc_tree)
+
+        call_args = task.build_prompt.call_args[0][0]
+        # Should contain the rendered index
+        assert "[FILE] guides/auth.md: Auth guide" in call_args
+        # Should NOT append raw doc content
+        assert "# Authentication\nUse JWT tokens..." not in call_args
+        assert "# Users API\nGET /api/users..." not in call_args
+
+    def test_prepare_uses_only_rendered_index_not_raw_doc_content(self):
+        """prepare() should use only the rendered_index, not append raw doc
+        content from doc_tree.files, because the rendered index IS the
+        variant-specific content. Appending raw docs dilutes axis effects (#193)."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy()
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({
+            "a.md": ("Raw content A", 10),
+            "b.md": ("Raw content B", 10),
+        })
+
+        # Two different rendered indices (simulating different variants)
+        rendered_flat = "FLAT INDEX: a.md, b.md"
+        rendered_nested = "NESTED INDEX:\n  section/\n    a.md\n    b.md"
+
+        strategy.prepare(rendered_flat, task, doc_tree)
+        flat_content = task.build_prompt.call_args[0][0]
+
+        task.reset_mock()
+        strategy.prepare(rendered_nested, task, doc_tree)
+        nested_content = task.build_prompt.call_args[0][0]
+
+        # The two calls should produce DIFFERENT content
+        assert flat_content != nested_content, (
+            "FullContextStrategy should produce different content for different "
+            "rendered indices — raw doc content must not dilute variant effects"
         )
-        client.complete.return_value = gen
-
-        # Old pipeline: variant.render() → task.build_prompt(index) → client.complete(messages)
-        rendered_index = "# Docs\nSome content"
-        messages_old = task.build_prompt(rendered_index)
-
-        # New pipeline: strategy.prepare() → strategy.execute()
-        task.build_prompt.reset_mock()
-        prepared = strategy.prepare(rendered_index, task, doc_tree)
-        result = strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
-
-        # Messages built identically
-        assert prepared.messages == messages_old
-        # Final response matches generation content
-        assert result.final_response == gen.content
-        # Tokens match
-        assert result.total_prompt_tokens == gen.prompt_tokens
-        assert result.total_completion_tokens == gen.completion_tokens
-        assert result.total_tokens == gen.total_tokens
-        assert result.total_cost == gen.cost
+        # rendered_index should be included
+        assert "FLAT INDEX" in flat_content
+        assert "NESTED INDEX" in nested_content
+        # Raw doc content should NOT be appended (it's the same for both)
+        assert "Raw content A" not in flat_content
+        assert "Raw content B" not in flat_content
 
     def test_setup_teardown_are_noops(self):
         from agent_evals.context.full import FullContextStrategy

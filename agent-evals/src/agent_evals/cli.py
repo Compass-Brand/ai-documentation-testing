@@ -205,7 +205,7 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         "--mode",
         choices=["full", "taguchi"],
         default=None,
-        help="Evaluation mode (default: full)",
+        help="Evaluation mode (default: taguchi)",
     )
     parser.add_argument(
         "--models",
@@ -418,6 +418,38 @@ def build_parser() -> argparse.ArgumentParser:
         "dashboard", help="Start the observatory web dashboard",
     )
     _add_dashboard_args(dash_parser)
+
+    # 'export' subcommand
+    export_parser = subparsers.add_parser(
+        "export", help="Export a run as a self-contained JSON bundle",
+    )
+    export_parser.add_argument(
+        "run_id", type=str, help="Run ID to export",
+    )
+    export_parser.add_argument(
+        "-o", "--output", type=str, required=True,
+        help="Output JSON file path",
+    )
+    export_parser.add_argument(
+        "--db", type=str, default=None,
+        help="Path to observatory database (default: ~/.observatory/observatory.db)",
+    )
+
+    # 'import' subcommand
+    import_parser = subparsers.add_parser(
+        "import", help="Import a run from a JSON bundle",
+    )
+    import_parser.add_argument(
+        "file", type=str, help="Path to exported JSON bundle",
+    )
+    import_parser.add_argument(
+        "--db", type=str, default=None,
+        help="Path to observatory database (default: ~/.observatory/observatory.db)",
+    )
+    import_parser.add_argument(
+        "--force", action="store_true", default=False,
+        help="Replace existing run with same ID",
+    )
 
     return parser
 
@@ -678,7 +710,7 @@ def _run_evaluation(
             logger.info("  %s: %r", key, value)
 
         # For taguchi mode, also show the OA design
-        mode = resolved.get("mode", "full")
+        mode = resolved.get("mode", "taguchi")
         if mode == "taguchi":
             from agent_evals.variants.registry import (
                 get_all_variants,
@@ -778,10 +810,29 @@ def _run_evaluation(
     if task_id_filter:
         tasks = [t for t in tasks if t.definition.task_id == task_id_filter]
 
-    # Apply limit
+    # Apply limit — round-robin across task types for balanced sampling
     limit = resolved.get("limit")
-    if limit is not None:
-        tasks = tasks[:limit]
+    if limit is not None and len(tasks) > limit:
+        from collections import defaultdict
+        from itertools import cycle
+
+        by_type: dict[str, list] = defaultdict(list)
+        for t in tasks:
+            by_type[t.definition.type].append(t)
+
+        selected: list = []
+        type_iters = {k: iter(v) for k, v in by_type.items()}
+        type_cycle = cycle(sorted(type_iters.keys()))
+        exhausted: set[str] = set()
+        while len(selected) < limit and len(exhausted) < len(type_iters):
+            tt = next(type_cycle)
+            if tt in exhausted:
+                continue
+            try:
+                selected.append(next(type_iters[tt]))
+            except StopIteration:
+                exhausted.add(tt)
+        tasks = selected
 
     if not tasks:
         logger.warning("No tasks matched the filter criteria.")
@@ -810,7 +861,7 @@ def _run_evaluation(
     doc_tree = load_doc_tree_for_source(source)
 
     # Route to the correct runner based on --mode
-    mode = resolved.get("mode", "full")
+    mode = resolved.get("mode", "taguchi")
 
     if mode == "taguchi":
         pipeline_mode = resolved.get("pipeline")
@@ -830,7 +881,7 @@ def _run_evaluation(
             raw_yaml=raw_yaml,
         )
 
-    # Default: full mode via orchestrator (wires strategy_factory)
+    # Explicit --mode full: run via orchestrator (wires strategy_factory)
     return _run_full(
         resolved, tasks, variants, doc_tree, api_key, run_config,
         raw_yaml=raw_yaml,
@@ -1221,6 +1272,66 @@ def _run_multi_strategy_pipeline(
     return 0
 
 
+def _resolve_observatory_db(db_arg: str | None) -> Path:
+    """Resolve the observatory DB path from a CLI arg or default."""
+    if db_arg:
+        return Path(db_arg)
+    return Path.home() / ".observatory" / "observatory.db"
+
+
+def _run_export(args: argparse.Namespace) -> int:
+    """Export a run to a JSON bundle.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.observatory.export import export_run
+    from agent_evals.observatory.store import ObservatoryStore
+
+    db_path = _resolve_observatory_db(args.db)
+    if not db_path.exists():
+        logger.error("Observatory database not found: %s", db_path)
+        return 1
+
+    store = ObservatoryStore(db_path=db_path)
+    output_path = Path(args.output)
+
+    try:
+        export_run(store, args.run_id, output_path)
+    except ValueError as exc:
+        logger.error("Export failed: %s", exc)
+        return 1
+
+    print(f"Exported run '{args.run_id}' to {output_path}")
+    return 0
+
+
+def _run_import(args: argparse.Namespace) -> int:
+    """Import a run from a JSON bundle.
+
+    Returns 0 on success, 1 on error.
+    """
+    from agent_evals.observatory.export import import_run
+    from agent_evals.observatory.store import ObservatoryStore
+
+    db_path = _resolve_observatory_db(args.db)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    store = ObservatoryStore(db_path=db_path)
+    file_path = Path(args.file)
+
+    if not file_path.exists():
+        logger.error("Import file not found: %s", file_path)
+        return 1
+
+    try:
+        run_id = import_run(store, file_path, force=args.force)
+    except ValueError as exc:
+        logger.error("Import failed: %s", exc)
+        return 1
+
+    print(f"Imported run '{run_id}' into {db_path}")
+    return 0
+
+
 def _run_dashboard(args: argparse.Namespace) -> int:
     """Launch the observatory dashboard from CLI args.
 
@@ -1262,11 +1373,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # Route dashboard subcommand
+    # Route subcommands that don't need config resolution
     if args.command == "dashboard":
         verbosity = 1 if args.verbose else (-1 if args.quiet else 0)
         configure_logging(verbosity)
         return _run_dashboard(args)
+
+    if args.command == "export":
+        configure_logging(0)
+        return _run_export(args)
+
+    if args.command == "import":
+        configure_logging(0)
+        return _run_import(args)
 
     # Initialize logging before anything else
     verbosity = 1 if args.verbose else (-1 if args.quiet else 0)

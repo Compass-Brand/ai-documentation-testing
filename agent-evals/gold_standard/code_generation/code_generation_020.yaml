@@ -9,7 +9,7 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    class\s+Settings
+    Settings
     DATABASE_URL
     LOG_LEVEL
     INFO

@@ -155,6 +155,124 @@ class TestMultiHopRAGBuildDocTree:
         assert len(doc_tree.files) >= 1
 
 
+class TestMultiHopRAGEmptyReasoningChain:
+    """Bug #177: records with empty reasoning_chain cause scorer to return 1.0."""
+
+    def test_skips_records_with_empty_evidence_list(self, tmp_path: Path) -> None:
+        """Records with empty evidence_list should be filtered out."""
+        from agent_evals.datasets.multihop_rag import MultiHopRAGAdapter
+
+        empty_evidence = _make_multihop_record(
+            query_id="e1", evidence_list=[],
+        )
+        valid_record = _make_multihop_record(query_id="v1")
+
+        records = [empty_evidence, valid_record]
+        adapter = MultiHopRAGAdapter()
+        with patch(
+            "agent_evals.datasets.multihop_rag.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 1
+        task = yaml.safe_load(list(tmp_path.glob("*.yaml"))[0].read_text())
+        assert len(task["metadata"]["reasoning_chain"]) >= 1
+
+    def test_skips_records_with_factless_evidence(self, tmp_path: Path) -> None:
+        """Records where all evidence entries have empty facts should be filtered."""
+        from agent_evals.datasets.multihop_rag import MultiHopRAGAdapter
+
+        no_facts = _make_multihop_record(
+            query_id="nf1",
+            evidence_list=[
+                {"fact": "", "source": "art1"},
+                {"fact": "", "source": "art2"},
+            ],
+        )
+        records = [no_facts]
+        adapter = MultiHopRAGAdapter()
+        with patch(
+            "agent_evals.datasets.multihop_rag.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 0
+
+
+class TestMultiHopRAGBuildDocTreeTokenCount:
+    """Bug #180: model_copy skips size_bytes/token_count update after appending."""
+
+    def test_appended_doc_updates_size_and_token_count(self) -> None:
+        """After appending facts, size_bytes and token_count must reflect new content."""
+        from agent_evals.datasets.multihop_rag import MultiHopRAGAdapter
+
+        records = [
+            _make_multihop_record(
+                query_id="q1",
+                evidence_list=[
+                    {"fact": "First fact from source A.", "source": "shared_source"},
+                ],
+            ),
+            _make_multihop_record(
+                query_id="q2",
+                evidence_list=[
+                    {"fact": "Second fact from source A, much longer text.", "source": "shared_source"},
+                ],
+            ),
+        ]
+        adapter = MultiHopRAGAdapter()
+        with patch(
+            "agent_evals.datasets.multihop_rag.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            doc_tree = adapter.build_doc_tree()
+
+        doc = doc_tree.files["news/shared_source.md"]
+        # Content should have both facts
+        assert "First fact" in doc.content
+        assert "Second fact" in doc.content
+        # size_bytes must reflect actual content size
+        assert doc.size_bytes == len(doc.content.encode("utf-8")), (
+            f"size_bytes {doc.size_bytes} != actual {len(doc.content.encode('utf-8'))}"
+        )
+        # token_count must reflect actual word count
+        assert doc.token_count == len(doc.content.split()), (
+            f"token_count {doc.token_count} != actual {len(doc.content.split())}"
+        )
+
+    def test_total_tokens_includes_appended_content(self) -> None:
+        """DocTree.total_tokens must count tokens from appended content, not just initial."""
+        from agent_evals.datasets.multihop_rag import MultiHopRAGAdapter
+
+        records = [
+            _make_multihop_record(
+                query_id="q1",
+                evidence_list=[
+                    {"fact": "Short fact.", "source": "src1"},
+                ],
+            ),
+            _make_multihop_record(
+                query_id="q2",
+                evidence_list=[
+                    {"fact": "Another longer fact for the same source.", "source": "src1"},
+                ],
+            ),
+        ]
+        adapter = MultiHopRAGAdapter()
+        with patch(
+            "agent_evals.datasets.multihop_rag.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            doc_tree = adapter.build_doc_tree()
+
+        expected_total = sum(
+            len(f.content.split()) for f in doc_tree.files.values()
+        )
+        assert doc_tree.total_tokens == expected_total
+
+
 class TestMultiHopRAGRegistration:
     def test_registered(self) -> None:
         from agent_evals.datasets import DATASET_REGISTRY

@@ -11,7 +11,7 @@ from typing import Any
 
 from rapidfuzz import fuzz, utils as fuzz_utils
 
-from agent_evals.tasks._utils import extract_keywords
+from agent_evals.tasks._utils import contains_text, extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 _FUZZY_CUTOFF = 80.0  # Minimum partial_ratio to count a keyword as matched
@@ -39,9 +39,16 @@ class CompositionalTask(EvalTask):
         else:
             questions = meta.get("sub_questions", [])
             answers = meta.get("expected_answers", [])
+            if len(questions) != len(answers):
+                msg = (
+                    f"sub_questions ({len(questions)}) and "
+                    f"expected_answers ({len(answers)}) must have the "
+                    f"same length"
+                )
+                raise ValueError(msg)
             self.sub_tasks = [
                 {"question": q, "expected_answer": a}
-                for q, a in zip(questions, answers)
+                for q, a in zip(questions, answers, strict=True)
             ]
 
     def build_prompt(self, index_content: str) -> list[dict[str, str]]:
@@ -72,20 +79,27 @@ class CompositionalTask(EvalTask):
 
     def _score_sub_answer(self, expected_lower: str, response_lower: str) -> float:
         """Score one sub-answer using exact containment, then fuzzy keyword coverage."""
-        if expected_lower in response_lower:
+        if contains_text(expected_lower, response_lower):
             return 1.0
         keywords = extract_keywords(expected_lower)
         if not keywords:
             return 0.0
         matched = 0
         for kw in keywords:
-            score = fuzz.partial_ratio(
-                kw, response_lower,
-                processor=fuzz_utils.default_process,
-                score_cutoff=_FUZZY_CUTOFF,
-            )
-            if score > 0:
-                matched += 1
+            # Short keywords (<=4 chars) are prone to partial_ratio inflation
+            # (e.g., "port" matches inside "transportation").  Use word-boundary
+            # matching instead to avoid false positives.
+            if len(kw) <= 4:
+                if contains_text(kw, response_lower):
+                    matched += 1
+            else:
+                score = fuzz.partial_ratio(
+                    kw, response_lower,
+                    processor=fuzz_utils.default_process,
+                    score_cutoff=_FUZZY_CUTOFF,
+                )
+                if score > 0:
+                    matched += 1
         return matched / len(keywords)
 
     def score_response(self, response: str, **kwargs: object) -> float:

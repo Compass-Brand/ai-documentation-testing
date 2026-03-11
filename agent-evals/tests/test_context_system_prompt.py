@@ -210,6 +210,36 @@ class TestPriorityTruncation:
         assert meta["truncated_tokens"] <= 25
 
     @patch("agent_evals.context.system_prompt.count_tokens")
+    def test_priority_truncate_uses_rendered_index_not_raw_content(self, mock_count):
+        """priority_truncate must use the rendered_index text, not raw doc
+        content from doc_tree.files (#183)."""
+        mock_count.side_effect = lambda text, **kw: len(text) // 4
+
+        # Raw doc content is different from the rendered index
+        raw_content = "RAW FILE CONTENT SHOULD NOT APPEAR"
+        files = {
+            "api/auth.md": _make_doc_file(
+                "api/auth.md", raw_content, tier="required", priority=10,
+            ),
+        }
+        doc_tree = _make_doc_tree(files)
+
+        # The rendered index (produced by a variant) is the experimental treatment
+        rendered_index = "RENDERED INDEX LINE: api/auth.md - Authentication guide"
+
+        config = StrategyConfig(token_budget=10, truncation="priority")
+        strategy = SystemPromptStrategy(config)
+        task = make_mock_task()
+
+        strategy.prepare(rendered_index, task, doc_tree)
+
+        call_args = task.build_prompt.call_args[0][0]
+        # Should contain text from rendered_index, not raw doc content
+        assert "RAW FILE CONTENT SHOULD NOT APPEAR" not in call_args
+        # Should be a truncation of the rendered_index
+        assert call_args in rendered_index or rendered_index.startswith(call_args)
+
+    @patch("agent_evals.context.system_prompt.count_tokens")
     def test_priority_with_no_files_falls_back_to_hard(self, mock_count):
         """When doc_tree has no files, priority truncation falls back to hard cutoff."""
         mock_count.side_effect = lambda text, **kw: len(text) // 4

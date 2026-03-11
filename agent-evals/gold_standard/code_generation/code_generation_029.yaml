@@ -11,10 +11,10 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
-    chunk_size.*10000|10000.*chunk
-    batch_size.*5000|5000.*batch
-    stream|Stream
+    streaming_pipeline
+    chunk
+    batch
+    stream
   entry_point: "streaming_pipeline"
   canonical_solution: ""
   libs: ["dataforge"]

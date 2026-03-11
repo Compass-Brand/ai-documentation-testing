@@ -127,14 +127,16 @@ class TestCompositeVariantMetadata:
         meta = composite.metadata()
         assert meta.category == "composite"
 
-    def test_token_estimate_is_sum_of_components(
+    def test_token_estimate_is_primary_only(
         self, stub_a: StubVariant, stub_b: StubVariant, stub_c: StubVariant
     ) -> None:
+        """Bug #182: token_estimate should reflect only the primary renderer, not sum of all."""
         composite = CompositeVariant(
             components={1: stub_a, 2: stub_b, 7: stub_c}
         )
         meta = composite.metadata()
-        assert meta.token_estimate == 300  # 3 × 100
+        # Only the primary (lowest axis = 1, token_estimate=100) should count
+        assert meta.token_estimate == 100
 
     def test_description_mentions_composite(
         self, stub_a: StubVariant, stub_b: StubVariant

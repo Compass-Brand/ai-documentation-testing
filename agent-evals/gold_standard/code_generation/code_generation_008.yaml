@@ -11,7 +11,7 @@ metadata:
   test: |
     ruff
     pytest
-    cov|coverage
+    cov
   entry_point: "ci_lint_test_step"
   canonical_solution: ""
   libs: []

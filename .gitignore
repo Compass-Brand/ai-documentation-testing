@@ -55,6 +55,7 @@ Thumbs.db
 
 # Project specific
 .agent-index-state.json
+.agent-index-tree.json
 reports/
 *.log
 .agent-evals-cache/
