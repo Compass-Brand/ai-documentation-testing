@@ -184,7 +184,8 @@ class ToolBasedStrategy(ContextStrategy):
         total_prompt = sum(g.prompt_tokens for g in generations)
         total_completion = sum(g.completion_tokens for g in generations)
         total_tokens = sum(g.total_tokens for g in generations)
-        total_cost = sum(g.cost for g in generations if g.cost is not None) or None
+        costs = [g.cost for g in generations if g.cost is not None]
+        total_cost = sum(costs) if costs else None
 
         return StrategyResult(
             final_response=final_text,
