@@ -7,6 +7,7 @@ adds "References:" listing files that this file's content mentions (outgoing).
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
@@ -75,7 +76,9 @@ class XrefDenseVariant(IndexVariant):
             doc = doc_tree.files[rel_path]
             content_lower = doc.content.lower()
             for stem, stem_path in stem_to_path.items():
-                if stem_path != rel_path and stem.lower() in content_lower:
+                if stem_path != rel_path and re.search(
+                    r"\b" + re.escape(stem.lower()) + r"\b", content_lower,
+                ):
                     mentions_of[stem].append(rel_path)
 
         lines: list[str] = []
@@ -103,7 +106,9 @@ class XrefDenseVariant(IndexVariant):
             content_lower = doc.content.lower()
             referenced = []
             for stem, stem_path in sorted(stem_to_path.items()):
-                if stem_path != rel_path and stem.lower() in content_lower:
+                if stem_path != rel_path and re.search(
+                    r"\b" + re.escape(stem.lower()) + r"\b", content_lower,
+                ):
                     referenced.append(stem_path)
             if referenced:
                 lines.append(f"  References: {', '.join(referenced)}")
