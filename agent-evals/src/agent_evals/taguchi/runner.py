@@ -475,7 +475,11 @@ class TaguchiRunner:
 
     def _select_client(self, row: TaguchiExperimentRow) -> LLMClient:
         """Select the LLMClient for this row's model assignment."""
+        from agent_evals.taguchi.factors import DUMMY_LEVEL
+
         if "model" in row.assignments:
             model_name = row.assignments["model"]
+            if model_name == DUMMY_LEVEL:
+                return self._clients[self._default_client_name]
             return self._clients[model_name]
         return self._clients[self._default_client_name]

@@ -763,6 +763,43 @@ class TestParallelExecution:
         )
 
 
+class TestDummyLevelModel:
+    """_select_client must handle DUMMY_LEVEL gracefully."""
+
+    def test_select_client_uses_default_when_model_is_dummy(self):
+        """When model factor gets DUMMY_LEVEL, _select_client should use default."""
+        from agent_evals.taguchi.factors import DUMMY_LEVEL
+
+        axes = {1: ["flat", "2tier"]}
+        models = ["claude", "gpt"]
+        design = _make_simple_design(n_rows=4, axes=axes, models=models)
+        variants = _make_variant_lookup(axes)
+
+        claude_client = make_mock_client("claude")
+        gpt_client = make_mock_client("gpt")
+        clients = {"claude": claude_client, "gpt": gpt_client}
+
+        config = EvalRunConfig(repetitions=1, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients=clients,
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        # Create a row with DUMMY_LEVEL for the model factor
+        dummy_row = TaguchiExperimentRow(
+            run_id=99,
+            assignments={"axis_1": "flat", "model": DUMMY_LEVEL},
+            dummy_factors={"model"},
+        )
+
+        # Should not raise KeyError; should fall back to default client
+        client = runner._select_client(dummy_row)
+        assert client is claude_client  # "claude" is first in clients dict
+
+
 class TestJudgeWiring:
     """TaguchiRunner calls LLM judge when judge_enabled=True."""
 
