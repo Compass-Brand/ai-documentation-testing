@@ -155,6 +155,52 @@ class TestMultiHopRAGBuildDocTree:
         assert len(doc_tree.files) >= 1
 
 
+class TestMultiHopRAGEmptyReasoningChain:
+    """Bug #177: records with empty reasoning_chain cause scorer to return 1.0."""
+
+    def test_skips_records_with_empty_evidence_list(self, tmp_path: Path) -> None:
+        """Records with empty evidence_list should be filtered out."""
+        from agent_evals.datasets.multihop_rag import MultiHopRAGAdapter
+
+        empty_evidence = _make_multihop_record(
+            query_id="e1", evidence_list=[],
+        )
+        valid_record = _make_multihop_record(query_id="v1")
+
+        records = [empty_evidence, valid_record]
+        adapter = MultiHopRAGAdapter()
+        with patch(
+            "agent_evals.datasets.multihop_rag.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 1
+        task = yaml.safe_load(list(tmp_path.glob("*.yaml"))[0].read_text())
+        assert len(task["metadata"]["reasoning_chain"]) >= 1
+
+    def test_skips_records_with_factless_evidence(self, tmp_path: Path) -> None:
+        """Records where all evidence entries have empty facts should be filtered."""
+        from agent_evals.datasets.multihop_rag import MultiHopRAGAdapter
+
+        no_facts = _make_multihop_record(
+            query_id="nf1",
+            evidence_list=[
+                {"fact": "", "source": "art1"},
+                {"fact": "", "source": "art2"},
+            ],
+        )
+        records = [no_facts]
+        adapter = MultiHopRAGAdapter()
+        with patch(
+            "agent_evals.datasets.multihop_rag.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 0
+
+
 class TestMultiHopRAGRegistration:
     def test_registered(self) -> None:
         from agent_evals.datasets import DATASET_REGISTRY

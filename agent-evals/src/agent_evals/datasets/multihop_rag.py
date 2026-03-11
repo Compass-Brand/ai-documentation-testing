@@ -55,6 +55,12 @@ class MultiHopRAGAdapter(DatasetAdapter):
 
             evidence = record.get("evidence_list") or []
             reasoning_chain = [e.get("fact", "") for e in evidence if e.get("fact")]
+
+            # Skip records with empty reasoning_chain -- the multi-hop scorer
+            # returns 1.0 unconditionally when there are no steps (bug #177).
+            if not reasoning_chain:
+                continue
+
             question_decomposition = [
                 f"Evidence from {e.get('source', 'unknown')}: {e.get('fact', '')}"
                 for e in evidence
