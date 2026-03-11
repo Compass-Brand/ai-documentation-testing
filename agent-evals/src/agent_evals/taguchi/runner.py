@@ -403,10 +403,14 @@ class TaguchiRunner:
             )
     def _build_composite(self, row: TaguchiExperimentRow) -> CompositeVariant:
         """Create a CompositeVariant from an OA row's axis assignments."""
+        from agent_evals.taguchi.factors import DUMMY_LEVEL
+
         components: dict[int, IndexVariant] = {}
         for factor in self._design.factors:
             if factor.axis is not None:
                 variant_name = row.assignments[factor.name]
+                if variant_name == DUMMY_LEVEL:
+                    continue
                 components[factor.axis] = self._variant_lookup[variant_name]
         return CompositeVariant(components)
 
