@@ -128,6 +128,7 @@ def run_compacted_sequence(
     compaction_ratio: float = 0.5,
     max_tokens: int = 1024,
     temperature: float = 0.0,
+    doc_tree: DocTree | None = None,
 ) -> list[StrategyResult]:
     """Run a sequence of tasks with compaction applied between each.
 
@@ -138,7 +139,7 @@ def run_compacted_sequence(
     carry_over_messages: list[dict[str, str]] | None = None
 
     for i, task in enumerate(tasks):
-        prepared = strategy.prepare("", task, None)
+        prepared = strategy.prepare("", task, doc_tree)
 
         if carry_over_messages is not None:
             prepared.messages = carry_over_messages + prepared.messages[1:]

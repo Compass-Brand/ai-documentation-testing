@@ -259,6 +259,68 @@ class TestMultiTaskSequence:
 # ---------------------------------------------------------------------------
 
 
+class TestRunCompactedSequenceDocTree:
+    """Bug #216: run_compacted_sequence passes None as doc_tree."""
+
+    def test_run_compacted_sequence_passes_none_doc_tree(self):
+        """Bug #216: strategy.prepare() receives None doc_tree, crashing real strategies."""
+        from agent_evals.context.modifiers.compaction import run_compacted_sequence
+
+        strategy = MagicMock()
+        strategy.prepare.return_value = PreparedContext(
+            messages=[
+                {"role": "system", "content": "System"},
+                {"role": "user", "content": "Question"},
+            ],
+            tools=None,
+            strategy_metadata={},
+        )
+        strategy.execute.return_value = StrategyResult(
+            final_response="answer",
+            generations=[],
+            total_prompt_tokens=50,
+            total_completion_tokens=25,
+            total_tokens=75,
+            total_cost=0.002,
+            messages=[
+                {"role": "system", "content": "System"},
+                {"role": "user", "content": "Question " * 30},
+                {"role": "assistant", "content": "Answer " * 30},
+            ],
+            strategy_metadata={},
+        )
+
+        tasks = [make_mock_task(f"task_{i}") for i in range(2)]
+        client = make_mock_client()
+
+        from datetime import datetime
+        from agent_index.models import DocFile, DocTree
+
+        doc_tree = DocTree(
+            files={
+                "test.md": DocFile(
+                    rel_path="test.md",
+                    content="# Test",
+                    size_bytes=6,
+                    token_count=2,
+                    tier="required",
+                    section="Test",
+                ),
+            },
+            scanned_at=datetime(2026, 1, 1),
+            source="/test",
+            total_tokens=2,
+        )
+
+        results = run_compacted_sequence(
+            tasks, strategy, client, doc_tree=doc_tree,
+        )
+        assert len(results) == 2
+        # Verify doc_tree was passed (not None)
+        for call in strategy.prepare.call_args_list:
+            assert call[0][2] is not None or call[1].get("doc_tree") is not None
+
+
 class TestRelatedTaskSequenceCarryover:
     """Compaction should allow testing whether context carries over between related tasks."""
 

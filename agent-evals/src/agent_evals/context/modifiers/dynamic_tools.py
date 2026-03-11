@@ -105,14 +105,18 @@ class DynamicToolModifier(ContextStrategy):
         task: EvalTask,
         doc_tree: DocTree,
     ) -> PreparedContext:
-        prepared = self._inner.prepare(rendered_index, task, doc_tree)
-        if prepared.tools:
-            prepared.tools = filter_tools(prepared.tools, self._mode, turn=0)
-        metadata = dict(prepared.strategy_metadata)
+        original = self._inner.prepare(rendered_index, task, doc_tree)
+        tools = list(original.tools) if original.tools else original.tools
+        if tools:
+            tools = filter_tools(tools, self._mode, turn=0)
+        metadata = dict(original.strategy_metadata)
         metadata["dynamic_tools_mode"] = self._mode
-        metadata["initial_tools_available"] = len(prepared.tools or [])
-        prepared.strategy_metadata = metadata
-        return prepared
+        metadata["initial_tools_available"] = len(tools or [])
+        return PreparedContext(
+            messages=list(original.messages),
+            tools=tools,
+            strategy_metadata=metadata,
+        )
 
     def execute(
         self,
@@ -187,7 +191,10 @@ class DynamicToolModifier(ContextStrategy):
                 except (json.JSONDecodeError, TypeError):
                     fn_args = {}
 
-                tool_result = self._inner._execute_tool(fn_name, fn_args)
+                if hasattr(self._inner, "_execute_tool"):
+                    tool_result = self._inner._execute_tool(fn_name, fn_args)
+                else:
+                    tool_result = f"Error: inner strategy '{self._inner.name()}' does not support tool execution"
                 tools_used.add(fn_name)
                 total_tool_calls += 1
 

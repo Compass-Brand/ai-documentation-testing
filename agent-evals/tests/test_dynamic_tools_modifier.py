@@ -233,6 +233,32 @@ class TestDynamicToolModifier:
         modifier = DynamicToolModifier(inner, mode="restricted")
         assert modifier.name() == "tool_based+restricted_tools"
 
+    def test_modifier_prepare_does_not_mutate_original(self):
+        """Bug #217: prepare() should not mutate the inner PreparedContext."""
+        from agent_evals.context.modifiers.dynamic_tools import DynamicToolModifier
+
+        inner = _make_inner_strategy(tools=ALL_TOOLS)
+        modifier = DynamicToolModifier(inner, mode="restricted")
+
+        task = make_mock_task()
+        doc_tree = _make_doc_tree()
+
+        # Get the original PreparedContext from inner
+        original_prepared = inner.prepare("# Index", task, doc_tree)
+        original_tools = list(original_prepared.tools)
+        original_metadata = dict(original_prepared.strategy_metadata)
+
+        # Now call modifier.prepare which wraps inner.prepare
+        modified = modifier.prepare("# Index", task, doc_tree)
+
+        # The inner's PreparedContext should not have been mutated
+        inner_prepared = inner.prepare("# Index", task, doc_tree)
+        assert len(inner_prepared.tools) == len(original_tools)
+        assert inner_prepared.strategy_metadata == original_metadata
+
+        # The modified result should be a separate object
+        assert modified is not inner_prepared
+
     def test_modifier_tracks_tools_available(self):
         from agent_evals.context.modifiers.dynamic_tools import DynamicToolModifier
 
@@ -317,3 +343,32 @@ class TestPhaseBasedExecuteLoop:
                     assert names == explore_tool_names, (
                         f"Turn {call_idx}: expected explore tools, got {names}"
                     )
+
+    def test_phase_based_crashes_when_inner_has_no_execute_tool(self):
+        """Bug #215: phase_based calls _execute_tool on inner without checking."""
+        from agent_evals.context.modifiers.dynamic_tools import DynamicToolModifier
+        from agent_evals.context.full import FullContextStrategy
+
+        inner = FullContextStrategy()
+        modifier = DynamicToolModifier(inner, mode="phase_based")
+
+        task = make_mock_task()
+        client = MagicMock()
+
+        tc = _make_tool_call("call_1", "list_docs", "{}")
+        gen_tool = _make_generation_result(content=None, tool_calls=[tc])
+        gen_final = _make_generation_result(content="Answer.", tool_calls=None)
+        client.complete.side_effect = [gen_tool, gen_final]
+
+        prepared = PreparedContext(
+            messages=[{"role": "user", "content": "test?"}],
+            tools=list(ALL_TOOLS),
+            strategy_metadata={"dynamic_tools_mode": "phase_based"},
+        )
+
+        # Should NOT raise AttributeError
+        result = modifier.execute(
+            prepared, task, client, max_tokens=2048, temperature=0.3,
+        )
+        assert result.final_response == "Answer."
+        assert result.strategy_metadata["tool_calls_made"] == 1
