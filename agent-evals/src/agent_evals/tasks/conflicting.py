@@ -7,6 +7,7 @@ yields 1.0; fallback uses keyword fraction of non-stopword words found.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from agent_evals.tasks._utils import extract_keywords
@@ -57,9 +58,10 @@ class ConflictingTask(EvalTask):
     def score_response(self, response: str, **kwargs: object) -> float:
         """Score response by checking for expected resolution match.
 
-        Checks for exact match of expected_resolution first (case-insensitive).
-        Falls back to computing fraction of non-stopword keywords (3+ chars)
-        from expected_resolution found in the response.
+        When expected_resolution contains ``|``, each segment is treated as
+        an alternative correct answer — matching ANY alternative scores 1.0.
+        Otherwise checks for exact match first, then falls back to keyword
+        fraction scoring.
 
         Args:
             response: The raw text response from the LLM.
@@ -73,6 +75,11 @@ class ConflictingTask(EvalTask):
 
         response_lower = response.lower()
 
+        # Handle pipe-separated alternatives (e.g. "No.|Yes.")
+        alternatives = [a.strip() for a in self.expected_resolution.split("|") if a.strip()]
+        if len(alternatives) > 1:
+            return self._score_alternatives(alternatives, response_lower)
+
         # Check exact match (case-insensitive)
         if self.expected_resolution.lower() in response_lower:
             return 1.0
@@ -84,5 +91,30 @@ class ConflictingTask(EvalTask):
 
         matched = sum(1 for kw in keywords if kw.lower() in response_lower)
         return max(0.0, min(1.0, matched / len(keywords)))
+
+    def _score_alternatives(
+        self, alternatives: list[str], response_lower: str,
+    ) -> float:
+        """Score against pipe-separated alternative answers.
+
+        Returns the best score across all alternatives.
+        """
+        best = 0.0
+        for alt in alternatives:
+            alt_clean = alt.strip(".,:;!?")
+            alt_lower = alt_clean.lower()
+            if not alt_lower:
+                continue
+            # Word-boundary match to avoid false positives on short words
+            pattern = r"\b" + re.escape(alt_lower) + r"\b"
+            if re.search(pattern, response_lower):
+                return 1.0
+            # Keyword match for longer alternatives
+            keywords = extract_keywords(alt)
+            if keywords:
+                matched = sum(1 for kw in keywords if kw.lower() in response_lower)
+                score = matched / len(keywords)
+                best = max(best, score)
+        return max(0.0, min(1.0, best))
 
 register_task_type("conflicting", ConflictingTask)
