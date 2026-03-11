@@ -83,14 +83,14 @@ CREATE TABLE IF NOT EXISTS runs (
     config        TEXT NOT NULL DEFAULT '{}',
     created_at    TEXT NOT NULL,
     finished_at   TEXT,
-    parent_run_id TEXT REFERENCES runs(run_id),
+    parent_run_id TEXT REFERENCES runs(run_id) ON DELETE SET NULL,
     phase         TEXT,
     pipeline_id   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trials (
     trial_id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id           TEXT NOT NULL REFERENCES runs(run_id),
+    run_id           TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
     task_id          TEXT NOT NULL,
     task_type        TEXT NOT NULL,
     variant_name     TEXT NOT NULL,
@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS trials (
 
 CREATE TABLE IF NOT EXISTS phase_results (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id              TEXT NOT NULL UNIQUE REFERENCES runs(run_id),
+    run_id              TEXT NOT NULL UNIQUE REFERENCES runs(run_id) ON DELETE CASCADE,
     main_effects        TEXT NOT NULL,
     anova               TEXT NOT NULL,
     optimal             TEXT NOT NULL,
@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS phase_results (
 );
 
 CREATE TABLE IF NOT EXISTS trial_traces (
-    trial_id      INTEGER PRIMARY KEY REFERENCES trials(trial_id),
+    trial_id      INTEGER PRIMARY KEY REFERENCES trials(trial_id) ON DELETE CASCADE,
     prompt_json   TEXT NOT NULL,
     response_text TEXT NOT NULL,
     created_at    TEXT NOT NULL
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS trial_traces (
 
 CREATE TABLE IF NOT EXISTS factor_definitions (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id       TEXT NOT NULL REFERENCES runs(run_id),
+    run_id       TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
     factor_name  TEXT NOT NULL,
     axis_id      INTEGER NOT NULL,
     level_index  INTEGER NOT NULL,
@@ -148,7 +148,7 @@ CREATE TABLE IF NOT EXISTS task_metadata (
 
 CREATE TABLE IF NOT EXISTS report_artifacts (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id        TEXT NOT NULL REFERENCES runs(run_id),
+    run_id        TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
     artifact_type TEXT NOT NULL,
     data_json     TEXT NOT NULL,
     created_at    TEXT NOT NULL,
@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS report_artifacts (
 
 CREATE TABLE IF NOT EXISTS llm_call_details (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
-    trial_id          INTEGER NOT NULL REFERENCES trials(trial_id),
+    trial_id          INTEGER NOT NULL REFERENCES trials(trial_id) ON DELETE CASCADE,
     call_index        INTEGER NOT NULL,
     prompt_tokens     INTEGER NOT NULL DEFAULT 0,
     completion_tokens INTEGER NOT NULL DEFAULT 0,

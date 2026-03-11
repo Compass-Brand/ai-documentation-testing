@@ -19,7 +19,7 @@ from agent_evals.taguchi.analysis import (
     run_anova,
     validate_confirmation,
 )
-from agent_evals.taguchi.factors import build_design
+from agent_evals.taguchi.factors import build_design, build_factorial_design
 from agent_evals.variants.composite import CompositeVariant
 
 if TYPE_CHECKING:
@@ -270,14 +270,16 @@ class DOEPipeline:
                 if sig in sig_to_row:
                     row_scores[sig_to_row[sig]].append(trial.score)
                     continue
-                # Also try matching by sorted factor order
-                # (composite names are sorted by axis in CompositeVariant)
-                # Fall through to row-by-row matching
+                # Also try matching by sorted level names.
+                # sorted() comparison is order-independent but avoids the
+                # false-positive that set equality allows when two factors
+                # share a level name (set loses duplicates).
+                sorted_parts = sorted(parts)
                 for row in design.rows:
-                    vals = tuple(
+                    vals = [
                         row.assignments[f] for f in factor_names_sorted
-                    )
-                    if set(parts) == set(vals) and len(parts) == len(vals):
+                    ]
+                    if sorted_parts == sorted(vals):
                         row_scores[row.run_id].append(trial.score)
                         break
                 continue
@@ -310,9 +312,7 @@ class DOEPipeline:
             if meta.name not in axes[meta.axis]:
                 axes[meta.axis].append(meta.name)
 
-        design = build_design(
-            dict(axes), self.config.models, self.config.oa_override,
-        )
+        design = build_factorial_design(dict(axes))
         row_scores = self._group_refinement_scores(trials, design)
         sn_ratios = compute_sn_ratios(
             row_scores, self.config.quality_type,
@@ -558,8 +558,8 @@ class DOEPipeline:
             parent_run_id=screening_result.run_id,
         )
 
-        # Gather observed scores
-        optimal_scores = [t.score for t in result.trials]
+        # Gather observed scores (exclude error trials, matching screening)
+        optimal_scores = [t.score for t in result.trials if t.error is None]
 
         # Build an OptimalPrediction from screening results for validation
         from agent_evals.taguchi.analysis import OptimalPrediction
