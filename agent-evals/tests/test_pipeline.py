@@ -1465,6 +1465,41 @@ def test_pipeline_resume_aggregates_total_trials():
     )
 
 
+def test_pipeline_resume_populates_trial_count_field():
+    """Bug #227: Resumed PhaseResult must have trial_count set from DB."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    # Resumed phases have trials=[] but trial_count should be populated
+    assert result.screening.trials == []
+    assert result.screening.trial_count == 50, (
+        f"Expected trial_count=50, got {result.screening.trial_count}"
+    )
+    assert result.confirmation.trial_count == 20
+    assert result.refinement.trial_count == 30
+
+
+def test_phase_result_trial_count_defaults_to_none():
+    """PhaseResult.trial_count defaults to None for fresh phases."""
+    result = PhaseResult(
+        run_id="r1",
+        phase="screening",
+        trials=["t1", "t2", "t3"],
+    )
+    assert result.trial_count is None
+
+
 def test_confirmation_phase_persists_confirmation_dict():
     """Confirmation dict (within_interval, sigma_deviation) must be persisted."""
     from pathlib import Path
@@ -1499,3 +1534,120 @@ def test_confirmation_phase_persists_confirmation_dict():
         assert result["confirmation"]["within_interval"] is True
         assert result["confirmation"]["sigma_deviation"] == pytest.approx(0.3)
         assert result["confirmation"]["observed_sn"] == pytest.approx(7.5)
+
+
+# ---------------------------------------------------------------------------
+# Bug #226: _group_refinement_scores maps to ALL matching OA rows
+# ---------------------------------------------------------------------------
+
+
+class TestGroupRefinementScoresBug226:
+    """_group_refinement_scores must map each trial to only the exact
+    OA row matching the trial's full factor combination.
+
+    Bug #226: The current code maps a trial's score to ALL rows that
+    contain the trial's variant_name in any factor position.  When
+    two factors share a level name (or a composite name partially
+    matches), scores are attributed to the wrong rows.
+    """
+
+    @staticmethod
+    def _make_trial(variant_name: str, score: float):
+        """Create a minimal trial mock."""
+        trial = MagicMock()
+        trial.variant_name = variant_name
+        trial.score = score
+        trial.error = None
+        return trial
+
+    @staticmethod
+    def _make_design_with_shared_level_names():
+        """Design where two factors share the level name 'verbose'.
+
+        Row 1: {axis_1: verbose,  axis_2: short}
+        Row 2: {axis_1: verbose,  axis_2: verbose}
+        Row 3: {axis_1: concise,  axis_2: short}
+        Row 4: {axis_1: concise,  axis_2: verbose}
+        """
+        from agent_evals.taguchi.factors import (
+            TaguchiDesign,
+            TaguchiExperimentRow,
+            TaguchiFactorDef,
+        )
+
+        factors = [
+            TaguchiFactorDef(
+                name="axis_1", n_levels=2,
+                level_names=["verbose", "concise"], axis=1,
+            ),
+            TaguchiFactorDef(
+                name="axis_2", n_levels=2,
+                level_names=["short", "verbose"], axis=2,
+            ),
+        ]
+        rows = [
+            TaguchiExperimentRow(
+                run_id=1,
+                assignments={"axis_1": "verbose", "axis_2": "short"},
+            ),
+            TaguchiExperimentRow(
+                run_id=2,
+                assignments={"axis_1": "verbose", "axis_2": "verbose"},
+            ),
+            TaguchiExperimentRow(
+                run_id=3,
+                assignments={"axis_1": "concise", "axis_2": "short"},
+            ),
+            TaguchiExperimentRow(
+                run_id=4,
+                assignments={"axis_1": "concise", "axis_2": "verbose"},
+            ),
+        ]
+        return TaguchiDesign(
+            oa_name="L4", n_runs=4, factors=factors, rows=rows,
+            level_counts=[2, 2],
+        )
+
+    def test_trial_maps_to_exact_row_not_all_partial_matches(self):
+        """A composite trial 'verbose+short' must map ONLY to row 1.
+
+        Bug: old code maps it to rows 1, 2, 3, 4 because 'verbose'
+        appears in rows 1, 2, 4 and 'short' appears in rows 1, 3.
+        """
+        design = self._make_design_with_shared_level_names()
+        trial = self._make_trial("verbose+short", score=0.9)
+
+        scores = DOEPipeline._group_refinement_scores([trial], design)
+
+        # Must map to ONLY row 1 (exact match for verbose+short)
+        assert 1 in scores
+        assert scores[1] == [0.9]
+        # Must NOT map to other rows
+        assert 2 not in scores, "Score leaked to row 2 (verbose+verbose)"
+        assert 3 not in scores, "Score leaked to row 3 (concise+short)"
+        assert 4 not in scores, "Score leaked to row 4 (concise+verbose)"
+
+    def test_shared_level_name_no_cross_factor_contamination(self):
+        """'verbose' as a single-variant trial must map only via the correct factor.
+
+        If a trial for axis_1's 'verbose' is encountered, it should map
+        to rows where axis_1=verbose (rows 1, 2), NOT where axis_2=verbose
+        (rows 2, 4).  With old code, it maps to rows 1, 2, AND 4.
+        """
+        design = self._make_design_with_shared_level_names()
+        # Single-variant trial — old code maps to ALL rows containing "verbose"
+        trial = self._make_trial("verbose", score=0.7)
+
+        scores = DOEPipeline._group_refinement_scores([trial], design)
+
+        # "verbose" should map to rows 1 and 2 (axis_1=verbose)
+        # OR rows 2 and 4 (axis_2=verbose) — but NOT all three.
+        # With composite matching, single-variant should match no exact row.
+        # The safest behavior: a single-variant name that appears in
+        # multiple factors should NOT match any row (ambiguous).
+        mapped_rows = set(scores.keys())
+        # Must NOT map to all 4 rows
+        assert len(mapped_rows) <= 2, (
+            f"Single-variant 'verbose' mapped to {len(mapped_rows)} rows "
+            f"instead of ≤2; cross-factor contamination"
+        )

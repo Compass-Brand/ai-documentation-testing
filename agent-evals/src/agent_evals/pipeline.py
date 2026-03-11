@@ -81,6 +81,7 @@ class PhaseResult:
     se_prediction: float | None = None
     confirmation: dict[str, Any] | None = None
     interaction_effects: list[dict] = field(default_factory=list)
+    trial_count: int | None = None
 
 
 @dataclass
@@ -119,6 +120,8 @@ class DOEPipeline:
         """Return trial count for a phase, using the store for resumed phases."""
         if phase.trials:
             return len(phase.trials)
+        if phase.trial_count is not None:
+            return phase.trial_count
         if self._store:
             try:
                 summary = self._store.get_run_summary(phase.run_id)
@@ -584,6 +587,7 @@ class DOEPipeline:
             # Reconstruct PhaseResult from DB, including cost/token aggregates.
             screen_run_id = completed_phases["screening"]
             phase_results = self._store.get_phase_results(screen_run_id)
+            screen_summary = self._store.get_run_summary(screen_run_id)
             screening = PhaseResult(
                 run_id=screen_run_id,
                 phase="screening",
@@ -598,6 +602,7 @@ class DOEPipeline:
                 predicted_sn=phase_results.get("predicted_sn") if phase_results else None,
                 prediction_interval=phase_results.get("prediction_interval") if phase_results else None,
                 se_prediction=phase_results.get("se_prediction") if phase_results else None,
+                trial_count=screen_summary.total_trials,
             )
         elif "screening" in in_progress_phases:
             screening = self.run_screening(
@@ -622,6 +627,7 @@ class DOEPipeline:
         if "confirmation" in completed_phases:
             conf_run_id = completed_phases["confirmation"]
             conf_phase_results = self._store.get_phase_results(conf_run_id)
+            conf_summary = self._store.get_run_summary(conf_run_id)
             confirmation = PhaseResult(
                 run_id=conf_run_id,
                 phase="confirmation",
@@ -630,6 +636,7 @@ class DOEPipeline:
                 total_tokens=conf_phase_results.get("total_tokens", 0) if conf_phase_results else 0,
                 elapsed_seconds=conf_phase_results.get("elapsed_seconds", 0.0) if conf_phase_results else 0.0,
                 confirmation=conf_phase_results.get("confirmation") if conf_phase_results else None,
+                trial_count=conf_summary.total_trials,
             )
         elif "confirmation" in in_progress_phases:
             confirmation = self.run_confirmation(
@@ -657,6 +664,7 @@ class DOEPipeline:
         if "refinement" in completed_phases:
             ref_run_id = completed_phases["refinement"]
             ref_phase_results = self._store.get_phase_results(ref_run_id)
+            ref_summary = self._store.get_run_summary(ref_run_id)
             refinement = PhaseResult(
                 run_id=ref_run_id,
                 phase="refinement",
@@ -669,6 +677,7 @@ class DOEPipeline:
                 total_tokens=ref_phase_results.get("total_tokens", 0) if ref_phase_results else 0,
                 elapsed_seconds=ref_phase_results.get("elapsed_seconds", 0.0) if ref_phase_results else 0.0,
                 interaction_effects=ref_phase_results.get("interaction_effects", []) if ref_phase_results else [],
+                trial_count=ref_summary.total_trials,
             )
         elif "refinement" in in_progress_phases:
             refinement = self.run_refinement(
