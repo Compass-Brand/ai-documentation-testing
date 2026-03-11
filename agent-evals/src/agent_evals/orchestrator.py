@@ -255,6 +255,27 @@ class EvalOrchestrator:
         ) -> None:
             trial_oa_row_id = trial.metrics.get("oa_row_id") if trial.metrics else None
             trial_phase = trial.metrics.get("phase") if trial.metrics else None
+
+            # Build per-call LLM details from aggregate trial data.
+            # For single-call strategies this produces one entry; for
+            # multi-call the aggregate is the best we have at callback time.
+            llm_call_results: list[dict] | None = None
+            if self.config.store_traces and trial.error is None:
+                api_call_ms = trial.metrics.get("api_call_ms", 0.0) if trial.metrics else 0.0
+                llm_call_results = [
+                    {
+                        "call_index": i,
+                        "prompt_tokens": trial.prompt_tokens if i == 0 else 0,
+                        "completion_tokens": trial.completion_tokens if i == 0 else 0,
+                        "cost": trial.cost if i == 0 else None,
+                        "api_call_ms": api_call_ms if i == 0 else 0.0,
+                        "cached_tokens": 0,
+                        "model": getattr(trial, "model", model_name),
+                        "provider": None,
+                    }
+                    for i in range(max(trial.llm_calls, 1))
+                ]
+
             self.tracker.record_trial(
                 run_id=run_id,
                 task_id=trial.task_id,
@@ -274,6 +295,10 @@ class EvalOrchestrator:
                 phase=trial_phase,
                 prompt_messages=trial.prompt_messages,
                 response_text=trial.response if trial.prompt_messages else None,
+                context_strategy=trial.context_strategy or "full_context",
+                llm_calls=trial.llm_calls,
+                strategy_metadata=trial.strategy_metadata or None,
+                llm_call_results=llm_call_results,
             )
 
         # Route to the correct runner.

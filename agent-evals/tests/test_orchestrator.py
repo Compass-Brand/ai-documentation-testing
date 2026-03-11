@@ -978,3 +978,194 @@ class TestMultiModel:
             db_path=tmp_path / "obs.db",
         )
         assert config.report_format is None
+
+
+# ---------------------------------------------------------------------------
+# TestStoreTraces — store-traces flag must persist trial_traces and
+# llm_call_details in taguchi mode (bug: store-traces has no effect)
+# ---------------------------------------------------------------------------
+
+
+class TestStoreTracesTaguchi:
+    """--store-traces must persist trial_traces and llm_call_details in taguchi mode."""
+
+    @staticmethod
+    def _make_trial_with_traces(
+        task_id: str = "retrieval_001",
+        score: float = 0.8,
+        cost: float = 0.001,
+    ) -> TrialResult:
+        """Create a TrialResult with prompt_messages set (like a real trial)."""
+        return TrialResult(
+            task_id=task_id,
+            task_type="retrieval",
+            variant_name="flat",
+            repetition=1,
+            score=score,
+            metrics={"oa_row_id": 1.0, "api_call_ms": 42.0},
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=cost,
+            latency_seconds=0.5,
+            response="test response text",
+            cached=False,
+            source="gold_standard",
+            model="mock-model",
+            prompt_messages=[{"role": "user", "content": "test question"}],
+            context_strategy="full_context",
+            llm_calls=1,
+            strategy_metadata={"index_tokens": 100},
+        )
+
+    def test_trial_traces_stored_in_taguchi_mode(self, tmp_path: Path) -> None:
+        """When store_traces=True, trial_traces table must have rows after taguchi run."""
+        config = OrchestratorConfig(
+            mode="taguchi",
+            models=["mock-model"],
+            api_key="test-key",
+            db_path=tmp_path / "obs.db",
+            store_traces=True,
+        )
+        orch = EvalOrchestrator(config)
+
+        trial = self._make_trial_with_traces()
+        trials = [trial]
+        taguchi_result = _make_taguchi_run_result(trials)
+
+        def fake_run_taguchi(
+            tasks, doc_tree, eval_config, design, variant_lookup,
+            progress_callback, source, **kwargs,
+        ):
+            for i, t in enumerate(trials):
+                progress_callback(i + 1, len(trials), t)
+            return taguchi_result
+
+        with patch.object(orch, "_run_taguchi", side_effect=fake_run_taguchi):
+            result = orch.run(
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
+                doc_tree=MagicMock(),
+                design=MagicMock(),
+                variant_lookup={"flat": make_mock_variant()},
+            )
+
+        # Verify trial_traces has data
+        stored_trials = orch.store.get_trials(result.run_id)
+        assert len(stored_trials) == 1
+        trace = orch.store.get_trace(stored_trials[0].trial_id)
+        assert trace is not None, "trial_traces should be populated when store_traces=True"
+        assert trace["response_text"] == "test response text"
+        assert len(trace["prompt_json"]) == 1
+
+    def test_llm_call_details_stored_in_taguchi_mode(self, tmp_path: Path) -> None:
+        """When store_traces=True, llm_call_details table must have rows after taguchi run."""
+        config = OrchestratorConfig(
+            mode="taguchi",
+            models=["mock-model"],
+            api_key="test-key",
+            db_path=tmp_path / "obs.db",
+            store_traces=True,
+        )
+        orch = EvalOrchestrator(config)
+
+        trial = self._make_trial_with_traces()
+        trials = [trial]
+        taguchi_result = _make_taguchi_run_result(trials)
+
+        def fake_run_taguchi(
+            tasks, doc_tree, eval_config, design, variant_lookup,
+            progress_callback, source, **kwargs,
+        ):
+            for i, t in enumerate(trials):
+                progress_callback(i + 1, len(trials), t)
+            return taguchi_result
+
+        with patch.object(orch, "_run_taguchi", side_effect=fake_run_taguchi):
+            result = orch.run(
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
+                doc_tree=MagicMock(),
+                design=MagicMock(),
+                variant_lookup={"flat": make_mock_variant()},
+            )
+
+        # Verify llm_call_details has data
+        stored_trials = orch.store.get_trials(result.run_id)
+        assert len(stored_trials) == 1
+        details = orch.store.get_llm_call_details(stored_trials[0].trial_id)
+        assert len(details) >= 1, "llm_call_details should have at least 1 row per trial"
+        assert details[0]["prompt_tokens"] == 10
+        assert details[0]["completion_tokens"] == 5
+
+    def test_context_strategy_persisted_in_taguchi_mode(self, tmp_path: Path) -> None:
+        """context_strategy field must be passed through to the store in taguchi mode."""
+        config = OrchestratorConfig(
+            mode="taguchi",
+            models=["mock-model"],
+            api_key="test-key",
+            db_path=tmp_path / "obs.db",
+            store_traces=True,
+        )
+        orch = EvalOrchestrator(config)
+
+        trial = self._make_trial_with_traces()
+        trials = [trial]
+        taguchi_result = _make_taguchi_run_result(trials)
+
+        def fake_run_taguchi(
+            tasks, doc_tree, eval_config, design, variant_lookup,
+            progress_callback, source, **kwargs,
+        ):
+            for i, t in enumerate(trials):
+                progress_callback(i + 1, len(trials), t)
+            return taguchi_result
+
+        with patch.object(orch, "_run_taguchi", side_effect=fake_run_taguchi):
+            result = orch.run(
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
+                doc_tree=MagicMock(),
+                design=MagicMock(),
+                variant_lookup={"flat": make_mock_variant()},
+            )
+
+        stored_trials = orch.store.get_trials(result.run_id)
+        assert stored_trials[0].context_strategy == "full_context"
+        assert stored_trials[0].llm_calls == 1
+
+    def test_store_traces_false_skips_traces(self, tmp_path: Path) -> None:
+        """When store_traces=False, no trial_traces should be stored."""
+        config = OrchestratorConfig(
+            mode="taguchi",
+            models=["mock-model"],
+            api_key="test-key",
+            db_path=tmp_path / "obs.db",
+            store_traces=False,
+        )
+        orch = EvalOrchestrator(config)
+
+        trial = self._make_trial_with_traces()
+        trials = [trial]
+        taguchi_result = _make_taguchi_run_result(trials)
+
+        def fake_run_taguchi(
+            tasks, doc_tree, eval_config, design, variant_lookup,
+            progress_callback, source, **kwargs,
+        ):
+            for i, t in enumerate(trials):
+                progress_callback(i + 1, len(trials), t)
+            return taguchi_result
+
+        with patch.object(orch, "_run_taguchi", side_effect=fake_run_taguchi):
+            result = orch.run(
+                tasks=[make_mock_task()],
+                variants=[make_mock_variant()],
+                doc_tree=MagicMock(),
+                design=MagicMock(),
+                variant_lookup={"flat": make_mock_variant()},
+            )
+
+        stored_trials = orch.store.get_trials(result.run_id)
+        trace = orch.store.get_trace(stored_trials[0].trial_id)
+        assert trace is None, "No traces should be stored when store_traces=False"
