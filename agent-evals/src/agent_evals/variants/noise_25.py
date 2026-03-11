@@ -49,7 +49,7 @@ class Noise25Variant(IndexVariant):
         if not doc_tree.files:
             return ""
 
-        rng = random.Random(42)  # noqa: S311
+        rng = random.Random(43)  # noqa: S311  -- distinct seed per noise level
 
         # Build real entries
         entries: list[tuple[str, str]] = []
