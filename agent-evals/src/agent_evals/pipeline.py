@@ -120,8 +120,11 @@ class DOEPipeline:
         if phase.trials:
             return len(phase.trials)
         if self._store:
-            summary = self._store.get_run_summary(phase.run_id)
-            return summary.total_trials
+            try:
+                summary = self._store.get_run_summary(phase.run_id)
+                return summary.total_trials
+            except ValueError:
+                return 0
         return 0
 
     @staticmethod
