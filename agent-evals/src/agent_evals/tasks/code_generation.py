@@ -173,7 +173,9 @@ class CodeGenerationTask(EvalTask):
             )
             match_rate = matched / len(patterns)
         else:
-            match_rate = 1.0  # No patterns -> vacuously satisfied
+            # No patterns -> can't verify correctness; cap at 0.5 so empty
+            # test fields don't vacuously produce near-perfect scores (bug #204).
+            match_rate = 0.5
 
         # Compute violation rate (patterns may be literal strings or regex)
         if self.forbidden_patterns:

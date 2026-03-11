@@ -179,18 +179,18 @@ class TestCodeGenerationTaskScoring:
     def test_empty_test_patterns_scores_based_on_violations_only(self) -> None:
         """When no test patterns, score depends on violation rate."""
         task = _codegen_task(test="", forbidden_patterns=[r"eval\s*\("])
-        # match_rate=1.0 (vacuously satisfied), but violation penalty applies
+        # match_rate=0.5 (capped per bug #204), but violation penalty applies
         clean = task.score_response("def add(a, b): return a + b")
         dirty = task.score_response("result = eval('1+2')")
-        # Both have match_rate=1.0, but dirty has violation
+        # Both have match_rate=0.5, but dirty has violation
         assert clean >= dirty
 
-    def test_empty_test_and_forbidden_returns_high(self) -> None:
-        """When no test patterns and no forbidden, match rate defaults to 1.0."""
+    def test_empty_test_and_forbidden_returns_moderate(self) -> None:
+        """When no test patterns and no forbidden, match rate is capped at 0.5 (bug #204)."""
         task = _codegen_task(test="", forbidden_patterns=[])
         score = task.score_response("def add(a, b): return a + b")
-        # 1.0 * 0.7 + 1.0 * 0.2 + 1.0 * 0.1 = 1.0 (vacuously satisfied, no violations, valid syntax)
-        assert abs(score - 1.0) < 0.01
+        # 0.5 * 0.7 + 1.0 * 0.2 + 1.0 * 0.1 = 0.65 (capped match_rate, no violations, valid syntax)
+        assert abs(score - 0.65) < 0.01
 
     def test_all_forbidden_violated(self) -> None:
         """Violating all forbidden patterns maximizes penalty."""
@@ -418,3 +418,32 @@ def test_no_test_patterns_does_not_cap_score_at_0_3():
     task = CodeGenerationTask(defn)
     score = task.score_response("def add(a, b):\n    return a + b")
     assert score > 0.3, f"Expected > 0.3, got {score}"
+
+
+# ---------------------------------------------------------------------------
+# Bug #204: Empty test field should not give near-perfect score
+# ---------------------------------------------------------------------------
+
+
+class TestBug204EmptyTestField:
+    """Bug #204: empty test field causes match_rate=1.0 vacuously, giving 0.9-1.0."""
+
+    def test_empty_test_field_caps_score_below_0_9(self) -> None:
+        """With no test patterns, score must be noticeably below 1.0."""
+        task = _codegen_task(test="", forbidden_patterns=[])
+        score = task.score_response("def add(a, b):\n    return a + b")
+        assert score < 0.7, (
+            f"Score {score} too high with empty test field (bug #204)"
+        )
+
+    def test_non_empty_test_field_scores_higher_than_empty(self) -> None:
+        """A response matching actual test patterns should score higher than empty test."""
+        task_empty = _codegen_task(test="", forbidden_patterns=[])
+        task_full = _codegen_task(test="def add\nreturn", forbidden_patterns=[])
+        response = "def add(a, b):\n    return a + b"
+
+        score_empty = task_empty.score_response(response)
+        score_full = task_full.score_response(response)
+        assert score_full > score_empty, (
+            f"Full test score {score_full} should exceed empty test score {score_empty}"
+        )
