@@ -206,14 +206,19 @@ class TestSelectOA:
             select_oa([10] * 100)
 
     def test_oa_selection_reference_mappings(self):
-        """Verify expected OA selections for common configurations."""
-        # 1 model, 10 axes
-        oa = select_oa([5, 4, 5, 4, 5, 5, 4, 4, 3, 4])
-        assert oa.name in ("L36", "L50", "L54", "L64", "L81")
+        """Verify expected OA selections for common configurations.
 
-        # 3 models, 10 axes
+        After fixing confounded OAs (#222, #223), L36 and L50 have fewer
+        columns.  Designs needing 10+ factors with max 5 levels now
+        correctly fall through to L121 (Bose GF(11), 12 columns).
+        """
+        # 1 model, 10 axes — needs 10 cols with max 5 levels
+        oa = select_oa([5, 4, 5, 4, 5, 5, 4, 4, 3, 4])
+        assert oa.name in ("L64", "L81", "L121", "L169")
+
+        # 3 models, 10 axes — needs 11 cols with max 5 levels
         oa = select_oa([5, 4, 5, 4, 5, 5, 4, 4, 3, 4, 3])
-        assert oa.name in ("L50", "L54", "L64", "L81")
+        assert oa.name in ("L64", "L81", "L121", "L169")
 
 
 class TestNewLargeArrays:
@@ -296,6 +301,92 @@ class TestOrthogonalityProperty:
                 counts = Counter(pairs)
                 freq = list(counts.values())
                 assert len(set(freq)) == 1
+
+
+class TestL36Orthogonality:
+    """Bug #222: L36 must have no duplicate columns and pairwise balance."""
+
+    def test_l36_no_duplicate_columns(self):
+        oa = get_oa("L36")
+        seen = set()
+        for col in range(oa.n_columns):
+            col_tuple = tuple(oa.matrix[:, col])
+            assert col_tuple not in seen, (
+                f"L36 column {col} is a duplicate"
+            )
+            seen.add(col_tuple)
+
+    def test_l36_pairwise_balance(self):
+        """Every pair of columns must show all level combos equally."""
+        oa = get_oa("L36")
+        for c1 in range(oa.n_columns):
+            for c2 in range(c1 + 1, oa.n_columns):
+                pairs = list(zip(
+                    oa.matrix[:, c1].tolist(),
+                    oa.matrix[:, c2].tolist(),
+                ))
+                counts = Counter(pairs)
+                expected = oa.column_levels(c1) * oa.column_levels(c2)
+                assert len(counts) == expected, (
+                    f"L36 cols ({c1},{c2}): {len(counts)}/{expected} combos"
+                )
+                freq = list(counts.values())
+                assert len(set(freq)) == 1, (
+                    f"L36 cols ({c1},{c2}) not balanced: {counts}"
+                )
+
+    def test_l36_has_mixed_levels(self):
+        """L36 must have both 2-level and 3-level columns."""
+        oa = get_oa("L36")
+        levels = {oa.column_levels(c) for c in range(oa.n_columns)}
+        assert 2 in levels
+        assert 3 in levels
+
+
+class TestL50Orthogonality:
+    """Bug #223: L50 must have pairwise orthogonal columns."""
+
+    def test_l50_all_5level_combos_present(self):
+        """Every 5x5 column pair must have all 25 combinations."""
+        oa = get_oa("L50")
+        for c1 in range(1, oa.n_columns):
+            for c2 in range(c1 + 1, oa.n_columns):
+                pairs = list(zip(
+                    oa.matrix[:, c1].tolist(),
+                    oa.matrix[:, c2].tolist(),
+                ))
+                counts = Counter(pairs)
+                expected = oa.column_levels(c1) * oa.column_levels(c2)
+                assert len(counts) == expected, (
+                    f"L50 cols ({c1},{c2}): {len(counts)}/{expected} combos"
+                )
+
+    def test_l50_pairwise_balance(self):
+        oa = get_oa("L50")
+        for c1 in range(oa.n_columns):
+            for c2 in range(c1 + 1, oa.n_columns):
+                pairs = list(zip(
+                    oa.matrix[:, c1].tolist(),
+                    oa.matrix[:, c2].tolist(),
+                ))
+                counts = Counter(pairs)
+                freq = list(counts.values())
+                assert len(set(freq)) == 1, (
+                    f"L50 cols ({c1},{c2}) not balanced"
+                )
+
+    def test_l50_no_correlated_columns(self):
+        """No 5-level column pair should have correlation > 0.05."""
+        oa = get_oa("L50")
+        for c1 in range(1, oa.n_columns):
+            for c2 in range(c1 + 1, oa.n_columns):
+                corr = np.corrcoef(
+                    oa.matrix[:, c1].astype(float),
+                    oa.matrix[:, c2].astype(float),
+                )[0, 1]
+                assert abs(corr) < 0.05, (
+                    f"L50 cols ({c1},{c2}) correlated: r={corr:.4f}"
+                )
 
 
 class TestL54PairwiseBalance:
