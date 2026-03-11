@@ -15,10 +15,12 @@ from agent_evals.taguchi.analysis import (
     compute_main_effects,
     compute_sn_ratios,
     predict_optimal,
+    rank_factors_by_effect_range,
     run_anova,
     validate_confirmation,
 )
 from agent_evals.taguchi.factors import build_design
+from agent_evals.variants.composite import CompositeVariant
 
 if TYPE_CHECKING:
     from agent_evals.orchestrator import EvalOrchestrator
@@ -115,6 +117,84 @@ class DOEPipeline:
         self._orchestrator = orchestrator
         self._pipeline_id = pipeline_id or uuid4().hex[:12]
         self._store = orchestrator.store
+
+    def _save_phase_report(self, phase_result: PhaseResult) -> None:
+        """Save a DOE-enriched report artifact for a pipeline phase."""
+        if self._store is None:
+            return
+        data: dict[str, Any] = {
+            "run_id": phase_result.run_id,
+            "phase": phase_result.phase,
+            "pipeline_id": self._pipeline_id,
+            "trial_count": len(phase_result.trials),
+            "total_cost": phase_result.total_cost,
+            "total_tokens": phase_result.total_tokens,
+            "elapsed_seconds": phase_result.elapsed_seconds,
+            "main_effects": _to_dict(phase_result.main_effects),
+            "anova": _to_dict(phase_result.anova),
+            "optimal": _to_dict(phase_result.optimal),
+            "significant_factors": phase_result.significant_factors,
+            "predicted_sn": phase_result.predicted_sn,
+            "confirmation": phase_result.confirmation,
+            "interaction_effects": phase_result.interaction_effects,
+        }
+        self._store.save_report_artifact(
+            phase_result.run_id, "phase_report", data,
+        )
+
+    def _save_factor_definitions(
+        self, run_id: str, variants: list[Any],
+    ) -> None:
+        """Persist factor/level definitions derived from variant metadata.
+
+        Gracefully handles FK violations (e.g. when the run_id has not
+        yet been recorded in the store) so that pipeline phases are not
+        aborted by ancillary persistence failures.
+        """
+        if self._store is None:
+            return
+        try:
+            axes: dict[int, list[str]] = defaultdict(list)
+            for v in variants:
+                meta = v.metadata()
+                if meta.axis == 0:
+                    continue
+                if meta.name not in axes[meta.axis]:
+                    axes[meta.axis].append(meta.name)
+
+            definitions: list[dict] = []
+            for axis_id, level_names in sorted(axes.items()):
+                for idx, name in enumerate(level_names):
+                    definitions.append({
+                        "factor_name": f"axis_{axis_id}",
+                        "axis_id": axis_id,
+                        "level_index": idx,
+                        "level_name": name,
+                        "description": "",
+                    })
+            self._store.save_factor_definitions(run_id, definitions)
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "Could not save factor definitions for run %s", run_id,
+            )
+
+    def _save_task_metadata(self, tasks: list[Any]) -> None:
+        """Persist task metadata to the observatory store."""
+        if self._store is None:
+            return
+        metadata_list: list[dict] = []
+        for task in tasks:
+            defn = task.definition
+            meta = defn.metadata if hasattr(defn, "metadata") else {}
+            metadata_list.append({
+                "task_id": defn.task_id,
+                "task_type": defn.type,
+                "domain": meta.get("domain", "") if isinstance(meta, dict) else "",
+                "difficulty": meta.get("difficulty", "") if isinstance(meta, dict) else "",
+                "word_count": meta.get("word_count", 0) if isinstance(meta, dict) else 0,
+                "tag_count": meta.get("tag_count", 0) if isinstance(meta, dict) else 0,
+            })
+        self._store.save_task_metadata(metadata_list)
 
     def _phase_trial_count(self, phase: PhaseResult) -> int:
         """Return trial count for a phase, using the store for resumed phases."""
@@ -412,6 +492,7 @@ class DOEPipeline:
                 prediction_interval=phase_result.prediction_interval,
                 se_prediction=phase_result.se_prediction,
             )
+            self._save_phase_report(phase_result)
 
         return phase_result
 
@@ -436,26 +517,35 @@ class DOEPipeline:
                 self.config.confirmation_reps
             )
 
-        # Filter variants to only the optimal config from screening
-        optimal_names = set(
-            (screening_result.optimal or {}).values()
-        )
-        filtered_variants = [
-            v for v in variants if v.metadata().name in optimal_names
-        ]
-        if not filtered_variants:
+        # Build a single CompositeVariant from all optimal levels.
+        # Each factor (axis_N) maps to a variant name; we need one
+        # component per axis to form the combined optimal configuration.
+        optimal_map = screening_result.optimal or {}
+        variant_by_name = {v.metadata().name: v for v in variants}
+
+        components: dict[int, Any] = {}
+        for _factor_name, level_name in optimal_map.items():
+            variant = variant_by_name.get(level_name)
+            if variant is not None:
+                axis = variant.metadata().axis
+                components[axis] = variant
+
+        if components:
+            composite = CompositeVariant(components)
+            filtered_variants = [composite]
+        else:
             logger.warning(
                 "No variants matched optimal config %s; using all",
                 screening_result.optimal,
             )
             filtered_variants = variants
 
-        # Build variant lookup from filtered set
+        # Build variant lookup from the composite
         variant_lookup = {
             v.metadata().name: v for v in filtered_variants
         }
 
-        # Run optimal config trials via orchestrator (full mode, not Taguchi)
+        # Run combined optimal config trials via orchestrator (full mode)
         result = self._orchestrator.run(
             tasks,
             filtered_variants,
@@ -465,6 +555,7 @@ class DOEPipeline:
             pipeline_id=self._pipeline_id,
             mode="full",
             resume_run_id=resume_run_id,
+            parent_run_id=screening_result.run_id,
         )
 
         # Gather observed scores
@@ -519,6 +610,7 @@ class DOEPipeline:
                 elapsed_seconds=phase_result.elapsed_seconds,
                 confirmation=phase_result.confirmation,
             )
+            self._save_phase_report(phase_result)
 
         return phase_result
 
@@ -543,27 +635,70 @@ class DOEPipeline:
                 self.config.refinement_reps
             )
 
-        # Filter variants to top-K significant factors from screening
-        top_k_factors = (
-            screening_result.significant_factors[: self.config.top_k]
+        # Select top-K factors by main effect S/N range (#235).
+        # More robust than ANOVA significance with noisy LLM data.
+        ranked_factors = rank_factors_by_effect_range(
+            screening_result.main_effects or {},
+            exclude_factors={"model"},
         )
+        top_k_factors = ranked_factors[: self.config.top_k]
+
+        if not top_k_factors:
+            top_k_factors = (
+                screening_result.significant_factors[: self.config.top_k]
+            )
+
         top_k_axes = self._resolve_factor_axes(variants, top_k_factors)
-        filtered_variants = [
-            v for v in variants if v.metadata().axis in top_k_axes
-        ]
-        if not filtered_variants:
+
+        # Build full factorial CompositeVariants (#234).
+        # Each combo varies the top-K factor levels; non-top-K axes
+        # are fixed at their screening optimal.
+        optimal = screening_result.optimal or {}
+        variant_by_name = {v.metadata().name: v for v in variants}
+
+        axis_variants: dict[int, list[Any]] = {}
+        for axis in sorted(top_k_axes):
+            axis_variants[axis] = [
+                v for v in variants if v.metadata().axis == axis
+            ]
+
+        fixed_components: dict[int, Any] = {}
+        for factor_name, level_name in optimal.items():
+            if not factor_name.startswith("axis_"):
+                continue
+            axis = int(factor_name.split("_", 1)[1])
+            if axis not in top_k_axes and level_name in variant_by_name:
+                fixed_components[axis] = variant_by_name[level_name]
+
+        sorted_top_axes = sorted(top_k_axes)
+        level_lists = [axis_variants[ax] for ax in sorted_top_axes]
+
+        from itertools import product as _itertools_product
+
+        factorial_composites: list[Any] = []
+        for combo in _itertools_product(*level_lists):
+            components = dict(fixed_components)
+            for axis, variant in zip(sorted_top_axes, combo):
+                components[axis] = variant
+            factorial_composites.append(CompositeVariant(components))
+
+        if not factorial_composites:
             logger.warning(
-                "No variants matched top-K factors %s; using all",
+                "No factorial combinations for top-K %s; using all",
                 top_k_factors,
             )
             filtered_variants = variants
+        else:
+            filtered_variants = factorial_composites
 
-        # Build variant lookup from filtered set
+        analysis_variants = [
+            v for v in variants if v.metadata().axis in top_k_axes
+        ]
+
         variant_lookup = {
             v.metadata().name: v for v in filtered_variants
         }
 
-        # Run trials via orchestrator (full mode, not Taguchi)
         result = self._orchestrator.run(
             tasks,
             filtered_variants,
@@ -573,11 +708,11 @@ class DOEPipeline:
             pipeline_id=self._pipeline_id,
             mode="full",
             resume_run_id=resume_run_id,
+            parent_run_id=screening_result.run_id,
         )
 
-        # Analyse refinement trials (mirrors screening analysis)
         analysis = self._analyse_refinement(
-            filtered_variants, result.trials,
+            analysis_variants, result.trials,
         )
 
         phase_result = PhaseResult(
@@ -608,6 +743,7 @@ class DOEPipeline:
                 elapsed_seconds=phase_result.elapsed_seconds,
                 interaction_effects=phase_result.interaction_effects,
             )
+            self._save_phase_report(phase_result)
 
         return phase_result
 
@@ -627,6 +763,9 @@ class DOEPipeline:
         When resuming (pipeline_id passed to __init__), completed phases
         are skipped and in-progress phases are resumed from their checkpoint.
         """
+        # Persist task metadata and factor definitions (bug #242).
+        self._save_task_metadata(tasks)
+
         # Check for completed and in-progress phases when resuming.
         completed_phases: dict[str, str] = {}  # phase -> run_id
         in_progress_phases: dict[str, str] = {}  # phase -> run_id
@@ -668,6 +807,10 @@ class DOEPipeline:
         else:
             screening = self.run_screening(tasks, variants, doc_tree)
 
+        # Persist factor definitions for the screening run (bug #242).
+        if "screening" not in completed_phases:
+            self._save_factor_definitions(screening.run_id, variants)
+
         # Semi mode: check callback after screening
         if self.config.mode == "semi" and phase_callback is not None:
             if not phase_callback(screening):
@@ -678,6 +821,10 @@ class DOEPipeline:
                     total_cost=screening.total_cost,
                     elapsed_seconds=screening.elapsed_seconds,
                 )
+
+        # Clear cache between phases to prevent cross-phase contamination
+        # (bug #236: screening responses replayed in confirmation/refinement).
+        self._orchestrator.clear_cache()
 
         # Phase 2: Confirmation
         if "confirmation" in completed_phases:
@@ -715,6 +862,9 @@ class DOEPipeline:
                     total_cost=screening.total_cost + confirmation.total_cost,
                     elapsed_seconds=screening.elapsed_seconds + confirmation.elapsed_seconds,
                 )
+
+        # Clear cache before refinement (bug #236).
+        self._orchestrator.clear_cache()
 
         # Phase 3: Refinement
         if "refinement" in completed_phases:

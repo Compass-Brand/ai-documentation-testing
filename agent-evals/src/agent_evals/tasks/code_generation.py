@@ -9,6 +9,11 @@ not regex, because they typically contain code snippets with characters
 like ``[]``, ``()``, and ``.`` that would be misinterpreted as regex
 metacharacters (see bug #169).
 
+When the response contains fenced code blocks, patterns are matched against
+extracted code only (not LLM prose) to prevent generic keywords from
+inflating scores (bug #247).  When no code blocks are present the full
+response is used as a fallback.
+
 Score formula: match_rate * 0.7 + (1 - violation_rate) * 0.2 + syntax_bonus * 0.1
 """
 
@@ -165,8 +170,12 @@ class CodeGenerationTask(EvalTask):
         Scoring formula:
             base = match_rate * 0.7 + (1 - violation_rate) * 0.2 + syntax_bonus * 0.1
         where syntax_bonus is 1.0 if the code parses as valid Python, 0.0 otherwise.
-        Test patterns use case-insensitive literal substring matching.
-        Forbidden patterns use regex (with literal fallback).
+        Test patterns are matched against extracted code blocks only (not LLM
+        prose) to prevent generic keywords from inflating scores (bug #247).
+        When no fenced code blocks are present, the full response is used as
+        a fallback (the response is assumed to be pure code).
+        Forbidden patterns use regex (with literal fallback) against the full
+        response.
         Clamped to [0, 1].
 
         Args:
@@ -176,6 +185,14 @@ class CodeGenerationTask(EvalTask):
         Returns:
             Score between 0.0 and 1.0.
         """
+        # Extract code blocks for pattern matching (bug #247).
+        # Patterns are matched against code only, not LLM prose, to avoid
+        # generic keywords like "service", "id", "db" matching explanatory
+        # text and inflating scores to 1.0 across all trials.
+        # When no code blocks are present, _extract_code_blocks returns
+        # the full response (assumed to be pure code).
+        code_text = _extract_code_blocks(response)
+
         # Parse test patterns (one per line, skip empty)
         test_str = self.test if isinstance(self.test, str) else ""
         patterns = [
@@ -185,7 +202,7 @@ class CodeGenerationTask(EvalTask):
         # Compute required match rate (case-insensitive via _match_pattern)
         if patterns:
             matched = sum(
-                1 for pat in patterns if _match_pattern(pat, response)
+                1 for pat in patterns if _match_pattern(pat, code_text)
             )
             match_rate = matched / len(patterns)
         else:
