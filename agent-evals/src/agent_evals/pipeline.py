@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import copy
 import logging
+import sqlite3
 from collections import defaultdict
+from itertools import product as itertools_product
 from dataclasses import asdict, dataclass, field, fields
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -153,27 +155,27 @@ class DOEPipeline:
         """
         if self._store is None:
             return
-        try:
-            axes: dict[int, list[str]] = defaultdict(list)
-            for v in variants:
-                meta = v.metadata()
-                if meta.axis == 0:
-                    continue
-                if meta.name not in axes[meta.axis]:
-                    axes[meta.axis].append(meta.name)
+        axes: dict[int, list[str]] = defaultdict(list)
+        for v in variants:
+            meta = v.metadata()
+            if meta.axis == 0:
+                continue
+            if meta.name not in axes[meta.axis]:
+                axes[meta.axis].append(meta.name)
 
-            definitions: list[dict] = []
-            for axis_id, level_names in sorted(axes.items()):
-                for idx, name in enumerate(level_names):
-                    definitions.append({
-                        "factor_name": f"axis_{axis_id}",
-                        "axis_id": axis_id,
-                        "level_index": idx,
-                        "level_name": name,
-                        "description": "",
-                    })
+        definitions: list[dict] = []
+        for axis_id, level_names in sorted(axes.items()):
+            for idx, name in enumerate(level_names):
+                definitions.append({
+                    "factor_name": f"axis_{axis_id}",
+                    "axis_id": axis_id,
+                    "level_index": idx,
+                    "level_name": name,
+                    "description": "",
+                })
+        try:
             self._store.save_factor_definitions(run_id, definitions)
-        except Exception:  # noqa: BLE001
+        except sqlite3.IntegrityError:
             logger.debug(
                 "Could not save factor definitions for run %s", run_id,
             )
@@ -673,10 +675,8 @@ class DOEPipeline:
         sorted_top_axes = sorted(top_k_axes)
         level_lists = [axis_variants[ax] for ax in sorted_top_axes]
 
-        from itertools import product as _itertools_product
-
         factorial_composites: list[Any] = []
-        for combo in _itertools_product(*level_lists):
+        for combo in itertools_product(*level_lists):
             components = dict(fixed_components)
             for axis, variant in zip(sorted_top_axes, combo):
                 components[axis] = variant
