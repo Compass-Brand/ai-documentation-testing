@@ -115,6 +115,15 @@ class DOEPipeline:
         self._pipeline_id = pipeline_id or uuid4().hex[:12]
         self._store = orchestrator.store
 
+    def _phase_trial_count(self, phase: PhaseResult) -> int:
+        """Return trial count for a phase, using the store for resumed phases."""
+        if phase.trials:
+            return len(phase.trials)
+        if self._store:
+            summary = self._store.get_run_summary(phase.run_id)
+            return summary.total_trials
+        return 0
+
     @staticmethod
     def _group_refinement_scores(
         trials: list[Any],
@@ -446,6 +455,7 @@ class DOEPipeline:
                 total_cost=phase_result.total_cost,
                 total_tokens=phase_result.total_tokens,
                 elapsed_seconds=phase_result.elapsed_seconds,
+                confirmation=phase_result.confirmation,
             )
 
         return phase_result
@@ -600,7 +610,7 @@ class DOEPipeline:
                 return PipelineResult(
                     pipeline_id=self._pipeline_id,
                     screening=screening,
-                    total_trials=len(screening.trials),
+                    total_trials=self._phase_trial_count(screening),
                     total_cost=screening.total_cost,
                     elapsed_seconds=screening.elapsed_seconds,
                 )
@@ -616,6 +626,7 @@ class DOEPipeline:
                 total_cost=conf_phase_results.get("total_cost", 0.0) if conf_phase_results else 0.0,
                 total_tokens=conf_phase_results.get("total_tokens", 0) if conf_phase_results else 0,
                 elapsed_seconds=conf_phase_results.get("elapsed_seconds", 0.0) if conf_phase_results else 0.0,
+                confirmation=conf_phase_results.get("confirmation") if conf_phase_results else None,
             )
         elif "confirmation" in in_progress_phases:
             confirmation = self.run_confirmation(
@@ -634,7 +645,7 @@ class DOEPipeline:
                     pipeline_id=self._pipeline_id,
                     screening=screening,
                     confirmation=confirmation,
-                    total_trials=len(screening.trials) + len(confirmation.trials),
+                    total_trials=self._phase_trial_count(screening) + self._phase_trial_count(confirmation),
                     total_cost=screening.total_cost + confirmation.total_cost,
                     elapsed_seconds=screening.elapsed_seconds + confirmation.elapsed_seconds,
                 )
@@ -669,9 +680,9 @@ class DOEPipeline:
         # Aggregate final results
         final_optimal = refinement.optimal or screening.optimal or {}
         total_trials = (
-            len(screening.trials)
-            + len(confirmation.trials)
-            + len(refinement.trials)
+            self._phase_trial_count(screening)
+            + self._phase_trial_count(confirmation)
+            + self._phase_trial_count(refinement)
         )
         total_cost = (
             screening.total_cost + confirmation.total_cost + refinement.total_cost

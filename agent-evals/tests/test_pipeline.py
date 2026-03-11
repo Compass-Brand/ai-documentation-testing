@@ -1436,3 +1436,66 @@ def test_pipeline_resume_restores_prediction_interval():
     assert result.screening.se_prediction == pytest.approx(1.15), (
         f"Expected se_prediction=1.15, got {result.screening.se_prediction}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Resume trial count and confirmation persistence
+# ---------------------------------------------------------------------------
+
+
+def test_pipeline_resume_aggregates_total_trials():
+    """Resumed pipeline must report correct total_trials from DB, not len([])."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    # Mock store has screening=50, confirmation=20, refinement=30 total_trials
+    assert result.total_trials == 100, (
+        f"Expected total_trials=100, got {result.total_trials}"
+    )
+
+
+def test_confirmation_phase_persists_confirmation_dict():
+    """Confirmation dict (within_interval, sigma_deviation) must be persisted."""
+    from pathlib import Path
+    import tempfile
+    from agent_evals.observatory.store import ObservatoryStore
+
+    with tempfile.TemporaryDirectory() as td:
+        store = ObservatoryStore(db_path=Path(td) / "test.db")
+        store.create_run("run_001", "taguchi", {})
+
+        confirmation = {
+            "within_interval": True,
+            "sigma_deviation": 0.3,
+            "observed_sn": 7.5,
+            "predicted_sn": 7.42,
+            "prediction_interval": [5.1, 9.7],
+        }
+
+        store.save_phase_results(
+            run_id="run_001",
+            main_effects={},
+            anova={},
+            optimal={},
+            significant_factors=[],
+            quality_type="larger_is_better",
+            confirmation=confirmation,
+        )
+
+        result = store.get_phase_results("run_001")
+        assert result is not None
+        assert result["confirmation"] is not None
+        assert result["confirmation"]["within_interval"] is True
+        assert result["confirmation"]["sigma_deviation"] == pytest.approx(0.3)
+        assert result["confirmation"]["observed_sn"] == pytest.approx(7.5)

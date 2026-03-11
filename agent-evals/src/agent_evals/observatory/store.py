@@ -193,6 +193,7 @@ class ObservatoryStore:
             "ALTER TABLE phase_results ADD COLUMN predicted_sn REAL",
             "ALTER TABLE phase_results ADD COLUMN prediction_interval TEXT",
             "ALTER TABLE phase_results ADD COLUMN se_prediction REAL",
+            "ALTER TABLE phase_results ADD COLUMN confirmation TEXT",
         ]
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_trials_run_type_variant "
@@ -614,6 +615,7 @@ class ObservatoryStore:
         predicted_sn: float | None = None,
         prediction_interval: tuple[float, float] | None = None,
         se_prediction: float | None = None,
+        confirmation: dict | None = None,
     ) -> None:
         """Save Taguchi phase analysis results for a run."""
         now = datetime.now(timezone.utc).isoformat()
@@ -622,6 +624,9 @@ class ObservatoryStore:
             if prediction_interval is not None
             else None
         )
+        confirmation_json = (
+            json.dumps(confirmation) if confirmation is not None else None
+        )
         with self._lock, self._connect() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO phase_results "
@@ -629,8 +634,8 @@ class ObservatoryStore:
                 "significant_factors, quality_type, created_at, "
                 "total_cost, total_tokens, elapsed_seconds, "
                 "interaction_effects, predicted_sn, prediction_interval, "
-                "se_prediction) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "se_prediction, confirmation) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     json.dumps(main_effects),
@@ -646,6 +651,7 @@ class ObservatoryStore:
                     predicted_sn,
                     interval_json,
                     se_prediction,
+                    confirmation_json,
                 ),
             )
 
@@ -695,6 +701,7 @@ class ObservatoryStore:
             "predicted_sn": row["predicted_sn"] if "predicted_sn" in row.keys() else None,
             "prediction_interval": prediction_interval,
             "se_prediction": row["se_prediction"] if "se_prediction" in row.keys() else None,
+            "confirmation": _safe_json("confirmation") if "confirmation" in row.keys() else None,
         }
 
     def get_pipeline_runs(self, pipeline_id: str) -> list[RunSummary]:
