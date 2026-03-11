@@ -99,6 +99,7 @@ def make_mock_variant(
     variant = MagicMock()
     meta = MagicMock()
     meta.name = name
+    meta.axis = axis
     meta.token_estimate = token_estimate
     variant.metadata.return_value = meta
     variant.render.return_value = rendered if rendered is not None else f"rendered {name}"

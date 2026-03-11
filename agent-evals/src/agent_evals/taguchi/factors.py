@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from itertools import product as _product
 
 from agent_evals.taguchi.catalog import get_oa, select_oa
 
@@ -140,6 +141,47 @@ def build_design(
     return TaguchiDesign(
         oa_name=oa.name,
         n_runs=oa.n_runs,
+        factors=factors,
+        rows=rows,
+        level_counts=level_counts,
+    )
+
+
+def build_factorial_design(
+    axes: dict[int, list[str]],
+) -> TaguchiDesign:
+    """Build a full factorial design from variant axes.
+
+    Unlike :func:`build_design` which selects an orthogonal array for
+    screening efficiency, this function generates every possible
+    combination of factor levels — suitable for the refinement phase
+    where interaction effects between top-K factors are of interest.
+
+    Args:
+        axes: Mapping of axis number to list of variant level names.
+
+    Returns:
+        A :class:`TaguchiDesign` with ``oa_name="full_factorial"``
+        and one row per level combination.
+    """
+    factors = build_factors_from_axes(axes)
+    level_counts = [f.n_levels for f in factors]
+    sorted_axes = sorted(axes)
+    level_lists = [axes[ax] for ax in sorted_axes]
+    factor_names = [f.name for f in factors]
+
+    rows: list[TaguchiExperimentRow] = []
+    for run_id, combo in enumerate(_product(*level_lists), start=1):
+        assignments = dict(zip(factor_names, combo, strict=True))
+        rows.append(TaguchiExperimentRow(
+            run_id=run_id,
+            assignments=assignments,
+            dummy_factors=set(),
+        ))
+
+    return TaguchiDesign(
+        oa_name="full_factorial",
+        n_runs=len(rows),
         factors=factors,
         rows=rows,
         level_counts=level_counts,

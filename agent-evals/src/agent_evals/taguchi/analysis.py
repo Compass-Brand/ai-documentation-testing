@@ -584,7 +584,13 @@ def predict_optimal(
             # estimated parameters, so n_eff = n / (1 + sum(df_i)).
             sum_dof = sum(f.df for f in anova_result.factors)
             n_eff = n / (1 + sum_dof)
-            se = math.sqrt(anova_result.ms_error / n_eff)
+            if anova_result.ms_error < 1e-12:
+                # Bug #238: ms_error ~ 0 means the error estimate is
+                # undefined (perfectly additive data).  Return NaN
+                # instead of 0 to avoid implying perfect certainty.
+                se = float("nan")
+            else:
+                se = math.sqrt(anova_result.ms_error / n_eff)
             df = anova_result.df_error
         else:
             # Fallback: total variance (no ANOVA available)

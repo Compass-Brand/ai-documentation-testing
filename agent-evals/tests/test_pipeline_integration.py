@@ -90,12 +90,13 @@ class TestPipelineIntegration:
 
     def test_full_pipeline_auto_mode(self) -> None:
         """Full auto-mode pipeline runs all three phases and aggregates results."""
-        config = PipelineConfig(models=["model-a"], mode="auto")
+        config = PipelineConfig(models=["model-a"], mode="auto", top_k=2)
         orch = MagicMock()
         trial = MagicMock()
         trial.score = 0.75
         trial.cost = 0.01
         trial.total_tokens = 100
+        trial.error = None
         trial.metrics = {"oa_row_id": 0}
         result = MagicMock()
         result.run_id = "test-run"
@@ -114,13 +115,18 @@ class TestPipelineIntegration:
              patch("agent_evals.pipeline.predict_optimal") as mock_pred, \
              patch("agent_evals.pipeline.validate_confirmation") as mock_val:
             mock_sn.return_value = {0: 10.5}
-            mock_me.return_value = {"structure": {"flat": 10.0, "nested": 12.0}}
+            mock_me.return_value = {
+                "axis_1": {"flat": 10.0, "nested": 12.0},
+                "axis_2": {"brief": 9.0, "verbose": 11.0},
+            }
             mock_anova.return_value = MagicMock()
             mock_anova.return_value.factors = [
-                MagicMock(factor_name="structure", p_value=0.001, corrected_p_value=0.001, omega_squared=0.089),
+                MagicMock(factor_name="axis_1", p_value=0.001, corrected_p_value=0.001, omega_squared=0.089),
             ]
             mock_pred.return_value = MagicMock()
-            mock_pred.return_value.optimal_assignment = {"structure": "nested"}
+            mock_pred.return_value.optimal_assignment = {
+                "axis_1": "nested", "axis_2": "verbose",
+            }
             mock_val.return_value = MagicMock(
                 within_interval=True,
                 sigma_deviation=0.3,
@@ -130,15 +136,19 @@ class TestPipelineIntegration:
             )
 
             # Create mock variants across 2 axes (validation requires ≥2 axes)
-            v1 = MagicMock()
-            v1.metadata.return_value = MagicMock(axis=1, name="flat")
-            v2 = MagicMock()
-            v2.metadata.return_value = MagicMock(axis=1, name="nested")
-            v3 = MagicMock()
-            v3.metadata.return_value = MagicMock(axis=2, name="brief")
-            v4 = MagicMock()
-            v4.metadata.return_value = MagicMock(axis=2, name="verbose")
-            variants = [v1, v2, v3, v4]
+            def _mv(axis, nm):
+                v = MagicMock()
+                m = MagicMock()
+                m.name = nm
+                m.axis = axis
+                m.token_estimate = 100
+                v.metadata.return_value = m
+                return v
+
+            variants = [
+                _mv(1, "flat"), _mv(1, "nested"),
+                _mv(2, "brief"), _mv(2, "verbose"),
+            ]
 
             pipeline_result = pipeline.run(
                 tasks=[], variants=variants, doc_tree=MagicMock(),
