@@ -56,6 +56,10 @@ class WikiContradictAdapter(DatasetAdapter):
             if limit is not None and count >= limit:
                 break
 
+            ref_answer = record.get("ref_answer", "")
+            if not ref_answer or not ref_answer.strip():
+                continue
+
             context_1 = record.get("context1", "")
             context_2 = record.get("context2", "")
             answer_1 = record.get("answer1", "")

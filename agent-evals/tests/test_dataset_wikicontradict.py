@@ -105,6 +105,43 @@ class TestWikiContradictConvertTasks:
         assert count == 5
 
 
+class TestWikiContradictFiltersEmptyRefAnswer:
+    """Bug #192: Records with empty ref_answer should be filtered out."""
+
+    def test_skips_records_with_empty_ref_answer(self, tmp_path: Path) -> None:
+        from agent_evals.datasets.wikicontradict import WikiContradictAdapter
+
+        records = [
+            _make_wikicontradict_record(ref_answer="500km"),
+            _make_wikicontradict_record(ref_answer=""),
+            _make_wikicontradict_record(ref_answer="300km"),
+        ]
+        adapter = WikiContradictAdapter()
+        with patch(
+            "agent_evals.datasets.wikicontradict.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 2  # Only the 2 records with non-empty ref_answer
+
+    def test_skips_records_with_whitespace_only_ref_answer(self, tmp_path: Path) -> None:
+        from agent_evals.datasets.wikicontradict import WikiContradictAdapter
+
+        records = [
+            _make_wikicontradict_record(ref_answer="500km"),
+            _make_wikicontradict_record(ref_answer="   "),
+        ]
+        adapter = WikiContradictAdapter()
+        with patch(
+            "agent_evals.datasets.wikicontradict.load_hf_dataset",
+            return_value=_mock_dataset(records),
+        ):
+            count = adapter.convert_tasks(tmp_path)
+
+        assert count == 1
+
+
 class TestWikiContradictRegistration:
     def test_registered(self) -> None:
         from agent_evals.datasets import DATASET_REGISTRY
