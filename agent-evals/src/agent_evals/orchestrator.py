@@ -449,14 +449,14 @@ class EvalOrchestrator:
 
     def _build_strategy_factory(self) -> Any:
         """Build a strategy factory callable from strategy_config."""
-        from agent_evals.context.registry import get_strategy_by_name, load_all
+        from agent_evals.context.registry import create_strategy_by_name, load_all
 
         sc = self.config.strategy_config
         strategy_name = sc.strategy
 
         def factory() -> Any:
             load_all()
-            strategy = get_strategy_by_name(strategy_name)
+            strategy = create_strategy_by_name(strategy_name)
             if strategy is not None:
                 return strategy
             # Fallback: import and instantiate directly
