@@ -135,25 +135,81 @@ class DOEPipeline:
         trials: list[Any],
         design: Any,
     ) -> dict[int, list[float]]:
-        """Group full-mode trial scores into design-row buckets.
+        """Group trial scores into design-row buckets by exact match.
 
-        In refinement, trials run in full mode (one variant per trial).
-        Each design row assigns a level per factor; we match a trial's
-        ``variant_name`` to any row that includes it, then collect
-        scores per row.  Trials matching no row are skipped.
+        Matches each trial to the OA row whose full factor combination
+        matches the trial's variant name.  Composite names (``"a+b+c"``)
+        are split on ``"+"`` and matched against the row's sorted
+        assignment values.  Single-variant names are matched when only
+        one factor uses that level name (unambiguous).
+
+        Trials with ``oa_row_id`` in metrics are mapped directly.
+        Trials matching no row are skipped.
         """
-        name_to_rows: dict[str, set[int]] = defaultdict(set)
+        # Build row signature -> row_id for exact combination matching.
+        # Signature = tuple of level names sorted by factor name.
+        sig_to_row: dict[tuple[str, ...], int] = {}
+        factor_names_sorted = sorted(f.name for f in design.factors)
         for row in design.rows:
-            for level_name in row.assignments.values():
-                name_to_rows[level_name].add(row.run_id)
+            sig = tuple(row.assignments[f] for f in factor_names_sorted)
+            sig_to_row[sig] = row.run_id
+
+        # Build single-level-name -> factor_name for unambiguous
+        # single-variant matching.  None marks ambiguous names.
+        level_to_factor: dict[str, str | None] = {}
+        for factor in design.factors:
+            for level_name in factor.level_names:
+                if level_name in level_to_factor:
+                    # Ambiguous — appears in multiple factors
+                    level_to_factor[level_name] = None
+                else:
+                    level_to_factor[level_name] = factor.name
 
         row_scores: dict[int, list[float]] = defaultdict(list)
         for trial in trials:
             if trial.error is not None:
                 continue
+
+            # Fast path: direct oa_row_id from Taguchi runner
+            oa_row_id = (
+                trial.metrics.get("oa_row_id")
+                if hasattr(trial, "metrics") and trial.metrics
+                else None
+            )
+            if oa_row_id is not None:
+                row_scores[int(oa_row_id)].append(trial.score)
+                continue
+
             vname = trial.variant_name
-            for rid in name_to_rows.get(vname, set()):
-                row_scores[rid].append(trial.score)
+
+            # Try composite name match: "level1+level2+..." -> exact row
+            if "+" in vname:
+                parts = vname.split("+")
+                # Try all permutations against row signatures
+                sig = tuple(parts)
+                if sig in sig_to_row:
+                    row_scores[sig_to_row[sig]].append(trial.score)
+                    continue
+                # Also try matching by sorted factor order
+                # (composite names are sorted by axis in CompositeVariant)
+                # Fall through to row-by-row matching
+                for row in design.rows:
+                    vals = tuple(
+                        row.assignments[f] for f in factor_names_sorted
+                    )
+                    if set(parts) == set(vals) and len(parts) == len(vals):
+                        row_scores[row.run_id].append(trial.score)
+                        break
+                continue
+
+            # Single-variant name: map to rows where this level's
+            # specific factor matches.  Skip if ambiguous.
+            factor_name = level_to_factor.get(vname)
+            if factor_name is None:
+                continue  # ambiguous or unknown level name
+            for row in design.rows:
+                if row.assignments.get(factor_name) == vname:
+                    row_scores[row.run_id].append(trial.score)
 
         return dict(row_scores)
 

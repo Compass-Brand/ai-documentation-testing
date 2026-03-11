@@ -1558,6 +1558,7 @@ class TestGroupRefinementScoresBug226:
         trial.variant_name = variant_name
         trial.score = score
         trial.error = None
+        trial.metrics = {}
         return trial
 
     @staticmethod
@@ -1608,11 +1609,10 @@ class TestGroupRefinementScoresBug226:
             level_counts=[2, 2],
         )
 
-    def test_trial_maps_to_exact_row_not_all_partial_matches(self):
+    def test_composite_trial_maps_to_exact_row(self):
         """A composite trial 'verbose+short' must map ONLY to row 1.
 
-        Bug: old code maps it to rows 1, 2, 3, 4 because 'verbose'
-        appears in rows 1, 2, 4 and 'short' appears in rows 1, 3.
+        Bug: old code can't handle composite names at all (maps to empty).
         """
         design = self._make_design_with_shared_level_names()
         trial = self._make_trial("verbose+short", score=0.9)
@@ -1620,7 +1620,7 @@ class TestGroupRefinementScoresBug226:
         scores = DOEPipeline._group_refinement_scores([trial], design)
 
         # Must map to ONLY row 1 (exact match for verbose+short)
-        assert 1 in scores
+        assert 1 in scores, "Composite 'verbose+short' should match row 1"
         assert scores[1] == [0.9]
         # Must NOT map to other rows
         assert 2 not in scores, "Score leaked to row 2 (verbose+verbose)"
@@ -1628,26 +1628,82 @@ class TestGroupRefinementScoresBug226:
         assert 4 not in scores, "Score leaked to row 4 (concise+verbose)"
 
     def test_shared_level_name_no_cross_factor_contamination(self):
-        """'verbose' as a single-variant trial must map only via the correct factor.
+        """'verbose' appears in both axis_1 and axis_2.
 
-        If a trial for axis_1's 'verbose' is encountered, it should map
-        to rows where axis_1=verbose (rows 1, 2), NOT where axis_2=verbose
-        (rows 2, 4).  With old code, it maps to rows 1, 2, AND 4.
+        Old code maps 'verbose' to ALL rows containing it (rows 1,2,4).
+        Correct: a single variant matches no exact row when ambiguous.
         """
         design = self._make_design_with_shared_level_names()
-        # Single-variant trial — old code maps to ALL rows containing "verbose"
         trial = self._make_trial("verbose", score=0.7)
 
         scores = DOEPipeline._group_refinement_scores([trial], design)
 
-        # "verbose" should map to rows 1 and 2 (axis_1=verbose)
-        # OR rows 2 and 4 (axis_2=verbose) — but NOT all three.
-        # With composite matching, single-variant should match no exact row.
-        # The safest behavior: a single-variant name that appears in
-        # multiple factors should NOT match any row (ambiguous).
         mapped_rows = set(scores.keys())
-        # Must NOT map to all 4 rows
+        # Must NOT map to 3+ rows (cross-factor contamination)
         assert len(mapped_rows) <= 2, (
             f"Single-variant 'verbose' mapped to {len(mapped_rows)} rows "
             f"instead of ≤2; cross-factor contamination"
         )
+
+    @staticmethod
+    def _make_unique_level_design():
+        """Design with unique level names across factors.
+
+        Row 1: {axis_1: flat,   axis_2: path}
+        Row 2: {axis_1: flat,   axis_2: summary}
+        Row 3: {axis_1: nested, axis_2: path}
+        Row 4: {axis_1: nested, axis_2: summary}
+        """
+        from agent_evals.taguchi.factors import (
+            TaguchiDesign,
+            TaguchiExperimentRow,
+            TaguchiFactorDef,
+        )
+
+        factors = [
+            TaguchiFactorDef(
+                name="axis_1", n_levels=2,
+                level_names=["flat", "nested"], axis=1,
+            ),
+            TaguchiFactorDef(
+                name="axis_2", n_levels=2,
+                level_names=["path", "summary"], axis=2,
+            ),
+        ]
+        rows = [
+            TaguchiExperimentRow(
+                run_id=1,
+                assignments={"axis_1": "flat", "axis_2": "path"},
+            ),
+            TaguchiExperimentRow(
+                run_id=2,
+                assignments={"axis_1": "flat", "axis_2": "summary"},
+            ),
+            TaguchiExperimentRow(
+                run_id=3,
+                assignments={"axis_1": "nested", "axis_2": "path"},
+            ),
+            TaguchiExperimentRow(
+                run_id=4,
+                assignments={"axis_1": "nested", "axis_2": "summary"},
+            ),
+        ]
+        return TaguchiDesign(
+            oa_name="L4", n_runs=4, factors=factors, rows=rows,
+            level_counts=[2, 2],
+        )
+
+    def test_composite_name_exact_match_unique_levels(self):
+        """Composite trial 'flat+path' maps to exactly row 1."""
+        design = self._make_unique_level_design()
+        trials = [
+            self._make_trial("flat+path", score=0.8),
+            self._make_trial("nested+summary", score=0.6),
+        ]
+
+        scores = DOEPipeline._group_refinement_scores(trials, design)
+
+        assert scores.get(1) == [0.8], "flat+path -> row 1"
+        assert scores.get(4) == [0.6], "nested+summary -> row 4"
+        assert 2 not in scores
+        assert 3 not in scores
