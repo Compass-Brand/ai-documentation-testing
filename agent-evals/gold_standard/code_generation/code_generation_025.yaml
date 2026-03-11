@@ -10,10 +10,10 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+upgrade
-    def\s+downgrade
-    users|user
-    Column|column
+    def upgrade
+    def downgrade
+    user
+    column
     email
     role
   entry_point: "upgrade"

@@ -10,9 +10,9 @@ metadata:
   expected_answer: ""
   test: |
     @register_source
-    class\s+\w+
-    def\s+read|def\s+fetch
-    json|JSON
+    JsonApiSource
+    def read
+    json
   entry_point: "JsonApiSource"
   canonical_solution: ""
   libs: ["dataforge"]

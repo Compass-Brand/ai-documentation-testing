@@ -9,9 +9,9 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    mock\.patch|@patch
-    def\s+test_
-    assert.*called|call_args|assert_called
+    patch
+    def test_
+    assert_called
   entry_point: "test_service_mock"
   canonical_solution: ""
   libs: ["framework.testing"]

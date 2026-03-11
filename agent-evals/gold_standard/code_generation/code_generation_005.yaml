@@ -12,7 +12,7 @@ metadata:
     Pipeline
     CSVSource
     PostgresLoader
-    data\.csv
+    data.csv
     users
   entry_point: "build_pipeline"
   canonical_solution: ""

@@ -761,3 +761,114 @@ class TestParallelExecution:
             f"Trials appear sequential: {elapsed:.3f}s >= {SLEEP * (1 + TOLERANCE):.3f}s. "
             "TaguchiRunner must use ThreadPoolExecutor."
         )
+
+
+class TestJudgeWiring:
+    """TaguchiRunner calls LLM judge when judge_enabled=True."""
+
+    def test_judge_called_at_sample_rate(self):
+        """Judge is called every N-th trial when judge_enabled=True."""
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=3, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client()
+        # judge_enabled=True, sample_rate=2 -> judge on trials 2, 4, 6...
+        config = EvalRunConfig(
+            repetitions=1, max_connections=1,
+            judge_enabled=True, judge_sample_rate=2,
+            judge_model="openrouter/test/judge-model",
+        )
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        # Mock the _call_judge method
+        judge_calls: list[str] = []
+        original_call_judge = runner._call_judge
+
+        def tracking_judge(client, task_type, question, response):
+            judge_calls.append(task_type)
+            return 0.85, "good answer"
+
+        runner._call_judge = tracking_judge  # type: ignore[assignment]
+
+        tasks = [make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        # 3 trials total (3 rows * 1 task * 1 rep)
+        assert len(result.trials) == 3
+        # Trial indices 0, 1, 2; judge on index 2 (every 2nd, skipping 0)
+        assert len(judge_calls) == 1
+
+        # The judged trial should have judge_score in metrics
+        judged_trials = [
+            t for t in result.trials if "judge_score" in t.metrics
+        ]
+        assert len(judged_trials) == 1
+        assert judged_trials[0].metrics["judge_score"] == 0.85
+        assert "judge_heuristic_delta" in judged_trials[0].metrics
+
+    def test_judge_not_called_when_disabled(self):
+        """Judge is NOT called when judge_enabled=False (default)."""
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=3, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client()
+        config = EvalRunConfig(repetitions=1, max_connections=1)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        for trial in result.trials:
+            assert "judge_score" not in trial.metrics
+
+    def test_judge_failure_does_not_abort_trial(self):
+        """If judge call fails, the trial still completes with its heuristic score."""
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=1, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client()
+        config = EvalRunConfig(
+            repetitions=2, max_connections=1,
+            judge_enabled=True, judge_sample_rate=1,
+            judge_model="openrouter/test/judge-model",
+        )
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        def failing_judge(client, task_type, question, response):
+            raise RuntimeError("Judge API timeout")
+
+        runner._call_judge = failing_judge  # type: ignore[assignment]
+
+        tasks = [make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        # Both trials complete despite judge failures
+        assert len(result.trials) == 2
+        for trial in result.trials:
+            assert trial.error is None
+            assert trial.score > 0  # heuristic score still works
+            assert "judge_score" not in trial.metrics  # judge failed

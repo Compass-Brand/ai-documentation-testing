@@ -9,10 +9,10 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+test_
+    def test_
     TestClient
     /api/users
-    assert.*200|status_code.*200
+    status_code
   entry_point: "test_list_users"
   canonical_solution: ""
   libs: ["framework.testing"]

@@ -75,6 +75,9 @@ class TaguchiRunner:
         self._default_client_name = next(iter(clients))
         self._store = store
         self._strategy_factory = strategy_factory or (lambda: FullContextStrategy())
+        # Thread-safe trial counter for judge sampling.
+        self._trial_counter = 0
+        self._trial_counter_lock = threading.Lock()
 
     def run(
         self,
@@ -340,6 +343,34 @@ class TaguchiRunner:
             scoring_ms = (time.monotonic() - score_start) * 1000
             latency = time.monotonic() - trial_start
 
+            # LLM-as-judge sampling
+            with self._trial_counter_lock:
+                trial_index = self._trial_counter
+                self._trial_counter += 1
+            sample_rate = self._config.judge_sample_rate
+            judge_active = (
+                self._config.judge_enabled
+                and trial_index > 0
+                and trial_index % sample_rate == 0
+            )
+            if judge_active:
+                try:
+                    question = getattr(task.definition, "question", None) or ""
+                    judge_score, _rationale = self._call_judge(
+                        client, task.definition.type,
+                        question, strategy_result.final_response,
+                    )
+                    metrics["judge_score"] = judge_score
+                    metrics["judge_heuristic_delta"] = round(
+                        abs(judge_score - score), 4,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Judge call failed (row %d, %s)",
+                        row.run_id, task.definition.task_id,
+                        exc_info=True,
+                    )
+
             # Extract timing from first generation if available
             first_gen = (
                 strategy_result.generations[0]
@@ -401,6 +432,34 @@ class TaguchiRunner:
                 model=model_name,
                 context_strategy=strategy_name,
             )
+    def _call_judge(
+        self,
+        client: LLMClient,
+        task_type: str,
+        question: str,
+        response: str,
+    ) -> tuple[float, str]:
+        """Call LLM judge to score one trial response.
+
+        Returns:
+            Tuple of (score, rationale).
+        """
+        from agent_evals.judge.calibrator import (
+            build_judge_prompt,
+            parse_judge_response,
+        )
+
+        judge_model = self._config.judge_model
+        messages = build_judge_prompt(
+            task_type=task_type,
+            question=question,
+            response=response,
+            rubric=None,
+        )
+        raw = client.complete(messages, model=judge_model).content
+        score, rationale = parse_judge_response(raw)
+        return score, rationale
+
     def _build_composite(self, row: TaguchiExperimentRow) -> CompositeVariant:
         """Create a CompositeVariant from an OA row's axis assignments."""
         from agent_evals.taguchi.factors import DUMMY_LEVEL

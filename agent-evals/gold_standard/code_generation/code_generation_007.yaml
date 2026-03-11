@@ -9,9 +9,9 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
+    setup_logging
     configure_logging
-    json|JSON
+    json
   entry_point: "setup_logging"
   canonical_solution: ""
   libs: ["framework.logging"]

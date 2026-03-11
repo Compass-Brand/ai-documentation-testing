@@ -1405,7 +1405,7 @@ class TestTaguchiModeRouting:
     def test_full_mode_still_uses_eval_runner(
         self, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """--mode full (or default) should NOT route to orchestrator."""
+        """--mode full should NOT route to orchestrator."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-test")
 
         eval_runner_called = False

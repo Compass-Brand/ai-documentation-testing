@@ -53,7 +53,7 @@ class OrchestratorConfig:
     models: list[str] = field(default_factory=list)
     api_key: str = ""
     db_path: Path | None = None
-    mode: str = "full"
+    mode: str = "taguchi"
     dashboard: bool = False
     dashboard_port: int = 8501
     report_format: str | None = None

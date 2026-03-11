@@ -9,9 +9,9 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
+    safe_insert
     sanitize_input
-    parameterized|\?|%s|:param
+    execute
   entry_point: "safe_insert"
   canonical_solution: ""
   libs: ["dataforge"]

@@ -9,10 +9,10 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
+    user_not_found_error
     APIError
     404
-    [Uu]ser not found
+    user not found
   entry_point: "user_not_found_error"
   canonical_solution: ""
   libs: ["framework.errors"]

@@ -205,7 +205,7 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         "--mode",
         choices=["full", "taguchi"],
         default=None,
-        help="Evaluation mode (default: full)",
+        help="Evaluation mode (default: taguchi)",
     )
     parser.add_argument(
         "--models",
@@ -710,7 +710,7 @@ def _run_evaluation(
             logger.info("  %s: %r", key, value)
 
         # For taguchi mode, also show the OA design
-        mode = resolved.get("mode", "full")
+        mode = resolved.get("mode", "taguchi")
         if mode == "taguchi":
             from agent_evals.variants.registry import (
                 get_all_variants,
@@ -861,7 +861,7 @@ def _run_evaluation(
     doc_tree = load_doc_tree_for_source(source)
 
     # Route to the correct runner based on --mode
-    mode = resolved.get("mode", "full")
+    mode = resolved.get("mode", "taguchi")
 
     if mode == "taguchi":
         pipeline_mode = resolved.get("pipeline")
@@ -881,7 +881,7 @@ def _run_evaluation(
             raw_yaml=raw_yaml,
         )
 
-    # Default: full mode via orchestrator (wires strategy_factory)
+    # Explicit --mode full: run via orchestrator (wires strategy_factory)
     return _run_full(
         resolved, tasks, variants, doc_tree, api_key, run_config,
         raw_yaml=raw_yaml,

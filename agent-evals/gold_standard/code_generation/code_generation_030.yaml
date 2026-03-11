@@ -10,11 +10,11 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
-    /health|health
-    database|db
-    redis|cache
-    json|JSON
+    health_check
+    health
+    database
+    redis
+    json
     status
   entry_point: "health_check"
   canonical_solution: ""

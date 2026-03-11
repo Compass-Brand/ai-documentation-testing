@@ -10,11 +10,11 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
-    patch|PATCH|update
-    user|User
+    update_user
+    update
+    user
     return
-    id|user_id
+    user_id
   entry_point: "update_user"
   canonical_solution: ""
   libs: ["framework.auth", "framework.errors"]

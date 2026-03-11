@@ -10,9 +10,9 @@ metadata:
   expected_answer: ""
   test: |
     @require_auth
-    def\s+\w+
+    get_user_profile
     return
-    profile|user
+    profile
   entry_point: "get_user_profile"
   canonical_solution: ""
   libs: ["framework.auth"]

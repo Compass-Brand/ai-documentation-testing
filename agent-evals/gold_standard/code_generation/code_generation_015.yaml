@@ -9,7 +9,7 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
+    log_with_request_id
     log_context
     request_id
   entry_point: "log_with_request_id"

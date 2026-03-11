@@ -165,15 +165,15 @@ class TestModeRouting:
         orch = _make_orchestrator(tmp_path, mode="taguchi")
         assert orch.runner_type == "taguchi"
 
-    def test_default_mode_is_full(self, tmp_path: Path) -> None:
+    def test_default_mode_is_taguchi(self, tmp_path: Path) -> None:
         config = OrchestratorConfig(
             models=["m"],
             api_key="key",
             db_path=tmp_path / "obs.db",
         )
-        assert config.mode == "full"
+        assert config.mode == "taguchi"
         orch = EvalOrchestrator(config)
-        assert orch.runner_type == "eval"
+        assert orch.runner_type == "taguchi"
 
 
 # ---------------------------------------------------------------------------

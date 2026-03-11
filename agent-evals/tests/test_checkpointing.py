@@ -336,6 +336,7 @@ class TestOrchestratorResume:
             api_key="test",
             store=store,
             resume_run_id="run-resume",
+            mode="full",
         )
         orch = EvalOrchestrator(config)
 
@@ -394,6 +395,7 @@ class TestOrchestratorResume:
             api_key="test",
             store=store,
             resume_run_id="run-merge",
+            mode="full",
         )
         orch = EvalOrchestrator(config)
 

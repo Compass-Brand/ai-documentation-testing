@@ -10,10 +10,10 @@ tags:
 metadata:
   expected_answer: ""
   test: |
-    def\s+\w+
+    refresh_token
     refresh
     token
-    rotate|new.*token|generate
+    rotate
     return
   entry_point: "refresh_token"
   canonical_solution: ""
