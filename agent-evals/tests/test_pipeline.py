@@ -377,7 +377,9 @@ def test_pipeline_confirmation_returns_phase_result():
 
 
 def test_pipeline_confirmation_filters_to_optimal_variants():
-    """Bug #96: Confirmation must only pass optimal variants to orchestrator."""
+    """Bug #96/#233: Confirmation must pass a single CompositeVariant
+    composed of all optimal levels, not individual variants.
+    """
     config = PipelineConfig(models=["model-a"])
     orch = _make_mock_orchestrator(score=0.7)
     pipeline = DOEPipeline(config=config, orchestrator=orch)
@@ -408,13 +410,19 @@ def test_pipeline_confirmation_filters_to_optimal_variants():
             doc_tree=MagicMock(),
         )
 
-    # Orchestrator should receive ONLY the 2 optimal variants, not all 15
+    # Orchestrator should receive exactly 1 CompositeVariant (the combined optimal)
     call_kwargs = orch.run.call_args
     passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
-    variant_names = {v.metadata().name for v in passed_variants}
-    assert variant_names == {"axis1_a", "axis2_b"}, (
-        f"Expected only optimal variants {{'axis1_a', 'axis2_b'}}, "
-        f"got {variant_names}"
+    assert len(passed_variants) == 1, (
+        f"Expected 1 CompositeVariant, got {len(passed_variants)} variants"
+    )
+    # The composite's name should contain both optimal level names
+    composite_name = passed_variants[0].metadata().name
+    assert "axis1_a" in composite_name, (
+        f"Composite name should include axis1_a, got {composite_name}"
+    )
+    assert "axis2_b" in composite_name, (
+        f"Composite name should include axis2_b, got {composite_name}"
     )
 
 
@@ -453,8 +461,10 @@ def test_pipeline_confirmation_passes_mode_full():
     assert call_kwargs.kwargs.get("mode") == "full"
 
 
-def test_pipeline_refinement_passes_mode_full():
-    """Phase 3 passes mode='full' to orchestrator."""
+def test_pipeline_refinement_passes_composites_in_full_mode():
+    """Phase 3 passes CompositeVariants in mode='full' (full factorial)."""
+    from agent_evals.variants.composite import CompositeVariant
+
     config = PipelineConfig(models=["model-a"], top_k=2)
     orch = _make_mock_orchestrator()
     pipeline = DOEPipeline(config=config, orchestrator=orch)
@@ -463,21 +473,23 @@ def test_pipeline_refinement_passes_mode_full():
         run_id="r1",
         phase="screening",
         trials=[],
-        optimal={"axis_1": "a"},
-        significant_factors=["axis_1"],
-        main_effects={"axis_1": {"a": 12.0, "b": 10.0}},
+        optimal={"axis_1": "axis1_a", "axis_2": "axis2_a"},
+        significant_factors=["axis_1", "axis_2"],
+        main_effects={
+            "axis_1": {"axis1_a": 12.0, "axis1_b": 10.0},
+            "axis_2": {"axis2_a": 15.0, "axis2_b": 8.0},
+        },
     )
 
-    with patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
-         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
-         patch("agent_evals.pipeline.run_anova") as mock_anova, \
-         patch("agent_evals.pipeline.predict_optimal") as mock_pred:
-        mock_sn.return_value = {0: 10.0}
-        mock_me.return_value = {}
-        mock_anova.return_value = MagicMock(factors=[])
-        mock_pred.return_value = MagicMock(
-            optimal_assignment={}, predicted_sn=0.0,
-        )
+    with patch.object(pipeline, "_analyse_refinement") as mock_analyse:
+        mock_analyse.return_value = {
+            "main_effects": {},
+            "anova": MagicMock(),
+            "optimal": {},
+            "predicted_sn": 10.0,
+            "significant_factors": [],
+            "interaction_effects": [],
+        }
         pipeline.run_refinement(
             screening_result=screening,
             tasks=[],
@@ -487,7 +499,13 @@ def test_pipeline_refinement_passes_mode_full():
 
     orch.run.assert_called_once()
     call_kwargs = orch.run.call_args
-    assert call_kwargs.kwargs.get("mode") == "full"
+    assert call_kwargs.kwargs.get("mode") == "full", (
+        "Refinement uses mode='full' with CompositeVariants"
+    )
+    passed_variants = call_kwargs.args[1]
+    assert all(isinstance(v, CompositeVariant) for v in passed_variants), (
+        "All variants must be CompositeVariant instances"
+    )
 
 
 def test_pipeline_confirmation_calls_validate():
@@ -567,12 +585,14 @@ def test_pipeline_confirmation_uses_screening_predicted_sn():
 
 
 def test_pipeline_refinement_filters_to_top_k_factor_variants():
-    """Bug #96: Refinement must only pass top-K factor variants to orchestrator."""
+    """Bug #96: Refinement must only use top-K factor axes (full factorial)."""
+    from agent_evals.variants.composite import CompositeVariant
+
     config = PipelineConfig(models=["model-a"], top_k=2)
     orch = _make_mock_orchestrator()
     pipeline = DOEPipeline(config=config, orchestrator=orch)
 
-    # axis_1 and axis_3 are top-2 significant factors
+    # axis_1 (range=4) and axis_3 (range=3) are top-2 by main effect range
     screening = PhaseResult(
         run_id="r1",
         phase="screening",
@@ -588,13 +608,15 @@ def test_pipeline_refinement_filters_to_top_k_factor_variants():
 
     all_variants = _make_variants()  # 5 axes * 3 levels = 15 variants
 
-    with patch("agent_evals.pipeline.compute_sn_ratios"), \
-         patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
-         patch("agent_evals.pipeline.run_anova") as mock_anova, \
-         patch("agent_evals.pipeline.predict_optimal") as mock_pred:
-        mock_me.return_value = {}
-        mock_anova.return_value = MagicMock(factors=[])
-        mock_pred.return_value = MagicMock(optimal_assignment={})
+    with patch.object(pipeline, "_analyse_refinement") as mock_analyse:
+        mock_analyse.return_value = {
+            "main_effects": {},
+            "anova": MagicMock(),
+            "optimal": {},
+            "predicted_sn": 10.0,
+            "significant_factors": [],
+            "interaction_effects": [],
+        }
         pipeline.run_refinement(
             screening_result=screening,
             tasks=[],
@@ -602,23 +624,16 @@ def test_pipeline_refinement_filters_to_top_k_factor_variants():
             doc_tree=MagicMock(),
         )
 
-    # Orchestrator should receive only variants from top-2 factors (axis_1, axis_3)
     call_kwargs = orch.run.call_args
     passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
-    variant_names = {v.metadata().name for v in passed_variants}
 
-    # top_k=2 means axis_1 and axis_3 (sorted by significance)
-    expected_axes = {"axis_1", "axis_3"}
-    for vname in variant_names:
-        axis_prefix = "_".join(vname.split("_")[:1])  # e.g. "axis1"
-        factor_name = f"axis_{axis_prefix.replace('axis', '')}"
-        assert factor_name in expected_axes or vname in variant_names, (
-            f"Variant {vname} does not belong to top-K factors {expected_axes}"
-        )
+    # All should be CompositeVariants (full factorial, not OFAT)
+    assert all(isinstance(v, CompositeVariant) for v in passed_variants)
 
-    # Should have 6 variants (3 levels * 2 axes), not all 15
-    assert len(passed_variants) == 6, (
-        f"Expected 6 variants for 2 top-K factors, got {len(passed_variants)}"
+    # 3 levels × 3 levels = 9 full factorial combos (not 6 OFAT)
+    assert len(passed_variants) == 9, (
+        f"Expected 3×3=9 factorial combos for 2 top-K factors, "
+        f"got {len(passed_variants)}"
     )
 
 
@@ -1707,3 +1722,750 @@ class TestGroupRefinementScoresBug226:
         assert scores.get(4) == [0.6], "nested+summary -> row 4"
         assert 2 not in scores
         assert 3 not in scores
+
+
+# ---------------------------------------------------------------------------
+# Bug #233: Confirmation must test COMBINED optimal, not individual variants
+# ---------------------------------------------------------------------------
+
+
+class TestConfirmationCombinedOptimal:
+    """Bug #233: Confirmation phase must compose a single CompositeVariant
+    from all optimal levels and test that combined configuration, rather than
+    testing each factor's optimal level individually.
+    """
+
+    def test_confirmation_builds_composite_variant(self):
+        """Confirmation must create a CompositeVariant from all optimal levels.
+
+        When screening identifies optimal={axis_1: 'axis1_a', axis_2: 'axis2_b'},
+        confirmation should build a single CompositeVariant({1: var_a, 2: var_b})
+        and pass that single composite to the orchestrator, not pass two separate
+        variants.
+        """
+        config = PipelineConfig(models=["model-a"])
+        orch = _make_mock_orchestrator(score=0.7)
+        pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+        screening = PhaseResult(
+            run_id="r1",
+            phase="screening",
+            trials=[],
+            optimal={"axis_1": "axis1_a", "axis_2": "axis2_b"},
+            significant_factors=["axis_1", "axis_2"],
+            predicted_sn=12.0,
+            prediction_interval=(10.0, 14.0),
+            se_prediction=1.0,
+        )
+
+        all_variants = _make_variants()  # 5 axes * 3 levels = 15 variants
+
+        with patch("agent_evals.pipeline.validate_confirmation") as mock_val:
+            mock_val.return_value = MagicMock(
+                within_interval=True,
+                sigma_deviation=0.3,
+                observed_sn=11.5,
+                predicted_sn=12.0,
+                prediction_interval=(10.0, 14.0),
+            )
+            pipeline.run_confirmation(
+                screening_result=screening,
+                tasks=[],
+                variants=all_variants,
+                doc_tree=MagicMock(),
+            )
+
+        # Orchestrator.run should receive exactly ONE variant (the composite)
+        call_kwargs = orch.run.call_args
+        passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
+        assert len(passed_variants) == 1, (
+            f"Confirmation should pass 1 CompositeVariant, got {len(passed_variants)} "
+            f"individual variants. The combined optimal must be tested as a single "
+            f"configuration, not as separate factor levels."
+        )
+
+    def test_confirmation_composite_contains_all_optimal_axes(self):
+        """The composite variant must include one component per optimal factor.
+
+        E.g., optimal={axis_1: 'axis1_a', axis_3: 'axis3_c'} -> composite has
+        components from axis 1 and axis 3.
+        """
+        from agent_evals.variants.composite import CompositeVariant
+
+        config = PipelineConfig(models=["model-a"])
+        orch = _make_mock_orchestrator(score=0.7)
+        pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+        screening = PhaseResult(
+            run_id="r1",
+            phase="screening",
+            trials=[],
+            optimal={"axis_1": "axis1_a", "axis_3": "axis3_c"},
+            significant_factors=["axis_1", "axis_3"],
+            predicted_sn=12.0,
+            prediction_interval=(10.0, 14.0),
+            se_prediction=1.0,
+        )
+
+        all_variants = _make_variants()
+
+        with patch("agent_evals.pipeline.validate_confirmation") as mock_val:
+            mock_val.return_value = MagicMock(
+                within_interval=True,
+                sigma_deviation=0.3,
+                observed_sn=11.5,
+                predicted_sn=12.0,
+                prediction_interval=(10.0, 14.0),
+            )
+            pipeline.run_confirmation(
+                screening_result=screening,
+                tasks=[],
+                variants=all_variants,
+                doc_tree=MagicMock(),
+            )
+
+        call_kwargs = orch.run.call_args
+        passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
+        composite = passed_variants[0]
+
+        # The composite's metadata name should combine the optimal level names
+        composite_name = composite.metadata().name
+        assert "axis1_a" in composite_name, (
+            f"Composite should include axis1_a, got name: {composite_name}"
+        )
+        assert "axis3_c" in composite_name, (
+            f"Composite should include axis3_c, got name: {composite_name}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug #234: Refinement must use factorial design, not OFAT
+# ---------------------------------------------------------------------------
+
+
+class TestRefinementFactorialDesign:
+    """Bug #234: Refinement phase must run a factorial (or fractional factorial)
+    design on the top-k factors, not one-factor-at-a-time experiments.
+    """
+
+    def test_refinement_generates_factorial_composites(self):
+        """Refinement must generate CompositeVariants covering all factor
+        combinations, not pass individual variants (OFAT).
+
+        With 2 top-k factors, each having 3 levels, refinement should
+        produce 3*3 = 9 CompositeVariant objects.
+        """
+        from agent_evals.variants.composite import CompositeVariant
+
+        config = PipelineConfig(models=["model-a"], top_k=2)
+        orch = _make_mock_orchestrator()
+        pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+        screening = PhaseResult(
+            run_id="r1",
+            phase="screening",
+            trials=[],
+            optimal={"axis_1": "axis1_a", "axis_3": "axis3_c"},
+            significant_factors=["axis_1", "axis_3"],
+            main_effects={
+                "axis_1": {"axis1_a": 12.0, "axis1_b": 10.0, "axis1_c": 8.0},
+                "axis_3": {"axis3_a": 8.5, "axis3_b": 10.5, "axis3_c": 11.5},
+            },
+        )
+
+        with patch("agent_evals.pipeline.build_design") as mock_build, \
+             patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+             patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+             patch("agent_evals.pipeline.run_anova") as mock_anova, \
+             patch("agent_evals.pipeline.predict_optimal") as mock_pred, \
+             patch("agent_evals.pipeline.compute_interactions") as mock_ix:
+            mock_row = MagicMock()
+            mock_row.run_id = 1
+            mock_row.assignments = {"axis_1": "axis1_a", "axis_3": "axis3_c"}
+            mock_row.dummy_factors = set()
+            mock_design = MagicMock()
+            mock_design.rows = [mock_row]
+            mock_design.factors = []
+            mock_build.return_value = mock_design
+
+            mock_sn.return_value = {1: 10.0}
+            mock_me.return_value = {}
+            mock_anova.return_value = MagicMock(factors=[])
+            mock_pred.return_value = MagicMock(
+                optimal_assignment={}, predicted_sn=0.0,
+            )
+            mock_ix.return_value = []
+
+            pipeline.run_refinement(
+                screening_result=screening,
+                tasks=[],
+                variants=_make_variants(),
+                doc_tree=MagicMock(),
+            )
+
+        call_kwargs = orch.run.call_args
+        passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
+
+        # With 2 factors (axis_1: 3 levels, axis_3: 3 levels),
+        # full factorial = 3 * 3 = 9 combinations
+        assert len(passed_variants) == 9, (
+            f"Expected 9 factorial CompositeVariants (3x3), "
+            f"got {len(passed_variants)}"
+        )
+        # Each should be a CompositeVariant (not a bare mock variant)
+        for v in passed_variants:
+            assert isinstance(v, CompositeVariant), (
+                f"Expected CompositeVariant, got {type(v).__name__}"
+            )
+
+    def test_refinement_composites_cover_all_combinations(self):
+        """Each factorial CompositeVariant's name must be a unique combination."""
+        config = PipelineConfig(models=["model-a"], top_k=2)
+        orch = _make_mock_orchestrator()
+        pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+        screening = PhaseResult(
+            run_id="r1",
+            phase="screening",
+            trials=[],
+            optimal={"axis_1": "axis1_a", "axis_3": "axis3_c"},
+            significant_factors=["axis_1", "axis_3"],
+            main_effects={
+                "axis_1": {"axis1_a": 12.0, "axis1_b": 10.0, "axis1_c": 8.0},
+                "axis_2": {"axis2_a": 9.0, "axis2_b": 11.0, "axis2_c": 10.0},
+                "axis_3": {"axis3_a": 8.5, "axis3_b": 10.5, "axis3_c": 11.5},
+            },
+        )
+
+        with patch("agent_evals.pipeline.build_design") as mock_build, \
+             patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
+             patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
+             patch("agent_evals.pipeline.run_anova") as mock_anova, \
+             patch("agent_evals.pipeline.predict_optimal") as mock_pred, \
+             patch("agent_evals.pipeline.compute_interactions") as mock_ix:
+            mock_row = MagicMock()
+            mock_row.run_id = 1
+            mock_row.assignments = {"axis_1": "axis1_a", "axis_3": "axis3_c"}
+            mock_row.dummy_factors = set()
+            mock_design = MagicMock()
+            mock_design.rows = [mock_row]
+            mock_design.factors = []
+            mock_build.return_value = mock_design
+
+            mock_sn.return_value = {1: 10.0}
+            mock_me.return_value = {}
+            mock_anova.return_value = MagicMock(factors=[])
+            mock_pred.return_value = MagicMock(
+                optimal_assignment={}, predicted_sn=0.0,
+            )
+            mock_ix.return_value = []
+
+            pipeline.run_refinement(
+                screening_result=screening,
+                tasks=[],
+                variants=_make_variants(),
+                doc_tree=MagicMock(),
+            )
+
+        call_kwargs = orch.run.call_args
+        passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
+
+        # All variant names should be unique (each is a distinct combination)
+        names = [v.metadata().name for v in passed_variants]
+        assert len(set(names)) == len(names), (
+            f"Duplicate factorial combinations found: {names}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug #235: Refinement uses main-effect ranking, not just significant_factors
+# ---------------------------------------------------------------------------
+
+
+class TestRefinementFactorRanking:
+    """Bug #235: When selecting top-k factors for refinement, the code must
+    use main-effect ranking (by delta = max - min of S/N ratios across levels)
+    from the screening analysis. The significant_factors list may be empty
+    (when no factors reach p < alpha), so the code must fall back to
+    main-effect delta ranking.
+    """
+
+    def test_refinement_selects_factors_by_main_effect_delta(self):
+        """When screening has no significant factors (all p > alpha), refinement
+        must still select top-k factors using main-effect delta ranking.
+        """
+        config = PipelineConfig(models=["model-a"], top_k=2)
+        orch = _make_mock_orchestrator()
+        pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+        # No significant factors (common with noisy/free models)
+        screening = PhaseResult(
+            run_id="r1",
+            phase="screening",
+            trials=[],
+            optimal={"axis_1": "axis1_a", "axis_2": "axis2_b", "axis_3": "axis3_c"},
+            significant_factors=[],  # EMPTY - no factors reached p < alpha
+            main_effects={
+                "axis_1": {"axis1_a": 12.0, "axis1_b": 10.0, "axis1_c": 8.0},  # delta=4.0
+                "axis_2": {"axis2_a": 9.0, "axis2_b": 9.5, "axis2_c": 9.2},    # delta=0.5
+                "axis_3": {"axis3_a": 8.5, "axis3_b": 10.5, "axis3_c": 11.5},   # delta=3.0
+            },
+        )
+
+        with patch.object(pipeline, "_analyse_refinement") as mock_analyse:
+            mock_analyse.return_value = {
+                "main_effects": {},
+                "anova": MagicMock(),
+                "optimal": {},
+                "predicted_sn": 10.0,
+                "significant_factors": [],
+                "interaction_effects": [],
+            }
+            pipeline.run_refinement(
+                screening_result=screening,
+                tasks=[],
+                variants=_make_variants(),
+                doc_tree=MagicMock(),
+            )
+
+        # Despite empty significant_factors, refinement should use
+        # main_effects delta to pick top-2: axis_1 (delta=4.0) and axis_3 (delta=3.0)
+        call_kwargs = orch.run.call_args
+        passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
+
+        # CompositeVariant names encode their component levels with "+"
+        all_names = " ".join(v.metadata().name for v in passed_variants)
+        assert "axis1_" in all_names, (
+            "axis_1 (delta=4.0) levels should be in composites"
+        )
+        assert "axis3_" in all_names, (
+            "axis_3 (delta=3.0) levels should be in composites"
+        )
+        # axis_2 non-optimal levels should NOT appear (it's fixed at optimal)
+        for vname in (v.metadata().name for v in passed_variants):
+            assert "axis2_a" not in vname, (
+                "axis_2 non-optimal 'axis2_a' should not be varied"
+            )
+            assert "axis2_c" not in vname, (
+                "axis_2 non-optimal 'axis2_c' should not be varied"
+            )
+
+    def test_refinement_prefers_main_effect_delta_over_significance_order(self):
+        """Even with some significant factors, the ranking should follow
+        main-effect delta, not the order from ANOVA significance.
+
+        Example: significant_factors=['axis_2', 'axis_1'] by omega_squared,
+        but main_effects show axis_3 has larger delta than axis_2.
+        When top_k=2, we want axis_1 and axis_3 (by delta), not axis_2 and axis_1.
+        """
+        config = PipelineConfig(models=["model-a"], top_k=2)
+        orch = _make_mock_orchestrator()
+        pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+        screening = PhaseResult(
+            run_id="r1",
+            phase="screening",
+            trials=[],
+            optimal={"axis_1": "axis1_a", "axis_2": "axis2_b", "axis_3": "axis3_c"},
+            significant_factors=["axis_2", "axis_1"],  # by omega_squared
+            main_effects={
+                "axis_1": {"axis1_a": 12.0, "axis1_b": 10.0, "axis1_c": 8.0},  # delta=4.0
+                "axis_2": {"axis2_a": 9.0, "axis2_b": 10.0, "axis2_c": 9.5},    # delta=1.0
+                "axis_3": {"axis3_a": 8.5, "axis3_b": 10.5, "axis3_c": 11.5},   # delta=3.0
+            },
+        )
+
+        with patch.object(pipeline, "_analyse_refinement") as mock_analyse:
+            mock_analyse.return_value = {
+                "main_effects": {},
+                "anova": MagicMock(),
+                "optimal": {},
+                "predicted_sn": 10.0,
+                "significant_factors": [],
+                "interaction_effects": [],
+            }
+            pipeline.run_refinement(
+                screening_result=screening,
+                tasks=[],
+                variants=_make_variants(),
+                doc_tree=MagicMock(),
+            )
+
+        call_kwargs = orch.run.call_args
+        passed_variants = call_kwargs[1].get("variants") or call_kwargs[0][1]
+
+        # By main-effect delta: axis_1 (4.0) and axis_3 (3.0) are top-2
+        all_names = " ".join(v.metadata().name for v in passed_variants)
+        assert "axis1_" in all_names, "axis_1 (delta=4.0) should be selected"
+        assert "axis3_" in all_names, "axis_3 (delta=3.0) should be selected"
+        # axis_2 non-optimal levels should NOT be varied
+        for vname in (v.metadata().name for v in passed_variants):
+            assert "axis2_a" not in vname, (
+                "axis_2 (delta=1.0) non-optimal should NOT be varied"
+            )
+            assert "axis2_c" not in vname, (
+                "axis_2 (delta=1.0) non-optimal should NOT be varied"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Bug #240: No screening report file generated in pipeline mode
+# ---------------------------------------------------------------------------
+
+
+class TestScreeningReportFile:
+    """Bug #240: screening phase should generate a JSON report file."""
+
+    def test_screening_generates_report_file(self, tmp_path):
+        """Pipeline screening phase must produce a report JSON file."""
+        from agent_evals.observatory.store import ObservatoryStore
+        from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+        store = ObservatoryStore(db_path=tmp_path / "obs.db")
+
+        # Create a mock orchestrator that returns minimal results
+        mock_orch = MagicMock()
+        mock_orch.store = store
+        mock_orch.config = MagicMock()
+        mock_orch.config.eval_config = MagicMock()
+        mock_orch.config.eval_config.repetitions = 3
+        mock_orch.config.eval_config.output_dir = str(tmp_path / "reports")
+
+        # Build a mock run result
+        mock_trial = MagicMock()
+        mock_trial.score = 0.8
+        mock_trial.error = None
+        mock_trial.metrics = {"oa_row_id": 1}
+        mock_trial.cost = 0.001
+        mock_trial.total_tokens = 100
+
+        mock_result = MagicMock()
+        mock_result.run_id = "test_screening_run"
+        mock_result.trials = [mock_trial]
+        mock_result.total_cost = 0.001
+        mock_result.total_tokens = 100
+        mock_result.elapsed_seconds = 1.0
+        mock_orch.run.return_value = mock_result
+
+        config = PipelineConfig(models=["m"])
+
+        pipeline = DOEPipeline(
+            config=config, orchestrator=mock_orch, pipeline_id="test_pipe",
+        )
+
+        # Run screening with mocked internals
+        with patch.object(
+            pipeline, "run_screening",
+        ) as mock_screening:
+            phase_result = PhaseResult(
+                run_id="scr_run",
+                phase="screening",
+                trials=[mock_trial],
+                total_cost=0.001,
+                total_tokens=100,
+                elapsed_seconds=1.0,
+                main_effects={"axis_1": {"flat": 10.0}},
+                anova={"factors": []},
+                optimal={"axis_1": "flat"},
+                significant_factors=["axis_1"],
+            )
+            mock_screening.return_value = phase_result
+
+            # After pipeline runs, check for screening report artifact in DB
+            store.create_run(
+                "scr_run", run_type="taguchi", config={},
+                phase="screening", pipeline_id="test_pipe",
+            )
+            pipeline._save_phase_report(phase_result)
+
+            artifacts = store.list_report_artifacts("scr_run")
+            artifact_types = [a["artifact_type"] for a in artifacts]
+            assert "phase_report" in artifact_types
+
+
+# ---------------------------------------------------------------------------
+# Bug #241: Report JSONs lack DOE-specific fields
+# ---------------------------------------------------------------------------
+
+
+class TestReportDOEFields:
+    """Bug #241: Report artifacts must include DOE-specific fields."""
+
+    def test_phase_report_includes_doe_fields(self, tmp_path):
+        """Phase report artifact must include DOE analysis fields."""
+        from agent_evals.observatory.store import ObservatoryStore
+        from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+        store = ObservatoryStore(db_path=tmp_path / "obs.db")
+        mock_orch = MagicMock()
+        mock_orch.store = store
+
+        config = PipelineConfig(models=["m"])
+        pipeline = DOEPipeline(
+            config=config, orchestrator=mock_orch, pipeline_id="pipe_241",
+        )
+
+        store.create_run(
+            "run_241", run_type="taguchi", config={},
+            phase="screening", pipeline_id="pipe_241",
+        )
+
+        phase_result = PhaseResult(
+            run_id="run_241",
+            phase="screening",
+            trials=[],
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={"factors": []},
+            optimal={"axis_1": "flat"},
+            significant_factors=["axis_1"],
+            predicted_sn=12.5,
+        )
+
+        pipeline._save_phase_report(phase_result)
+
+        artifact = store.get_report_artifact("run_241", "phase_report")
+        assert artifact is not None
+        data = artifact["data"]
+
+        # Must include DOE-specific fields
+        assert "phase" in data
+        assert data["phase"] == "screening"
+        assert "pipeline_id" in data
+        assert data["pipeline_id"] == "pipe_241"
+        assert "run_id" in data
+        assert "main_effects" in data
+        assert "anova" in data
+        assert "optimal" in data
+        assert "significant_factors" in data
+
+
+# ---------------------------------------------------------------------------
+# Bug #242: factor_definitions, task_metadata, report_artifacts never populated
+# ---------------------------------------------------------------------------
+
+
+class TestPipelinePopulatesTables:
+    """Bug #242: Pipeline must populate factor_definitions and task_metadata."""
+
+    def test_screening_saves_factor_definitions(self, tmp_path):
+        """After screening, factor_definitions table must have entries."""
+        from agent_evals.observatory.store import ObservatoryStore
+        from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+        store = ObservatoryStore(db_path=tmp_path / "obs.db")
+        mock_orch = MagicMock()
+        mock_orch.store = store
+        mock_orch.config = MagicMock()
+        mock_orch.config.eval_config = MagicMock()
+        mock_orch.config.eval_config.repetitions = 3
+
+        config = PipelineConfig(models=["m"])
+        pipeline = DOEPipeline(
+            config=config, orchestrator=mock_orch, pipeline_id="pipe_242",
+        )
+
+        store.create_run(
+            "run_242", run_type="taguchi", config={},
+            phase="screening", pipeline_id="pipe_242",
+        )
+
+        # Simulate variant metadata (MagicMock 'name' is special —
+        # set it as an attribute after construction)
+        meta1 = MagicMock(axis=1)
+        meta1.name = "flat"
+        mock_variant1 = MagicMock()
+        mock_variant1.metadata.return_value = meta1
+
+        meta2 = MagicMock(axis=1)
+        meta2.name = "nested"
+        mock_variant2 = MagicMock()
+        mock_variant2.metadata.return_value = meta2
+
+        variants = [mock_variant1, mock_variant2]
+        pipeline._save_factor_definitions("run_242", variants)
+
+        defs = store.get_factor_definitions("run_242")
+        assert len(defs) > 0
+        factor_names = {d["factor_name"] for d in defs}
+        assert "axis_1" in factor_names
+
+    def test_pipeline_saves_task_metadata(self, tmp_path):
+        """Pipeline must save task metadata to the task_metadata table."""
+        from agent_evals.observatory.store import ObservatoryStore
+        from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+        store = ObservatoryStore(db_path=tmp_path / "obs.db")
+        mock_orch = MagicMock()
+        mock_orch.store = store
+
+        config = PipelineConfig(models=["m"])
+        pipeline = DOEPipeline(
+            config=config, orchestrator=mock_orch, pipeline_id="pipe_tm",
+        )
+
+        # Simulate task list
+        mock_task = MagicMock()
+        mock_task.definition.task_id = "task_1"
+        mock_task.definition.type = "retrieval"
+        mock_task.definition.metadata = {"domain": "api", "difficulty": "easy"}
+
+        pipeline._save_task_metadata([mock_task])
+
+        metadata = store.get_task_metadata()
+        assert len(metadata) > 0
+        assert metadata[0]["task_id"] == "task_1"
+        assert metadata[0]["task_type"] == "retrieval"
+
+
+# ---------------------------------------------------------------------------
+# Bug #243: parent_run_id is None for confirmation/refinement runs
+# ---------------------------------------------------------------------------
+
+
+class TestParentRunId:
+    """Bug #243: confirmation/refinement runs must reference screening run."""
+
+    def test_confirmation_passes_parent_run_id(self):
+        """Orchestrator.run must receive parent_run_id for confirmation."""
+        from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+        # Use fully mocked store to avoid FK constraints
+        mock_store = MagicMock()
+        mock_orch = MagicMock()
+        mock_orch.store = mock_store
+        mock_orch.config = MagicMock()
+        mock_orch.config.eval_config = MagicMock()
+        mock_orch.config.eval_config.repetitions = 5
+
+        mock_trial = MagicMock()
+        mock_trial.score = 0.8
+        mock_trial.error = None
+        mock_trial.cost = 0.001
+        mock_trial.total_tokens = 100
+        mock_trial.metrics = {}
+
+        mock_result = MagicMock()
+        mock_result.run_id = "confirm_run"
+        mock_result.trials = [mock_trial]
+        mock_result.total_cost = 0.001
+        mock_result.total_tokens = 100
+        mock_result.elapsed_seconds = 1.0
+        mock_orch.run.return_value = mock_result
+
+        config = PipelineConfig(models=["m"])
+        pipeline = DOEPipeline(
+            config=config, orchestrator=mock_orch, pipeline_id="pipe_243",
+        )
+
+        screening_result = PhaseResult(
+            run_id="screening_run",
+            phase="screening",
+            trials=[],
+            optimal={"axis_1": "flat"},
+            significant_factors=["axis_1"],
+            predicted_sn=10.0,
+            prediction_interval=(8.0, 12.0),
+            se_prediction=1.0,
+        )
+
+        meta = MagicMock(axis=1)
+        meta.name = "flat"
+        mock_variant = MagicMock()
+        mock_variant.metadata.return_value = meta
+
+        with patch(
+            "agent_evals.pipeline.validate_confirmation",
+            return_value=MagicMock(
+                within_interval=True,
+                sigma_deviation=0.5,
+                observed_sn=10.5,
+                predicted_sn=10.0,
+                prediction_interval=(8.0, 12.0),
+            ),
+        ):
+            pipeline.run_confirmation(
+                screening_result, [], [mock_variant], MagicMock(),
+            )
+
+        # Verify orchestrator.run was called with parent_run_id
+        call_kwargs = mock_orch.run.call_args
+        assert call_kwargs is not None
+        assert call_kwargs.kwargs.get("parent_run_id") == "screening_run", \
+            "orchestrator.run must be called with parent_run_id=screening_run"
+
+    def test_refinement_passes_parent_run_id(self):
+        """Orchestrator.run must receive parent_run_id for refinement."""
+        from agent_evals.pipeline import DOEPipeline, PipelineConfig
+
+        mock_store = MagicMock()
+        mock_orch = MagicMock()
+        mock_orch.store = mock_store
+        mock_orch.config = MagicMock()
+        mock_orch.config.eval_config = MagicMock()
+        mock_orch.config.eval_config.repetitions = 3
+
+        mock_trial = MagicMock()
+        mock_trial.score = 0.8
+        mock_trial.error = None
+        mock_trial.cost = 0.001
+        mock_trial.total_tokens = 100
+        mock_trial.metrics = {}
+        mock_trial.variant_name = "flat"
+
+        mock_result = MagicMock()
+        mock_result.run_id = "refine_run"
+        mock_result.trials = [mock_trial]
+        mock_result.total_cost = 0.001
+        mock_result.total_tokens = 100
+        mock_result.elapsed_seconds = 1.0
+        mock_orch.run.return_value = mock_result
+
+        config = PipelineConfig(models=["m"])
+        pipeline = DOEPipeline(
+            config=config, orchestrator=mock_orch, pipeline_id="pipe_243r",
+        )
+
+        screening_result = PhaseResult(
+            run_id="screening_run_ref",
+            phase="screening",
+            trials=[],
+            significant_factors=["axis_1"],
+            main_effects={"axis_1": {"flat": 10.0, "nested": 8.0}},
+        )
+
+        meta = MagicMock(axis=1)
+        meta.name = "flat"
+        mock_variant = MagicMock()
+        mock_variant.metadata.return_value = meta
+
+        with patch(
+            "agent_evals.pipeline.build_design",
+        ), patch(
+            "agent_evals.pipeline.compute_sn_ratios",
+            return_value={},
+        ), patch(
+            "agent_evals.pipeline.compute_main_effects",
+            return_value={},
+        ), patch(
+            "agent_evals.pipeline.run_anova",
+            return_value=MagicMock(factors=[]),
+        ), patch(
+            "agent_evals.pipeline.predict_optimal",
+            return_value=MagicMock(
+                optimal_assignment={},
+                predicted_sn=10.0,
+                prediction_interval=(8.0, 12.0),
+                se_prediction=1.0,
+            ),
+        ), patch(
+            "agent_evals.pipeline.compute_interactions",
+            return_value=[],
+        ):
+            pipeline.run_refinement(
+                screening_result, [], [mock_variant], MagicMock(),
+            )
+
+        call_kwargs = mock_orch.run.call_args
+        assert call_kwargs is not None
+        assert call_kwargs.kwargs.get("parent_run_id") == "screening_run_ref", \
+            "orchestrator.run must be called with parent_run_id=screening_run_ref"
