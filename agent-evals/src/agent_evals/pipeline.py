@@ -77,6 +77,8 @@ class PhaseResult:
     optimal: dict[str, str] | None = None
     significant_factors: list[str] = field(default_factory=list)
     predicted_sn: float | None = None
+    prediction_interval: tuple[float, float] | list[float] | None = None
+    se_prediction: float | None = None
     confirmation: dict[str, Any] | None = None
     interaction_effects: list[dict] = field(default_factory=list)
 
@@ -314,6 +316,8 @@ class DOEPipeline:
             anova=anova,
             optimal=optimal.optimal_assignment,
             predicted_sn=optimal.predicted_sn,
+            prediction_interval=optimal.prediction_interval,
+            se_prediction=optimal.se_prediction,
             significant_factors=[f.factor_name for f in sig_factors],
         )
 
@@ -328,6 +332,9 @@ class DOEPipeline:
                 total_cost=phase_result.total_cost,
                 total_tokens=phase_result.total_tokens,
                 elapsed_seconds=phase_result.elapsed_seconds,
+                predicted_sn=phase_result.predicted_sn,
+                prediction_interval=phase_result.prediction_interval,
+                se_prediction=phase_result.se_prediction,
             )
 
         return phase_result
@@ -390,9 +397,16 @@ class DOEPipeline:
         # Build an OptimalPrediction from screening results for validation
         from agent_evals.taguchi.analysis import OptimalPrediction
 
+        # Reconstruct prediction_interval as tuple if stored as list
+        pi = screening_result.prediction_interval
+        if isinstance(pi, list) and len(pi) == 2:
+            pi = (pi[0], pi[1])
+
         prediction = OptimalPrediction(
             optimal_assignment=screening_result.optimal or {},
             predicted_sn=screening_result.predicted_sn or 0.0,
+            prediction_interval=pi,
+            se_prediction=screening_result.se_prediction,
         )
 
         # Validate observed against prediction
@@ -563,6 +577,9 @@ class DOEPipeline:
                 total_cost=phase_results.get("total_cost", 0.0) if phase_results else 0.0,
                 total_tokens=phase_results.get("total_tokens", 0) if phase_results else 0,
                 elapsed_seconds=phase_results.get("elapsed_seconds", 0.0) if phase_results else 0.0,
+                predicted_sn=phase_results.get("predicted_sn") if phase_results else None,
+                prediction_interval=phase_results.get("prediction_interval") if phase_results else None,
+                se_prediction=phase_results.get("se_prediction") if phase_results else None,
             )
         elif "screening" in in_progress_phases:
             screening = self.run_screening(

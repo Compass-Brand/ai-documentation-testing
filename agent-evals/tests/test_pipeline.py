@@ -1308,3 +1308,131 @@ def test_pipeline_resume_aggregates_total_cost():
     assert result.elapsed_seconds == pytest.approx(255.0), (
         f"Expected elapsed_seconds=255.0, got {result.elapsed_seconds}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Bug #205: Pipeline resume must restore predicted_sn from store
+# Bug #189: Pipeline resume must restore prediction_interval and se_prediction
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_store_for_resume_with_predictions():
+    """Create a mock store with predicted_sn, prediction_interval, se_prediction."""
+    store = MagicMock()
+
+    screening_run = MagicMock()
+    screening_run.run_id = "screen-run-1"
+    screening_run.status = "completed"
+    screening_run.phase = "screening"
+
+    confirmation_run = MagicMock()
+    confirmation_run.run_id = "conf-run-1"
+    confirmation_run.status = "completed"
+    confirmation_run.phase = "confirmation"
+
+    refinement_run = MagicMock()
+    refinement_run.run_id = "ref-run-1"
+    refinement_run.status = "completed"
+    refinement_run.phase = "refinement"
+
+    store.get_pipeline_runs.return_value = [
+        screening_run, confirmation_run, refinement_run,
+    ]
+
+    def _get_phase_results(run_id):
+        data = {
+            "screen-run-1": {
+                "main_effects": {"axis_1": {"a": 12.0}},
+                "anova": {},
+                "optimal": {"axis_1": "a"},
+                "significant_factors": ["axis_1"],
+                "total_cost": 1.25,
+                "total_tokens": 50000,
+                "elapsed_seconds": 120.0,
+                "interaction_effects": [],
+                "predicted_sn": 7.42,
+                "prediction_interval": [5.1, 9.7],
+                "se_prediction": 1.15,
+            },
+            "conf-run-1": {
+                "main_effects": None,
+                "anova": None,
+                "optimal": None,
+                "significant_factors": [],
+                "total_cost": 0.50,
+                "total_tokens": 20000,
+                "elapsed_seconds": 45.0,
+                "interaction_effects": [],
+                "predicted_sn": None,
+                "prediction_interval": None,
+                "se_prediction": None,
+            },
+            "ref-run-1": {
+                "main_effects": {"axis_1": {"a": 13.0}},
+                "anova": {},
+                "optimal": {"axis_1": "a"},
+                "significant_factors": ["axis_1"],
+                "total_cost": 0.75,
+                "total_tokens": 30000,
+                "elapsed_seconds": 90.0,
+                "interaction_effects": [],
+                "predicted_sn": 8.1,
+                "prediction_interval": None,
+                "se_prediction": None,
+            },
+        }
+        return data.get(run_id)
+
+    store.get_phase_results.side_effect = _get_phase_results
+    store.get_run_summary.side_effect = lambda rid: {
+        "screen-run-1": screening_run,
+        "conf-run-1": confirmation_run,
+        "ref-run-1": refinement_run,
+    }.get(rid)
+
+    return store
+
+
+def test_pipeline_resume_restores_predicted_sn():
+    """Bug #205: predicted_sn must be restored from DB on pipeline resume."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume_with_predictions()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    assert result.screening.predicted_sn == pytest.approx(7.42), (
+        f"Expected predicted_sn=7.42, got {result.screening.predicted_sn}"
+    )
+
+
+def test_pipeline_resume_restores_prediction_interval():
+    """Bug #189: prediction_interval and se_prediction must be restored on resume."""
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    store = _make_mock_store_for_resume_with_predictions()
+    orch.store = store
+
+    pipeline = DOEPipeline(
+        config=config, orchestrator=orch, pipeline_id="test-pipe",
+    )
+    pipeline._store = store
+
+    result = pipeline.run(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    assert result.screening.prediction_interval == pytest.approx([5.1, 9.7]), (
+        f"Expected prediction_interval=[5.1, 9.7], got {result.screening.prediction_interval}"
+    )
+    assert result.screening.se_prediction == pytest.approx(1.15), (
+        f"Expected se_prediction=1.15, got {result.screening.se_prediction}"
+    )

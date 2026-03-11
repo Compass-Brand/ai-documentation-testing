@@ -1162,6 +1162,86 @@ class TestPhaseResultsInteractions:
 
 
 # ---------------------------------------------------------------------------
+# Bug #205: predicted_sn persistence in phase_results
+# Bug #189: prediction_interval and se_prediction persistence
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseResultsPredictionPersistence:
+    """Phase results must persist predicted_sn, prediction_interval, and se_prediction."""
+
+    def test_save_and_get_predicted_sn(self, tmp_path: Path) -> None:
+        """predicted_sn round-trips through SQLite (bug #205)."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-sn", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-sn",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={"axis_1": {"p_value": 0.01}},
+            optimal={"axis_1": "flat"},
+            significant_factors=["axis_1"],
+            quality_type="larger_is_better",
+            predicted_sn=7.42,
+        )
+        result = store.get_phase_results("run-sn")
+        assert result is not None
+        assert result["predicted_sn"] == pytest.approx(7.42)
+
+    def test_predicted_sn_defaults_to_none(self, tmp_path: Path) -> None:
+        """predicted_sn defaults to None when not provided."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-no-sn", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-no-sn",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={},
+            optimal={},
+            significant_factors=[],
+            quality_type="larger_is_better",
+        )
+        result = store.get_phase_results("run-no-sn")
+        assert result is not None
+        assert result["predicted_sn"] is None
+
+    def test_save_and_get_prediction_interval(self, tmp_path: Path) -> None:
+        """prediction_interval round-trips through SQLite (bug #189)."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-pi", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-pi",
+            main_effects={"axis_1": {"flat": 10.0}},
+            anova={},
+            optimal={},
+            significant_factors=[],
+            quality_type="larger_is_better",
+            predicted_sn=7.42,
+            prediction_interval=(5.1, 9.7),
+            se_prediction=1.15,
+        )
+        result = store.get_phase_results("run-pi")
+        assert result is not None
+        assert result["prediction_interval"] == pytest.approx([5.1, 9.7])
+        assert result["se_prediction"] == pytest.approx(1.15)
+
+    def test_prediction_interval_defaults_to_none(self, tmp_path: Path) -> None:
+        """prediction_interval and se_prediction default to None."""
+        store = ObservatoryStore(tmp_path / "test.db")
+        store.create_run("run-no-pi", "taguchi", {})
+        store.save_phase_results(
+            run_id="run-no-pi",
+            main_effects={},
+            anova={},
+            optimal={},
+            significant_factors=[],
+            quality_type="larger_is_better",
+        )
+        result = store.get_phase_results("run-no-pi")
+        assert result is not None
+        assert result["prediction_interval"] is None
+        assert result["se_prediction"] is None
+
+
+# ---------------------------------------------------------------------------
 # TestReportArtifacts (Task 4)
 # ---------------------------------------------------------------------------
 

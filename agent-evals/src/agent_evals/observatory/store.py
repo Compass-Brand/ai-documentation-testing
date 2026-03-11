@@ -190,6 +190,9 @@ class ObservatoryStore:
             "ALTER TABLE phase_results ADD COLUMN total_tokens INTEGER DEFAULT 0",
             "ALTER TABLE phase_results ADD COLUMN elapsed_seconds REAL DEFAULT 0.0",
             "ALTER TABLE phase_results ADD COLUMN interaction_effects TEXT DEFAULT '[]'",
+            "ALTER TABLE phase_results ADD COLUMN predicted_sn REAL",
+            "ALTER TABLE phase_results ADD COLUMN prediction_interval TEXT",
+            "ALTER TABLE phase_results ADD COLUMN se_prediction REAL",
         ]
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_trials_run_type_variant "
@@ -608,17 +611,26 @@ class ObservatoryStore:
         total_tokens: int = 0,
         elapsed_seconds: float = 0.0,
         interaction_effects: list[dict] | None = None,
+        predicted_sn: float | None = None,
+        prediction_interval: tuple[float, float] | None = None,
+        se_prediction: float | None = None,
     ) -> None:
         """Save Taguchi phase analysis results for a run."""
         now = datetime.now(timezone.utc).isoformat()
+        interval_json = (
+            json.dumps(list(prediction_interval))
+            if prediction_interval is not None
+            else None
+        )
         with self._lock, self._connect() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO phase_results "
                 "(run_id, main_effects, anova, optimal, "
                 "significant_factors, quality_type, created_at, "
                 "total_cost, total_tokens, elapsed_seconds, "
-                "interaction_effects) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "interaction_effects, predicted_sn, prediction_interval, "
+                "se_prediction) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     json.dumps(main_effects),
@@ -631,6 +643,9 @@ class ObservatoryStore:
                     total_tokens,
                     elapsed_seconds,
                     json.dumps(interaction_effects or []),
+                    predicted_sn,
+                    interval_json,
+                    se_prediction,
                 ),
             )
 
@@ -655,6 +670,18 @@ class ObservatoryStore:
                 )
                 return None
 
+        # Parse prediction_interval JSON (stored as [low, high] or null)
+        raw_interval = row["prediction_interval"] if "prediction_interval" in row.keys() else None
+        prediction_interval = None
+        if raw_interval is not None:
+            try:
+                prediction_interval = json.loads(raw_interval)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(
+                    "Corrupted JSON in phase_results.prediction_interval for run %s",
+                    run_id,
+                )
+
         return {
             "main_effects": _safe_json("main_effects"),
             "anova": _safe_json("anova"),
@@ -665,6 +692,9 @@ class ObservatoryStore:
             "total_tokens": row["total_tokens"] or 0,
             "elapsed_seconds": row["elapsed_seconds"] or 0.0,
             "interaction_effects": _safe_json("interaction_effects") or [],
+            "predicted_sn": row["predicted_sn"] if "predicted_sn" in row.keys() else None,
+            "prediction_interval": prediction_interval,
+            "se_prediction": row["se_prediction"] if "se_prediction" in row.keys() else None,
         }
 
     def get_pipeline_runs(self, pipeline_id: str) -> list[RunSummary]:
