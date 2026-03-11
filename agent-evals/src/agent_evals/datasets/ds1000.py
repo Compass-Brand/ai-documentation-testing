@@ -10,6 +10,8 @@ Contamination risk: MODERATE (library docs may appear in training data)
 
 from __future__ import annotations
 
+import ast
+import textwrap
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,6 +24,78 @@ from agent_evals.datasets.base import DatasetAdapter
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
+
+
+def _extract_key_patterns(reference_code: str) -> list[str]:
+    """Extract key expressions from DS-1000 reference code for literal matching.
+
+    DS-1000 reference code typically follows the pattern::
+
+        def g(df, List):
+            return df.iloc[List]
+
+        result = g(df.copy(), List)
+
+    This function extracts the meaningful expressions (e.g. ``df.iloc[List]``)
+    that should appear in a correct answer, rather than storing the full
+    wrapper function as a test pattern (bug #169).
+
+    Strategy:
+    1. Parse the code with ``ast`` to find return statements and
+       standalone expressions inside function bodies.
+    2. If parsing fails, fall back to heuristic line extraction.
+    3. Filter out boilerplate lines (function defs, result assignments,
+       blank lines, comments).
+    """
+    patterns: list[str] = []
+    code = textwrap.dedent(reference_code).strip()
+
+    # Try AST-based extraction first
+    try:
+        tree = ast.parse(code)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                for child in ast.iter_child_nodes(node):
+                    if isinstance(child, ast.Return) and child.value is not None:
+                        # Extract the source text of the return value
+                        pattern = ast.get_source_segment(code, child.value)
+                        if pattern and pattern.strip():
+                            patterns.append(pattern.strip())
+                    elif isinstance(child, ast.Expr):
+                        pattern = ast.get_source_segment(code, child.value)
+                        if pattern and pattern.strip():
+                            patterns.append(pattern.strip())
+    except SyntaxError:
+        pass
+
+    # Fallback: heuristic line extraction if AST found nothing
+    if not patterns:
+        patterns = _extract_patterns_heuristic(code)
+
+    return patterns
+
+
+def _extract_patterns_heuristic(code: str) -> list[str]:
+    """Heuristic fallback for extracting key patterns from reference code.
+
+    Filters out boilerplate lines and returns substantive code lines.
+    """
+    skip_prefixes = ("def ", "result ", "result=", "#", "import ")
+    patterns: list[str] = []
+    for line in code.split("\n"):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if any(stripped.startswith(p) for p in skip_prefixes):
+            continue
+        if stripped.startswith("return "):
+            # Keep just the return expression
+            expr = stripped[len("return "):].strip()
+            if expr:
+                patterns.append(expr)
+            continue
+        patterns.append(stripped)
+    return patterns
 
 
 @register_dataset
@@ -58,6 +132,10 @@ class DS1000Adapter(DatasetAdapter):
             meta = record.get("metadata") or {}
             library = meta.get("library", "unknown")
 
+            # Extract key expressions for literal pattern matching (bug #169)
+            test_patterns = _extract_key_patterns(ref_code)
+            test_field = "\n".join(test_patterns)
+
             task_id = self._generate_task_id("code_generation", count)
             task = {
                 "task_id": task_id,
@@ -67,7 +145,7 @@ class DS1000Adapter(DatasetAdapter):
                 "difficulty": "medium",
                 "tags": ["code", "ds1000", library],
                 "metadata": {
-                    "test": ref_code,
+                    "test": test_field,
                     "canonical_solution": ref_code,
                     "entry_point": "",
                     "forbidden_patterns": ["eval(", "exec("],

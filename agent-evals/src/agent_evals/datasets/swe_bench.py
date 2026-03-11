@@ -10,6 +10,7 @@ Contamination risk: HIGH (well-known benchmark)
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -22,6 +23,64 @@ from agent_evals.datasets.base import DatasetAdapter
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
+
+# Pattern matching diff headers: "diff --git a/path b/path"
+_DIFF_FILE_PATTERN: re.Pattern[str] = re.compile(
+    r"^diff --git a/(.+?) b/(.+?)$", re.MULTILINE
+)
+
+
+def _extract_patch_files(patch: str) -> list[str]:
+    """Extract unique file paths from a git diff patch string.
+
+    Parses ``diff --git a/<path> b/<path>`` headers and returns
+    deduplicated paths in the order they first appear.
+
+    Args:
+        patch: Raw unified-diff text (the ``patch`` or ``test_patch``
+            field from the SWE-bench dataset).
+
+    Returns:
+        Ordered list of unique file paths found in the patch.
+    """
+    if not patch:
+        return []
+    seen: set[str] = set()
+    result: list[str] = []
+    for match in _DIFF_FILE_PATTERN.finditer(patch):
+        path = match.group(2)  # use the "b/" (destination) path
+        if path not in seen:
+            seen.add(path)
+            result.append(path)
+    return result
+
+
+def _summarize_for_file(
+    path: str, problem: str, hints: str
+) -> str:
+    """Build a short, meaningful summary for a changed file.
+
+    Uses the first sentence of the problem statement (up to 120 chars)
+    and, when available, prepends hints text for richer context.
+
+    Args:
+        path: The file path (used to add a file-specific prefix).
+        problem: The full problem statement text.
+        hints: The hints_text field (may be empty).
+
+    Returns:
+        A concise summary string suitable for keyword scoring.
+    """
+    # First sentence of the problem statement
+    first_sentence = problem.split("\n")[0].strip()
+    if len(first_sentence) > 120:
+        first_sentence = first_sentence[:117] + "..."
+
+    parts = [f"Changed file for fix: {first_sentence}"]
+    if hints:
+        hint_line = hints.strip().split("\n")[0][:100]
+        parts.append(f"Hint: {hint_line}")
+    return " | ".join(parts)
 
 
 @register_dataset
@@ -71,10 +130,19 @@ class SWEBenchAdapter(DatasetAdapter):
             except (json.JSONDecodeError, TypeError):
                 pass_to_pass = []
 
-            # Build files dict from repo structure
-            files = {f"{repo}/docs/README.md": f"Repository documentation for {repo}"}
-            if hints:
-                files[f"{repo}/hints.md"] = hints[:200]
+            # Extract actual changed files from the patch diff
+            patch = record.get("patch", "")
+            test_patch = record.get("test_patch", "")
+            changed_files = _extract_patch_files(patch)
+            test_files = _extract_patch_files(test_patch)
+
+            # Build files dict with real paths and meaningful summaries
+            files: dict[str, str] = {}
+            for fpath in changed_files:
+                files[fpath] = _summarize_for_file(fpath, problem, hints)
+            for fpath in test_files:
+                if fpath not in files:
+                    files[fpath] = f"Test file for verifying the fix: {fpath}"
 
             task_id = self._generate_task_id("agentic", count)
             task = {

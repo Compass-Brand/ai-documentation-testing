@@ -217,12 +217,13 @@ class TestCodeRAGBuildDocTree:
             _make_lib_doc_record("numpy.array", "Create an array object."),
             _make_lib_doc_record("pandas.dataframe", "Two-dimensional data structure."),
         ]
-        mock_ds = _mock_dataset(lib_records)
+        mock_corpus_ds = _mock_dataset(lib_records)
+        mock_query_ds = _mock_dataset([])  # no humaneval docs
 
         adapter = CodeRAGBenchAdapter()
         with patch(
             "agent_evals.datasets.code_rag_bench.load_hf_dataset",
-            return_value=mock_ds,
+            side_effect=[mock_corpus_ds, mock_query_ds],
         ):
             doc_tree = adapter.build_doc_tree()
 
@@ -237,12 +238,13 @@ class TestCodeRAGBuildDocTree:
                 "numpy.array: Create an array from data. Supports dtype parameter.",
             ),
         ]
-        mock_ds = _mock_dataset(lib_records)
+        mock_corpus_ds = _mock_dataset(lib_records)
+        mock_query_ds = _mock_dataset([])
 
         adapter = CodeRAGBenchAdapter()
         with patch(
             "agent_evals.datasets.code_rag_bench.load_hf_dataset",
-            return_value=mock_ds,
+            side_effect=[mock_corpus_ds, mock_query_ds],
         ):
             doc_tree = adapter.build_doc_tree()
 
@@ -259,16 +261,132 @@ class TestCodeRAGBuildDocTree:
             _make_lib_doc_record(f"lib.func{i}", f"Function {i} docs.")
             for i in range(20)
         ]
-        mock_ds = _mock_dataset(lib_records)
+        mock_corpus_ds = _mock_dataset(lib_records)
+        mock_query_ds = _mock_dataset([])
 
         adapter = CodeRAGBenchAdapter()
         with patch(
             "agent_evals.datasets.code_rag_bench.load_hf_dataset",
-            return_value=mock_ds,
+            side_effect=[mock_corpus_ds, mock_query_ds],
         ):
             doc_tree = adapter.build_doc_tree(limit=5)
 
         assert len(doc_tree.files) <= 5
+
+    def test_humaneval_docs_injected_into_doc_tree(self) -> None:
+        """HumanEval doc entries must appear at the same paths convert_tasks uses."""
+        from agent_evals.datasets.code_rag_bench import CodeRAGBenchAdapter
+
+        # Corpus has one doc that does NOT overlap with HumanEval docs
+        lib_records = [
+            _make_lib_doc_record("numpy.array", "Create an array object."),
+        ]
+        # HumanEval record references math.isclose (not in corpus)
+        query_records = [
+            _make_humaneval_record(
+                task_id="HumanEval/0",
+                prompt="def has_close(numbers): ...",
+                docs=[{"title": "math.isclose", "text": "Return True if close."}],
+            ),
+        ]
+        mock_corpus_ds = _mock_dataset(lib_records)
+        mock_query_ds = _mock_dataset(query_records)
+
+        adapter = CodeRAGBenchAdapter()
+        with patch(
+            "agent_evals.datasets.code_rag_bench.load_hf_dataset",
+            side_effect=[mock_corpus_ds, mock_query_ds],
+        ):
+            doc_tree = adapter.build_doc_tree()
+
+        # Both corpus doc and injected HumanEval doc should be present
+        assert "library-docs/numpy/array.md" in doc_tree.files
+        assert "library-docs/math/isclose.md" in doc_tree.files
+        assert len(doc_tree.files) == 2
+
+    def test_humaneval_docs_do_not_overwrite_corpus_docs(self) -> None:
+        """When a HumanEval doc title matches a corpus doc_id, keep the corpus version."""
+        from agent_evals.datasets.code_rag_bench import CodeRAGBenchAdapter
+
+        corpus_content = "Full numpy.array documentation from corpus."
+        lib_records = [
+            _make_lib_doc_record("numpy.array", corpus_content),
+        ]
+        # HumanEval also references numpy.array but with shorter text
+        query_records = [
+            _make_humaneval_record(
+                task_id="HumanEval/0",
+                docs=[{"title": "numpy.array", "text": "Short stub."}],
+            ),
+        ]
+        mock_corpus_ds = _mock_dataset(lib_records)
+        mock_query_ds = _mock_dataset(query_records)
+
+        adapter = CodeRAGBenchAdapter()
+        with patch(
+            "agent_evals.datasets.code_rag_bench.load_hf_dataset",
+            side_effect=[mock_corpus_ds, mock_query_ds],
+        ):
+            doc_tree = adapter.build_doc_tree()
+
+        # Corpus version should be preserved, not overwritten
+        assert doc_tree.files["library-docs/numpy/array.md"].content == corpus_content
+        assert len(doc_tree.files) == 1
+
+
+class TestCodeRAGExpectedFilesMatchDocTree:
+    """Bug #168: expected_files from convert_tasks must exist in build_doc_tree."""
+
+    def test_expected_files_are_present_in_doc_tree(self, tmp_path: Path) -> None:
+        from agent_evals.datasets.code_rag_bench import CodeRAGBenchAdapter
+
+        query_records = [
+            _make_humaneval_record(
+                task_id="HumanEval/0",
+                prompt="def has_close(numbers): ...",
+                docs=[
+                    {"title": "math.isclose", "text": "Return True if close."},
+                    {"title": "numpy.allclose", "text": "Check array closeness."},
+                ],
+            ),
+            _make_humaneval_record(
+                task_id="HumanEval/1",
+                prompt="def sort_list(lst): ...",
+                docs=[{"title": "list.sort", "text": "Sort in place."}],
+            ),
+        ]
+        # Corpus contains unrelated docs only
+        lib_records = [
+            _make_lib_doc_record("pandas.dataframe", "Two-dimensional structure."),
+        ]
+        mock_query_ds = _mock_dataset(query_records)
+        mock_corpus_ds = _mock_dataset(lib_records)
+
+        adapter = CodeRAGBenchAdapter()
+
+        # 1. Generate task YAMLs
+        with patch(
+            "agent_evals.datasets.code_rag_bench.load_hf_dataset",
+            return_value=mock_query_ds,
+        ):
+            adapter.convert_tasks(tmp_path)
+
+        # 2. Collect all expected_files from generated tasks
+        expected_files: set[str] = set()
+        for yaml_file in tmp_path.glob("*.yaml"):
+            task = yaml.safe_load(yaml_file.read_text(encoding="utf-8"))
+            expected_files.update(task["metadata"]["expected_files"])
+
+        # 3. Build doc tree (corpus call first, then query call)
+        with patch(
+            "agent_evals.datasets.code_rag_bench.load_hf_dataset",
+            side_effect=[mock_corpus_ds, mock_query_ds],
+        ):
+            doc_tree = adapter.build_doc_tree()
+
+        # 4. Every expected_file must exist in the doc tree
+        missing = expected_files - set(doc_tree.files.keys())
+        assert not missing, f"expected_files not in doc tree: {missing}"
 
 
 # ---------------------------------------------------------------------------

@@ -2,7 +2,8 @@
 
 Tests cover:
 - ContextStrategy ABC interface enforcement
-- FullContextStrategy.prepare() produces correct messages
+- FullContextStrategy.prepare() appends doc content to rendered index
+- FullContextStrategy.prepare() respects max_content_tokens budget
 - FullContextStrategy.execute() wraps client response correctly
 - FullContextStrategy.supports_caching() returns True
 - StrategyConfig defaults
@@ -12,10 +13,43 @@ Tests cover:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest
 from conftest import make_mock_client, make_mock_task
+
+
+def _make_doc_tree(
+    files: dict[str, tuple[str, int | None]],
+):
+    """Build a DocTree for testing.
+
+    Args:
+        files: Mapping of rel_path -> (content, token_count).
+            token_count may be None to test the heuristic fallback.
+    """
+    from agent_index.models import DocFile, DocTree
+
+    doc_files = {}
+    for rel_path, (content, token_count) in files.items():
+        doc_files[rel_path] = DocFile(
+            rel_path=rel_path,
+            content=content,
+            size_bytes=len(content.encode()),
+            token_count=token_count,
+            tier="recommended",
+            section="General",
+        )
+
+    return DocTree(
+        files=doc_files,
+        scanned_at=datetime.now(tz=timezone.utc),
+        source="/test",
+        total_tokens=sum(
+            tc for _, (_, tc) in files.items() if tc is not None
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -260,19 +294,145 @@ class TestFullContextStrategy:
 
         assert FullContextStrategy().supports_caching() is True
 
-    def test_prepare_calls_build_prompt(self):
+    def test_prepare_appends_doc_content_to_rendered_index(self):
+        """prepare() should pass rendered index + doc content to build_prompt."""
         from agent_evals.context.full import FullContextStrategy
 
         strategy = FullContextStrategy()
         task = make_mock_task()
-        doc_tree = MagicMock()
+        doc_tree = _make_doc_tree({
+            "guides/auth.md": ("Auth guide content", 10),
+        })
 
         prepared = strategy.prepare("rendered index", task, doc_tree)
 
-        task.build_prompt.assert_called_once_with("rendered index")
+        # build_prompt should receive index + separator + document content
+        call_args = task.build_prompt.call_args[0][0]
+        assert call_args.startswith("rendered index")
+        assert "---\n## Document Contents" in call_args
+        assert "### guides/auth.md" in call_args
+        assert "Auth guide content" in call_args
         assert prepared.messages == task.build_prompt.return_value
         assert prepared.tools is None
-        assert prepared.strategy_metadata == {}
+
+    def test_prepare_with_empty_doc_tree_passes_index_only(self):
+        """When doc_tree has no files, only the rendered index is passed."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy()
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({})
+
+        strategy.prepare("rendered index", task, doc_tree)
+
+        task.build_prompt.assert_called_once_with("rendered index")
+
+    def test_prepare_includes_multiple_files_sorted(self):
+        """Files should be included in sorted order by rel_path."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy()
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({
+            "guides/setup.md": ("Setup content", 10),
+            "api/endpoints.md": ("API content", 10),
+            "guides/auth.md": ("Auth content", 10),
+        })
+
+        strategy.prepare("index", task, doc_tree)
+
+        call_args = task.build_prompt.call_args[0][0]
+        # Files should appear in sorted order
+        api_pos = call_args.index("### api/endpoints.md")
+        auth_pos = call_args.index("### guides/auth.md")
+        setup_pos = call_args.index("### guides/setup.md")
+        assert api_pos < auth_pos < setup_pos
+
+    def test_prepare_respects_max_content_tokens(self):
+        """Files exceeding the token budget should be excluded."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy(max_content_tokens=25)
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({
+            "a.md": ("Small file", 10),
+            "b.md": ("Medium file", 15),
+            "c.md": ("Large file", 20),
+        })
+
+        strategy.prepare("index", task, doc_tree)
+
+        call_args = task.build_prompt.call_args[0][0]
+        # a.md (10 tokens) fits, b.md (15 tokens) would push to 25 -- fits exactly at boundary?
+        # 10 + 15 = 25, which is NOT > 25, so b.md fits
+        assert "### a.md" in call_args
+        assert "### b.md" in call_args
+        # c.md (20 tokens) would push to 45 > 25, excluded
+        assert "### c.md" not in call_args
+
+    def test_prepare_stops_at_first_file_exceeding_budget(self):
+        """Token budget enforcement stops at the first file that would exceed it."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy(max_content_tokens=5)
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({
+            "a.md": ("Content A", 10),  # 10 > 5, excluded
+            "b.md": ("Content B", 3),   # Would be fine but a.md broke the loop
+        })
+
+        strategy.prepare("index", task, doc_tree)
+
+        call_args = task.build_prompt.call_args[0][0]
+        # Since files are sorted and a.md (10) > budget (5), it stops
+        assert "### a.md" not in call_args
+        # b.md comes after a.md alphabetically but a.md exceeds budget
+        # so the loop breaks at a.md and b.md is never reached
+        assert "### b.md" not in call_args
+        # Falls back to index only
+        assert call_args == "index"
+
+    def test_prepare_uses_heuristic_when_token_count_is_none(self):
+        """When token_count is None, _estimate_tokens (~4 chars/token) is used."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy(max_content_tokens=100)
+        task = make_mock_task()
+        # 20 chars = ~5 tokens via heuristic
+        doc_tree = _make_doc_tree({
+            "a.md": ("twelve chars1234", None),
+        })
+
+        strategy.prepare("index", task, doc_tree)
+
+        call_args = task.build_prompt.call_args[0][0]
+        assert "### a.md" in call_args
+        assert "twelve chars1234" in call_args
+
+    def test_prepare_strategy_metadata(self):
+        """strategy_metadata should include content stats."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy(max_content_tokens=1000)
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({
+            "a.md": ("Content", 50),
+            "b.md": ("More content", 60),
+        })
+
+        prepared = strategy.prepare("the index", task, doc_tree)
+
+        assert "index_tokens" in prepared.strategy_metadata
+        assert prepared.strategy_metadata["content_files_included"] == 2
+        assert prepared.strategy_metadata["max_content_tokens"] == 1000
+
+    def test_default_max_content_tokens(self):
+        """Default max_content_tokens should be 50000."""
+        from agent_evals.context.full import DEFAULT_MAX_CONTENT_TOKENS, FullContextStrategy
+
+        strategy = FullContextStrategy()
+        assert strategy._max_content_tokens == DEFAULT_MAX_CONTENT_TOKENS
+        assert DEFAULT_MAX_CONTENT_TOKENS == 50_000
 
     def test_execute_calls_client_complete(self):
         from agent_evals.context.base import PreparedContext
@@ -316,47 +476,27 @@ class TestFullContextStrategy:
         assert result.generations[0] is gen
         assert result.messages == messages
 
-    def test_execute_produces_identical_results_to_current_behavior(self):
-        """FullContextStrategy must produce the same output as the old
-        render → build_prompt → complete pipeline."""
-        from agent_evals.context.base import PreparedContext
+    def test_prepare_includes_doc_content_unlike_old_behavior(self):
+        """The fixed prepare() should include doc content that the old
+        pipeline was missing -- this is the core P0 bug fix validation."""
         from agent_evals.context.full import FullContextStrategy
-        from agent_evals.llm.client import GenerationResult
 
         strategy = FullContextStrategy()
         task = make_mock_task()
-        doc_tree = MagicMock()
-        client = make_mock_client()
+        doc_tree = _make_doc_tree({
+            "guides/auth.md": ("# Authentication\nUse JWT tokens...", 20),
+            "api/users.md": ("# Users API\nGET /api/users...", 15),
+        })
 
-        gen = GenerationResult(
-            content="LLM answer",
-            prompt_tokens=200,
-            completion_tokens=100,
-            total_tokens=300,
-            cost=0.01,
-            model="test-model",
-            generation_id="gen-2",
-        )
-        client.complete.return_value = gen
+        rendered_index = "[FILE] guides/auth.md: Auth guide\n[FILE] api/users.md: Users API"
+        strategy.prepare(rendered_index, task, doc_tree)
 
-        # Old pipeline: variant.render() → task.build_prompt(index) → client.complete(messages)
-        rendered_index = "# Docs\nSome content"
-        messages_old = task.build_prompt(rendered_index)
-
-        # New pipeline: strategy.prepare() → strategy.execute()
-        task.build_prompt.reset_mock()
-        prepared = strategy.prepare(rendered_index, task, doc_tree)
-        result = strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
-
-        # Messages built identically
-        assert prepared.messages == messages_old
-        # Final response matches generation content
-        assert result.final_response == gen.content
-        # Tokens match
-        assert result.total_prompt_tokens == gen.prompt_tokens
-        assert result.total_completion_tokens == gen.completion_tokens
-        assert result.total_tokens == gen.total_tokens
-        assert result.total_cost == gen.cost
+        call_args = task.build_prompt.call_args[0][0]
+        # Should contain the index metadata
+        assert "[FILE] guides/auth.md: Auth guide" in call_args
+        # AND the actual document content (the P0 fix)
+        assert "# Authentication\nUse JWT tokens..." in call_args
+        assert "# Users API\nGET /api/users..." in call_args
 
     def test_setup_teardown_are_noops(self):
         from agent_evals.context.full import FullContextStrategy

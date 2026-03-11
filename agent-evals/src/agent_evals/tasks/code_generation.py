@@ -1,8 +1,13 @@
 """Code generation task type for evaluating generated code quality.
 
-Scores responses by checking regex test patterns and forbidden pattern
+Scores responses by checking literal substring patterns and forbidden pattern
 violations, with syntax validation via ast.parse.  Case-insensitive
-matching is used for literal fallback patterns.
+matching is used for all pattern comparisons.
+
+Test patterns (from the ``test`` field) are matched as literal substrings,
+not regex, because they typically contain code snippets with characters
+like ``[]``, ``()``, and ``.`` that would be misinterpreted as regex
+metacharacters (see bug #169).
 
 Score formula: match_rate * 0.7 + (1 - violation_rate) * 0.2 + syntax_bonus * 0.1
 """
@@ -16,7 +21,22 @@ from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
 def _match_pattern(pattern: str, text: str) -> bool:
-    """Match a pattern against text, trying regex first, falling back to case-insensitive literal."""
+    """Match a pattern against text using case-insensitive literal substring matching.
+
+    Uses literal matching (``in`` operator) rather than regex because test
+    patterns are typically code snippets containing regex metacharacters
+    such as ``[]``, ``()``, and ``.`` that would silently match the wrong
+    things instead of raising ``re.error`` (bug #169).
+    """
+    return pattern.lower() in text.lower()
+
+
+def _match_regex(pattern: str, text: str) -> bool:
+    """Match a pattern as regex, falling back to literal if invalid.
+
+    Used for forbidden_patterns where regex semantics (e.g. ``eval\\s*\\(``)
+    are intentional.
+    """
     try:
         return bool(re.search(pattern, text, re.IGNORECASE))
     except re.error:
@@ -80,9 +100,9 @@ def _check_syntax(code: str, language: str | None = None) -> bool:
 class CodeGenerationTask(EvalTask):
     """Task type for evaluating code generation quality.
 
-    Parses the ``test`` field into regex patterns (one per line) and
-    checks each against the response. Also checks ``forbidden_patterns``
-    for violations. Score formula:
+    Parses the ``test`` field into literal substring patterns (one per line)
+    and checks each against the response.  Also checks ``forbidden_patterns``
+    (which support regex) for violations.  Score formula:
         match_rate * 0.7 + (1 - violation_rate) * 0.2 + syntax_bonus * 0.1
     Clamped to [0, 1].
     """
@@ -124,12 +144,13 @@ class CodeGenerationTask(EvalTask):
         ]
 
     def score_response(self, response: str, **kwargs: object) -> float:
-        """Score response using regex pattern matching, violation checks, and syntax validation.
+        """Score response using literal pattern matching, violation checks, and syntax validation.
 
         Scoring formula:
             base = match_rate * 0.7 + (1 - violation_rate) * 0.2 + syntax_bonus * 0.1
         where syntax_bonus is 1.0 if the code parses as valid Python, 0.0 otherwise.
-        Pattern matching uses case-insensitive regex (or literal fallback).
+        Test patterns use case-insensitive literal substring matching.
+        Forbidden patterns use regex (with literal fallback).
         Clamped to [0, 1].
 
         Args:
@@ -158,7 +179,7 @@ class CodeGenerationTask(EvalTask):
         if self.forbidden_patterns:
             violations = sum(
                 1 for pat in self.forbidden_patterns
-                if _match_pattern(pat, response)
+                if _match_regex(pat, response)
             )
             violation_rate = violations / len(self.forbidden_patterns)
         else:

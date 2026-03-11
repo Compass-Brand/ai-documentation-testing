@@ -8,6 +8,7 @@ Tests cover:
 - score_response: partial pattern match (between 0 and 1)
 - Forbidden pattern penalty
 - Edge cases: empty patterns, empty forbidden, multiline test field
+- Bug #169: literal matching for code patterns with regex metacharacters
 """
 
 from __future__ import annotations
@@ -15,7 +16,11 @@ from __future__ import annotations
 from typing import Any
 
 from agent_evals.tasks.base import TASK_TYPES, TaskDefinition
-from agent_evals.tasks.code_generation import CodeGenerationTask
+from agent_evals.tasks.code_generation import (
+    CodeGenerationTask,
+    _match_pattern,
+    _match_regex,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -26,7 +31,7 @@ def _codegen_task(**meta_overrides: Any) -> CodeGenerationTask:
     """Create a CodeGenerationTask with default metadata, with optional overrides."""
     meta: dict[str, Any] = {
         "expected_answer": "def add(a, b): return a + b",
-        "test": r"def\s+add\s*\(.*\)\s*:" + "\n" + r"return\s+.*\+",
+        "test": "def add\nreturn a + b",
         "entry_point": "add",
         "canonical_solution": "def add(a, b):\n    return a + b",
         "libs": [],
@@ -125,7 +130,7 @@ class TestCodeGenerationTaskScoring:
     def test_all_patterns_match_no_violations_near_1(self) -> None:
         """Response matching all required patterns with no violations scores ~1.0."""
         task = _codegen_task(
-            test="def\\s+add\nreturn",
+            test="def add\nreturn",
             forbidden_patterns=[],
         )
         response = "def add(a, b):\n    return a + b"
@@ -139,7 +144,7 @@ class TestCodeGenerationTaskScoring:
         No patterns matched, no forbidden violations, invalid syntax (plain text).
         """
         task = _codegen_task(
-            test="def\\s+add\nreturn\\s+.*\\+",
+            test="def add\nreturn a + b",
             forbidden_patterns=[],
         )
         response = "I don't know how to write this function."
@@ -149,7 +154,7 @@ class TestCodeGenerationTaskScoring:
     def test_partial_pattern_match(self) -> None:
         """Response matching some but not all patterns scores partially."""
         task = _codegen_task(
-            test="def\\s+add\nreturn\\s+.*\\+\ntype\\s+hints",
+            test="def add\nreturn a + b\ntype hints",
             forbidden_patterns=[],
         )
         # Matches first two patterns but not the third
@@ -160,7 +165,7 @@ class TestCodeGenerationTaskScoring:
     def test_forbidden_pattern_penalizes_score(self) -> None:
         """Forbidden patterns reduce the score."""
         task = _codegen_task(
-            test="def\\s+add",
+            test="def add",
             forbidden_patterns=[r"eval\s*\("],
         )
         clean_response = "def add(a, b):\n    return a + b"
@@ -190,7 +195,7 @@ class TestCodeGenerationTaskScoring:
     def test_all_forbidden_violated(self) -> None:
         """Violating all forbidden patterns maximizes penalty."""
         task = _codegen_task(
-            test=".",  # single pattern that matches anything
+            test="eval",  # single literal pattern that matches the response
             forbidden_patterns=[r"eval", r"exec"],
         )
         response = "eval(exec('code'))"
@@ -211,7 +216,7 @@ class TestCodeGenerationTaskScoring:
             assert 0.0 <= score <= 1.0
 
     def test_multiline_test_field_splits_into_patterns(self) -> None:
-        """The test field with multiple lines produces multiple regex patterns."""
+        """The test field with multiple lines produces multiple literal patterns."""
         task = _codegen_task(
             test="pattern_one\npattern_two\npattern_three",
             forbidden_patterns=[],
@@ -232,7 +237,7 @@ class TestCodeGenerationSyntaxValidation:
     def test_valid_python_syntax_not_penalized(self) -> None:
         """Response with valid Python syntax is not penalized."""
         task = _codegen_task(
-            test="def\\s+add",
+            test="def add",
             forbidden_patterns=[],
         )
         response = "```python\ndef add(a, b):\n    return a + b\n```"
@@ -242,7 +247,7 @@ class TestCodeGenerationSyntaxValidation:
     def test_invalid_python_syntax_penalized(self) -> None:
         """Response with invalid Python syntax receives a penalty."""
         task = _codegen_task(
-            test="def\\s+add",
+            test="def add",
             forbidden_patterns=[],
         )
         valid_response = "def add(a, b):\n    return a + b"
@@ -328,6 +333,79 @@ class TestCodeGenerationPartialCredit:
         score_3 = task.score_response(response_3)
 
         assert score_1 < score_2 < score_3
+
+
+# ---------------------------------------------------------------------------
+# Bug #169: Literal matching for code patterns with regex metacharacters
+# ---------------------------------------------------------------------------
+
+
+class TestBug169LiteralMatching:
+    """Tests for bug #169: code patterns with regex metacharacters.
+
+    Code patterns like ``df.iloc[List]`` contain ``[]`` which are valid regex
+    character classes. The old regex-first approach silently matched wrong
+    things instead of erroring, causing 0/N pattern matches and scores
+    capped at 0.3.
+    """
+
+    def test_match_pattern_uses_literal_matching(self) -> None:
+        """_match_pattern uses literal substring matching, not regex."""
+        # df.iloc[List] contains brackets that are valid regex character classes
+        assert _match_pattern("df.iloc[List]", "return df.iloc[List]")
+
+    def test_match_pattern_dot_is_literal(self) -> None:
+        """Dot in pattern matches only literal dot, not any character."""
+        assert _match_pattern("df.iloc", "df.iloc[0]")
+        assert not _match_pattern("df.iloc", "dfXiloc")
+
+    def test_match_pattern_brackets_are_literal(self) -> None:
+        """Square brackets match literally, not as character classes."""
+        # With regex, [List] would match any single char from {L, i, s, t}
+        # With literal matching, it matches the exact string "[List]"
+        assert _match_pattern("[List]", "df.iloc[List]")
+        assert not _match_pattern("[List]", "df.iloc[0]")
+
+    def test_match_pattern_parens_are_literal(self) -> None:
+        """Parentheses in patterns are literal, not regex groups."""
+        assert _match_pattern("g(df.copy(), List)", "result = g(df.copy(), List)")
+        assert not _match_pattern("g(df.copy(), List)", "result = g df copy List")
+
+    def test_match_regex_still_supports_regex(self) -> None:
+        """_match_regex uses regex for forbidden_patterns."""
+        assert _match_regex(r"eval\s*\(", "eval ('code')")
+        assert not _match_regex(r"eval\s*\(", "evaluate something")
+
+    def test_match_regex_falls_back_to_literal(self) -> None:
+        """_match_regex falls back to literal on invalid regex."""
+        assert _match_regex("[invalid", "has [invalid regex")
+
+    def test_ds1000_iloc_pattern_scores_correctly(self) -> None:
+        """DS-1000 style pattern with df.iloc[List] scores > 0.3.
+
+        This is the exact bug scenario: reference_code patterns containing
+        regex metacharacters should match when the response contains them.
+        """
+        task = _codegen_task(
+            test="df.iloc[List]",
+            forbidden_patterns=[],
+        )
+        response = "def g(df, List):\n    return df.iloc[List]"
+        score = task.score_response(response)
+        # match_rate=1.0 -> 0.7, no violations -> 0.2, valid syntax -> 0.1
+        assert score >= 0.9, f"Expected >= 0.9, got {score}"
+
+    def test_forbidden_patterns_still_use_regex(self) -> None:
+        """Forbidden patterns continue to use regex matching."""
+        task = _codegen_task(
+            test="result",
+            forbidden_patterns=[r"eval\s*\("],
+        )
+        # This response has "eval (" which should match the regex r"eval\s*\("
+        response = "result = eval ('1+2')"
+        score = task.score_response(response)
+        # match_rate=1.0*0.7 + violation_rate=1.0 -> (1-1)*0.2=0.0 + syntax=0.1
+        assert score < 0.9
 
 
 def test_no_test_patterns_does_not_cap_score_at_0_3():

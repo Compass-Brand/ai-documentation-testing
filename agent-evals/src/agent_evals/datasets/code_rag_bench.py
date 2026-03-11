@@ -93,7 +93,14 @@ class CodeRAGBenchAdapter(DatasetAdapter):
         return count
 
     def build_doc_tree(self, limit: int | None = None) -> DocTree:
-        """Build DocTree from library-documentation corpus."""
+        """Build DocTree from library-documentation corpus and HumanEval docs.
+
+        The library-documentation corpus provides the bulk of the doc tree,
+        but expected_files in convert_tasks() are derived from HumanEval
+        ``docs[*].title`` fields.  Those titles may not exist in the corpus,
+        so we also inject every HumanEval doc entry into the tree at the
+        same path that convert_tasks() would generate for expected_files.
+        """
         from agent_index.models import DocFile, DocTree
 
         ds = load_hf_dataset(self._CORPUS_DATASET, split="train", limit=limit)
@@ -117,6 +124,33 @@ class CodeRAGBenchAdapter(DatasetAdapter):
                 section=lib_name,
                 summary=content[:100].split(".")[0] + "." if "." in content[:100] else content[:100],
             )
+
+        # Inject HumanEval doc entries so expected_files paths are present
+        query_ds = load_hf_dataset(self._QUERY_DATASET, split="train", limit=limit)
+        for record in query_ds:
+            docs = record.get("docs") or []
+            for d in docs:
+                title = d.get("title")
+                if not title:
+                    continue
+                rel_path = f"library-docs/{title.replace('.', '/')}.md"
+                if rel_path in files:
+                    continue
+                content = d.get("text", "")
+                lib_name = title.split(".")[0] if "." in title else "general"
+                files[rel_path] = DocFile(
+                    rel_path=rel_path,
+                    content=content,
+                    size_bytes=len(content.encode("utf-8")),
+                    token_count=len(content.split()),
+                    tier="recommended",
+                    section=lib_name,
+                    summary=(
+                        content[:100].split(".")[0] + "."
+                        if "." in content[:100]
+                        else content[:100]
+                    ),
+                )
 
         return DocTree(
             files=files,
