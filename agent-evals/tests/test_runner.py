@@ -411,7 +411,7 @@ class TestRunTrial:
         variant.render.assert_called_once_with(doc_tree)
 
     def test_trial_calls_build_prompt(self) -> None:
-        """The trial builds a prompt with the rendered index + doc content."""
+        """The trial builds a prompt with the rendered index directly."""
         client = _make_mock_client()
         config = EvalRunConfig(use_cache=False)
         runner = EvalRunner(client=client, config=config)
@@ -422,12 +422,9 @@ class TestRunTrial:
 
         runner._run_trial(task, variant, doc_tree, 1)
 
-        # FullContextStrategy appends doc content after the rendered index
+        # FullContextStrategy passes rendered index directly (no raw doc appending)
         call_args = task.build_prompt.call_args[0][0]
-        assert call_args.startswith("# Index Content\nSome docs here.")
-        assert "---\n## Document Contents" in call_args
-        assert "### guides/auth.md" in call_args
-        assert "# Authentication\nHow to authenticate." in call_args
+        assert call_args == "# Index Content\nSome docs here."
 
     def test_trial_calls_llm_complete(self) -> None:
         """The trial calls client.complete with the messages."""
