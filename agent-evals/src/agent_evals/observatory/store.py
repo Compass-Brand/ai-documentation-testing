@@ -17,6 +17,19 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def extract_provider(model: str | None) -> str | None:
+    """Extract the provider prefix from a model string.
+
+    Examples:
+        "openrouter/arcee-ai/trinity:free" -> "openrouter"
+        "claude-sonnet" -> None
+        None -> None
+    """
+    if not model or "/" not in model:
+        return None
+    return model.split("/", 1)[0]
+
+
 @dataclass
 class TrialRecord:
     """A single trial row read back from the store."""
@@ -396,14 +409,37 @@ class ObservatoryStore:
         }
 
     def finish_run(self, run_id: str) -> None:
-        """Mark a run as completed with a timestamp."""
+        """Mark a run as completed (or 'empty' if it has zero trials)."""
         now = datetime.now(timezone.utc).isoformat()
         with self._lock, self._connect() as conn:
+            trial_count = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM trials WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()["cnt"]
+            status = "completed" if trial_count > 0 else "empty"
             conn.execute(
-                "UPDATE runs SET status = 'completed', finished_at = ? "
+                "UPDATE runs SET status = ?, finished_at = ? "
                 "WHERE run_id = ?",
-                (now, run_id),
+                (status, now, run_id),
             )
+
+    def purge_empty_runs(self) -> list[str]:
+        """Delete runs with status 'empty' (zero trials).
+
+        Returns list of purged run_ids.
+        """
+        with self._lock, self._connect() as conn:
+            rows = conn.execute(
+                "SELECT run_id FROM runs WHERE status = 'empty'"
+            ).fetchall()
+            if rows:
+                ids = [r["run_id"] for r in rows]
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"DELETE FROM runs WHERE run_id IN ({placeholders})",
+                    ids,
+                )
+            return [r["run_id"] for r in rows]
 
     def fail_run(self, run_id: str, error: str | None = None) -> None:
         """Mark a run as failed with optional error message and timestamp."""
@@ -433,7 +469,12 @@ class ObservatoryStore:
             )
 
     def reap_stale_runs(self, max_age_seconds: int = 300) -> list[str]:
-        """Mark active runs with stale heartbeats as failed.
+        """Mark stale active runs as failed.
+
+        Catches two cases:
+        1. Runs with a heartbeat older than the cutoff.
+        2. Runs with no heartbeat whose created_at is older than the cutoff
+           (zombie runs that never received a heartbeat).
 
         Returns list of reaped run_ids.
         """
@@ -444,8 +485,11 @@ class ObservatoryStore:
         with self._lock, self._connect() as conn:
             stale = conn.execute(
                 "SELECT run_id FROM runs WHERE status = 'active' "
-                "AND heartbeat_at IS NOT NULL AND heartbeat_at < ?",
-                (cutoff,),
+                "AND ("
+                "  (heartbeat_at IS NOT NULL AND heartbeat_at < ?) "
+                "  OR (heartbeat_at IS NULL AND created_at < ?)"
+                ")",
+                (cutoff, cutoff),
             ).fetchall()
             if stale:
                 ids = [row["run_id"] for row in stale]
@@ -980,6 +1024,10 @@ class ObservatoryStore:
         """
         with self._lock, self._connect() as conn:
             for c in calls:
+                raw_provider = c.get("provider")
+                # Treat the literal string "None" as missing (bug #244).
+                if raw_provider is None or raw_provider == "None":
+                    raw_provider = extract_provider(c.get("model", ""))
                 conn.execute(
                     "INSERT INTO llm_call_details "
                     "(trial_id, call_index, prompt_tokens, "
@@ -995,7 +1043,7 @@ class ObservatoryStore:
                         c.get("api_call_ms", 0.0),
                         c.get("cached_tokens", 0),
                         c.get("model", ""),
-                        c.get("provider"),
+                        raw_provider,
                     ),
                 )
 

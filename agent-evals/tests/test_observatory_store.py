@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -171,9 +172,18 @@ class TestFinishRun:
         self, store: ObservatoryStore
     ) -> None:
         store.create_run("run_001", run_type="taguchi", config={})
+        store.record_trial(**_make_trial_kwargs("run_001"))
         store.finish_run("run_001")
         runs = store.list_runs()
         assert runs[0].status == "completed"
+
+    def test_finish_zero_trials_sets_empty(
+        self, store: ObservatoryStore
+    ) -> None:
+        store.create_run("run_001", run_type="taguchi", config={})
+        store.finish_run("run_001")
+        runs = store.list_runs()
+        assert runs[0].status == "empty"
 
     def test_finish_sets_timestamp(self, store: ObservatoryStore) -> None:
         store.create_run("run_001", run_type="taguchi", config={})
@@ -1436,3 +1446,317 @@ class TestLLMCallDetails:
         assert result_2[0]["prompt_tokens"] == 200
         assert result_2[0]["model"] == "claude-haiku"
         assert result_2[1]["prompt_tokens"] == 150
+
+
+# ---------------------------------------------------------------------------
+# Bug #244: extract_provider utility
+# ---------------------------------------------------------------------------
+
+
+class TestExtractProvider:
+    """extract_provider extracts the provider prefix from model strings."""
+
+    def test_openrouter_prefix(self) -> None:
+        from agent_evals.observatory.store import extract_provider
+
+        assert extract_provider("openrouter/arcee-ai/trinity:free") == "openrouter"
+
+    def test_nested_provider(self) -> None:
+        from agent_evals.observatory.store import extract_provider
+
+        assert extract_provider("openrouter/anthropic/claude-sonnet-4.5") == "openrouter"
+
+    def test_no_slash_returns_none(self) -> None:
+        from agent_evals.observatory.store import extract_provider
+
+        assert extract_provider("claude-sonnet") is None
+
+    def test_empty_string_returns_none(self) -> None:
+        from agent_evals.observatory.store import extract_provider
+
+        assert extract_provider("") is None
+
+    def test_none_returns_none(self) -> None:
+        from agent_evals.observatory.store import extract_provider
+
+        assert extract_provider(None) is None
+
+
+class TestProviderAutoExtraction:
+    """Bug #244: save_llm_call_details auto-extracts provider from model."""
+
+    def test_provider_none_extracted_from_model(
+        self, store: ObservatoryStore
+    ) -> None:
+        """When provider is None, extract it from the model string."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id = store.record_trial(**_make_trial_kwargs("run_001"))
+        calls = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "cost": 0.001,
+                "api_call_ms": 300.0,
+                "cached_tokens": 0,
+                "model": "openrouter/anthropic/claude-sonnet-4.5",
+                "provider": None,
+            },
+        ]
+        store.save_llm_call_details(trial_id, calls)
+        result = store.get_llm_call_details(trial_id)
+        assert result[0]["provider"] == "openrouter"
+
+    def test_provider_string_none_extracted_from_model(
+        self, store: ObservatoryStore
+    ) -> None:
+        """When provider is literal string 'None', extract from model."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id = store.record_trial(**_make_trial_kwargs("run_001"))
+        calls = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "cost": 0.001,
+                "api_call_ms": 300.0,
+                "cached_tokens": 0,
+                "model": "openrouter/arcee-ai/trinity:free",
+                "provider": "None",
+            },
+        ]
+        store.save_llm_call_details(trial_id, calls)
+        result = store.get_llm_call_details(trial_id)
+        assert result[0]["provider"] == "openrouter"
+
+    def test_provider_missing_key_extracted_from_model(
+        self, store: ObservatoryStore
+    ) -> None:
+        """When provider key is absent, extract from model string."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id = store.record_trial(**_make_trial_kwargs("run_001"))
+        calls = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "cost": 0.001,
+                "api_call_ms": 300.0,
+                "cached_tokens": 0,
+                "model": "openrouter/anthropic/claude-sonnet-4.5",
+            },
+        ]
+        store.save_llm_call_details(trial_id, calls)
+        result = store.get_llm_call_details(trial_id)
+        assert result[0]["provider"] == "openrouter"
+
+    def test_provider_explicit_not_overridden(
+        self, store: ObservatoryStore
+    ) -> None:
+        """When provider is explicitly set, do not override it."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id = store.record_trial(**_make_trial_kwargs("run_001"))
+        calls = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "cost": 0.001,
+                "api_call_ms": 300.0,
+                "cached_tokens": 0,
+                "model": "openrouter/anthropic/claude-sonnet-4.5",
+                "provider": "anthropic",
+            },
+        ]
+        store.save_llm_call_details(trial_id, calls)
+        result = store.get_llm_call_details(trial_id)
+        assert result[0]["provider"] == "anthropic"
+
+    def test_provider_none_no_slash_in_model(
+        self, store: ObservatoryStore
+    ) -> None:
+        """When provider is None and model has no slash, provider stays None."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        trial_id = store.record_trial(**_make_trial_kwargs("run_001"))
+        calls = [
+            {
+                "call_index": 0,
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "cost": 0.001,
+                "api_call_ms": 300.0,
+                "cached_tokens": 0,
+                "model": "claude-sonnet",
+                "provider": None,
+            },
+        ]
+        store.save_llm_call_details(trial_id, calls)
+        result = store.get_llm_call_details(trial_id)
+        assert result[0]["provider"] is None
+
+
+# ---------------------------------------------------------------------------
+# Bug #245: Ghost completed runs with zero trials
+# ---------------------------------------------------------------------------
+
+
+class TestFinishRunEmptyGuard:
+    """finish_run marks runs with zero trials as 'empty' not 'completed'."""
+
+    def test_finish_run_with_trials_is_completed(
+        self, store: ObservatoryStore
+    ) -> None:
+        """A run with trials finishes as 'completed'."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        store.record_trial(**_make_trial_kwargs("run_001"))
+        store.finish_run("run_001")
+        summary = store.get_run_summary("run_001")
+        assert summary.status == "completed"
+
+    def test_finish_run_with_zero_trials_is_empty(
+        self, store: ObservatoryStore
+    ) -> None:
+        """A run with zero trials finishes as 'empty'."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        store.finish_run("run_001")
+        summary = store.get_run_summary("run_001")
+        assert summary.status == "empty"
+
+    def test_purge_empty_runs_deletes_empties(
+        self, store: ObservatoryStore
+    ) -> None:
+        """purge_empty_runs removes runs with status 'empty'."""
+        store.create_run("run_empty", run_type="taguchi", config={})
+        store.finish_run("run_empty")
+        store.create_run("run_good", run_type="taguchi", config={})
+        store.record_trial(**_make_trial_kwargs("run_good"))
+        store.finish_run("run_good")
+
+        purged = store.purge_empty_runs()
+        assert purged == ["run_empty"]
+
+        runs = store.list_runs()
+        run_ids = [r.run_id for r in runs]
+        assert "run_empty" not in run_ids
+        assert "run_good" in run_ids
+
+    def test_purge_empty_runs_returns_empty_when_none(
+        self, store: ObservatoryStore
+    ) -> None:
+        """purge_empty_runs returns empty list when no empty runs exist."""
+        store.create_run("run_001", run_type="taguchi", config={})
+        store.record_trial(**_make_trial_kwargs("run_001"))
+        store.finish_run("run_001")
+        purged = store.purge_empty_runs()
+        assert purged == []
+
+
+# ---------------------------------------------------------------------------
+# Bug #246: Zombie active runs never finalized
+# ---------------------------------------------------------------------------
+
+
+class TestReapZombieRuns:
+    """reap_stale_runs also catches runs with NULL heartbeat based on created_at."""
+
+    def test_reap_null_heartbeat_old_run(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Active runs with NULL heartbeat and old created_at are reaped."""
+        store.create_run("run_zombie", run_type="taguchi", config={})
+        # Backdate created_at to simulate a stale run
+        with store._connect() as conn:
+            old_time = (
+                datetime.now(timezone.utc) - timedelta(hours=2)
+            ).isoformat()
+            conn.execute(
+                "UPDATE runs SET created_at = ? WHERE run_id = ?",
+                (old_time, "run_zombie"),
+            )
+        reaped = store.reap_stale_runs(max_age_seconds=3600)
+        assert "run_zombie" in reaped
+        summary = store.get_run_summary("run_zombie")
+        assert summary.status == "failed"
+
+    def test_reap_null_heartbeat_fresh_run_not_reaped(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Active runs with NULL heartbeat but recent created_at are NOT reaped."""
+        store.create_run("run_fresh", run_type="taguchi", config={})
+        reaped = store.reap_stale_runs(max_age_seconds=3600)
+        assert "run_fresh" not in reaped
+        summary = store.get_run_summary("run_fresh")
+        assert summary.status == "active"
+
+    def test_reap_completed_run_not_reaped(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Completed runs are never reaped, even if old."""
+        store.create_run("run_done", run_type="taguchi", config={})
+        store.record_trial(**_make_trial_kwargs("run_done"))
+        store.finish_run("run_done")
+        with store._connect() as conn:
+            old_time = (
+                datetime.now(timezone.utc) - timedelta(hours=2)
+            ).isoformat()
+            conn.execute(
+                "UPDATE runs SET created_at = ? WHERE run_id = ?",
+                (old_time, "run_done"),
+            )
+        reaped = store.reap_stale_runs(max_age_seconds=3600)
+        assert "run_done" not in reaped
+
+
+# ---------------------------------------------------------------------------
+# Bug #239: FK enforcement — PRAGMA foreign_keys must be ON
+# ---------------------------------------------------------------------------
+
+
+class TestForeignKeyEnforcement:
+    """Bug #239: FK enforcement disabled — PRAGMA foreign_keys never ON."""
+
+    def test_pragma_foreign_keys_is_on(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Verify PRAGMA foreign_keys returns 1 (ON) for new connections."""
+        with store._connect() as conn:
+            row = conn.execute("PRAGMA foreign_keys").fetchone()
+        assert row[0] == 1
+
+    def test_trial_insert_with_invalid_run_id_raises(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Inserting a trial referencing a non-existent run_id must fail."""
+        import sqlite3
+
+        with pytest.raises(sqlite3.IntegrityError):
+            store.record_trial(**_make_trial_kwargs("nonexistent_run"))
+
+    def test_trace_insert_with_invalid_trial_id_raises(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Inserting a trace referencing a non-existent trial_id must fail."""
+        import sqlite3
+
+        with pytest.raises(sqlite3.IntegrityError):
+            store.record_trace(
+                trial_id=999999,
+                prompt_json=[{"role": "user", "content": "test"}],
+                response_text="test response",
+            )
+
+    def test_phase_results_with_invalid_run_id_raises(
+        self, store: ObservatoryStore
+    ) -> None:
+        """Inserting phase_results referencing a non-existent run_id must fail."""
+        import sqlite3
+
+        with pytest.raises(sqlite3.IntegrityError):
+            store.save_phase_results(
+                run_id="nonexistent_run",
+                main_effects={},
+                anova={},
+                optimal={},
+                significant_factors=[],
+                quality_type="larger_is_better",
+            )
