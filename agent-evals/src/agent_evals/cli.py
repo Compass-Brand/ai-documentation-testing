@@ -810,10 +810,29 @@ def _run_evaluation(
     if task_id_filter:
         tasks = [t for t in tasks if t.definition.task_id == task_id_filter]
 
-    # Apply limit
+    # Apply limit — round-robin across task types for balanced sampling
     limit = resolved.get("limit")
-    if limit is not None:
-        tasks = tasks[:limit]
+    if limit is not None and len(tasks) > limit:
+        from collections import defaultdict
+        from itertools import cycle
+
+        by_type: dict[str, list] = defaultdict(list)
+        for t in tasks:
+            by_type[t.definition.type].append(t)
+
+        selected: list = []
+        type_iters = {k: iter(v) for k, v in by_type.items()}
+        type_cycle = cycle(sorted(type_iters.keys()))
+        exhausted: set[str] = set()
+        while len(selected) < limit and len(exhausted) < len(type_iters):
+            tt = next(type_cycle)
+            if tt in exhausted:
+                continue
+            try:
+                selected.append(next(type_iters[tt]))
+            except StopIteration:
+                exhausted.add(tt)
+        tasks = selected
 
     if not tasks:
         logger.warning("No tasks matched the filter criteria.")
