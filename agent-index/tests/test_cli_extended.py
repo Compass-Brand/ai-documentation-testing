@@ -181,10 +181,10 @@ class TestValidateCLI:
             """).strip()
         )
 
-        # Scan and save the index (simulates a previous run)
+        # Scan and save the tree snapshot (simulates a previous main workflow)
         doc_tree = scan_local(docs_dir)
-        index_path = tmp_path / ".agent-index-state.json"
-        index_path.write_text(doc_tree.model_dump_json(), encoding="utf-8")
+        tree_path = tmp_path / ".agent-index-tree.json"
+        tree_path.write_text(doc_tree.model_dump_json(), encoding="utf-8")
 
         # Delete one file from disk after saving the index
         (docs_dir / "guide.md").unlink()
@@ -270,6 +270,57 @@ class TestValidateCLI:
 
         mock_render.assert_not_called()
         mock_sort.assert_not_called()
+
+
+    def test_validate_loads_tree_not_transform_state(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Bug #115 regression: validate must handle TransformState in state file.
+
+        The transform pipeline writes TransformState to .agent-index-state.json,
+        not DocTree. The validate path must use a separate tree snapshot file
+        (.agent-index-tree.json) saved by the main workflow.
+        """
+        from agent_index.scanner import scan_local
+        from agent_index.transform import TransformState, save_state
+
+        # Create config and docs
+        docs_dir = tmp_path / "docs"
+        docs_dir.mkdir()
+        (docs_dir / "readme.md").write_text("# Hello")
+        (docs_dir / "guide.md").write_text("# Guide")
+
+        config_file = tmp_path / "agent-index.yaml"
+        config_file.write_text(
+            dedent("""
+            index_name: "Test"
+            root_path: "./docs"
+            """).strip()
+        )
+
+        # Simulate a previous main workflow: scan and save tree snapshot
+        doc_tree = scan_local(docs_dir)
+        tree_path = tmp_path / ".agent-index-tree.json"
+        tree_path.write_text(doc_tree.model_dump_json(), encoding="utf-8")
+
+        # Also write a TransformState to the old state path (as transform would)
+        state = TransformState(
+            file_hashes={"readme.md": "abc123", "guide.md": "def456"},
+            transformed_content={"readme.md": "# Hello", "guide.md": "# Guide"},
+        )
+        save_state(state, tmp_path / ".agent-index-state.json")
+
+        # Delete a file from disk
+        (docs_dir / "guide.md").unlink()
+
+        args = parse_args(["--validate", "--config", str(config_file)])
+        with patch("agent_index.cli.Path.cwd", return_value=tmp_path):
+            result = run(args)
+
+        # Should detect guide.md as missing using tree snapshot, not crash on TransformState
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "guide.md" in captured.err
 
 
 class TestExistingBehaviorPreserved:

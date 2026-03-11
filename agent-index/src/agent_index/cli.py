@@ -174,14 +174,16 @@ def run(args: Namespace) -> int:
 
         scan_path = Path(args.local) if args.local else Path.cwd() / config.root_path
 
-        # Bug #115: Load a previously saved index instead of rescanning fresh.
-        # A fresh scan would always match disk, making missing_files/stale_entries
-        # impossible to detect.
-        state_path = config_path.parent / ".agent-index-state.json"
-        if state_path.exists():
+        # Bug #115: Load a previously saved tree snapshot instead of rescanning
+        # fresh. A fresh scan would always match disk, making missing_files
+        # /stale_entries impossible to detect. The tree snapshot is saved by
+        # the main workflow to .agent-index-tree.json (separate from the
+        # transform pipeline's .agent-index-state.json).
+        tree_path = config_path.parent / ".agent-index-tree.json"
+        if tree_path.exists():
             try:
                 doc_tree = DocTree.model_validate_json(
-                    state_path.read_text(encoding="utf-8")
+                    tree_path.read_text(encoding="utf-8")
                 )
             except Exception as e:
                 print(f"Error loading saved index: {e}", file=sys.stderr)
@@ -277,6 +279,14 @@ def run(args: Namespace) -> int:
 
     # Step 4: Assign tiers
     doc_tree = assign_tiers(doc_tree, config.tiers)
+
+    # Step 4b: Save tree snapshot for --validate drift detection
+    config_path = Path(args.config) if args.config else find_config()
+    tree_snapshot_dir = config_path.parent if config_path else Path.cwd()
+    tree_snapshot_path = tree_snapshot_dir / ".agent-index-tree.json"
+    tree_snapshot_path.write_text(
+        doc_tree.model_dump_json(indent=2), encoding="utf-8"
+    )
 
     # Step 5: Sort BLUF
     sorted_files = sort_files_bluf(list(doc_tree.files.values()), config.tiers)
