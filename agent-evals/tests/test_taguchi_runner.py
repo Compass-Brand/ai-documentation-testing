@@ -1056,12 +1056,11 @@ class TestJudgePrimaryRouting:
 
         result = runner.run(tasks, doc_tree)
 
-        # 3 rows * 1 task * 1 rep = 3 trials
+        # 3 rows * 1 task * 1 rep = 3 trials, all judged for primary types
         assert len(result.trials) == 3
-        # trial_index 0 is always skipped, so 2 judged
         judged = [t for t in result.trials if "judge_score" in t.metrics]
-        assert len(judged) >= 2, (
-            f"Expected >= 2 judged trials for judge-primary type, got {len(judged)}"
+        assert len(judged) == 3, (
+            f"Expected 3 judged trials for judge-primary type, got {len(judged)}"
         )
 
     def test_judge_sampled_for_non_primary_types(self):
@@ -1147,3 +1146,42 @@ class TestJudgePrimaryRouting:
         assert kw.get("canonical_solution") == "def foo():\n    return 42"
         assert "test_criteria" in kw
         assert kw["test_criteria"]["entry_point"] == "foo"
+
+    def test_judge_primary_not_skipped_at_trial_index_zero(self):
+        """Judge-primary types must be judged even on the very first trial (index 0).
+
+        Regression test for inconsistent trial_index=0 skip between runners.
+        TaguchiRunner._trial_counter starts at 0, so the first trial was
+        incorrectly skipped by the ``trial_index > 0`` guard.
+        """
+        # Single OA row → single trial at index 0
+        axes = {1: ["flat"]}
+        design = _make_simple_design(n_rows=1, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client(
+            content="RATIONALE: Solid\nSCORE: 0.90",
+        )
+        config = EvalRunConfig(
+            repetitions=1, max_connections=1,
+            judge_enabled=True, judge_sample_rate=100,
+            judge_model="openrouter/test/judge-model",
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [make_mock_task("cg_001", task_type="code_generation")]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        assert len(result.trials) == 1
+        judged = [t for t in result.trials if "judge_score" in t.metrics]
+        assert len(judged) == 1, (
+            "Judge-primary trial at index 0 must not be skipped"
+        )

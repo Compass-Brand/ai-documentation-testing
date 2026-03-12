@@ -1786,6 +1786,44 @@ class TestEvalRunnerJudgePrimary:
         assert "test_criteria" in kw
         assert kw["test_criteria"]["entry_point"] == "foo"
 
+    def test_judge_primary_not_skipped_at_trial_index_zero(self, monkeypatch) -> None:
+        """Judge-primary types must be judged even at trial_index=0.
+
+        Regression test: the ``trial_index > 0`` guard was skipping the
+        first trial for judge-primary types.
+        """
+        from agent_evals.judge.calibrator import JudgeScore
+
+        mock_judge_score = JudgeScore(
+            example_id="test", judge_model="mock", score=0.85,
+            rationale="good", raw_response="RATIONALE: good\nSCORE: 0.85",
+        )
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner._call_judge",
+            lambda self, task_type, question, response, **kw: mock_judge_score,
+        )
+        task = _make_mock_task_with_metadata(
+            task_type="code_generation",
+            metadata={"expected_answer": "def foo(): return 42"},
+        )
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+        client = _make_mock_client()
+        config = EvalRunConfig(
+            use_cache=False,
+            judge_enabled=True,
+            judge_sample_rate=100,
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+        runner = EvalRunner(client, config=config)
+
+        result = runner._run_trial(
+            task, variant, doc_tree, repetition=0, trial_index=0,
+        )
+        assert "judge_score" in result.metrics, (
+            "Judge-primary trial at index 0 must not be skipped"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Thread safety tests for baseline variant setup

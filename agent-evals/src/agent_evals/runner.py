@@ -1083,10 +1083,9 @@ class EvalRunner:
         )
         judge_active = (
             self._config.judge_enabled
-            and trial_index > 0
             and (
                 is_judge_primary
-                or trial_index % sample_rate == 0
+                or (trial_index > 0 and trial_index % sample_rate == 0)
             )
         )
         if judge_active:
