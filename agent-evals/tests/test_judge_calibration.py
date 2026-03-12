@@ -620,6 +620,98 @@ class TestCalibrate:
         with pytest.raises(ValueError, match="code_generation.*2.*5"):
             calibrate(golds, judges, min_examples_per_type=5)
 
+
+# ===================================================================
+# build_judge_prompt — reference-aware
+# ===================================================================
+
+
+class TestBuildJudgePromptWithReference:
+    """Tests for reference-aware kwargs in build_judge_prompt."""
+
+    def test_expected_answer_included_in_prompt(self) -> None:
+        messages = build_judge_prompt(
+            task_type="retrieval",
+            question="What is X?",
+            response="X is Y.",
+            expected_answer="X is Y, discovered in 1990.",
+        )
+        user_content = messages[1]["content"]
+        assert "Expected Answer" in user_content
+        assert "X is Y, discovered in 1990." in user_content
+
+    def test_canonical_solution_included_for_code(self) -> None:
+        messages = build_judge_prompt(
+            task_type="code_generation",
+            question="Write a function...",
+            response="def foo(): pass",
+            canonical_solution="def foo():\n    return 42",
+        )
+        user_content = messages[1]["content"]
+        assert "Reference Solution" in user_content
+        assert "return 42" in user_content
+
+    def test_test_criteria_included_for_code(self) -> None:
+        messages = build_judge_prompt(
+            task_type="code_generation",
+            question="Write a function...",
+            response="def foo(): pass",
+            test_criteria={"entry_point": "foo", "test_patterns": ["return 42"]},
+        )
+        user_content = messages[1]["content"]
+        assert "entry_point" in user_content.lower() or "Entry Point" in user_content
+        assert "foo" in user_content
+
+    def test_no_reference_fields_backward_compatible(self) -> None:
+        messages = build_judge_prompt(
+            task_type="retrieval",
+            question="What is X?",
+            response="X is Y.",
+        )
+        assert len(messages) == 2
+        assert "Expected Answer" not in messages[1]["content"]
+
+    def test_rubric_updated_for_reference_scoring(self) -> None:
+        messages = build_judge_prompt(
+            task_type="code_generation",
+            question="Write...",
+            response="def foo(): pass",
+            canonical_solution="def foo(): return 42",
+        )
+        system_content = messages[0]["content"]
+        assert "reference" in system_content.lower() or "canonical" in system_content.lower()
+
+    def test_test_criteria_libs_and_forbidden(self) -> None:
+        messages = build_judge_prompt(
+            task_type="code_generation",
+            question="Write...",
+            response="def foo(): pass",
+            test_criteria={
+                "entry_point": "foo",
+                "libs": ["math", "os"],
+                "forbidden_patterns": ["eval("],
+            },
+        )
+        user_content = messages[1]["content"]
+        assert "math" in user_content
+        assert "os" in user_content
+        assert "eval(" in user_content
+
+    def test_all_reference_fields_combined(self) -> None:
+        messages = build_judge_prompt(
+            task_type="code_generation",
+            question="Write a function",
+            response="def foo(): pass",
+            expected_answer="def foo(): return 42",
+            canonical_solution="def foo():\n    return 42",
+            test_criteria={"entry_point": "foo"},
+        )
+        user_content = messages[1]["content"]
+        assert "Expected Answer" in user_content
+        assert "Reference Solution" in user_content
+        assert "Entry Point" in user_content
+
+
     def test_mae_reflects_differences(self) -> None:
         golds = [
             _make_gold("ex_0", "retrieval", 0.0),

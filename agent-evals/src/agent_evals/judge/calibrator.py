@@ -236,6 +236,26 @@ RATIONALE: <your step-by-step reasoning>
 SCORE: <a single number between 0.0 and 1.0>
 """
 
+_REFERENCE_RUBRICS: dict[str, str] = {
+    "code_generation": (
+        "Score the code against the provided reference solution and test "
+        "criteria. Check: (1) Does it define the expected entry point? "
+        "(2) Does it match the test patterns? (3) Is it functionally "
+        "equivalent to the reference? (4) Does it avoid forbidden patterns? "
+        "Score 1.0 for a correct implementation, 0.0 for non-functional code."
+    ),
+    "compositional": (
+        "Score the response against the expected answer. Check that ALL "
+        "sub-parts of the question are addressed correctly. Score based on "
+        "the fraction of sub-answers that match the expected answer."
+    ),
+    "agentic": (
+        "Score the response against the expected answer. Evaluate the "
+        "reasoning chain, tool usage, and final answer. Compare against "
+        "the reference to determine correctness, not just plausibility."
+    ),
+}
+
 _DEFAULT_RUBRICS: dict[str, str] = {
     "retrieval": (
         "Evaluate whether the response correctly retrieves and presents the "
@@ -305,27 +325,61 @@ def build_judge_prompt(
     question: str,
     response: str,
     rubric: str | None = None,
+    *,
+    expected_answer: str | None = None,
+    canonical_solution: str | None = None,
+    test_criteria: dict | None = None,
 ) -> list[dict[str, str]]:
     """Build the prompt for the LLM judge.
 
-    Uses pointwise scoring with chain-of-thought (per DESIGN.md):
-    - System message with scoring rubric
-    - User message with question and response to evaluate
-    - Instructs judge to explain reasoning before giving a score
-    - Penalizes verbosity bias
-    - Temperature 0.0 for deterministic output
+    When reference material (expected_answer, canonical_solution,
+    test_criteria) is provided, the judge performs reference-based
+    evaluation — scoring the response against the ground truth rather
+    than relying on subjective quality assessment.
     """
-    effective_rubric = rubric or _DEFAULT_RUBRICS.get(task_type, _GENERIC_RUBRIC)
+    has_reference = any([expected_answer, canonical_solution, test_criteria])
+
+    if has_reference:
+        effective_rubric = rubric or _REFERENCE_RUBRICS.get(
+            task_type, _DEFAULT_RUBRICS.get(task_type, _GENERIC_RUBRIC)
+        )
+    else:
+        effective_rubric = rubric or _DEFAULT_RUBRICS.get(task_type, _GENERIC_RUBRIC)
 
     system_msg = _SYSTEM_TEMPLATE.format(
         task_type=task_type,
         rubric=effective_rubric,
     )
 
-    user_msg = (
-        f"## Question\n{question}\n\n"
-        f"## Response to Evaluate\n{response}"
-    )
+    # Build user message with optional reference sections
+    parts = [f"## Question\n{question}"]
+
+    if expected_answer:
+        parts.append(f"## Expected Answer\n{expected_answer}")
+
+    if canonical_solution:
+        parts.append(f"## Reference Solution\n```\n{canonical_solution}\n```")
+
+    if test_criteria:
+        criteria_lines: list[str] = []
+        if "entry_point" in test_criteria:
+            criteria_lines.append(f"- Entry Point: `{test_criteria['entry_point']}`")
+        if "test_patterns" in test_criteria:
+            for pat in test_criteria["test_patterns"]:
+                criteria_lines.append(f"- Must contain: `{pat}`")
+        if "libs" in test_criteria:
+            criteria_lines.append(
+                f"- Expected libraries: {', '.join(test_criteria['libs'])}"
+            )
+        if "forbidden_patterns" in test_criteria:
+            for pat in test_criteria["forbidden_patterns"]:
+                criteria_lines.append(f"- Must NOT contain: `{pat}`")
+        if criteria_lines:
+            parts.append("## Test Criteria\n" + "\n".join(criteria_lines))
+
+    parts.append(f"## Response to Evaluate\n{response}")
+
+    user_msg = "\n\n".join(parts)
 
     return [
         {"role": "system", "content": system_msg},
