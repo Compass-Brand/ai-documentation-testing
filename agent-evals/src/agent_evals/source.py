@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from agent_evals.datasets.gold_standard import GoldStandardManager
 
 logger = logging.getLogger(__name__)
 
@@ -152,20 +155,19 @@ def load_doc_tree_for_source(source: str = DEFAULT_SOURCE) -> Any:
     )
 
 
-def _load_gold_standard_tasks(mgr: Any) -> list[Any]:
+def _load_gold_standard_tasks(mgr: GoldStandardManager) -> list[Any]:
     """Load tasks from all prepared adapters (9 HF + 2 synthetic)."""
     from agent_evals.tasks.loader import load_tasks
 
     all_tasks: list[Any] = []
     for name in mgr.all_adapters():
-        task_dir = mgr.task_dir(name)
-        if not task_dir.exists():
+        if not mgr.is_adapter_prepared(name):
             continue
-        all_tasks.extend(load_tasks(task_dir))
+        all_tasks.extend(load_tasks(mgr.task_dir(name)))
     return all_tasks
 
 
-def _load_gold_standard_doc_tree(mgr: Any) -> Any:
+def _load_gold_standard_doc_tree(mgr: GoldStandardManager) -> Any:
     """Merge DocTrees from all prepared adapters, namespacing files."""
     from datetime import UTC, datetime
 

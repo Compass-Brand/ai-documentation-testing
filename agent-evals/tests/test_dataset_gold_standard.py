@@ -18,8 +18,28 @@ class TestRequiredAdapters:
         adapters = mgr.required_adapters()
         assert "ds1000" in adapters
         assert "ibm-techqa" in adapters
-        assert "ambigqa" in adapters
-        assert "repliqa" in adapters
+
+
+class TestAllAdapters:
+    def test_returns_eleven_adapters(self):
+        """all_adapters() returns 9 HF + 2 synthetic = 11."""
+        mgr = GoldStandardManager()
+        adapters = mgr.all_adapters()
+        assert len(adapters) == 11
+
+    def test_includes_synthetic_adapters(self):
+        """all_adapters() includes perturbation and synthetic-efficiency."""
+        mgr = GoldStandardManager()
+        adapters = mgr.all_adapters()
+        assert "perturbation" in adapters
+        assert "synthetic-efficiency" in adapters
+
+    def test_is_superset_of_required(self):
+        """all_adapters() contains all required_adapters()."""
+        mgr = GoldStandardManager()
+        required = set(mgr.required_adapters())
+        all_names = set(mgr.all_adapters())
+        assert required.issubset(all_names)
 
 
 class TestIsPrepared:
@@ -81,6 +101,78 @@ class TestLimitFor:
     def test_custom_limit_overrides_default(self):
         mgr = GoldStandardManager(limits={"ibm-techqa": 200})
         assert mgr.limit_for("ibm-techqa") == 200
+
+
+class TestPrepareAllErrorResilience:
+    """prepare_all() should continue when individual adapters fail."""
+
+    def test_continues_after_adapter_failure(self, tmp_path, monkeypatch):
+        """If one adapter raises, others still prepare."""
+        from agent_evals.datasets import gold_standard as gs_mod
+
+        call_log: list[str] = []
+
+        class FakeAdapter:
+            def __init__(self, name, *, should_fail=False):
+                self._name = name
+                self._should_fail = should_fail
+
+            def convert_tasks(self, output_dir, limit=None, **kw):
+                call_log.append(self._name)
+                if self._should_fail:
+                    raise RuntimeError(f"Simulated failure for {self._name}")
+                return 1
+
+            def build_doc_tree(self, limit=None):
+                from unittest.mock import MagicMock
+
+                mock_dt = MagicMock()
+                mock_dt.model_dump_json.return_value = '{"files":{},"scanned_at":"2026-01-01T00:00:00+00:00","source":"x","total_tokens":0}'
+                return mock_dt
+
+        # Make ds1000 fail, others succeed
+        adapters = {}
+        for name in gs_mod._REQUIRED_ADAPTERS:
+            adapters[name] = FakeAdapter(name, should_fail=(name == "ds1000"))
+
+        def mock_get_adapter(name):
+            return adapters.get(name, FakeAdapter(name))
+
+        monkeypatch.setattr(gs_mod, "get_adapter", mock_get_adapter)
+        monkeypatch.setattr(gs_mod, "load_all", lambda: None)
+
+        mgr = GoldStandardManager(cache_dir=tmp_path)
+        results = mgr.prepare_all()
+
+        # ds1000 should not be in results (it failed)
+        assert "ds1000" not in results
+        # All other 8 adapters should have succeeded
+        succeeded = [n for n in gs_mod._REQUIRED_ADAPTERS if n != "ds1000"]
+        for name in succeeded:
+            assert name in results, f"{name} should have succeeded"
+            assert results[name] == 1
+
+    def test_logs_warning_on_adapter_failure(self, tmp_path, monkeypatch, caplog):
+        """Failed adapters should produce a warning log."""
+        import logging
+
+        from agent_evals.datasets import gold_standard as gs_mod
+
+        class FailingAdapter:
+            def convert_tasks(self, output_dir, limit=None, **kw):
+                raise RuntimeError("Download failed")
+
+        monkeypatch.setattr(
+            gs_mod, "get_adapter", lambda name: FailingAdapter(),
+        )
+        monkeypatch.setattr(gs_mod, "load_all", lambda: None)
+
+        mgr = GoldStandardManager(cache_dir=tmp_path)
+        with caplog.at_level(logging.WARNING):
+            mgr.prepare_all()
+
+        assert any("ambigqa" in r.message for r in caplog.records)
+        assert any("Download failed" in r.message for r in caplog.records)
 
 
 class TestGenerateSyntheticTasks:
