@@ -1667,6 +1667,126 @@ class TestJudgeSampling:
         assert len(warning_records) >= 1, "Judge failure should log at WARNING, not DEBUG"
 
 
+class TestEvalRunnerJudgePrimary:
+    """Tests for judge-primary score routing in EvalRunner."""
+
+    def test_judge_always_called_for_primary_types(self, monkeypatch) -> None:
+        """EvalRunner calls judge on every trial for judge-primary types."""
+        from agent_evals.judge.calibrator import JudgeScore
+
+        mock_judge_score = JudgeScore(
+            example_id="test", judge_model="mock", score=0.85,
+            rationale="good", raw_response="RATIONALE: good\nSCORE: 0.85",
+        )
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner._call_judge",
+            lambda self, task_type, question, response, **kw: mock_judge_score,
+        )
+        task = _make_mock_task_with_metadata(
+            task_type="code_generation",
+            metadata={"expected_answer": "def foo(): return 42"},
+        )
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+        client = _make_mock_client()
+        config = EvalRunConfig(
+            use_cache=False,
+            judge_enabled=True,
+            judge_sample_rate=100,  # high rate — would normally skip
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+        runner = EvalRunner(client, config=config)
+
+        # Run multiple trials — all should be judged (except index 0)
+        results = [
+            runner._run_trial(task, variant, doc_tree, repetition=i, trial_index=i)
+            for i in range(1, 5)
+        ]
+        judged = [r for r in results if "judge_score" in r.metrics]
+        assert len(judged) == 4, (
+            f"Expected 4 judged trials for judge-primary type, got {len(judged)}"
+        )
+
+    def test_judge_sampled_for_non_primary_types(self, monkeypatch) -> None:
+        """Non-primary types still use sampling."""
+        from agent_evals.judge.calibrator import JudgeScore
+
+        mock_judge_score = JudgeScore(
+            example_id="test", judge_model="mock", score=0.80,
+            rationale="ok", raw_response="RATIONALE: ok\nSCORE: 0.80",
+        )
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner._call_judge",
+            lambda self, task_type, question, response, **kw: mock_judge_score,
+        )
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+        client = _make_mock_client()
+        config = EvalRunConfig(
+            use_cache=False,
+            judge_enabled=True,
+            judge_sample_rate=100,
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+        runner = EvalRunner(client, config=config)
+
+        # retrieval is NOT primary — sample_rate=100 means no sampling fires
+        results = [
+            runner._run_trial(task, variant, doc_tree, repetition=i, trial_index=i)
+            for i in range(1, 5)
+        ]
+        judged = [r for r in results if "judge_score" in r.metrics]
+        assert len(judged) == 0, (
+            f"Expected 0 judged trials for non-primary type with rate=100, got {len(judged)}"
+        )
+
+    def test_judge_kwargs_passed_for_primary_types(self, monkeypatch) -> None:
+        """EvalRunner passes metadata kwargs to _call_judge for primary types."""
+        from agent_evals.judge.calibrator import JudgeScore
+
+        captured_kwargs: list[dict] = []
+
+        def capturing_judge(self, task_type, question, response, **kw):
+            captured_kwargs.append(kw)
+            return JudgeScore(
+                example_id="test", judge_model="mock", score=0.9,
+                rationale="good", raw_response="RATIONALE: good\nSCORE: 0.9",
+            )
+
+        monkeypatch.setattr(
+            "agent_evals.runner.EvalRunner._call_judge", capturing_judge,
+        )
+
+        task = _make_mock_task_with_metadata(
+            task_type="code_generation",
+            metadata={
+                "expected_answer": "def foo(): return 42",
+                "canonical_solution": "def foo():\n    return 42",
+                "entry_point": "foo",
+                "test": "assert foo() == 42",
+            },
+        )
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+        client = _make_mock_client()
+        config = EvalRunConfig(
+            use_cache=False,
+            judge_enabled=True,
+            judge_sample_rate=1,
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+        runner = EvalRunner(client, config=config)
+        runner._run_trial(task, variant, doc_tree, repetition=1, trial_index=1)
+
+        assert len(captured_kwargs) >= 1
+        kw = captured_kwargs[0]
+        assert kw.get("expected_answer") == "def foo(): return 42"
+        assert kw.get("canonical_solution") == "def foo():\n    return 42"
+        assert "test_criteria" in kw
+        assert kw["test_criteria"]["entry_point"] == "foo"
+
+
 # ---------------------------------------------------------------------------
 # Thread safety tests for baseline variant setup
 # ---------------------------------------------------------------------------

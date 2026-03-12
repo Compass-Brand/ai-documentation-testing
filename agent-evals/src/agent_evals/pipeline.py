@@ -30,6 +30,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _effective_score(
+    trial: Any, judge_primary_types: frozenset[str],
+) -> float:
+    """Return judge_score for judge-primary types, else trial.score."""
+    if (
+        trial.task_type in judge_primary_types
+        and trial.metrics
+        and "judge_score" in trial.metrics
+    ):
+        return trial.metrics["judge_score"]
+    return trial.score
+
+
 def _to_dict(obj: Any) -> Any:
     """Convert a dataclass instance to a dict, or return the object as-is."""
     if obj is None:
@@ -64,6 +77,7 @@ class PipelineConfig:
     model_budgets: dict[str, float] | None = None
     strategy_config: StrategyConfig = field(default_factory=StrategyConfig)
     strategy_reps: dict[str, int] = field(default_factory=dict)
+    judge_primary_types: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass
@@ -216,6 +230,7 @@ class DOEPipeline:
     def _group_refinement_scores(
         trials: list[Any],
         design: Any,
+        judge_primary_types: frozenset[str] = frozenset(),
     ) -> dict[int, list[float]]:
         """Group trial scores into design-row buckets by exact match.
 
@@ -252,6 +267,8 @@ class DOEPipeline:
             if trial.error is not None:
                 continue
 
+            score = _effective_score(trial, judge_primary_types)
+
             # Fast path: direct oa_row_id from Taguchi runner
             oa_row_id = (
                 trial.metrics.get("oa_row_id")
@@ -259,7 +276,7 @@ class DOEPipeline:
                 else None
             )
             if oa_row_id is not None:
-                row_scores[int(oa_row_id)].append(trial.score)
+                row_scores[int(oa_row_id)].append(score)
                 continue
 
             vname = trial.variant_name
@@ -270,7 +287,7 @@ class DOEPipeline:
                 # Try all permutations against row signatures
                 sig = tuple(parts)
                 if sig in sig_to_row:
-                    row_scores[sig_to_row[sig]].append(trial.score)
+                    row_scores[sig_to_row[sig]].append(score)
                     continue
                 # Also try matching by sorted level names.
                 # sorted() comparison is order-independent but avoids the
@@ -282,7 +299,7 @@ class DOEPipeline:
                         row.assignments[f] for f in factor_names_sorted
                     ]
                     if sorted_parts == sorted(vals):
-                        row_scores[row.run_id].append(trial.score)
+                        row_scores[row.run_id].append(score)
                         break
                 continue
 
@@ -293,7 +310,7 @@ class DOEPipeline:
                 continue  # ambiguous or unknown level name
             for row in design.rows:
                 if row.assignments.get(factor_name) == vname:
-                    row_scores[row.run_id].append(trial.score)
+                    row_scores[row.run_id].append(score)
 
         return dict(row_scores)
 
@@ -315,7 +332,9 @@ class DOEPipeline:
                 axes[meta.axis].append(meta.name)
 
         design = build_factorial_design(dict(axes))
-        row_scores = self._group_refinement_scores(trials, design)
+        row_scores = self._group_refinement_scores(
+            trials, design, self.config.judge_primary_types,
+        )
         sn_ratios = compute_sn_ratios(
             row_scores, self.config.quality_type,
         )
@@ -444,7 +463,9 @@ class DOEPipeline:
             if trial.error is not None:
                 continue
             row_id = trial.metrics["oa_row_id"]
-            row_scores[row_id].append(trial.score)
+            row_scores[row_id].append(
+                _effective_score(trial, self.config.judge_primary_types)
+            )
 
         # 6-9. Statistical analysis
         sn_ratios = compute_sn_ratios(

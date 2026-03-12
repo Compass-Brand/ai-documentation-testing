@@ -131,6 +131,7 @@ class EvalRunConfig:
     fetch_generation_stats: bool = False
     generation_stats_rate: float = 1.0
     budget: float | None = None
+    judge_primary_types: frozenset[str] = frozenset()
 
     _VALID_OUTPUT_FORMATS = frozenset({"json", "csv", "both"})
     _VALID_DISPLAY_MODES = frozenset({"rich", "plain", "none"})
@@ -795,7 +796,16 @@ class EvalRunner:
             variant.set_target_tokens(oracle_tokens)
         return variant
 
-    def _call_judge(self, task_type: str, question: str, response: str) -> "JudgeScore":
+    def _call_judge(
+        self,
+        task_type: str,
+        question: str,
+        response: str,
+        *,
+        expected_answer: str | None = None,
+        canonical_solution: str | None = None,
+        test_criteria: dict | None = None,
+    ) -> "JudgeScore":
         """Call LLM judge to score one trial response.
 
         PHASE A GUARD: judge scores are validation-only. Do NOT modify
@@ -805,6 +815,12 @@ class EvalRunner:
             JudgeScore,
             build_judge_prompt,
             parse_judge_response,
+        )
+
+        ref_kwargs = dict(
+            expected_answer=expected_answer,
+            canonical_solution=canonical_solution,
+            test_criteria=test_criteria,
         )
 
         if self._config.judge_mode == "poll":
@@ -825,6 +841,7 @@ class EvalRunner:
                     question=question,
                     response=response,
                     rubric=None,
+                    **ref_kwargs,
                 )
                 raw = self._client.complete(messages, model=model).content
                 score_val, rationale = parse_judge_response(raw)
@@ -854,6 +871,7 @@ class EvalRunner:
             question=question,
             response=response,
             rubric=None,
+            **ref_kwargs,
         )
         raw = self._client.complete(messages, model=judge_model).content
         score, rationale = parse_judge_response(raw)
@@ -1060,14 +1078,33 @@ class EvalRunner:
         metrics["cost_metrics"] = cost_metrics.to_dict()
         # LLM-as-judge sampling: configurable via EvalRunConfig
         sample_rate = self._config.judge_sample_rate
-        judge_active = self._config.judge_enabled and trial_index > 0 and trial_index % sample_rate == 0
+        is_judge_primary = (
+            task.definition.type in self._config.judge_primary_types
+        )
+        judge_active = (
+            self._config.judge_enabled
+            and trial_index > 0
+            and (
+                is_judge_primary
+                or trial_index % sample_rate == 0
+            )
+        )
         if judge_active:
             try:
+                from agent_evals.taguchi.runner import _extract_judge_metadata
+
                 question = getattr(task.definition, "question", None) or ""
+                meta = getattr(task.definition, "metadata", None) or {}
+                judge_kwargs: dict = {}
+                if is_judge_primary:
+                    judge_kwargs = _extract_judge_metadata(
+                        task.definition.type, meta,
+                    )
                 judge_result = self._call_judge(
                     task.definition.type,
                     question,
                     strategy_result.final_response,
+                    **judge_kwargs,
                 )
                 metrics["judge_score"] = judge_result.score
                 metrics["judge_heuristic_delta"] = round(

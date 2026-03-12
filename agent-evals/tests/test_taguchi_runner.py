@@ -1024,3 +1024,126 @@ class TestJudgeWiring:
             assert trial.error is None
             assert trial.score > 0  # heuristic score still works
             assert "judge_score" not in trial.metrics  # judge failed
+
+
+class TestJudgePrimaryRouting:
+    """Tests for judge-primary score routing in TaguchiRunner."""
+
+    def test_judge_always_called_for_primary_types(self):
+        """Judge fires on every trial for judge-primary task types."""
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=3, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client(
+            content="RATIONALE: Good\nSCORE: 0.85",
+        )
+        config = EvalRunConfig(
+            repetitions=1, max_connections=1,
+            judge_enabled=True, judge_sample_rate=100,
+            judge_model="openrouter/test/judge-model",
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [make_mock_task("cg_001", task_type="code_generation")]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        # 3 rows * 1 task * 1 rep = 3 trials
+        assert len(result.trials) == 3
+        # trial_index 0 is always skipped, so 2 judged
+        judged = [t for t in result.trials if "judge_score" in t.metrics]
+        assert len(judged) >= 2, (
+            f"Expected >= 2 judged trials for judge-primary type, got {len(judged)}"
+        )
+
+    def test_judge_sampled_for_non_primary_types(self):
+        """Non-primary types still use sampling."""
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=3, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client(
+            content="RATIONALE: OK\nSCORE: 0.80",
+        )
+        config = EvalRunConfig(
+            repetitions=1, max_connections=1,
+            judge_enabled=True, judge_sample_rate=100,
+            judge_model="openrouter/test/judge-model",
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        # retrieval is NOT judge-primary
+        tasks = [make_mock_task("ret_001", task_type="retrieval")]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        # 3 trials; sample_rate=100 means no sampling fires
+        assert len(result.trials) == 3
+        judged = [t for t in result.trials if "judge_score" in t.metrics]
+        assert len(judged) == 0, (
+            f"Expected 0 judged trials for non-primary type with rate=100, got {len(judged)}"
+        )
+
+    def test_judge_metadata_passed_for_primary_types(self):
+        """Judge prompt includes expected_answer and test_criteria for primary types."""
+        axes = {1: ["flat", "2tier"]}
+        design = _make_simple_design(n_rows=2, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client(
+            content="RATIONALE: Good\nSCORE: 0.90",
+        )
+        config = EvalRunConfig(
+            repetitions=1, max_connections=1,
+            judge_enabled=True, judge_sample_rate=1,
+            judge_model="openrouter/test/judge-model",
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        captured_kwargs: list[dict] = []
+        original = runner._call_judge
+
+        def capture_judge(client, task_type, question, response, **kwargs):
+            captured_kwargs.append(kwargs)
+            return original(client, task_type, question, response, **kwargs)
+
+        runner._call_judge = capture_judge  # type: ignore[assignment]
+
+        task = make_mock_task("cg_001", task_type="code_generation")
+        task.definition.metadata = {
+            "expected_answer": "def foo(): return 42",
+            "canonical_solution": "def foo():\n    return 42",
+            "entry_point": "foo",
+            "test": "assert foo() == 42",
+        }
+        doc_tree = MagicMock()
+
+        runner.run([task], doc_tree)
+
+        assert len(captured_kwargs) >= 1, "Judge should have been called at least once"
+        kw = captured_kwargs[0]
+        assert kw.get("expected_answer") == "def foo(): return 42"
+        assert kw.get("canonical_solution") == "def foo():\n    return 42"
+        assert "test_criteria" in kw
+        assert kw["test_criteria"]["entry_point"] == "foo"

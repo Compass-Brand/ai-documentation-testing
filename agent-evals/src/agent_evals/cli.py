@@ -200,6 +200,15 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         help="Model for LLM judge scoring (default: openrouter/openai/gpt-4o-mini)",
     )
 
+    parser.add_argument(
+        "--judge-primary-types",
+        type=str,
+        default=None,
+        help="Comma-separated task types that use judge as primary scorer "
+             "(e.g. 'code_generation,compositional,agentic'). "
+             "Implies --judge-enabled for those types.",
+    )
+
     # Taguchi / multi-model configuration
     parser.add_argument(
         "--mode",
@@ -521,6 +530,7 @@ _CONFIG_KEYS: dict[str, type] = {
     "judge_mode": str,
     "judge_model": str,
     "judge_sample_rate": int,
+    "judge_primary_types": str,
     "resume": str,
     "resume_pipeline": str,
     "dashboard": bool,
@@ -596,12 +606,23 @@ def resolve_config(
     return resolved
 
 
+def _parse_judge_primary_types(resolved: dict[str, Any]) -> frozenset[str]:
+    """Parse comma-separated judge_primary_types into a frozenset."""
+    raw = resolved.get("judge_primary_types")
+    if not raw:
+        return frozenset()
+    return frozenset(t.strip() for t in raw.split(",") if t.strip())
+
+
 def build_eval_run_config(resolved: dict[str, Any]) -> EvalRunConfig:
     """Build an EvalRunConfig from a resolved config dict.
 
     Maps CLI/config/env keys to EvalRunConfig fields with appropriate defaults.
     """
     from agent_evals.runner import EvalRunConfig
+
+    judge_primary_types = _parse_judge_primary_types(resolved)
+    judge_enabled = resolved.get("judge_enabled", False) or bool(judge_primary_types)
 
     return EvalRunConfig(
         repetitions=resolved.get("repetitions", 10),
@@ -615,10 +636,11 @@ def build_eval_run_config(resolved: dict[str, Any]) -> EvalRunConfig:
         output_format=resolved.get("output_format", "both"),
         display_mode=resolved.get("display", "rich"),
         continue_on_error=resolved.get("continue_on_error", False),
-        judge_enabled=resolved.get("judge_enabled", False),
+        judge_enabled=judge_enabled,
         judge_sample_rate=resolved.get("judge_sample_rate", 20),
         judge_model=resolved.get("judge_model", "openrouter/openai/gpt-4o-mini"),
         judge_mode=resolved.get("judge_mode", "routine"),
+        judge_primary_types=judge_primary_types,
     )
 
 
@@ -1157,6 +1179,7 @@ def _run_pipeline(
         global_budget=resolved.get("budget"),
         model_budgets=model_budgets,
         strategy_config=strategy_config,
+        judge_primary_types=run_config.judge_primary_types,
     )
 
     resume_pipeline_id = resolved.get("resume_pipeline")
@@ -1247,6 +1270,7 @@ def _run_multi_strategy_pipeline(
         model_budgets=model_budgets,
         strategy_config=strategy_config,
         strategy_reps=strategy_reps,
+        judge_primary_types=run_config.judge_primary_types,
     )
 
     resume_pipeline_id = resolved.get("resume_pipeline")

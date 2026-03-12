@@ -2469,3 +2469,51 @@ class TestParentRunId:
         assert call_kwargs is not None
         assert call_kwargs.kwargs.get("parent_run_id") == "screening_run_ref", \
             "orchestrator.run must be called with parent_run_id=screening_run_ref"
+
+
+class TestEffectiveScore:
+    """Tests for _effective_score helper in pipeline module."""
+
+    def test_returns_judge_score_for_primary_type(self):
+        from agent_evals.pipeline import _effective_score
+
+        trial = MagicMock()
+        trial.task_type = "code_generation"
+        trial.score = 0.5
+        trial.metrics = {"judge_score": 0.9}
+
+        result = _effective_score(trial, frozenset({"code_generation"}))
+        assert result == 0.9
+
+    def test_returns_trial_score_for_non_primary_type(self):
+        from agent_evals.pipeline import _effective_score
+
+        trial = MagicMock()
+        trial.task_type = "retrieval"
+        trial.score = 0.7
+        trial.metrics = {"judge_score": 0.9}
+
+        result = _effective_score(trial, frozenset({"code_generation"}))
+        assert result == 0.7
+
+    def test_returns_trial_score_when_no_judge_score(self):
+        from agent_evals.pipeline import _effective_score
+
+        trial = MagicMock()
+        trial.task_type = "code_generation"
+        trial.score = 0.6
+        trial.metrics = {}
+
+        result = _effective_score(trial, frozenset({"code_generation"}))
+        assert result == 0.6
+
+    def test_returns_trial_score_with_empty_primary_types(self):
+        from agent_evals.pipeline import _effective_score
+
+        trial = MagicMock()
+        trial.task_type = "code_generation"
+        trial.score = 0.5
+        trial.metrics = {"judge_score": 0.9}
+
+        result = _effective_score(trial, frozenset())
+        assert result == 0.5
