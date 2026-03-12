@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 from agent_evals.context.base import ContextStrategy, StrategyResult
 from agent_evals.context.full import FullContextStrategy
 from agent_evals.cost import CostTracker
+from agent_evals.judge.calibrator import extract_judge_metadata
 from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.llm.cache import ResponseCache
 from agent_evals.llm.client import GenerationResult, LLMClient
@@ -1090,8 +1091,6 @@ class EvalRunner:
         )
         if judge_active:
             try:
-                from agent_evals.judge.calibrator import extract_judge_metadata
-
                 question = getattr(task.definition, "question", None) or ""
                 meta = getattr(task.definition, "metadata", None) or {}
                 judge_kwargs: dict = {}
