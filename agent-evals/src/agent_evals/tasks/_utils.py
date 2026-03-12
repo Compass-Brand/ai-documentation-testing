@@ -63,3 +63,23 @@ def contains_text(needle: str, haystack: str) -> bool:
     if len(needle) <= _SHORT_STRING_THRESHOLD:
         return bool(re.search(r"\b" + re.escape(needle) + r"\b", haystack))
     return needle in haystack
+
+
+def fuzzy_to_continuous_score(fuzzy_score: float) -> float | None:
+    """Map a rapidfuzz score to a continuous [0.5, 1.0] value.
+
+    Uses piecewise linear interpolation across three tiers:
+    - [85, 100] -> [0.9, 1.0]
+    - [70, 85)  -> [0.7, 0.9)
+    - [50, 70)  -> [0.5, 0.7)
+
+    Returns ``None`` when *fuzzy_score* < 50, signaling the caller
+    should fall back to keyword-based scoring.
+    """
+    if fuzzy_score >= 85.0:
+        return 0.9 + 0.1 * (fuzzy_score - 85.0) / 15.0
+    if fuzzy_score >= 70.0:
+        return 0.7 + 0.2 * (fuzzy_score - 70.0) / 15.0
+    if fuzzy_score >= 50.0:
+        return 0.5 + 0.2 * (fuzzy_score - 50.0) / 20.0
+    return None
