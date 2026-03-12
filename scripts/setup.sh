@@ -71,6 +71,14 @@ else
     info ".env already exists"
 fi
 
+# --- Prepare gold standard datasets ---
+info "Preparing gold standard HF datasets..."
+if uv run agent-evals --prepare-datasets all --dataset-limit 100 2>&1; then
+    info "Gold standard datasets prepared"
+else
+    warn "Dataset preparation failed. Run manually: uv run agent-evals --prepare-datasets all --dataset-limit 100"
+fi
+
 # --- Verify installation ---
 info "Running tests to verify installation..."
 if uv run python -m pytest --tb=short -q 2>&1 | tail -5; then
@@ -100,4 +108,5 @@ echo "Next steps:"
 echo "  1. Edit .env with your OPENROUTER_API_KEY"
 echo "  2. Run a dry-run:  uv run agent-evals --model openrouter/anthropic/claude-sonnet-4.5 --dry-run"
 echo "  3. Run tests:      uv run python -m pytest"
-echo "  4. Run evals:      uv run agent-evals --config agent-evals/examples/minimal-config.yaml"
+echo "  4. Run evals:      uv run agent-evals --model openrouter/provider/name"
+echo "  5. Legacy tasks:   uv run agent-evals --source legacy --model openrouter/provider/name"

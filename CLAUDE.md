@@ -44,6 +44,15 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1  # Windows
 # Manual install (UV workspace)
 uv sync --dev
 
+# First-time setup: prepare gold standard datasets
+agent-evals --prepare-datasets all --dataset-limit 100
+
+# Run evaluation (uses HF datasets as gold standard)
+agent-evals --model openrouter/provider/name
+
+# Run with legacy hand-crafted tasks
+agent-evals --source legacy --model openrouter/provider/name
+
 # Run all tests
 pytest
 
