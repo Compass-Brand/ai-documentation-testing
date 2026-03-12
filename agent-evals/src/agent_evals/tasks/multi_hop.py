@@ -109,7 +109,13 @@ class MultiHopTask(EvalTask):
             steps_counted += 1
             matched = sum(1 for kw in keywords if self._keyword_in_response(kw, response_lower))
             coverage = matched / len(keywords)
-            score_sum += coverage if coverage >= STEP_COVERAGE_THRESHOLD else 0.0
+            if coverage >= STEP_COVERAGE_THRESHOLD:
+                score_sum += coverage
+            elif coverage > 0:
+                # Below threshold: quadratic ramp gives partial credit
+                # while still penalizing weak coverage.
+                # At threshold boundary: ramp == coverage (continuous).
+                score_sum += coverage * (coverage / STEP_COVERAGE_THRESHOLD)
 
         if steps_counted == 0:
             return 1.0

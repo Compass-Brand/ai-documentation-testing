@@ -328,6 +328,50 @@ class TestMultiHopTaskScoring:
         assert score == 1.0
 
 
+class TestMultiHopContinuousScoring:
+    """Tests for continuous scoring below the 30% coverage threshold."""
+
+    def test_below_threshold_gets_partial_credit(self):
+        """Coverage below 30% threshold should get partial credit, not zero."""
+        task = _multi_hop_task(
+            reasoning_chain=["alpha bravo charlie delta echo"],
+            question_decomposition=[],
+        )
+        # Response has 1/5 keywords = 20% coverage (below 30% threshold)
+        score = task.score_response("alpha")
+        assert 0.0 < score < 0.3  # partial credit, not zero
+
+    def test_above_threshold_gets_full_coverage(self):
+        """Coverage above threshold should still use actual coverage value."""
+        task = _multi_hop_task(
+            reasoning_chain=["alpha bravo charlie delta echo"],
+            question_decomposition=[],
+        )
+        # 3/5 keywords = 60% coverage
+        score = task.score_response("alpha bravo charlie")
+        assert score >= 0.5
+
+    def test_zero_coverage_still_zero(self):
+        """No keywords matched should still score 0.0."""
+        task = _multi_hop_task(
+            reasoning_chain=["alpha bravo charlie"],
+            question_decomposition=[],
+        )
+        score = task.score_response("xyz nothing here")
+        assert score == 0.0
+
+    def test_monotonic_with_coverage(self):
+        """Higher coverage always produces higher or equal score."""
+        task = _multi_hop_task(
+            reasoning_chain=["alpha bravo charlie delta echo"],
+            question_decomposition=[],
+        )
+        s1 = task.score_response("alpha")          # 1/5 = 20%
+        s2 = task.score_response("alpha bravo")     # 2/5 = 40%
+        s3 = task.score_response("alpha bravo charlie delta echo")  # 5/5
+        assert s1 <= s2 <= s3
+
+
 def test_single_keyword_hit_does_not_pass_step():
     """A step with 5 keywords must not pass on a single keyword match."""
     defn = TaskDefinition(
@@ -340,4 +384,4 @@ def test_single_keyword_hit_does_not_pass_step():
     task = MultiHopTask(defn)
     # Only "alpha" appears -- 1/5 = 20% < 30% threshold
     score = task.score_response("alpha is mentioned but nothing else.")
-    assert score == 0.0, f"Expected 0.0 for 20% coverage, got {score}"
+    assert 0.0 < score < 0.3, f"Expected partial credit for 20% coverage, got {score}"
