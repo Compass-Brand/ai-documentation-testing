@@ -226,3 +226,83 @@ class TestFactExtractionTaskScoring:
         )
         assert score >= 0.7, f"Expected >= 0.7 for fuzzy paraphrase, got {score}"
 
+
+class TestFuzzyScoreContinuous:
+    """Tests for linear interpolation within fuzzy-score bands.
+
+    IMPORTANT: token_set_ratio returns 100.0 whenever ALL tokens of the
+    expected string appear in the response. To test specific bands, the
+    response must be MISSING at least one expected token (replaced with
+    a synonym) so the fuzzy score lands in the desired range.
+
+    All inputs below were verified empirically:
+      - "database connection pooling strategy" vs "...pooling approach..."  -> 85.71
+      - "distributed cache invalidation broadcast notification service handler"
+        vs "...service processor"  -> 93.8
+      - "database connection pooling strategy" vs "...pooling mechanism..." -> 75.0
+    """
+
+    def test_fuzzy_85_scores_above_0_9(self):
+        """Fuzzy=85.71 should map to ~0.905 via [85,100] -> [0.9,1.0]."""
+        task = _fact_task(
+            expected_answer="database connection pooling strategy",
+            answer_aliases=[],
+        )
+        # Missing "strategy", has "approach" instead -> fuzzy=85.71, no exact match
+        score = task.score_response(
+            "the database connection pooling approach handles resources"
+        )
+        assert score >= 0.9, f"Expected >= 0.9 for fuzzy=85.71, got {score}"
+
+    def test_fuzzy_94_scores_between_0_9_and_1(self):
+        """Fuzzy=93.8 should map to ~0.959, strictly between 0.9 and 1.0."""
+        task = _fact_task(
+            expected_answer=(
+                "distributed cache invalidation broadcast notification service handler"
+            ),
+            answer_aliases=[],
+        )
+        # Missing "handler", has "processor" instead -> fuzzy=93.8, no exact match
+        score = task.score_response(
+            "the distributed cache invalidation broadcast notification service processor"
+        )
+        assert 0.9 < score < 1.0, (
+            f"Expected strictly between 0.9 and 1.0 for fuzzy=93.8, got {score}"
+        )
+
+    def test_fuzzy_75_scores_between_0_7_and_0_9(self):
+        """Fuzzy=75.0 should map to ~0.767 via [70,85) -> [0.7,0.9)."""
+        task = _fact_task(
+            expected_answer="database connection pooling strategy",
+            answer_aliases=[],
+        )
+        # Missing "connection" and "strategy" -> fuzzy=75.0, no exact match
+        score = task.score_response(
+            "a database pooling mechanism for connections"
+        )
+        assert 0.7 <= score < 0.9, (
+            f"Expected between 0.7 and 0.9 for fuzzy=75.0, got {score}"
+        )
+
+    def test_monotonic_with_fuzzy_score(self):
+        """Higher fuzzy score always produces higher or equal final score."""
+        task = _fact_task(
+            expected_answer="database connection pooling strategy",
+            answer_aliases=[],
+        )
+        # fuzzy=85.71 (missing "strategy") -> score ~0.905
+        s_high = task.score_response(
+            "the database connection pooling approach handles resources"
+        )
+        # fuzzy=75.0 (missing "connection" + "strategy") -> score ~0.767
+        s_mid = task.score_response(
+            "a database pooling mechanism for connections"
+        )
+        # fuzzy=65.38 (only 2/4 tokens match) -> score ~0.654
+        s_low = task.score_response(
+            "the database has a caching strategy"
+        )
+        assert s_low <= s_mid <= s_high, (
+            f"Monotonicity violated: low={s_low}, mid={s_mid}, high={s_high}"
+        )
+

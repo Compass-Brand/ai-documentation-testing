@@ -110,9 +110,14 @@ class RobustnessTask(EvalTask):
             processor=fuzz_utils.default_process,
         )
         if fuzzy_score >= 85.0:
-            return 0.9
+            # Map [85, 100] -> [0.9, 1.0]
+            return 0.9 + 0.1 * (fuzzy_score - 85.0) / 15.0
         if fuzzy_score >= 70.0:
-            return 0.7
+            # Map [70, 85) -> [0.7, 0.9)
+            return 0.7 + 0.2 * (fuzzy_score - 70.0) / 15.0
+        if fuzzy_score >= 50.0:
+            # Map [50, 70) -> [0.5, 0.7)
+            return 0.5 + 0.2 * (fuzzy_score - 50.0) / 20.0
 
         # Layer 4: Keyword fallback
         keywords = extract_keywords(self.expected_answer)

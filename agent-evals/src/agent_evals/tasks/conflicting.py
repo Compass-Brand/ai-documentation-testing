@@ -1,8 +1,7 @@
 """Conflicting information task type for evaluating conflict resolution.
 
-Scores responses by checking whether the model resolved conflicting
-information correctly based on the expected resolution. Exact match
-yields 1.0; fallback uses keyword fraction of non-stopword words found.
+Scores responses using 3 weighted axes: resolution correctness (50%),
+source awareness (30%), and strategy recognition (20%).
 """
 
 from __future__ import annotations
@@ -12,6 +11,11 @@ from typing import Any
 
 from agent_evals.tasks._utils import contains_text, extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
+
+# Axis weights for multi-axis scoring (must sum to 1.0)
+_W_RESOLUTION = 0.50
+_W_SOURCE = 0.30
+_W_STRATEGY = 0.20
 
 
 class ConflictingTask(EvalTask):
@@ -28,6 +32,16 @@ class ConflictingTask(EvalTask):
         self.sources: list[dict[str, Any]] = meta.get("sources", [])
         self.expected_resolution: str = meta.get("expected_resolution", "")
         self.resolution_strategy: str = meta.get("resolution_strategy", "")
+
+        # Precompute per-task invariants used by score_response
+        self._alternatives: list[str] = [
+            a.strip() for a in self.expected_resolution.split("|") if a.strip()
+        ]
+        self._expected_lower: str = self.expected_resolution.lower()
+        self._expected_keywords: list[str] = extract_keywords(self.expected_resolution)
+        self._source_names: list[str] = [
+            s.get("name", "") for s in self.sources if s.get("name")
+        ]
 
     def build_prompt(self, index_content: str) -> list[dict[str, str]]:
         """Build messages for conflicting information evaluation.
@@ -80,43 +94,38 @@ class ConflictingTask(EvalTask):
         strategy_score = self._score_strategy(response_lower)
 
         score = (
-            resolution_score * 0.5
-            + source_score * 0.3
-            + strategy_score * 0.2
+            resolution_score * _W_RESOLUTION
+            + source_score * _W_SOURCE
+            + strategy_score * _W_STRATEGY
         )
         return max(0.0, min(1.0, score))
 
     def _score_resolution(self, response_lower: str) -> float:
         """Axis 1: Resolution correctness — wraps existing logic."""
-        alternatives = [
-            a.strip() for a in self.expected_resolution.split("|") if a.strip()
-        ]
-        if len(alternatives) > 1:
-            return self._score_alternatives(alternatives, response_lower)
+        if len(self._alternatives) > 1:
+            return self._score_alternatives(self._alternatives, response_lower)
 
-        if contains_text(self.expected_resolution.lower(), response_lower):
+        if contains_text(self._expected_lower, response_lower):
             return 1.0
 
-        keywords = extract_keywords(self.expected_resolution)
-        if not keywords:
+        if not self._expected_keywords:
             return 0.0
 
         matched = sum(
-            1 for kw in keywords if contains_text(kw.lower(), response_lower)
+            1 for kw in self._expected_keywords
+            if contains_text(kw.lower(), response_lower)
         )
-        return max(0.0, min(1.0, matched / len(keywords)))
+        return matched / len(self._expected_keywords)
 
     def _score_source_awareness(self, response_lower: str) -> float:
         """Axis 2: Source awareness — fraction of source names found."""
-        if not self.sources:
+        if not self._source_names:
             return 0.0
 
-        names = [s.get("name", "") for s in self.sources if s.get("name")]
-        if not names:
-            return 0.0
-
-        matched = sum(1 for name in names if name.lower() in response_lower)
-        return matched / len(names)
+        matched = sum(
+            1 for name in self._source_names if name.lower() in response_lower
+        )
+        return matched / len(self._source_names)
 
     _STRATEGY_PHRASES: tuple[str, ...] = (
         "conflict", "contradict", "inconsisten", "disagree",
