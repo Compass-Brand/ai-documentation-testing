@@ -721,16 +721,16 @@ def validate_confirmation(
         prediction.predicted_sn - 1.0,
         prediction.predicted_sn + 1.0,
     )
-    within = low <= observed_sn <= high
+    within = bool(low <= observed_sn <= high)
 
     # Sigma deviation
     se = prediction.se_prediction or 1.0
     sigma_dev = (observed_sn - prediction.predicted_sn) / se if se > 0 else 0.0
 
     return ConfirmationResult(
-        observed_sn=observed_sn,
-        predicted_sn=prediction.predicted_sn,
-        prediction_interval=(low, high),
+        observed_sn=float(observed_sn),
+        predicted_sn=float(prediction.predicted_sn),
+        prediction_interval=(float(low), float(high)),
         within_interval=within,
-        sigma_deviation=sigma_dev,
+        sigma_deviation=float(sigma_dev),
     )
