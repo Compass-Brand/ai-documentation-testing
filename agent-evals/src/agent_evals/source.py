@@ -27,7 +27,8 @@ def load_tasks_for_source(source: str = DEFAULT_SOURCE) -> list[Any]:
     """Load evaluation tasks for the given *source*.
 
     Args:
-        source: ``"gold_standard"`` for built-in fixtures, a dataset
+        source: ``"gold_standard"`` (loads HF datasets, falls back to
+            legacy), ``"legacy"`` (hand-crafted YAMLs), a dataset
             adapter name (e.g. ``"repliqa"``), or a comma-separated
             list of dataset names (e.g. ``"repliqa,ambigqa"``).
 
@@ -40,7 +41,26 @@ def load_tasks_for_source(source: str = DEFAULT_SOURCE) -> list[Any]:
     """
     from agent_evals.tasks.loader import load_tasks
 
+    if source == "legacy":
+        if not _GOLD_STANDARD_DIR.is_dir():
+            raise FileNotFoundError(
+                f"Legacy gold standard directory not found: {_GOLD_STANDARD_DIR}"
+            )
+        return load_tasks(_GOLD_STANDARD_DIR)
+
     if source == DEFAULT_SOURCE:
+        from agent_evals.datasets.gold_standard import GoldStandardManager
+
+        mgr = GoldStandardManager()
+        if mgr.is_prepared():
+            return _load_gold_standard_tasks(mgr)
+        # Fall back to legacy when datasets not prepared
+        missing = mgr.missing_adapters()
+        logger.warning(
+            "HF datasets not prepared (missing: %s). Falling back to legacy. "
+            "Run: agent-evals --prepare-datasets all",
+            ", ".join(missing),
+        )
         if not _GOLD_STANDARD_DIR.is_dir():
             raise FileNotFoundError(
                 f"Gold standard directory not found: {_GOLD_STANDARD_DIR}"
@@ -59,7 +79,7 @@ def load_tasks_for_source(source: str = DEFAULT_SOURCE) -> list[Any]:
     for name in names:
         if not cache.is_prepared(name):
             raise SourceNotPreparedError(
-                f"Dataset \'{name}\' has not been prepared. "
+                f"Dataset '{name}' has not been prepared. "
                 f"Run: agent-evals --prepare-datasets {name}"
             )
         all_tasks.extend(load_tasks(cache.task_dir(name)))
@@ -70,18 +90,30 @@ def load_tasks_for_source(source: str = DEFAULT_SOURCE) -> list[Any]:
 def load_doc_tree_for_source(source: str = DEFAULT_SOURCE) -> Any:
     """Load the doc_tree for the given *source*.
 
-    For ``"gold_standard"`` returns the built-in sample doc tree.
-    For other sources reads the cached JSON doc tree.  When *source*
-    is a comma-separated list, doc trees are merged.
+    For ``"gold_standard"`` loads merged HF dataset doc trees (or falls
+    back to built-in sample).  For ``"legacy"`` returns the built-in
+    sample doc tree.  For other sources reads the cached JSON doc tree.
+    When *source* is a comma-separated list, doc trees are merged.
 
     Args:
-        source: ``"gold_standard"``, a dataset adapter name, or a
-            comma-separated list of dataset names.
+        source: ``"gold_standard"``, ``"legacy"``, a dataset adapter
+            name, or a comma-separated list of dataset names.
 
     Returns:
         A ``DocTree`` instance.
     """
+    if source == "legacy":
+        from agent_evals.fixtures import load_sample_doc_tree
+
+        return load_sample_doc_tree()
+
     if source == DEFAULT_SOURCE:
+        from agent_evals.datasets.gold_standard import GoldStandardManager
+
+        mgr = GoldStandardManager()
+        if mgr.is_prepared():
+            return _load_gold_standard_doc_tree(mgr)
+        # Fall back to legacy fixture
         from agent_evals.fixtures import load_sample_doc_tree
 
         return load_sample_doc_tree()
@@ -116,5 +148,44 @@ def load_doc_tree_for_source(source: str = DEFAULT_SOURCE) -> Any:
         files=merged_files,
         scanned_at=datetime.now(tz=UTC),
         source=",".join(names),
+        total_tokens=total_tokens,
+    )
+
+
+def _load_gold_standard_tasks(mgr: Any) -> list[Any]:
+    """Load tasks from all 9 prepared HF adapters."""
+    from agent_evals.tasks.loader import load_tasks
+
+    all_tasks: list[Any] = []
+    for name in mgr.required_adapters():
+        task_dir = mgr._cache.task_dir(name)
+        all_tasks.extend(load_tasks(task_dir))
+    return all_tasks
+
+
+def _load_gold_standard_doc_tree(mgr: Any) -> Any:
+    """Merge DocTrees from all 9 HF adapters, namespacing files."""
+    from datetime import UTC, datetime
+
+    from agent_index.models import DocTree
+
+    merged_files: dict[str, Any] = {}
+    total_tokens = 0
+
+    for name in mgr.required_adapters():
+        dt_path = mgr._cache.doc_tree_path(name)
+        if not dt_path.exists():
+            continue
+        dt = DocTree.model_validate_json(
+            dt_path.read_text(encoding="utf-8")
+        )
+        for rel_path, doc_file in dt.files.items():
+            merged_files[f"{name}/{rel_path}"] = doc_file
+        total_tokens += dt.total_tokens or 0
+
+    return DocTree(
+        files=merged_files,
+        scanned_at=datetime.now(tz=UTC),
+        source="gold_standard",
         total_tokens=total_tokens,
     )

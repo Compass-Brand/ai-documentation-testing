@@ -145,7 +145,8 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         type=str,
         default=None,
         help=(
-            "Task source: gold_standard (default), dataset name, "
+            "Task source: gold_standard (default, loads HF datasets), "
+            "'legacy' (hand-crafted YAMLs), dataset name, "
             "or comma-separated list"
         ),
     )
