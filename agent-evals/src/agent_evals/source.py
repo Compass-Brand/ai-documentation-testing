@@ -153,18 +153,20 @@ def load_doc_tree_for_source(source: str = DEFAULT_SOURCE) -> Any:
 
 
 def _load_gold_standard_tasks(mgr: Any) -> list[Any]:
-    """Load tasks from all 9 prepared HF adapters."""
+    """Load tasks from all prepared adapters (9 HF + 2 synthetic)."""
     from agent_evals.tasks.loader import load_tasks
 
     all_tasks: list[Any] = []
-    for name in mgr.required_adapters():
-        task_dir = mgr._cache.task_dir(name)
+    for name in mgr.all_adapters():
+        task_dir = mgr.task_dir(name)
+        if not task_dir.exists():
+            continue
         all_tasks.extend(load_tasks(task_dir))
     return all_tasks
 
 
 def _load_gold_standard_doc_tree(mgr: Any) -> Any:
-    """Merge DocTrees from all 9 HF adapters, namespacing files."""
+    """Merge DocTrees from all prepared adapters, namespacing files."""
     from datetime import UTC, datetime
 
     from agent_index.models import DocTree
@@ -172,8 +174,8 @@ def _load_gold_standard_doc_tree(mgr: Any) -> Any:
     merged_files: dict[str, Any] = {}
     total_tokens = 0
 
-    for name in mgr.required_adapters():
-        dt_path = mgr._cache.doc_tree_path(name)
+    for name in mgr.all_adapters():
+        dt_path = mgr.doc_tree_path(name)
         if not dt_path.exists():
             continue
         dt = DocTree.model_validate_json(
