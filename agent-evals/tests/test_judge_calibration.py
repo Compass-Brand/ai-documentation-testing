@@ -712,6 +712,73 @@ class TestBuildJudgePromptWithReference:
         assert "Entry Point" in user_content
 
 
+
+# ===================================================================
+# extract_judge_metadata
+# ===================================================================
+
+
+class TestExtractJudgeMetadata:
+    """Tests for extract_judge_metadata (shared helper)."""
+
+    def test_code_generation_extracts_all_fields(self) -> None:
+        from agent_evals.judge.calibrator import extract_judge_metadata
+
+        meta = {
+            "expected_answer": "def foo(): return 42",
+            "canonical_solution": "def foo():\n    return 42",
+            "entry_point": "foo",
+            "test": "assert foo() == 42\nfoo()",
+            "libs": ["math"],
+            "forbidden_patterns": ["eval("],
+        }
+        result = extract_judge_metadata("code_generation", meta)
+        assert result["expected_answer"] == "def foo(): return 42"
+        assert result["canonical_solution"] == "def foo():\n    return 42"
+        assert result["test_criteria"]["entry_point"] == "foo"
+        assert len(result["test_criteria"]["test_patterns"]) == 2
+        assert result["test_criteria"]["libs"] == ["math"]
+        assert result["test_criteria"]["forbidden_patterns"] == ["eval("]
+
+    def test_compositional_joins_sub_answers(self) -> None:
+        from agent_evals.judge.calibrator import extract_judge_metadata
+
+        meta = {
+            "sub_questions": ["What is X?", "What is Y?"],
+            "expected_answers": ["Alpha", "Beta"],
+        }
+        result = extract_judge_metadata("compositional", meta)
+        assert "1. What is X?: Alpha" in result["expected_answer"]
+        assert "2. What is Y?: Beta" in result["expected_answer"]
+
+    def test_agentic_extracts_tools_and_files(self) -> None:
+        from agent_evals.judge.calibrator import extract_judge_metadata
+
+        meta = {
+            "expected_tools": [{"name": "search"}, {"name": "read"}],
+            "files": {"main.py": "...", "test.py": "..."},
+            "FAIL_TO_PASS": ["test_login"],
+        }
+        result = extract_judge_metadata("agentic", meta)
+        assert "search" in result["expected_answer"]
+        assert "main.py" in result["expected_answer"]
+        assert "test_login" in result["expected_answer"]
+
+    def test_generic_passes_expected_answer(self) -> None:
+        from agent_evals.judge.calibrator import extract_judge_metadata
+
+        meta = {"expected_answer": "42"}
+        result = extract_judge_metadata("retrieval", meta)
+        assert result["expected_answer"] == "42"
+
+    def test_empty_metadata_returns_empty(self) -> None:
+        from agent_evals.judge.calibrator import extract_judge_metadata
+
+        result = extract_judge_metadata("code_generation", {})
+        assert result.get("test_criteria") is None
+        assert result.get("expected_answer") is None
+
+
     def test_mae_reflects_differences(self) -> None:
         golds = [
             _make_gold("ex_0", "retrieval", 0.0),

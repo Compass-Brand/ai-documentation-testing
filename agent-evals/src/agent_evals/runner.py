@@ -1091,13 +1091,13 @@ class EvalRunner:
         )
         if judge_active:
             try:
-                from agent_evals.taguchi.runner import _extract_judge_metadata
+                from agent_evals.judge.calibrator import extract_judge_metadata
 
                 question = getattr(task.definition, "question", None) or ""
                 meta = getattr(task.definition, "metadata", None) or {}
                 judge_kwargs: dict = {}
                 if is_judge_primary:
-                    judge_kwargs = _extract_judge_metadata(
+                    judge_kwargs = extract_judge_metadata(
                         task.definition.type, meta,
                     )
                 judge_result = self._call_judge(

@@ -388,6 +388,76 @@ def build_judge_prompt(
 
 
 # ---------------------------------------------------------------------------
+# Judge metadata extraction
+# ---------------------------------------------------------------------------
+
+
+def extract_judge_metadata(task_type: str, meta: dict) -> dict:
+    """Extract reference metadata for judge prompts from task metadata.
+
+    Returns kwargs suitable for passing to ``build_judge_prompt()``.
+    """
+    kwargs: dict = {}
+    if task_type == "code_generation":
+        kwargs["expected_answer"] = meta.get("expected_answer")
+        kwargs["canonical_solution"] = meta.get("canonical_solution")
+        test_criteria: dict = {}
+        if meta.get("entry_point"):
+            test_criteria["entry_point"] = meta["entry_point"]
+        if meta.get("test"):
+            test_criteria["test_patterns"] = [
+                p for p in meta["test"].split("\n") if p.strip()
+            ]
+        if meta.get("libs"):
+            test_criteria["libs"] = meta["libs"]
+        if meta.get("forbidden_patterns"):
+            test_criteria["forbidden_patterns"] = meta["forbidden_patterns"]
+        if test_criteria:
+            kwargs["test_criteria"] = test_criteria
+
+    elif task_type == "compositional":
+        expected_answers = meta.get("expected_answers", [])
+        sub_questions = meta.get("sub_questions", [])
+        if expected_answers:
+            parts = []
+            for i, (q, a) in enumerate(
+                zip(sub_questions, expected_answers), 1
+            ):
+                parts.append(f"{i}. {q}: {a}")
+            kwargs["expected_answer"] = "\n".join(parts)
+
+    elif task_type == "agentic":
+        expected_tools = meta.get("expected_tools", [])
+        files = meta.get("files", {})
+        fail_to_pass = meta.get("FAIL_TO_PASS", [])
+        ref_parts = []
+        if expected_tools:
+            ref_parts.append(
+                "Expected tools: " + ", ".join(
+                    t.get("name", "") if isinstance(t, dict) else str(t)
+                    for t in expected_tools
+                )
+            )
+        if files:
+            ref_parts.append(
+                "Key files: " + ", ".join(files.keys())
+            )
+        if fail_to_pass:
+            ref_parts.append(
+                "Must-pass tests: " + ", ".join(fail_to_pass)
+            )
+        if ref_parts:
+            kwargs["expected_answer"] = "\n".join(ref_parts)
+
+    else:
+        # Generic: pass expected_answer if present
+        if meta.get("expected_answer"):
+            kwargs["expected_answer"] = meta["expected_answer"]
+
+    return kwargs
+
+
+# ---------------------------------------------------------------------------
 # Response parsing
 # ---------------------------------------------------------------------------
 
