@@ -127,7 +127,9 @@ git commit -m "fix: --limit flag now caps per type, not total
 
 The help text said 'Max tasks per type' but the round-robin
 implementation capped at N total. Extracted _apply_task_limit()
-and replaced with per-type slicing."
+and replaced with per-type slicing.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
 ---
@@ -322,7 +324,9 @@ git commit -m "feat: reference-aware judge prompts
 build_judge_prompt() now accepts expected_answer, canonical_solution,
 and test_criteria kwargs. When provided, the judge evaluates against
 ground truth instead of subjective quality. Adds _REFERENCE_RUBRICS
-for code_generation, compositional, and agentic types."
+for code_generation, compositional, and agentic types.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
 ---
@@ -380,9 +384,9 @@ In the config builder, parse the comma-separated string into a set:
 ```python
     judge_primary_raw = resolved.get("judge_primary_types")
     judge_primary_types = (
-        set(t.strip() for t in judge_primary_raw.split(",") if t.strip())
+        frozenset(t.strip() for t in judge_primary_raw.split(",") if t.strip())
         if judge_primary_raw
-        else set()
+        else frozenset()
     )
 ```
 
@@ -397,33 +401,136 @@ class TestJudgePrimaryRouting:
     def test_judge_always_called_for_primary_types(self):
         """Judge should fire on every trial for judge-primary task types,
         not just at sample_rate intervals."""
-        # Setup: config with judge_primary_types={"code_generation"}
-        # Run 5 trials with code_generation tasks
-        # Assert: all 5 get judge_score in metrics
-        ...
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=3, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client()
+        config = EvalRunConfig(
+            repetitions=1, max_connections=1,
+            judge_enabled=True, judge_sample_rate=100,  # high rate = sampling would skip
+            judge_model="openrouter/test/judge-model",
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        judge_calls: list[str] = []
+
+        def tracking_judge(self_inner, client, task_type, question, response, **kwargs):
+            judge_calls.append(task_type)
+            return 0.85, "good answer"
+
+        runner._call_judge = tracking_judge.__get__(runner)  # bind as method
+
+        # code_generation tasks are judge-primary
+        tasks = [make_mock_task(f"cg_{i:03d}", task_type="code_generation") for i in range(3)]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        # 3 rows * 3 tasks * 1 rep = 9 trials; trial_index 0 always skipped
+        assert len(result.trials) == 9
+        judged = [t for t in result.trials if t.metrics.get("judge_score") is not None]
+        assert len(judged) >= 8, (
+            f"Expected >= 8 judged trials for judge-primary type, got {len(judged)}"
+        )
 
     def test_judge_sampled_for_non_primary_types(self):
         """Non-primary types should still use sampling."""
-        # Setup: config with judge_primary_types={"code_generation"}
-        # Run 10 trials with retrieval tasks, sample_rate=5
-        # Assert: only ~2 get judge_score
-        ...
+        axes = {1: ["flat", "2tier", "3tier"]}
+        design = _make_simple_design(n_rows=3, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client()
+        config = EvalRunConfig(
+            repetitions=1, max_connections=1,
+            judge_enabled=True, judge_sample_rate=5,
+            judge_model="openrouter/test/judge-model",
+            judge_primary_types=frozenset({"code_generation"}),  # retrieval NOT primary
+        )
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        judge_calls: list[str] = []
+
+        def tracking_judge(self_inner, client, task_type, question, response, **kwargs):
+            judge_calls.append(task_type)
+            return 0.80, "ok"
+
+        runner._call_judge = tracking_judge.__get__(runner)
+
+        # retrieval tasks — NOT judge-primary
+        tasks = [make_mock_task(f"ret_{i:03d}", task_type="retrieval") for i in range(4)]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+
+        # 3 rows * 4 tasks * 1 rep = 12 trials
+        assert len(result.trials) == 12
+        judged = [t for t in result.trials if t.metrics.get("judge_score") is not None]
+        # sample_rate=5 → only trial indices 5, 10 fire (index 0 skipped)
+        assert len(judged) <= 3, (
+            f"Expected <= 3 judged trials for sampled non-primary type, got {len(judged)}"
+        )
 
     def test_judge_metadata_passed_for_primary_types(self):
         """Judge prompt should include expected_answer and test_criteria
         for judge-primary task types."""
-        # Mock _call_judge to capture kwargs
-        captured_kwargs = {}
-        original_call_judge = TaguchiRunner._call_judge
+        axes = {1: ["flat"]}
+        design = _make_simple_design(n_rows=1, axes=axes)
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client()
+        config = EvalRunConfig(
+            repetitions=2, max_connections=1,
+            judge_enabled=True, judge_sample_rate=1,
+            judge_model="openrouter/test/judge-model",
+            judge_primary_types=frozenset({"code_generation"}),
+        )
 
-        def capture_judge(self, client, task_type, question, response, **kwargs):
-            captured_kwargs.update(kwargs)
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        captured_kwargs: list[dict] = []
+
+        def capture_judge(self_inner, client, task_type, question, response, **kwargs):
+            captured_kwargs.append(kwargs)
             return 0.8, "mocked"
 
-        # Patch, run one trial with code_generation task that has metadata
-        # containing canonical_solution and entry_point, verify kwargs
-        # captured_kwargs should have expected_answer and/or test_criteria
-        ...
+        runner._call_judge = capture_judge.__get__(runner)
+
+        # Create a code_generation task with explicit metadata
+        task = make_mock_task("cg_001", task_type="code_generation")
+        task.definition.metadata = {
+            "expected_answer": "def foo(): return 42",
+            "canonical_solution": "def foo():\n    return 42",
+            "entry_point": "foo",
+            "test": "assert foo() == 42",
+            "libs": ["math"],
+            "forbidden_patterns": ["eval("],
+        }
+        doc_tree = MagicMock()
+
+        runner.run([task], doc_tree)
+
+        assert len(captured_kwargs) >= 1, "Judge should have been called at least once"
+        kw = captured_kwargs[0]
+        assert kw.get("expected_answer") == "def foo(): return 42"
+        assert kw.get("canonical_solution") == "def foo():\n    return 42"
+        assert "test_criteria" in kw
+        assert kw["test_criteria"]["entry_point"] == "foo"
 ```
 
 ### Step 4: Modify TaguchiRunner._run_trial for always-judge
@@ -581,36 +688,48 @@ In `agent-evals/src/agent_evals/pipeline.py`, update the **screening** row_score
             row_scores[int(row_id)].append(effective_score)
 ```
 
-Apply the same pattern to the **refinement** aggregation in `_group_refinement_scores()` (line ~250). **Important:** This method has **four separate `trial.score` append sites** (fast path at line 262, composite name at 273, composite sorted at 285, single-variant at 296). Compute `effective_score` once at the top of the loop (right after the `if trial.error is not None: continue` guard) and use it at ALL four append sites:
+Apply the same pattern to the **refinement** aggregation in `_group_refinement_scores()` (line ~216). **Critical:** This method is a `@staticmethod` — it has no `self` and cannot access `self.config`. Two options:
+
+**Option A (recommended):** Add a `judge_primary_types` parameter to the static method signature:
 
 ```python
-        for trial in trials:
-            if trial.error is not None:
-                continue
-
-            # Compute effective score once — judge override for primary types
-            effective_score = trial.score
-            if (
-                trial.task_type in self.config.judge_primary_types
-                and trial.metrics
-                and "judge_score" in trial.metrics
-            ):
-                effective_score = trial.metrics["judge_score"]
-
-            # Fast path: direct oa_row_id from Taguchi runner
-            oa_row_id = (
-                trial.metrics.get("oa_row_id")
-                if hasattr(trial, "metrics") and trial.metrics
-                else None
-            )
-            if oa_row_id is not None:
-                row_scores[int(oa_row_id)].append(effective_score)  # was trial.score
-                continue
-
-            # ... (all other append sites also use effective_score)
+    @staticmethod
+    def _group_refinement_scores(
+        trials: list[Any],
+        design: Any,
+        judge_primary_types: frozenset[str] = frozenset(),
+    ) -> dict[int, list[float]]:
 ```
 
-> **Tip:** Consider extracting `_effective_score(trial, judge_primary_types)` as a static helper to avoid duplication between `run_screening()` and `_group_refinement_scores()`.
+Update all callers of `_group_refinement_scores` to pass `judge_primary_types=self.config.judge_primary_types`.
+
+**Option B:** Remove `@staticmethod` and convert to an instance method with `self` access. This is a larger change and may break existing callers.
+
+**With either option**, this method has **four separate `trial.score` append sites** (fast path at line 262, composite name at 273, composite sorted at 285, single-variant at 296). Extract a helper to compute effective score once and use it at ALL four append sites:
+
+```python
+def _effective_score(
+    trial: Any, judge_primary_types: frozenset[str],
+) -> float:
+    """Return judge_score for judge-primary types, else trial.score."""
+    if (
+        trial.task_type in judge_primary_types
+        and trial.metrics
+        and "judge_score" in trial.metrics
+    ):
+        return trial.metrics["judge_score"]
+    return trial.score
+```
+
+Then in `_group_refinement_scores`, right after `if trial.error is not None: continue`:
+
+```python
+            score = _effective_score(trial, judge_primary_types)
+```
+
+And replace all four `trial.score` references in append calls with `score`.
+
+Use the same `_effective_score` helper in `run_screening()` (line ~447) for consistency.
 
 > **Note:** No `hasattr` guard needed — `PipelineConfig.judge_primary_types` defaults to empty `frozenset()`, so the `in` check is always safe.
 
@@ -639,10 +758,86 @@ In `cli.py`, pass `judge_primary_types=judge_primary_types` to **both** `Pipelin
 
 Also check `observatory/run_manager.py:368` if it constructs `PipelineConfig`.
 
+### Step 7c: Write tests for EvalRunner judge-primary routing
+
+Add to `agent-evals/tests/test_runner.py` (alongside the existing `test_judge_score_sampled_into_metrics` at line ~1616):
+
+```python
+class TestEvalRunnerJudgePrimary:
+    def test_judge_always_called_for_primary_types(self, monkeypatch) -> None:
+        """EvalRunner should call judge on every trial for judge-primary types."""
+        config = EvalRunConfig(
+            repetitions=1,
+            max_connections=1,
+            judge_enabled=True,
+            judge_sample_rate=100,  # high rate — would normally skip
+            judge_model="openrouter/test/judge",
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+        runner = EvalRunner(config=config, client=make_mock_client())
+
+        judge_call_count = 0
+        original = runner._call_judge
+
+        def counting_judge(task_type, question, response, **kwargs):
+            nonlocal judge_call_count
+            judge_call_count += 1
+            return original(task_type, question, response, **kwargs)
+
+        monkeypatch.setattr(runner, "_call_judge", counting_judge)
+
+        tasks = [make_mock_task(f"cg_{i}", task_type="code_generation") for i in range(3)]
+        variants = [make_mock_variant()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, variants, doc_tree)
+
+        # Every code_generation trial should invoke judge (not sampled)
+        cg_trials = [t for t in result.trials if t.task_type == "code_generation"]
+        assert judge_call_count >= len(cg_trials) - 1  # index 0 may be skipped
+
+    def test_judge_kwargs_passed_to_build_prompt(self, monkeypatch) -> None:
+        """EvalRunner should pass metadata kwargs to build_judge_prompt for primary types."""
+        config = EvalRunConfig(
+            repetitions=1,
+            max_connections=1,
+            judge_enabled=True,
+            judge_sample_rate=1,
+            judge_model="openrouter/test/judge",
+            judge_primary_types=frozenset({"code_generation"}),
+        )
+        runner = EvalRunner(config=config, client=make_mock_client())
+
+        captured_kwargs: list[dict] = []
+        original = runner._call_judge
+
+        def capture_judge(task_type, question, response, **kwargs):
+            captured_kwargs.append(kwargs)
+            return original(task_type, question, response, **kwargs)
+
+        monkeypatch.setattr(runner, "_call_judge", capture_judge)
+
+        task = make_mock_task("cg_001", task_type="code_generation")
+        task.definition.metadata = {
+            "expected_answer": "def foo(): return 42",
+            "canonical_solution": "def foo():\n    return 42",
+            "entry_point": "foo",
+            "test": "assert foo() == 42\nfoo()",
+        }
+        variants = [make_mock_variant()]
+        doc_tree = MagicMock()
+
+        runner.run([task], variants, doc_tree)
+
+        assert len(captured_kwargs) >= 1
+        kw = captured_kwargs[0]
+        assert kw.get("expected_answer") == "def foo(): return 42"
+```
+
 ### Step 8: Run tests
 
 ```bash
-uv run pytest agent-evals/tests/test_pipeline.py agent-evals/tests/test_taguchi_runner.py -v
+uv run pytest agent-evals/tests/test_pipeline.py agent-evals/tests/test_taguchi_runner.py agent-evals/tests/test_runner.py -v
 ```
 
 ### Step 9: Run full test suite
@@ -658,15 +853,19 @@ git add agent-evals/src/agent_evals/runner.py \
   agent-evals/src/agent_evals/cli.py \
   agent-evals/src/agent_evals/taguchi/runner.py \
   agent-evals/src/agent_evals/pipeline.py \
+  agent-evals/src/agent_evals/observatory/run_manager.py \
   agent-evals/tests/test_pipeline.py \
-  agent-evals/tests/test_taguchi_runner.py
+  agent-evals/tests/test_taguchi_runner.py \
+  agent-evals/tests/test_runner.py
 git commit -m "feat: judge-primary scoring for semantic task types
 
 Adds --judge-primary-types CLI flag. For specified types, the judge
 runs on every trial (not sampled) and its score is used for S/N
 ratio and ANOVA instead of the heuristic score. Task metadata
 (expected_answer, test_criteria, canonical_solution) is passed to
-the judge prompt for reference-based evaluation."
+the judge prompt for reference-based evaluation.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
 ---
@@ -676,7 +875,7 @@ the judge prompt for reference-based evaluation."
 Replace binary per-step threshold with continuous partial credit.
 
 **Files:**
-- Modify: `agent-evals/src/agent_evals/tasks/multi_hop.py:107-108`
+- Modify: `agent-evals/src/agent_evals/tasks/multi_hop.py:112`
 - Test: `agent-evals/tests/test_task_multi_hop.py`
 
 ### Step 1: Write failing tests
@@ -730,7 +929,7 @@ uv run pytest agent-evals/tests/test_task_multi_hop.py::TestMultiHopContinuousSc
 
 ### Step 3: Implement continuous scoring
 
-In `agent-evals/src/agent_evals/tasks/multi_hop.py`, replace line 108:
+In `agent-evals/src/agent_evals/tasks/multi_hop.py`, replace line 112:
 
 ```python
             score_sum += coverage if coverage >= STEP_COVERAGE_THRESHOLD else 0.0
@@ -774,7 +973,9 @@ git commit -m "feat: continuous scoring for multi_hop steps
 
 Replace binary threshold with quadratic ramp below 30%. Coverage
 at 20% now gets partial credit (~0.13) instead of 0.0. Maintains
-continuity at the threshold boundary."
+continuity at the threshold boundary.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
 ---
@@ -794,22 +995,83 @@ Add to `agent-evals/tests/test_task_fact_extraction.py`:
 
 ```python
 class TestFuzzyScoreContinuous:
+    """Tests for linear interpolation within fuzzy-score bands.
+
+    IMPORTANT: token_set_ratio returns 100.0 whenever ALL tokens of the
+    expected string appear in the response. To test specific bands, the
+    response must be MISSING at least one expected token (replaced with
+    a synonym) so the fuzzy score lands in the desired range.
+
+    All inputs below were verified empirically:
+      - "database connection pooling strategy" vs "...pooling approach..."  -> 85.71
+      - "distributed cache invalidation broadcast notification service handler"
+        vs "...service processor"  -> 93.8
+      - "database connection pooling strategy" vs "...pooling mechanism..." -> 75.0
+    """
+
     def test_fuzzy_85_scores_above_0_9(self):
-        """Score at fuzzy=85 should be exactly 0.9 (lower bound of top band)."""
-        # Use a task where expected_answer fuzzy-matches at ~85
-        ...
+        """Fuzzy=85.71 should map to ~0.905 via [85,100] -> [0.9,1.0]."""
+        task = _fact_task(
+            expected_answer="database connection pooling strategy",
+            answer_aliases=[],
+        )
+        # Missing "strategy", has "approach" instead → fuzzy=85.71, no exact match
+        score = task.score_response(
+            "the database connection pooling approach handles resources"
+        )
+        assert score >= 0.9, f"Expected >= 0.9 for fuzzy=85.71, got {score}"
 
-    def test_fuzzy_92_scores_between_0_9_and_1(self):
-        """Score at fuzzy=92.5 should be ~0.95, not flat 0.9."""
-        ...
+    def test_fuzzy_94_scores_between_0_9_and_1(self):
+        """Fuzzy=93.8 should map to ~0.959, strictly between 0.9 and 1.0."""
+        task = _fact_task(
+            expected_answer=(
+                "distributed cache invalidation broadcast notification service handler"
+            ),
+            answer_aliases=[],
+        )
+        # Missing "handler", has "processor" instead → fuzzy=93.8, no exact match
+        score = task.score_response(
+            "the distributed cache invalidation broadcast notification service processor"
+        )
+        assert 0.9 < score < 1.0, (
+            f"Expected strictly between 0.9 and 1.0 for fuzzy=93.8, got {score}"
+        )
 
-    def test_fuzzy_77_scores_between_0_7_and_0_9(self):
-        """Score at fuzzy=77.5 should be ~0.8, not flat 0.7."""
-        ...
+    def test_fuzzy_75_scores_between_0_7_and_0_9(self):
+        """Fuzzy=75.0 should map to ~0.767 via [70,85) -> [0.7,0.9)."""
+        task = _fact_task(
+            expected_answer="database connection pooling strategy",
+            answer_aliases=[],
+        )
+        # Missing "connection" and "strategy" → fuzzy=75.0, no exact match
+        score = task.score_response(
+            "a database pooling mechanism for connections"
+        )
+        assert 0.7 <= score < 0.9, (
+            f"Expected between 0.7 and 0.9 for fuzzy=75.0, got {score}"
+        )
 
     def test_monotonic_with_fuzzy_score(self):
         """Higher fuzzy score always produces higher or equal final score."""
-        ...
+        task = _fact_task(
+            expected_answer="database connection pooling strategy",
+            answer_aliases=[],
+        )
+        # fuzzy=85.71 (missing "strategy") → score ~0.905
+        s_high = task.score_response(
+            "the database connection pooling approach handles resources"
+        )
+        # fuzzy=75.0 (missing "connection" + "strategy") → score ~0.767
+        s_mid = task.score_response(
+            "a database pooling mechanism for connections"
+        )
+        # fuzzy=65.38 (only 2/4 tokens match) → score ~0.654
+        s_low = task.score_response(
+            "the database has a caching strategy"
+        )
+        assert s_low <= s_mid <= s_high, (
+            f"Monotonicity violated: low={s_low}, mid={s_mid}, high={s_high}"
+        )
 ```
 
 ### Step 2: Implement linear interpolation
@@ -858,7 +1120,9 @@ git commit -m "feat: continuous fuzzy scoring for fact_extraction and robustness
 
 Replace step-function cascade (0.7/0.9 bands) with linear interpolation.
 fuzzy=77.5 now scores ~0.8 instead of flat 0.7. Adds [50,70) band to
-fill the dead zone between keyword fallback and fuzzy matching."
+fill the dead zone between keyword fallback and fuzzy matching.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
 ---
@@ -966,7 +1230,9 @@ git commit -m "feat: 3-axis scoring for conflicting tasks
 
 Decompose into resolution correctness (50%), source awareness (30%),
 and strategy recognition (20%). Increases distinct score values from
-~10 (N/11 fractions) to continuous distribution."
+~10 (N/11 fractions) to continuous distribution.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
 ---
@@ -1053,7 +1319,9 @@ git commit -m "feat: 3-axis scoring for compositional tasks
 
 Decompose into completeness (50%), integration quality (30%),
 and organization (20%). Increases distinct score values from
-6 (sub-task fractions) to continuous distribution."
+6 (sub-task fractions) to continuous distribution.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 ```
 
 ---
