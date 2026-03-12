@@ -28,16 +28,8 @@ def _conflicting_task(**meta_overrides: Any) -> ConflictingTask:
     """Create a ConflictingTask with default metadata, with optional overrides."""
     meta: dict[str, Any] = {
         "sources": [
-            {
-                "content": "The timeout is 30 seconds",
-                "authority_level": 3,
-                "file": "docs/config.md",
-            },
-            {
-                "content": "The timeout is 60 seconds",
-                "authority_level": 5,
-                "file": "docs/api-reference.md",
-            },
+            {"name": "config.md", "claim": "The timeout is 30 seconds", "authority": 3},
+            {"name": "api-reference.md", "claim": "The timeout is 60 seconds", "authority": 5},
         ],
         "expected_resolution": "The timeout is 60 seconds",
         "resolution_strategy": "highest_authority",
@@ -136,17 +128,17 @@ class TestConflictingTaskBuildPrompt:
 class TestConflictingTaskScoring:
     """Tests for ConflictingTask.score_response."""
 
-    def test_exact_match_returns_1(self) -> None:
-        """Response containing exact expected_resolution scores 1.0."""
+    def test_exact_match_returns_resolution_weight(self) -> None:
+        """Bare exact match scores 0.5 (resolution axis only, no source/strategy)."""
         task = _conflicting_task()
         score = task.score_response("The timeout is 60 seconds by default.")
-        assert score == 1.0
+        assert score == 0.5
 
     def test_exact_match_case_insensitive(self) -> None:
-        """Exact matching is case-insensitive."""
+        """Exact matching is case-insensitive (resolution axis)."""
         task = _conflicting_task()
         score = task.score_response("the timeout is 60 seconds according to docs.")
-        assert score == 1.0
+        assert score == 0.5
 
     def test_no_match_returns_0(self) -> None:
         """Response with no matching keywords scores 0.0."""
@@ -188,3 +180,99 @@ class TestConflictingTaskScoring:
         ]:
             score = task.score_response(resp)
             assert 0.0 <= score <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# Multi-axis scoring
+# ---------------------------------------------------------------------------
+
+
+class TestConflictingMultiAxis:
+    """Tests for 3-axis scoring: resolution (50%), source awareness (30%), strategy (20%)."""
+
+    def test_correct_resolution_plus_sources_scores_higher(self) -> None:
+        """Response mentioning sources should score higher than bare answer."""
+        task = _conflicting_task(
+            expected_resolution="use version 2",
+            sources=[
+                {"name": "config.yaml", "claim": "version 1", "authority": 3},
+                {"name": "README.md", "claim": "version 2", "authority": 5},
+            ],
+        )
+        bare = task.score_response("use version 2")
+        with_sources = task.score_response(
+            "config.yaml says version 1 but README.md says version 2. use version 2"
+        )
+        assert with_sources > bare
+
+    def test_wrong_resolution_with_sources_gets_partial(self) -> None:
+        """Wrong answer but acknowledging sources gets partial credit."""
+        task = _conflicting_task(
+            expected_resolution="adopt the v2 endpoint",
+            sources=[
+                {"name": "config.yaml", "claim": "v1 endpoint", "authority": 3},
+                {"name": "README.md", "claim": "v2 endpoint", "authority": 5},
+            ],
+        )
+        # Wrong answer, mentions sources but no strategy phrases
+        score = task.score_response(
+            "config.yaml and README.md have different answers. I recommend v1."
+        )
+        # resolution=0 (neither "adopt" nor "endpoint" in response), sources=1.0, strategy=0
+        # score = 0*0.5 + 1.0*0.3 + 0*0.2 = 0.3
+        assert 0.0 < score < 0.5
+
+    def test_source_awareness_checks_name_key(self) -> None:
+        """Source awareness uses 'name' key from source metadata."""
+        task = _conflicting_task(
+            expected_resolution="answer",
+            sources=[
+                {"name": "alpha.md", "claim": "A", "authority": 3},
+                {"name": "beta.md", "claim": "B", "authority": 5},
+            ],
+        )
+        no_sources = task.score_response("answer")
+        one_source = task.score_response("answer. See alpha.md for details")
+        both_sources = task.score_response("alpha.md and beta.md both say answer")
+        assert both_sources > one_source >= no_sources
+
+    def test_strategy_recognition_phrases(self) -> None:
+        """Response mentioning conflict/contradiction gets strategy credit."""
+        task = _conflicting_task(expected_resolution="use version 2")
+        no_strategy = task.score_response("use version 2")
+        with_strategy = task.score_response(
+            "The sources contradict each other. use version 2"
+        )
+        assert with_strategy > no_strategy
+
+    def test_pipe_separated_alternatives_still_work(self) -> None:
+        """Pipe-separated alternatives in expected_resolution still match."""
+        task = _conflicting_task(
+            expected_resolution="use v2|adopt version 2",
+        )
+        score_alt1 = task.score_response("You should use v2.")
+        score_alt2 = task.score_response("I recommend you adopt version 2.")
+        assert score_alt1 > 0.0
+        assert score_alt2 > 0.0
+
+    def test_perfect_response_near_1(self) -> None:
+        """Response with correct answer, sources, and strategy phrases scores near 1.0."""
+        task = _conflicting_task(
+            expected_resolution="use version 2",
+            sources=[
+                {"name": "config.yaml", "claim": "version 1", "authority": 3},
+                {"name": "README.md", "claim": "version 2", "authority": 5},
+            ],
+        )
+        score = task.score_response(
+            "config.yaml and README.md contradict each other. "
+            "Since README.md has higher authority, use version 2."
+        )
+        assert score >= 0.9
+
+    def test_empty_sources_no_source_axis(self) -> None:
+        """With no sources metadata, source axis contributes 0."""
+        task = _conflicting_task(expected_resolution="answer", sources=[])
+        score = task.score_response("answer")
+        # Only resolution (50%) + maybe strategy (20%) contribute
+        assert 0.4 <= score <= 0.7

@@ -56,12 +56,12 @@ class ConflictingTask(EvalTask):
         ]
 
     def score_response(self, response: str, **kwargs: object) -> float:
-        """Score response by checking for expected resolution match.
+        """Score response using 3-axis weighted scoring.
 
-        When expected_resolution contains ``|``, each segment is treated as
-        an alternative correct answer — matching ANY alternative scores 1.0.
-        Otherwise checks for exact match first, then falls back to keyword
-        fraction scoring.
+        Axes:
+        - Resolution correctness (50%): wraps existing exact/keyword/alternative logic
+        - Source awareness (30%): checks if source ``name`` values appear in response
+        - Strategy recognition (20%): checks for conflict/contradiction phrases
 
         Args:
             response: The raw text response from the LLM.
@@ -75,16 +75,28 @@ class ConflictingTask(EvalTask):
 
         response_lower = response.lower()
 
-        # Handle pipe-separated alternatives (e.g. "No.|Yes.")
-        alternatives = [a.strip() for a in self.expected_resolution.split("|") if a.strip()]
+        resolution_score = self._score_resolution(response_lower)
+        source_score = self._score_source_awareness(response_lower)
+        strategy_score = self._score_strategy(response_lower)
+
+        score = (
+            resolution_score * 0.5
+            + source_score * 0.3
+            + strategy_score * 0.2
+        )
+        return max(0.0, min(1.0, score))
+
+    def _score_resolution(self, response_lower: str) -> float:
+        """Axis 1: Resolution correctness — wraps existing logic."""
+        alternatives = [
+            a.strip() for a in self.expected_resolution.split("|") if a.strip()
+        ]
         if len(alternatives) > 1:
             return self._score_alternatives(alternatives, response_lower)
 
-        # Check exact match (case-insensitive)
         if contains_text(self.expected_resolution.lower(), response_lower):
             return 1.0
 
-        # Fallback: keyword matching
         keywords = extract_keywords(self.expected_resolution)
         if not keywords:
             return 0.0
@@ -93,6 +105,31 @@ class ConflictingTask(EvalTask):
             1 for kw in keywords if contains_text(kw.lower(), response_lower)
         )
         return max(0.0, min(1.0, matched / len(keywords)))
+
+    def _score_source_awareness(self, response_lower: str) -> float:
+        """Axis 2: Source awareness — fraction of source names found."""
+        if not self.sources:
+            return 0.0
+
+        names = [s.get("name", "") for s in self.sources if s.get("name")]
+        if not names:
+            return 0.0
+
+        matched = sum(1 for name in names if name.lower() in response_lower)
+        return matched / len(names)
+
+    _STRATEGY_PHRASES: tuple[str, ...] = (
+        "conflict", "contradict", "inconsisten", "disagree",
+        "defer to", "higher authority", "more authoritative",
+        "takes precedence", "overrides", "supersede",
+    )
+
+    def _score_strategy(self, response_lower: str) -> float:
+        """Axis 3: Strategy recognition — presence of conflict-resolution phrases."""
+        for phrase in self._STRATEGY_PHRASES:
+            if phrase in response_lower:
+                return 1.0
+        return 0.0
 
     def _score_alternatives(
         self, alternatives: list[str], response_lower: str,
