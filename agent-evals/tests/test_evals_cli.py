@@ -889,6 +889,79 @@ class TestPrepareDatasetsCommand:
         assert result == 1  # Fails because dataset unknown, not because model missing
 
 
+class TestPrepareAllGoldStandard:
+    """--prepare-datasets all prepares entire gold standard via GoldStandardManager."""
+
+    def test_prepare_all_invokes_gold_standard_manager(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--prepare-datasets all should delegate to GoldStandardManager.prepare_all."""
+        calls: list[dict] = []
+
+        class MockGoldStandardManager:
+            def __init__(self, cache_dir=None, limits=None):
+                calls.append({"cache_dir": cache_dir, "limits": limits})
+
+            def prepare_all(self, default_limit=None):
+                calls.append({"prepare_all": True, "default_limit": default_limit})
+                return {"ds1000": 10, "ambigqa": 15}
+
+        monkeypatch.setattr(
+            "agent_evals.datasets.gold_standard.GoldStandardManager",
+            MockGoldStandardManager,
+        )
+        resolved: dict[str, object] = {"prepare_datasets": "all"}
+        result = _run_evaluation(resolved)
+        assert result == 0
+        assert any(c.get("prepare_all") for c in calls), "prepare_all was not called"
+
+    def test_prepare_all_passes_dataset_limit(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--prepare-datasets all should pass dataset_limit to prepare_all."""
+        captured_limit = []
+
+        class MockGoldStandardManager:
+            def __init__(self, **kwargs):
+                pass
+
+            def prepare_all(self, default_limit=None):
+                captured_limit.append(default_limit)
+                return {}
+
+        monkeypatch.setattr(
+            "agent_evals.datasets.gold_standard.GoldStandardManager",
+            MockGoldStandardManager,
+        )
+        resolved: dict[str, object] = {
+            "prepare_datasets": "all",
+            "dataset_limit": 50,
+        }
+        result = _run_evaluation(resolved)
+        assert result == 0
+        assert captured_limit == [50]
+
+    def test_prepare_all_does_not_fall_through_to_per_adapter(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """--prepare-datasets all should return 0, not fall through to per-adapter loop."""
+        class MockGoldStandardManager:
+            def __init__(self, **kwargs):
+                pass
+
+            def prepare_all(self, default_limit=None):
+                return {"ds1000": 5}
+
+        monkeypatch.setattr(
+            "agent_evals.datasets.gold_standard.GoldStandardManager",
+            MockGoldStandardManager,
+        )
+        # If it falls through, it would try to split "all" and call get_adapter("all")
+        resolved: dict[str, object] = {"prepare_datasets": "all"}
+        result = _run_evaluation(resolved)
+        assert result == 0
+
+
 class TestSourceFlag:
     """--source controls which task source is used."""
 

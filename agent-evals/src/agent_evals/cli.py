@@ -704,6 +704,20 @@ def _run_evaluation(
     # --prepare-datasets: download + convert without running evals (no model needed)
     prepare = resolved.get("prepare_datasets")
     if prepare is not None:
+        if prepare == "all":
+            from agent_evals.datasets.gold_standard import GoldStandardManager
+
+            cache_dir = resolved.get("dataset_cache_dir")
+            mgr = GoldStandardManager(
+                cache_dir=Path(cache_dir) if cache_dir else None,
+            )
+            results = mgr.prepare_all(
+                default_limit=resolved.get("dataset_limit"),
+            )
+            for name, count in results.items():
+                logger.info("Prepared %d tasks for '%s'", count, name)
+            return 0
+
         from agent_evals.datasets import get_adapter, load_all as load_all_datasets
         from agent_evals.datasets.cache import DatasetCache
 
