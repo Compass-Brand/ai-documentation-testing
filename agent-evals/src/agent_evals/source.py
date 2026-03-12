@@ -177,9 +177,9 @@ def _load_gold_standard_doc_tree(mgr: GoldStandardManager) -> Any:
     total_tokens = 0
 
     for name in mgr.all_adapters():
-        dt_path = mgr.doc_tree_path(name)
-        if not dt_path.exists():
+        if not mgr.is_adapter_prepared(name):
             continue
+        dt_path = mgr.doc_tree_path(name)
         dt = DocTree.model_validate_json(
             dt_path.read_text(encoding="utf-8")
         )
