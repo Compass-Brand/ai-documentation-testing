@@ -124,7 +124,7 @@ class GoldStandardManager:
         Uses _SYNTHETIC_SOURCES mapping: each (source_adapter, target_adapter)
         pair generates target tasks from prepared source tasks.
         """
-        load_all()  # ensure adapters registered (idempotent via module cache)
+        load_all()
         results: dict[str, int] = {}
         for source_name, adapter_name in _SYNTHETIC_SOURCES:
             if not self._cache.is_prepared(source_name):
@@ -136,6 +136,13 @@ class GoldStandardManager:
                 count = adapter.convert_tasks(
                     output_dir, limit=limit, source_dir=source_dir,
                 )
+
+                doc_tree = adapter.build_doc_tree(limit=limit)
+                dt_path = self._cache.doc_tree_path(adapter_name)
+                dt_path.write_text(
+                    doc_tree.model_dump_json(indent=2), encoding="utf-8",
+                )
+
                 self._cache.mark_prepared(adapter_name, task_count=count)
                 results[adapter_name] = count
             except Exception as exc:
