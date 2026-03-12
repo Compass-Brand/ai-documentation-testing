@@ -1,12 +1,12 @@
 """Compositional task type for evaluating multi-part question answering.
 
-Scores responses by checking whether each sub-task's expected answer
-appears (case-insensitive) in the response.  Score = fraction of
-sub-tasks whose expected_answer is found.
+Scores responses using 3 weighted axes: completeness (50%),
+integration quality (30%), and organization (20%).
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from rapidfuzz import fuzz, utils as fuzz_utils
@@ -15,6 +15,11 @@ from agent_evals.tasks._utils import contains_text, extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 _FUZZY_CUTOFF = 80.0  # Minimum partial_ratio to count a keyword as matched
+
+# Axis weights for multi-axis scoring (must sum to 1.0)
+_W_COMPLETENESS = 0.50
+_W_INTEGRATION = 0.30
+_W_ORGANIZATION = 0.20
 
 
 class CompositionalTask(EvalTask):
@@ -103,12 +108,12 @@ class CompositionalTask(EvalTask):
         return matched / len(keywords)
 
     def score_response(self, response: str, **kwargs: object) -> float:
-        """Score response by checking sub-task answer coverage.
+        """Score response using 3-axis weighted scoring.
 
-        For each sub-task with a non-empty expected_answer, checks whether
-        the answer appears (case-insensitive) in the response, falling back
-        to fuzzy keyword matching via rapidfuzz.
-        Score = total_score / scored_count (only non-empty sub-tasks count).
+        Axes:
+        - Completeness (50%): fraction of sub-tasks whose expected answer is found
+        - Integration quality (30%): cross-sub-task keyword co-occurrence in sentences
+        - Organization (20%): structural markers (First/Second, numbered lists, headers)
 
         Args:
             response: The raw text response from the LLM.
@@ -120,7 +125,28 @@ class CompositionalTask(EvalTask):
         if not self.sub_tasks:
             return 1.0
 
+        # No scorable sub-tasks (all empty expected_answer) → vacuous truth
+        has_scorable = any(
+            sub.get("expected_answer", "").strip() for sub in self.sub_tasks
+        )
+        if not has_scorable:
+            return 1.0
+
         response_lower = response.lower()
+
+        completeness = self._score_completeness(response_lower)
+        integration = self._score_integration(response_lower)
+        organization = self._score_organization(response_lower)
+
+        score = (
+            completeness * _W_COMPLETENESS
+            + integration * _W_INTEGRATION
+            + organization * _W_ORGANIZATION
+        )
+        return max(0.0, min(1.0, score))
+
+    def _score_completeness(self, response_lower: str) -> float:
+        """Axis 1: Sub-task completeness — wraps existing sub-answer scoring."""
         total_score = 0.0
         scored_count = 0
 
@@ -133,8 +159,70 @@ class CompositionalTask(EvalTask):
 
         if scored_count == 0:
             return 1.0
-        score = total_score / scored_count
-        return max(0.0, min(1.0, score))
+        return total_score / scored_count
+
+    def _score_integration(self, response_lower: str) -> float:
+        """Axis 2: Integration quality — cross-sub-task keyword co-occurrence.
+
+        For each pair of adjacent sub-tasks, checks whether keywords from
+        both appear within the same sentence (split on ". ").
+        """
+        scorable = [
+            sub for sub in self.sub_tasks
+            if sub.get("expected_answer", "").strip()
+        ]
+        if len(scorable) < 2:
+            return 0.0
+
+        sentences = [s.strip() for s in response_lower.split(". ") if s.strip()]
+        if not sentences:
+            return 0.0
+
+        # Extract keywords per sub-task
+        sub_keywords: list[list[str]] = []
+        for sub in scorable:
+            kws = extract_keywords(sub["expected_answer"])
+            sub_keywords.append([kw.lower() for kw in kws])
+
+        # Check adjacent pair co-occurrence
+        pairs_found = 0
+        total_pairs = len(scorable) - 1
+
+        for i in range(total_pairs):
+            kws_a = sub_keywords[i]
+            kws_b = sub_keywords[i + 1]
+            if not kws_a or not kws_b:
+                continue
+            for sentence in sentences:
+                has_a = any(kw in sentence for kw in kws_a)
+                has_b = any(kw in sentence for kw in kws_b)
+                if has_a and has_b:
+                    pairs_found += 1
+                    break
+
+        return pairs_found / total_pairs if total_pairs > 0 else 0.0
+
+    _ORDINAL_PATTERN: re.Pattern[str] = re.compile(
+        r"\b(first|second|third|fourth|fifth)\b"
+    )
+    _NUMBERED_PATTERN: re.Pattern[str] = re.compile(r"^\s*\d+[\.\)]\s", re.MULTILINE)
+    _HEADER_PATTERN: re.Pattern[str] = re.compile(r"^#{1,6}\s", re.MULTILINE)
+
+    def _score_organization(self, response_lower: str) -> float:
+        """Axis 3: Response organization — structural markers."""
+        markers = 0
+        if self._ORDINAL_PATTERN.search(response_lower):
+            markers += 1
+        if self._NUMBERED_PATTERN.search(response_lower):
+            markers += 1
+        if self._HEADER_PATTERN.search(response_lower):
+            markers += 1
+        # Any marker present = partial credit, 2+ = full credit
+        if markers >= 2:
+            return 1.0
+        if markers == 1:
+            return 0.5
+        return 0.0
 
 
 register_task_type("compositional", CompositionalTask)

@@ -123,8 +123,8 @@ class TestCompositionalTaskBuildPrompt:
 class TestCompositionalTaskScoring:
     """Tests for CompositionalTask.score_response."""
 
-    def test_all_sub_task_answers_found_returns_1(self) -> None:
-        """Response containing all sub-task expected answers scores 1.0."""
+    def test_all_sub_task_answers_found_high_score(self) -> None:
+        """Response containing all sub-task answers in one sentence scores high."""
         task = _compositional_task(
             sub_tasks=[
                 {"question": "Language?", "expected_answer": "Python"},
@@ -133,7 +133,8 @@ class TestCompositionalTaskScoring:
         )
         response = "Flask is written in Python and runs on port 5000."
         score = task.score_response(response)
-        assert score == 1.0
+        # completeness=1.0, integration=1.0 (co-occurrence), organization=0
+        assert score == 0.8
 
     def test_no_sub_task_answers_found_returns_0(self) -> None:
         """Response containing no sub-task expected answers scores 0.0."""
@@ -157,7 +158,8 @@ class TestCompositionalTaskScoring:
         )
         response = "Flask is written in Python."
         score = task.score_response(response)
-        assert score == 0.5
+        # completeness=0.5 (1 of 2), integration=0, organization=0
+        assert score == 0.25
 
     def test_empty_sub_tasks_returns_1(self) -> None:
         """Empty sub_tasks list returns 1.0 (vacuous truth)."""
@@ -166,7 +168,7 @@ class TestCompositionalTaskScoring:
         assert score == 1.0
 
     def test_case_insensitive_matching(self) -> None:
-        """Sub-task answer matching is case-insensitive."""
+        """Sub-task answer matching is case-insensitive (completeness axis)."""
         task = _compositional_task(
             sub_tasks=[
                 {"question": "Language?", "expected_answer": "Python"},
@@ -174,7 +176,8 @@ class TestCompositionalTaskScoring:
         )
         response = "It is written in PYTHON."
         score = task.score_response(response)
-        assert score == 1.0
+        # Single sub-task: completeness=1.0, integration=0 (<2 scorable), org=0
+        assert score == 0.5
 
     def test_score_clamped_between_0_and_1(self) -> None:
         """Score is always between 0.0 and 1.0."""
@@ -184,7 +187,7 @@ class TestCompositionalTaskScoring:
             assert 0.0 <= score <= 1.0
 
     def test_three_sub_tasks_partial_score(self) -> None:
-        """Three sub-tasks with one answered gives ~0.333 score."""
+        """Three sub-tasks with one answered gives completeness weight * 1/3."""
         task = _compositional_task(
             sub_tasks=[
                 {"question": "Q1?", "expected_answer": "Alpha"},
@@ -194,7 +197,9 @@ class TestCompositionalTaskScoring:
         )
         response = "The answer is Alpha."
         score = task.score_response(response)
-        assert abs(score - 1.0 / 3.0) < 0.01
+        # completeness = 1/3, integration=0, organization=0
+        expected = (1.0 / 3.0) * 0.5
+        assert abs(score - expected) < 0.01
 
     def test_sub_task_answer_as_substring(self) -> None:
         """Sub-task answer found as substring in response still matches."""
@@ -205,7 +210,8 @@ class TestCompositionalTaskScoring:
         )
         response = "The service runs on port 5000/tcp."
         score = task.score_response(response)
-        assert score == 1.0
+        # Single sub-task: completeness=1.0, integration=0 (<2 scorable), org=0
+        assert score == 0.5
 
     def test_missing_expected_answer_key_skipped(self) -> None:
         """Sub-task without expected_answer key is skipped during scoring."""
@@ -220,7 +226,7 @@ class TestCompositionalTaskScoring:
 
 
 def test_empty_sub_task_excluded_from_denominator():
-    """Max achievable score must be 1.0 when a sub-task has empty expected_answer."""
+    """Empty sub-task excluded from completeness denominator."""
     defn = TaskDefinition(
         task_id="compositional_001", type="compositional", question="Q",
         domain="framework_api", difficulty="easy",
@@ -231,7 +237,8 @@ def test_empty_sub_task_excluded_from_denominator():
     )
     task = CompositionalTask(defn)
     score = task.score_response("The version is Python 3.11 and nothing else.")
-    assert score == 1.0, f"Expected 1.0 (empty sub-task excluded), got {score}"
+    # completeness=1.0 (1 scorable sub-task matched), integration=0 (<2 scorable), org=0
+    assert score == 0.5, f"Expected 0.5 (completeness only), got {score}"
 
 
 def test_fuzzy_match_catches_paraphrase():
@@ -253,4 +260,90 @@ def test_exact_match_still_scores_one():
         metadata={"sub_tasks": [{"question": "version?", "expected_answer": "Python 3.11"}]},
     )
     task = CompositionalTask(defn)
-    assert task.score_response("Python 3.11 is used.") == 1.0
+    # Completeness axis (50%) = 1.0, integration/organization may add more
+    assert task.score_response("Python 3.11 is used.") >= 0.5
+
+
+# ---------------------------------------------------------------------------
+# Multi-axis scoring
+# ---------------------------------------------------------------------------
+
+
+class TestCompositionalMultiAxis:
+    """Tests for 3-axis scoring: completeness (50%), integration (30%), organization (20%)."""
+
+    def test_integrated_response_scores_higher(self) -> None:
+        """Response weaving sub-answers together scores strictly higher than segregated."""
+        task = _compositional_task(sub_tasks=[
+            {"question": "What is X?", "expected_answer": "alpha beta"},
+            {"question": "What is Y?", "expected_answer": "gamma delta"},
+        ])
+        # Segregated: keywords in separate sentences, no co-occurrence
+        segregated = task.score_response("alpha beta. gamma delta.")
+        # Integrated: keywords from both sub-tasks in same sentence
+        integrated = task.score_response(
+            "alpha beta relates to gamma delta through their shared properties."
+        )
+        assert integrated > segregated
+
+    def test_organized_response_scores_higher(self) -> None:
+        """Response with structure indicators scores strictly higher than flat text."""
+        task = _compositional_task(sub_tasks=[
+            {"question": "Q1", "expected_answer": "answer one"},
+            {"question": "Q2", "expected_answer": "answer two"},
+        ])
+        flat = task.score_response("answer one answer two")
+        organized = task.score_response(
+            "First, answer one. Second, answer two."
+        )
+        assert organized > flat
+
+    def test_completeness_still_dominates(self) -> None:
+        """Missing sub-answers score low even with good organization."""
+        task = _compositional_task(sub_tasks=[
+            {"question": "Q1", "expected_answer": "alpha"},
+            {"question": "Q2", "expected_answer": "beta"},
+        ])
+        organized_but_incomplete = task.score_response(
+            "First, alpha is the answer. Second, I don't know."
+        )
+        flat_but_complete = task.score_response("alpha and beta")
+        assert flat_but_complete >= organized_but_incomplete
+
+    def test_numbered_list_gets_organization_credit(self) -> None:
+        """Numbered list format gets organization axis credit."""
+        task = _compositional_task(sub_tasks=[
+            {"question": "Q1", "expected_answer": "alpha"},
+            {"question": "Q2", "expected_answer": "beta"},
+        ])
+        # Both use separated sentences (no integration co-occurrence)
+        no_org = task.score_response("alpha. beta.")
+        with_org = task.score_response("1. alpha. 2. beta.")
+        assert with_org > no_org
+
+    def test_header_markers_get_organization_credit(self) -> None:
+        """Markdown headers get organization axis credit."""
+        task = _compositional_task(sub_tasks=[
+            {"question": "Q1", "expected_answer": "alpha"},
+            {"question": "Q2", "expected_answer": "beta"},
+        ])
+        no_headers = task.score_response("alpha and beta")
+        with_headers = task.score_response("## Part 1\nalpha\n## Part 2\nbeta")
+        assert with_headers >= no_headers
+
+    def test_perfect_response_near_1(self) -> None:
+        """Response with all sub-answers, integration, and structure scores near 1.0."""
+        task = _compositional_task(sub_tasks=[
+            {"question": "What is X?", "expected_answer": "alpha beta"},
+            {"question": "What is Y?", "expected_answer": "gamma delta"},
+        ])
+        score = task.score_response(
+            "First, alpha beta is important. Second, gamma delta matters. "
+            "Together, alpha beta and gamma delta form a complete picture."
+        )
+        assert score >= 0.8
+
+    def test_empty_sub_tasks_still_returns_1(self) -> None:
+        """Empty sub_tasks list returns 1.0 (vacuous truth, unchanged)."""
+        task = _compositional_task(sub_tasks=[])
+        assert task.score_response("Any response") == 1.0
