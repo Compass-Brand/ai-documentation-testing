@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 import logging
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from agent_evals.cli import (
+    _apply_task_limit,
     _run_evaluation,
     build_parser,
     load_config,
@@ -2149,3 +2150,54 @@ class TestPhaseCStrategyFlags:
 
         result = _build_strategy_config({"context_strategy": "compression"})
         assert result.compression_method == "algorithmic"
+
+
+# ---------------------------------------------------------------------------
+# _apply_task_limit tests
+# ---------------------------------------------------------------------------
+
+
+def _make_task(task_type: str, task_id: str) -> MagicMock:
+    t = MagicMock()
+    t.definition.type = task_type
+    t.definition.task_id = task_id
+    return t
+
+
+class TestApplyTaskLimit:
+    """Verify _apply_task_limit caps tasks per type, not total."""
+
+    def test_limit_none_returns_all(self) -> None:
+        tasks = [_make_task("retrieval", f"r_{i}") for i in range(10)]
+        result = _apply_task_limit(tasks, None)
+        assert len(result) == 10
+
+    def test_limit_caps_per_type(self) -> None:
+        tasks = (
+            [_make_task("retrieval", f"r_{i}") for i in range(5)]
+            + [_make_task("code_generation", f"cg_{i}") for i in range(5)]
+            + [_make_task("agentic", f"a_{i}") for i in range(5)]
+        )
+        result = _apply_task_limit(tasks, 2)
+        assert len(result) == 6  # 2 per type x 3 types
+
+    def test_limit_preserves_small_types(self) -> None:
+        tasks = (
+            [_make_task("retrieval", f"r_{i}") for i in range(10)]
+            + [_make_task("canaries", "c_0")]
+        )
+        result = _apply_task_limit(tasks, 5)
+        assert len(result) == 6  # 5 retrieval + 1 canary
+
+    def test_limit_larger_than_type_count(self) -> None:
+        tasks = [_make_task("retrieval", f"r_{i}") for i in range(3)]
+        result = _apply_task_limit(tasks, 10)
+        assert len(result) == 3
+
+    def test_types_are_sorted(self) -> None:
+        tasks = (
+            [_make_task("z_type", "z_0")]
+            + [_make_task("a_type", "a_0")]
+        )
+        result = _apply_task_limit(tasks, 1)
+        assert result[0].definition.type == "a_type"
