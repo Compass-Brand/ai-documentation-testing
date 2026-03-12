@@ -176,8 +176,8 @@ class TestCompositionalTaskScoring:
         )
         response = "It is written in PYTHON."
         score = task.score_response(response)
-        # Single sub-task: completeness=1.0, integration=0 (<2 scorable), org=0
-        assert score == 0.5
+        # Single sub-task: uses completeness only (integration/org N/A)
+        assert score == 1.0
 
     def test_score_clamped_between_0_and_1(self) -> None:
         """Score is always between 0.0 and 1.0."""
@@ -210,8 +210,8 @@ class TestCompositionalTaskScoring:
         )
         response = "The service runs on port 5000/tcp."
         score = task.score_response(response)
-        # Single sub-task: completeness=1.0, integration=0 (<2 scorable), org=0
-        assert score == 0.5
+        # Single sub-task: uses completeness only (integration/org N/A)
+        assert score == 1.0
 
     def test_missing_expected_answer_key_skipped(self) -> None:
         """Sub-task without expected_answer key is skipped during scoring."""
@@ -237,8 +237,8 @@ def test_empty_sub_task_excluded_from_denominator():
     )
     task = CompositionalTask(defn)
     score = task.score_response("The version is Python 3.11 and nothing else.")
-    # completeness=1.0 (1 scorable sub-task matched), integration=0 (<2 scorable), org=0
-    assert score == 0.5, f"Expected 0.5 (completeness only), got {score}"
+    # Single scorable sub-task: uses completeness only (integration/org N/A)
+    assert score == 1.0, f"Expected 1.0 (completeness only), got {score}"
 
 
 def test_fuzzy_match_catches_paraphrase():

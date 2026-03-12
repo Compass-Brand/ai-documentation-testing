@@ -56,6 +56,16 @@ class CompositionalTask(EvalTask):
                 for q, a in zip(questions, answers, strict=True)
             ]
 
+        # Precompute per-task invariants used by score_response
+        self._scorable_subs: list[dict[str, Any]] = [
+            sub for sub in self.sub_tasks
+            if sub.get("expected_answer", "").strip()
+        ]
+        self._sub_keywords: list[list[str]] = [
+            [kw.lower() for kw in extract_keywords(sub["expected_answer"])]
+            for sub in self._scorable_subs
+        ]
+
     def build_prompt(self, index_content: str) -> list[dict[str, str]]:
         """Build messages for compositional reasoning evaluation.
 
@@ -122,19 +132,16 @@ class CompositionalTask(EvalTask):
         Returns:
             Score between 0.0 and 1.0.
         """
-        if not self.sub_tasks:
-            return 1.0
-
-        # No scorable sub-tasks (all empty expected_answer) → vacuous truth
-        has_scorable = any(
-            sub.get("expected_answer", "").strip() for sub in self.sub_tasks
-        )
-        if not has_scorable:
+        if not self.sub_tasks or not self._scorable_subs:
             return 1.0
 
         response_lower = response.lower()
-
         completeness = self._score_completeness(response_lower)
+
+        # Single sub-task: integration/organization are N/A — use completeness only
+        if len(self._scorable_subs) < 2:
+            return max(0.0, min(1.0, completeness))
+
         integration = self._score_integration(response_lower)
         organization = self._score_organization(response_lower)
 
@@ -167,30 +174,19 @@ class CompositionalTask(EvalTask):
         For each pair of adjacent sub-tasks, checks whether keywords from
         both appear within the same sentence (split on ". ").
         """
-        scorable = [
-            sub for sub in self.sub_tasks
-            if sub.get("expected_answer", "").strip()
-        ]
-        if len(scorable) < 2:
+        if len(self._scorable_subs) < 2:
             return 0.0
 
         sentences = [s.strip() for s in response_lower.split(". ") if s.strip()]
         if not sentences:
             return 0.0
 
-        # Extract keywords per sub-task
-        sub_keywords: list[list[str]] = []
-        for sub in scorable:
-            kws = extract_keywords(sub["expected_answer"])
-            sub_keywords.append([kw.lower() for kw in kws])
-
-        # Check adjacent pair co-occurrence
+        total_pairs = len(self._sub_keywords) - 1
         pairs_found = 0
-        total_pairs = len(scorable) - 1
 
         for i in range(total_pairs):
-            kws_a = sub_keywords[i]
-            kws_b = sub_keywords[i + 1]
+            kws_a = self._sub_keywords[i]
+            kws_b = self._sub_keywords[i + 1]
             if not kws_a or not kws_b:
                 continue
             for sentence in sentences:
