@@ -33,6 +33,12 @@ _DEFAULT_LIMITS: dict[str, int] = {
 # General default when no per-adapter limit specified
 _GENERAL_DEFAULT_LIMIT: int = 100
 
+# Synthetic adapters and their HF source adapters
+_SYNTHETIC_SOURCES: tuple[tuple[str, str], ...] = (
+    ("ibm-techqa", "synthetic-efficiency"),
+    ("code-rag-bench", "perturbation"),
+)
+
 
 class GoldStandardManager:
     """Manages HF dataset preparation and loading as gold standard."""
@@ -89,7 +95,38 @@ class GoldStandardManager:
             self._cache.mark_prepared(name, task_count=count)
             results[name] = count
 
+        # Auto-generate synthetic tasks from prepared HF data
+        results.update(self._generate_synthetic_tasks(effective_default))
         return results
+
+    def _generate_synthetic_tasks(self, limit: int) -> dict[str, int]:
+        """Generate synthetic adapter tasks from prepared HF data.
+
+        Uses _SYNTHETIC_SOURCES mapping: each (source_adapter, target_adapter)
+        pair generates target tasks from prepared source tasks.
+        """
+        load_all()  # ensure adapters registered (idempotent via module cache)
+        results: dict[str, int] = {}
+        for source_name, adapter_name in _SYNTHETIC_SOURCES:
+            if not self._cache.is_prepared(source_name):
+                continue
+            source_dir = self._cache.task_dir(source_name)
+            adapter = get_adapter(adapter_name)
+            output_dir = self._cache.task_dir(adapter_name)
+            count = adapter.convert_tasks(
+                output_dir, limit=limit, source_dir=source_dir,
+            )
+            self._cache.mark_prepared(adapter_name, task_count=count)
+            results[adapter_name] = count
+        return results
+
+    def task_dir(self, adapter_name: str) -> Path:
+        """Return the task YAML directory for a prepared adapter."""
+        return self._cache.task_dir(adapter_name)
+
+    def doc_tree_path(self, adapter_name: str) -> Path:
+        """Return the doc_tree JSON path for a prepared adapter."""
+        return self._cache.doc_tree_path(adapter_name)
 
     def limit_for(self, adapter_name: str) -> int:
         """Return the configured limit for an adapter."""

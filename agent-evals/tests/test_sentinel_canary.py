@@ -24,7 +24,7 @@ from agent_evals.tasks.loader import load_task, load_tasks
 # ---------------------------------------------------------------------------
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_GOLD_STANDARD_DIR = _PROJECT_ROOT / "gold_standard"
+_GOLD_STANDARD_DIR = _PROJECT_ROOT / "gold_standard_legacy"
 _SENTINELS_DIR = _GOLD_STANDARD_DIR / "sentinels"
 _CANARIES_DIR = _GOLD_STANDARD_DIR / "canaries"
 

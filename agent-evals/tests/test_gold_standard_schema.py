@@ -24,7 +24,7 @@ import yaml
 # Paths
 # ---------------------------------------------------------------------------
 
-GOLD_STANDARD_DIR = Path(__file__).resolve().parent.parent / "gold_standard"
+GOLD_STANDARD_DIR = Path(__file__).resolve().parent.parent / "gold_standard_legacy"
 SCHEMA_PATH = GOLD_STANDARD_DIR / "schema.yaml"
 
 # ---------------------------------------------------------------------------

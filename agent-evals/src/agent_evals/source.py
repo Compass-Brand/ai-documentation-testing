@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_SOURCE = "gold_standard"
 
 _GOLD_STANDARD_DIR = (
-    Path(__file__).resolve().parent.parent.parent / "gold_standard"
+    Path(__file__).resolve().parent.parent.parent / "gold_standard_legacy"
 )
 
 
