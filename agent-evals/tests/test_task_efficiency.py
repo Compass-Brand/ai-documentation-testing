@@ -7,6 +7,7 @@ Tests cover:
 - build_prompt returns message list with index content and question
 - score_response: exact answer match within budget (1.0)
 - score_response: alias match within budget (1.0)
+- score_response: fuzzy match gets partial credit
 - score_response: no match (0.0)
 - score_response: keyword fraction scoring
 - Length penalty when exceeding token_budget
@@ -142,6 +143,40 @@ class TestEfficiencyTaskScoring:
         task = _efficiency_task(token_budget=50)
         score = task.score_response("The event loop runs them.")
         assert score == 1.0
+
+    def test_fuzzy_match_scores_higher_than_keywords_alone(self) -> None:
+        """Fuzzy matching should give higher score than keyword fallback.
+
+        "database connection pooling" vs "db connection pool management":
+        - Keyword matching: only "connection" matches (1/3 ≈ 0.33)
+        - Fuzzy matching: high token overlap should give >= 0.5
+        """
+        task = _efficiency_task(
+            expected_answer="database connection pooling",
+            answer_aliases=[],
+            token_budget=100,
+        )
+        score = task.score_response("db connection pool management")
+        # Without fuzzy: keyword match gives ~0.33 (only "connection")
+        # With fuzzy: token_set_ratio should be >= 50, giving >= 0.5
+        assert score >= 0.5, (
+            f"fuzzy near-match should score >= 0.5, got {score}"
+        )
+
+    def test_fuzzy_match_with_length_penalty(self) -> None:
+        """Fuzzy match score should still be subject to length penalty."""
+        task = _efficiency_task(
+            expected_answer="database connection pooling",
+            answer_aliases=[],
+            token_budget=5,
+        )
+        long_response = (
+            "the db connection pool management requires a lot of "
+            "additional context and explanation to fully understand"
+        )
+        score = task.score_response(long_response)
+        # Fuzzy base score reduced by length penalty
+        assert score < 0.5
 
     def test_no_match_returns_0(self) -> None:
         """Response with no matching keywords scores 0.0."""

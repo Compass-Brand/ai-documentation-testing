@@ -420,6 +420,10 @@ def extract_judge_metadata(task_type: str, meta: dict) -> dict:
         sub_questions = meta.get("sub_questions", [])
         if expected_answers:
             parts = []
+            # Intentionally zip without strict=True: CompositionalTask.__init__
+            # validates length parity, but metadata from HF adapters may have
+            # ragged lists.  Silently truncating to the shorter list is safer
+            # than crashing the judge prompt builder.
             for i, (q, a) in enumerate(
                 zip(sub_questions, expected_answers), 1
             ):

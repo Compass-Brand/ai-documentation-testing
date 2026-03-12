@@ -1,14 +1,17 @@
 """Efficiency task type for evaluating concise answering ability.
 
-Scores responses on correctness (exact/alias/keyword match) and then
+Scores responses on correctness (exact/alias/fuzzy/keyword match) and then
 applies a length penalty when the response exceeds the token budget.
 Token count uses LiteLLM's tokenizer via count_tokens().
 """
 
 from __future__ import annotations
 
+from rapidfuzz import fuzz
+from rapidfuzz import utils as fuzz_utils
+
 from agent_evals.llm.token_counter import count_tokens
-from agent_evals.tasks._utils import contains_text, extract_keywords
+from agent_evals.tasks._utils import contains_text, extract_keywords, fuzzy_to_continuous_score
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type
 
 
@@ -16,8 +19,9 @@ class EfficiencyTask(EvalTask):
     """Task type for evaluating answer efficiency (correctness + conciseness).
 
     Checks if the expected answer or any alias appears in the response
-    (exact match = 1.0 base score). Falls back to keyword fraction.
-    Then applies a length penalty if the response exceeds the token budget.
+    (exact match = 1.0 base score). Uses fuzzy matching for near-matches.
+    Falls back to keyword fraction. Then applies a length penalty if the
+    response exceeds the token budget.
     """
 
     def __init__(self, definition: TaskDefinition) -> None:
@@ -27,6 +31,7 @@ class EfficiencyTask(EvalTask):
         self.answer_aliases: list[str] = meta.get("answer_aliases", [])
         self.token_budget: int = meta.get("token_budget", 0)
         self.message_limit: int = meta.get("message_limit", 0)
+        self._expected_lower: str = self.expected_answer.lower()
 
     def build_prompt(self, index_content: str) -> list[dict[str, str]]:
         """Build messages for efficiency evaluation.
@@ -56,9 +61,9 @@ class EfficiencyTask(EvalTask):
     def score_response(self, response: str, **kwargs: object) -> float:
         """Score response on correctness and conciseness.
 
-        Base score: 1.0 for exact/alias match, else keyword fraction.
-        Length penalty: if word count > token_budget, multiply by
-        token_budget / actual_tokens. Clamped to [0, 1].
+        Base score: 1.0 for exact/alias match, [0.5, 1.0] for fuzzy match,
+        else keyword fraction. Length penalty: if word count > token_budget,
+        multiply by token_budget / actual_tokens. Clamped to [0, 1].
 
         Args:
             response: The raw text response from the LLM.
@@ -74,7 +79,7 @@ class EfficiencyTask(EvalTask):
 
         # Check exact match
         base_score: float
-        if contains_text(self.expected_answer.lower(), response_lower):
+        if contains_text(self._expected_lower, response_lower):
             base_score = 1.0
         else:
             # Check alias matches
@@ -87,16 +92,26 @@ class EfficiencyTask(EvalTask):
             if alias_matched:
                 base_score = 1.0
             else:
-                # Fallback: keyword matching
-                keywords = extract_keywords(self.expected_answer)
-                if not keywords:
-                    base_score = 0.0
+                # Fuzzy matching — catches paraphrases and abbreviations
+                fuzzy_score = fuzz.token_set_ratio(
+                    self._expected_lower,
+                    response_lower,
+                    processor=fuzz_utils.default_process,
+                )
+                continuous = fuzzy_to_continuous_score(fuzzy_score)
+                if continuous is not None:
+                    base_score = continuous
                 else:
-                    matched = sum(
-                        1 for kw in keywords
-                        if contains_text(kw.lower(), response_lower)
-                    )
-                    base_score = matched / len(keywords)
+                    # Fallback: keyword matching
+                    keywords = extract_keywords(self.expected_answer)
+                    if not keywords:
+                        base_score = 0.0
+                    else:
+                        matched = sum(
+                            1 for kw in keywords
+                            if contains_text(kw.lower(), response_lower)
+                        )
+                        base_score = matched / len(keywords)
 
         # Apply length penalty
         if self.token_budget > 0:
