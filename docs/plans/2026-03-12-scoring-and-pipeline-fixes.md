@@ -774,7 +774,7 @@ class TestEvalRunnerJudgePrimary:
             judge_model="openrouter/test/judge",
             judge_primary_types=frozenset({"code_generation"}),
         )
-        runner = EvalRunner(config=config, client=make_mock_client())
+        runner = EvalRunner(config=config, client=_make_mock_client())
 
         judge_call_count = 0
         original = runner._call_judge
@@ -786,8 +786,8 @@ class TestEvalRunnerJudgePrimary:
 
         monkeypatch.setattr(runner, "_call_judge", counting_judge)
 
-        tasks = [make_mock_task(f"cg_{i}", task_type="code_generation") for i in range(3)]
-        variants = [make_mock_variant()]
+        tasks = [_make_mock_task(f"cg_{i}", task_type="code_generation") for i in range(3)]
+        variants = [_make_mock_variant()]
         doc_tree = MagicMock()
 
         result = runner.run(tasks, variants, doc_tree)
@@ -806,7 +806,7 @@ class TestEvalRunnerJudgePrimary:
             judge_model="openrouter/test/judge",
             judge_primary_types=frozenset({"code_generation"}),
         )
-        runner = EvalRunner(config=config, client=make_mock_client())
+        runner = EvalRunner(config=config, client=_make_mock_client())
 
         captured_kwargs: list[dict] = []
         original = runner._call_judge
@@ -817,14 +817,14 @@ class TestEvalRunnerJudgePrimary:
 
         monkeypatch.setattr(runner, "_call_judge", capture_judge)
 
-        task = make_mock_task("cg_001", task_type="code_generation")
+        task = _make_mock_task("cg_001", task_type="code_generation")
         task.definition.metadata = {
             "expected_answer": "def foo(): return 42",
             "canonical_solution": "def foo():\n    return 42",
             "entry_point": "foo",
             "test": "assert foo() == 42\nfoo()",
         }
-        variants = [make_mock_variant()]
+        variants = [_make_mock_variant()]
         doc_tree = MagicMock()
 
         runner.run([task], variants, doc_tree)
