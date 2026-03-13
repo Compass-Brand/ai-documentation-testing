@@ -273,6 +273,12 @@ class EvalOrchestrator:
         # Wire up telemetry: bridge trial progress to the EventTracker.
         model_name = self.config.models[0] if self.config.models else "unknown"
 
+        # Display callback for progress output
+        from agent_evals.progress import make_progress_callback
+        display_cb = make_progress_callback(
+            eval_config.display_mode, budget=eval_config.budget,
+        )
+
         def _on_trial_progress(
             completed: int, total: int, trial: TrialResult
         ) -> None:
@@ -331,6 +337,8 @@ class EvalOrchestrator:
                 llm_call_results=llm_call_results,
                 judge_score=trial_judge_score,
             )
+            if display_cb is not None:
+                display_cb(completed, total, trial)
 
         # Route to the correct runner.
         if effective_mode == "taguchi":
