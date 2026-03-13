@@ -122,6 +122,40 @@ class TestJudgeModelPassthrough:
         assert call_kwargs.kwargs["model"] == "openrouter/openai/gpt-4o-mini"
 
 
+class TestJudgeGraduation:
+    """Tests for judge score graduation into trial.score."""
+
+    def test_graduation_config_fields_exist(self):
+        """EvalRunConfig accepts graduation fields."""
+        config = EvalRunConfig(
+            judge_enabled=True,
+            judge_graduation_enabled=True,
+            judge_graduation_weight=0.5,
+        )
+        assert config.judge_graduation_enabled is True
+        assert config.judge_graduation_weight == 0.5
+
+    def test_graduation_disabled_by_default(self):
+        """Graduation is off by default."""
+        config = EvalRunConfig()
+        assert config.judge_graduation_enabled is False
+
+    def test_graduation_weight_validation(self):
+        """Weight must be between 0.0 and 1.0."""
+        with pytest.raises(ValueError, match="judge_graduation_weight"):
+            EvalRunConfig(judge_graduation_weight=1.5)
+        with pytest.raises(ValueError, match="judge_graduation_weight"):
+            EvalRunConfig(judge_graduation_weight=-0.1)
+
+    def test_graduation_requires_judge_enabled(self):
+        """Cannot enable graduation without enabling judge."""
+        with pytest.raises(ValueError, match="judge_enabled"):
+            EvalRunConfig(
+                judge_enabled=False,
+                judge_graduation_enabled=True,
+            )
+
+
 class TestJudgeSamplingBehavior:
     def test_judge_fires_at_configured_rate(self):
         """Judge is called at the configured sample rate intervals."""

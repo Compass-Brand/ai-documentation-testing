@@ -30,6 +30,7 @@ from agent_evals.context.base import ContextStrategy, StrategyResult
 from agent_evals.context.full import FullContextStrategy
 from agent_evals.cost import CostTracker
 from agent_evals.judge.calibrator import extract_judge_metadata
+from agent_evals.judge_graduation import blend_scores
 from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.llm.cache import ResponseCache
 from agent_evals.llm.client import GenerationResult, LLMClient
@@ -133,6 +134,8 @@ class EvalRunConfig:
     generation_stats_rate: float = 1.0
     budget: float | None = None
     judge_primary_types: frozenset[str] = frozenset()
+    judge_graduation_enabled: bool = False
+    judge_graduation_weight: float = 0.3
 
     _VALID_OUTPUT_FORMATS = frozenset({"json", "csv", "both"})
     _VALID_DISPLAY_MODES = frozenset({"rich", "plain", "none"})
@@ -161,6 +164,15 @@ class EvalRunConfig:
             raise ValueError(
                 f"display_mode must be one of {sorted(self._VALID_DISPLAY_MODES)}, "
                 f"got {self.display_mode!r}"
+            )
+        if not 0.0 <= self.judge_graduation_weight <= 1.0:
+            raise ValueError(
+                f"judge_graduation_weight must be in [0.0, 1.0], "
+                f"got {self.judge_graduation_weight}"
+            )
+        if self.judge_graduation_enabled and not self.judge_enabled:
+            raise ValueError(
+                "judge_graduation_enabled requires judge_enabled=True"
             )
 
 
@@ -1111,12 +1123,27 @@ class EvalRunner:
             except Exception:
                 logger.warning("Judge call failed for trial %d", trial_index, exc_info=True)
 
+        # Judge graduation: blend judge score into trial.score
+        final_score = score
+        if (
+            self._config.judge_graduation_enabled
+            and "judge_score" in metrics
+        ):
+            weight = (
+                1.0 if is_judge_primary
+                else self._config.judge_graduation_weight
+            )
+            final_score = blend_scores(score, metrics["judge_score"], weight)
+            metrics["graduation_applied"] = True
+            metrics["graduation_weight"] = weight
+            metrics["pre_graduation_score"] = score
+
         return TrialResult(
             task_id=task.definition.task_id,
             task_type=task.definition.type,
             variant_name=variant_name,
             repetition=repetition,
-            score=score,
+            score=final_score,
             metrics=metrics,
             prompt_tokens=strategy_result.total_prompt_tokens,
             completion_tokens=strategy_result.total_completion_tokens,

@@ -209,6 +209,18 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
              "(e.g. 'code_generation,compositional,agentic'). "
              "Implies --judge-enabled for those types.",
     )
+    parser.add_argument(
+        "--judge-graduation",
+        action="store_true",
+        default=False,
+        help="Enable judge score graduation into trial.score (requires --judge-enabled)",
+    )
+    parser.add_argument(
+        "--judge-graduation-weight",
+        type=float,
+        default=None,
+        help="Weight for judge score in blended scoring (0.0=all heuristic, 1.0=all judge)",
+    )
 
     # Taguchi / multi-model configuration
     parser.add_argument(
@@ -532,6 +544,8 @@ _CONFIG_KEYS: dict[str, type] = {
     "judge_model": str,
     "judge_sample_rate": int,
     "judge_primary_types": str,
+    "judge_graduation": bool,
+    "judge_graduation_weight": float,
     "resume": str,
     "resume_pipeline": str,
     "dashboard": bool,
@@ -642,6 +656,8 @@ def build_eval_run_config(resolved: dict[str, Any]) -> EvalRunConfig:
         judge_model=resolved.get("judge_model", "openrouter/openai/gpt-4o-mini"),
         judge_mode=resolved.get("judge_mode", "routine"),
         judge_primary_types=judge_primary_types,
+        judge_graduation_enabled=resolved.get("judge_graduation", False),
+        judge_graduation_weight=resolved.get("judge_graduation_weight", 0.3),
     )
 
 

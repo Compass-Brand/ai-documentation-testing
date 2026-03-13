@@ -33,7 +33,17 @@ logger = logging.getLogger(__name__)
 def _effective_score(
     trial: Any, judge_primary_types: frozenset[str],
 ) -> float:
-    """Return judge_score for judge-primary types, else trial.score."""
+    """Return the appropriate score for analysis.
+
+    If graduation was applied in the runner, trial.score already contains
+    the blended score — use it directly. Otherwise, fall back to returning
+    judge_score for judge-primary types.
+    """
+    if (
+        trial.metrics
+        and trial.metrics.get("graduation_applied")
+    ):
+        return trial.score
     if (
         trial.task_type in judge_primary_types
         and trial.metrics
