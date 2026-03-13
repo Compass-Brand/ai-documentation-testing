@@ -10,17 +10,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-from agent_evals.variants.base import VariantMetadata
-from agent_evals.variants.registry import (
-    clear_registry,
-    get_variants_for_axis,
-    load_all,
-)
 
 # ---------------------------------------------------------------------------
 # Lazy imports -- these will fail until the implementation exists (TDD RED)
 # ---------------------------------------------------------------------------
-
 from agent_evals.variants.agent_instruction import (
     InstructionArchitectureOnly,
     InstructionConventionsOnly,
@@ -31,6 +24,12 @@ from agent_evals.variants.agent_instruction import (
     InstructionOverloaded,
     InstructionStandard,
     InstructionVerbose,
+)
+from agent_evals.variants.base import VariantMetadata
+from agent_evals.variants.registry import (
+    clear_registry,
+    get_variants_for_axis,
+    load_all,
 )
 
 # ---------------------------------------------------------------------------

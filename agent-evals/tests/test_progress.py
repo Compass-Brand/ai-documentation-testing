@@ -6,7 +6,6 @@ import logging
 from unittest.mock import MagicMock
 
 import pytest
-
 from agent_evals.progress import make_progress_callback
 from agent_evals.runner import TrialResult
 

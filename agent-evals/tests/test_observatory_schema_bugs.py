@@ -14,15 +14,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.pipeline import (
     DOEPipeline,
     PhaseResult,
     PipelineConfig,
-    _to_dict,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

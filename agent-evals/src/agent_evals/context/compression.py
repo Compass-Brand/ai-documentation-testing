@@ -17,6 +17,7 @@ from agent_evals.llm.token_counter import count_tokens
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
+
     from agent_evals.llm.client import LLMClient
     from agent_evals.tasks.base import EvalTask
 

@@ -11,13 +11,10 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import MagicMock
 
-import pytest
-from conftest import make_mock_task
-
 from agent_evals.context.base import PreparedContext, StrategyResult
 from agent_evals.llm.client import GenerationResult
 from agent_index.models import DocFile, DocTree
-
+from conftest import make_mock_task
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -346,8 +343,8 @@ class TestPhaseBasedExecuteLoop:
 
     def test_phase_based_crashes_when_inner_has_no_execute_tool(self):
         """Bug #215: phase_based calls _execute_tool on inner without checking."""
-        from agent_evals.context.modifiers.dynamic_tools import DynamicToolModifier
         from agent_evals.context.full import FullContextStrategy
+        from agent_evals.context.modifiers.dynamic_tools import DynamicToolModifier
 
         inner = FullContextStrategy()
         modifier = DynamicToolModifier(inner, mode="phase_based")

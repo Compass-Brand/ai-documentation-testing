@@ -10,12 +10,9 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
-from unittest.mock import MagicMock
 
 import pytest
-
 from agent_evals.tasks.base import TaskDefinition
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -371,7 +368,7 @@ class TestBug199UnobservedLevelsZero:
 
     def test_predict_optimal_skips_nan_levels(self):
         """predict_optimal should not select NaN levels as optimal."""
-        from agent_evals.taguchi.analysis import compute_main_effects, predict_optimal
+        from agent_evals.taguchi.analysis import predict_optimal
 
         # Manually construct main_effects with a NaN level
         main_effects = {
@@ -450,7 +447,6 @@ class TestBug198ErrorTrialsInSNRatio:
 
     def test_error_trials_excluded_from_row_scores(self):
         """Pipeline should exclude error trials when grouping row_scores."""
-        from agent_evals.pipeline import DOEPipeline
 
         # The _group_row_scores logic (screening) appends trial.score
         # for every trial regardless of trial.error.

@@ -9,7 +9,8 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from rapidfuzz import fuzz, utils as fuzz_utils
+from rapidfuzz import fuzz
+from rapidfuzz import utils as fuzz_utils
 
 from agent_evals.tasks._utils import contains_text, extract_keywords
 from agent_evals.tasks.base import EvalTask, TaskDefinition, register_task_type

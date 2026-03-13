@@ -9,12 +9,9 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from unittest.mock import patch
 
 import pytest
-
 from agent_evals.diagnostics import DiagnosticTracker
-
 
 # ---------------------------------------------------------------------------
 # Thread-safe recording

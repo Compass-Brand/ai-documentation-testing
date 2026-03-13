@@ -13,7 +13,7 @@ Tests cover:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -44,7 +44,7 @@ def _make_doc_tree(
 
     return DocTree(
         files=doc_files,
-        scanned_at=datetime.now(tz=timezone.utc),
+        scanned_at=datetime.now(tz=UTC),
         source="/test",
         total_tokens=sum(
             tc for _, (_, tc) in files.items() if tc is not None

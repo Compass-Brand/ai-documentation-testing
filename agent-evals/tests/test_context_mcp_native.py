@@ -13,13 +13,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from unittest.mock import MagicMock, patch
-
-import pytest
-from conftest import make_mock_task
+from unittest.mock import MagicMock
 
 from agent_index.models import DocFile, DocTree
-
+from conftest import make_mock_task
 
 # ---------------------------------------------------------------------------
 # Helpers

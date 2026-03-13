@@ -164,7 +164,6 @@ class TestValidateCLI:
         --validate must detect the missing file. A fresh scan would never
         see the deleted file, so missing_files would always be empty.
         """
-        from agent_index.models import DocTree
         from agent_index.scanner import scan_local
 
         # Create config and docs

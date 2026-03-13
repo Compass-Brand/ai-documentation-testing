@@ -10,9 +10,6 @@ from __future__ import annotations
 import random
 from unittest.mock import MagicMock
 
-import pytest
-
-
 # ---------------------------------------------------------------------------
 # _brief_summary tests
 # ---------------------------------------------------------------------------

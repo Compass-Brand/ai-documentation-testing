@@ -13,7 +13,7 @@ from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.registry import register_variant
 
 if TYPE_CHECKING:
-    from agent_index.models import DocFile, DocTree
+    from agent_index.models import DocTree
 
 
 @register_variant

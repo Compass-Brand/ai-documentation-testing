@@ -8,7 +8,12 @@ from unittest.mock import patch
 
 import pytest
 import yaml
-from agent_index.autodetect import _classify_file, _detect_project_name, auto_detect, generate_config_yaml
+from agent_index.autodetect import (
+    _classify_file,
+    _detect_project_name,
+    auto_detect,
+    generate_config_yaml,
+)
 from agent_index.config import load_config
 from agent_index.models import IndexConfig
 

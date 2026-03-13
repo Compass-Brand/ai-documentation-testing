@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from agent_evals.fixtures import load_sample_doc_tree
 from agent_evals.variants.base import VariantMetadata
 from agent_evals.variants.baselines import (
     LengthMatchedRandomBaseline,
@@ -12,18 +13,17 @@ from agent_evals.variants.baselines import (
     NoIndexBaseline,
     OracleBaseline,
 )
-from agent_evals.fixtures import load_sample_doc_tree
 from agent_evals.variants.granularity_file import GranularityFileVariant
 from agent_evals.variants.noise_0 import Noise0Variant
-from agent_evals.variants.scale_50 import Scale50Variant
-from agent_evals.variants.scale_100 import Scale100Variant
-from agent_evals.variants.structure_flat import StructureFlatVariant
 from agent_evals.variants.registry import (
     clear_registry,
     get_all_variants,
     get_variants_for_axis,
     register_variant,
 )
+from agent_evals.variants.scale_50 import Scale50Variant
+from agent_evals.variants.scale_100 import Scale100Variant
+from agent_evals.variants.structure_flat import StructureFlatVariant
 from agent_index.models import DocFile, DocTree
 
 # ---------------------------------------------------------------------------

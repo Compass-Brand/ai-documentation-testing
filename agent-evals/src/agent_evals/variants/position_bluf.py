@@ -14,7 +14,7 @@ from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.registry import register_variant
 
 if TYPE_CHECKING:
-    from agent_index.models import DocFile, DocTree
+    from agent_index.models import DocTree
 
 # Tier ordering: lower number = appears earlier in the index.
 _TIER_ORDER = {"required": 0, "recommended": 1, "reference": 2}

@@ -11,8 +11,8 @@ Bose construction: Bose & Bush (1952), using GF(p) for primes p.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 import numpy as np
 import numpy.typing as npt

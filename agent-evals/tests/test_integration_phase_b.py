@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agent_evals.llm.client import GenerationResult
-from agent_evals.llm.generation_stats import GenerationStats
-from agent_evals.metrics import CostMetrics, TurnMetrics, aggregate_turn_metrics
+from agent_evals.metrics import CostMetrics
 from agent_evals.reports.stability import compute_stability
 
 

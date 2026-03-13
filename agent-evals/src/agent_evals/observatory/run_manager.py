@@ -14,7 +14,7 @@ import os
 import re
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -147,7 +147,7 @@ class RunManager:
             "run_id": run_id,
             "mode": request.mode,
             "models": models,
-            "started_at": datetime.now(tz=timezone.utc).isoformat(),
+            "started_at": datetime.now(tz=UTC).isoformat(),
             "cancel_event": cancel_event,
         }
 

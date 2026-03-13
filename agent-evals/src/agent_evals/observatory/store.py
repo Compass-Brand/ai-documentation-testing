@@ -11,7 +11,7 @@ import logging
 import sqlite3
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -294,7 +294,7 @@ class ObservatoryStore:
         Raises:
             ValueError: If run_id already exists.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
             existing = conn.execute(
                 "SELECT 1 FROM runs WHERE run_id = ?", (run_id,)
@@ -340,7 +340,7 @@ class ObservatoryStore:
         Returns:
             The auto-generated trial_id for the inserted row.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         meta_json = json.dumps(strategy_metadata) if strategy_metadata else None
         with self._lock, self._connect() as conn:
             cursor = conn.execute(
@@ -378,7 +378,7 @@ class ObservatoryStore:
             prompt_json: Prompt messages as a list of dicts.
             response_text: Raw LLM response text.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO trial_traces "
@@ -410,7 +410,7 @@ class ObservatoryStore:
 
     def finish_run(self, run_id: str) -> None:
         """Mark a run as completed (or 'empty' if it has zero trials)."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
             trial_count = conn.execute(
                 "SELECT COUNT(*) AS cnt FROM trials WHERE run_id = ?",
@@ -443,7 +443,7 @@ class ObservatoryStore:
 
     def fail_run(self, run_id: str, error: str | None = None) -> None:
         """Mark a run as failed with optional error message and timestamp."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
             if error:
                 conn.execute(
@@ -461,7 +461,7 @@ class ObservatoryStore:
 
     def update_heartbeat(self, run_id: str) -> None:
         """Update the heartbeat timestamp for a run."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
             conn.execute(
                 "UPDATE runs SET heartbeat_at = ? WHERE run_id = ?",
@@ -479,9 +479,9 @@ class ObservatoryStore:
         Returns list of reaped run_ids.
         """
         cutoff = (
-            datetime.now(timezone.utc) - timedelta(seconds=max_age_seconds)
+            datetime.now(UTC) - timedelta(seconds=max_age_seconds)
         ).isoformat()
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
             stale = conn.execute(
                 "SELECT run_id FROM runs WHERE status = 'active' "
@@ -667,7 +667,7 @@ class ObservatoryStore:
         confirmation: dict | None = None,
     ) -> None:
         """Save Taguchi phase analysis results for a run."""
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         interval_json = (
             json.dumps(list(prediction_interval))
             if prediction_interval is not None
@@ -778,7 +778,7 @@ class ObservatoryStore:
         Raises:
             ValueError: If run_id does not exist.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
             existing = conn.execute(
                 "SELECT 1 FROM runs WHERE run_id = ?", (run_id,)
@@ -930,7 +930,7 @@ class ObservatoryStore:
             artifact_type: Kind of artifact (e.g. "kv_cache_analysis").
             data: Arbitrary dict payload serialised as JSON.
         """
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         with self._lock, self._connect() as conn:
             conn.execute(
                 "INSERT OR REPLACE INTO report_artifacts "

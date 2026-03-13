@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_evals.judge.calibrator import JudgeScore
 from agent_evals.judge.poll import (
     PanelScore,

@@ -111,6 +111,6 @@ class TestEfficiencyConvertTasks:
 
 class TestEfficiencyRegistration:
     def test_registered(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
         import agent_evals.datasets.synthetic_efficiency  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
         assert "synthetic-efficiency" in DATASET_REGISTRY

@@ -4,15 +4,10 @@ from __future__ import annotations
 
 import math
 
-import numpy as np
 import pytest
-from scipy import stats
-
 from agent_evals.taguchi.analysis import (
-    ANOVAFactorResult,
     ANOVAResult,
     ConfirmationResult,
-    InteractionEffect,
     OptimalPrediction,
     compute_interactions,
     compute_main_effects,
@@ -26,7 +21,7 @@ from agent_evals.taguchi.factors import (
     TaguchiExperimentRow,
     TaguchiFactorDef,
 )
-
+from scipy import stats
 
 # ---------------------------------------------------------------------------
 # Helpers

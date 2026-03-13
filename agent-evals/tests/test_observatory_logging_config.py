@@ -1,8 +1,8 @@
 """Tests for Observatory logging configuration."""
 import logging
-import pytest
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture(autouse=True)
@@ -16,8 +16,9 @@ def _cleanup_logger():
 
 
 def test_setup_logging_creates_log_file_on_first_write(tmp_path):
-    from agent_evals.observatory.logging_config import setup_logging
     import logging
+
+    from agent_evals.observatory.logging_config import setup_logging
     setup_logging(log_dir=tmp_path)
     logger = logging.getLogger("agent_evals")
     logger.info("test message")

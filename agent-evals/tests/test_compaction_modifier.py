@@ -11,11 +11,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-from conftest import make_mock_client, make_mock_task
-
 from agent_evals.context.base import PreparedContext, StrategyResult
-
+from conftest import make_mock_client, make_mock_task
 
 # ---------------------------------------------------------------------------
 # simulate_compaction
@@ -116,8 +113,8 @@ class TestCompactionModifier:
     """CompactionModifier wraps an inner strategy with compaction."""
 
     def test_wraps_strategy_with_compaction(self):
-        from agent_evals.context.modifiers.compaction import CompactionModifier
         from agent_evals.context.full import FullContextStrategy
+        from agent_evals.context.modifiers.compaction import CompactionModifier
 
         inner = FullContextStrategy()
         modifier = CompactionModifier(inner, compaction_ratio=0.5)
@@ -294,6 +291,7 @@ class TestRunCompactedSequenceDocTree:
         client = make_mock_client()
 
         from datetime import datetime
+
         from agent_index.models import DocFile, DocTree
 
         doc_tree = DocTree(
@@ -326,7 +324,6 @@ class TestRelatedTaskSequenceCarryover:
 
     def test_related_task_sequence_tests_carryover(self):
         from agent_evals.context.modifiers.compaction import (
-            CompactionModifier,
             run_compacted_sequence,
         )
 

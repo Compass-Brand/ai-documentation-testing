@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-
 from agent_evals.reports.cache_analysis import (
     build_cache_report,
     cache_friendliness_score,

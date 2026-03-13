@@ -7,8 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
-from agent_evals.datasets.base import DatasetAdapter
-
 
 def _make_ds1000_record(
     prompt: str = "import numpy as np\ndef solve():\n    # ",
@@ -202,9 +200,8 @@ class TestExtractKeyPatternsTopLevelAssignment:
 
 class TestDS1000Registration:
     def test_registered(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
-
         import agent_evals.datasets.ds1000  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
 
         assert "ds1000" in DATASET_REGISTRY
 

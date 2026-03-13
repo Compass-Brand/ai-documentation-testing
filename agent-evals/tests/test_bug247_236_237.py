@@ -18,11 +18,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agent_evals.tasks.base import TaskDefinition
 from agent_evals.tasks.code_generation import CodeGenerationTask
-
 
 # ---------------------------------------------------------------------------
 # Helpers

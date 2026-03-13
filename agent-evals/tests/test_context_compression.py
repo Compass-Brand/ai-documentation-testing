@@ -15,9 +15,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
 from conftest import make_mock_client, make_mock_task
-
 
 # ---------------------------------------------------------------------------
 # Registration

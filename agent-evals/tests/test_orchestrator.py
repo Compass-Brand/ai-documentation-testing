@@ -11,17 +11,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker, TrackerEvent
 from agent_evals.orchestrator import (
     EvalOrchestrator,
     OrchestratorConfig,
-    OrchestratorResult,
 )
 from agent_evals.runner import EvalRunConfig, EvalRunResult, TrialResult
 from conftest import make_mock_client, make_mock_task, make_mock_variant
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -8,10 +8,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from pydantic import ValidationError
-
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
+from pydantic import ValidationError
 
 
 @pytest.fixture
@@ -26,9 +25,7 @@ def tracker(store: ObservatoryStore) -> EventTracker:
 
 from agent_evals.observatory.run_manager import (
     HeartbeatThread,
-    RunConflictError,
     RunManager,
-    RunSetupError,
     StartRunRequest,
 )
 

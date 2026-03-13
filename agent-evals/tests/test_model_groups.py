@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_evals.observatory.model_catalog import ModelCatalog
-from agent_evals.observatory.model_groups import ModelGroup, ModelGroupManager
+from agent_evals.observatory.model_groups import ModelGroupManager
 
 
 @pytest.fixture

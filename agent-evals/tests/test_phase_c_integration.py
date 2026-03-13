@@ -6,9 +6,7 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
-
 from agent_index.models import DocFile, DocTree
-
 from conftest import make_mock_task
 
 
@@ -88,7 +86,10 @@ class TestNewAxesDiscovery:
 
 class TestHallucinationDetection:
     def test_full_detection_flow(self):
-        from agent_evals.judge.hallucination import build_hallucination_prompt, parse_hallucination_result
+        from agent_evals.judge.hallucination import (
+            build_hallucination_prompt,
+            parse_hallucination_result,
+        )
         messages = build_hallucination_prompt(
             response="OAuth2 tokens expire in 1 hour.",
             source_docs="# Auth\nOAuth2 tokens expire after 1 hour.",

@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from agent_evals.reports.aggregator import ReportData, VariantSummary
 from agent_evals.reports.html_renderer import render_html
 from agent_evals.runner import EvalRunConfig
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -337,8 +337,8 @@ def test_space_separated_test_names_parsed_correctly():
 
 def test_agentic_score_redistributes_weights_when_no_files():
     """With only expected_tools metadata, score must reflect full tool detection weight."""
-    from agent_evals.tasks.base import TaskDefinition
     from agent_evals.tasks.agentic import AgenticTask
+    from agent_evals.tasks.base import TaskDefinition
     defn = TaskDefinition(
         task_id="agentic_001", type="agentic", question="Q",
         domain="framework_api", difficulty="easy",

@@ -8,8 +8,12 @@ from __future__ import annotations
 
 from agent_evals.observatory.history import (
     compare_runs,
-    cost_trend as _cost_trend,
     detect_regressions,
+)
+from agent_evals.observatory.history import (
+    cost_trend as _cost_trend,
+)
+from agent_evals.observatory.history import (
     model_ranking as _model_ranking,
 )
 from agent_evals.observatory.store import ObservatoryStore

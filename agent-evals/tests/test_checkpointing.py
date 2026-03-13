@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.runner import EvalRunConfig, EvalRunner
 from agent_evals.taguchi.factors import (
@@ -16,7 +15,6 @@ from agent_evals.taguchi.factors import (
 )
 from agent_evals.taguchi.runner import TaguchiRunner
 from conftest import make_mock_client, make_mock_task, make_mock_variant
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -388,7 +386,7 @@ class TestOrchestratorResume:
         store.fail_run("run-merge", error="crashed")
 
         from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
-        from agent_evals.runner import EvalRunConfig, EvalRunResult, TrialResult
+        from agent_evals.runner import EvalRunResult, TrialResult
 
         config = OrchestratorConfig(
             models=["mock"],

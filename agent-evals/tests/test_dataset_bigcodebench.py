@@ -7,8 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
-from agent_evals.datasets.base import DatasetAdapter
-
 
 def _make_bigcodebench_record(
     task_id: str = "BigCodeBench/0",
@@ -256,8 +254,7 @@ class TestBigCodeBenchBuildDocTree:
 
 class TestBigCodeBenchRegistration:
     def test_registered(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
-
         import agent_evals.datasets.bigcodebench  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
 
         assert "bigcodebench" in DATASET_REGISTRY

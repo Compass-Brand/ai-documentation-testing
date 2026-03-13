@@ -24,20 +24,20 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-logger = logging.getLogger(__name__)
-
 from agent_evals.context.base import ContextStrategy, StrategyResult
 from agent_evals.context.full import FullContextStrategy
 from agent_evals.cost import CostTracker
+from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.judge.calibrator import extract_judge_metadata
 from agent_evals.judge_graduation import blend_scores
-from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.llm.cache import ResponseCache
 from agent_evals.llm.client import GenerationResult, LLMClient
 from agent_evals.variants.baselines import (
     LengthMatchedRandomBaseline,
     OracleBaseline,
 )
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
@@ -818,7 +818,7 @@ class EvalRunner:
         expected_answer: str | None = None,
         canonical_solution: str | None = None,
         test_criteria: dict | None = None,
-    ) -> "JudgeScore":
+    ) -> JudgeScore:
         """Call LLM judge to score one trial response.
 
         PHASE A GUARD: judge scores are validation-only. Do NOT modify

@@ -8,6 +8,7 @@ from agent_evals.context.base import ContextStrategy, PreparedContext, StrategyR
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
+
     from agent_evals.llm.client import LLMClient
     from agent_evals.tasks.base import EvalTask
 

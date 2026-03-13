@@ -6,17 +6,15 @@ Uses FastAPI TestClient for endpoint testing.
 
 from __future__ import annotations
 
-import itertools
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
-
 from agent_evals.observatory.model_catalog import ModelCatalog
 from agent_evals.observatory.run_manager import RunManager
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
 from agent_evals.observatory.web.server import create_app
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture

@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from agent_evals.observatory.cli import (
     cli_compare_runs,
     cli_cost_trend,

@@ -5,7 +5,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from agent_evals.runner import EvalRunConfig, TrialResult
 
 

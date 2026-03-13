@@ -14,11 +14,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
 from agent_evals.variants.base import IndexVariant, PipelineRole, VariantMetadata
 from agent_evals.variants.composite import CompositeVariant
 from agent_index.models import DocFile, DocTree
-
 
 # ---------------------------------------------------------------------------
 # Helpers

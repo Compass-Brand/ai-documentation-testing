@@ -9,12 +9,10 @@ from __future__ import annotations
 from io import StringIO
 from pathlib import Path
 
-import pytest
-from rich.console import Console
-
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.terminal import TerminalDashboard
 from agent_evals.observatory.tracker import EventTracker
+from rich.console import Console
 
 
 def _setup(

@@ -6,17 +6,14 @@ source routing through the orchestrator, and dashboard integration.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-
 from agent_evals.cli import _run_evaluation
 from agent_evals.observatory.run_manager import RunManager, StartRunRequest
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

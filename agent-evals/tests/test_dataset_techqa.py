@@ -6,9 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import yaml
-
 from agent_evals.datasets.base import DatasetAdapter
-
 
 # ---------------------------------------------------------------------------
 # Mock data helpers
@@ -341,8 +339,7 @@ class TestTechQALoadErrorHandling:
 
 class TestTechQARegistration:
     def test_registered_in_dataset_registry(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
-
         import agent_evals.datasets.ibm_techqa  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
 
         assert "ibm-techqa" in DATASET_REGISTRY

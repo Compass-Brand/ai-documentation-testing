@@ -112,6 +112,6 @@ class TestPerturbationConvertTasks:
 
 class TestPerturbationRegistration:
     def test_registered(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
         import agent_evals.datasets.perturbation  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
         assert "perturbation" in DATASET_REGISTRY

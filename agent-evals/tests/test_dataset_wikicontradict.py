@@ -144,6 +144,6 @@ class TestWikiContradictFiltersEmptyRefAnswer:
 
 class TestWikiContradictRegistration:
     def test_registered(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
         import agent_evals.datasets.wikicontradict  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
         assert "wikicontradict" in DATASET_REGISTRY

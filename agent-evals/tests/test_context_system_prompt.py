@@ -14,17 +14,14 @@ Tests cover:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
-
-import pytest
-from conftest import make_mock_client, make_mock_task
+from datetime import UTC, datetime
+from unittest.mock import patch
 
 from agent_evals.context.base import PreparedContext, StrategyConfig, StrategyResult
 from agent_evals.context.system_prompt import SystemPromptStrategy
 from agent_evals.llm.client import GenerationResult
-from agent_index.models import DocFile, DocTree, TierConfig
-
+from agent_index.models import DocFile, DocTree
+from conftest import make_mock_client, make_mock_task
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -34,7 +31,7 @@ def _make_doc_tree(files: dict[str, DocFile] | None = None) -> DocTree:
     """Create a minimal DocTree for testing."""
     return DocTree(
         files=files or {},
-        scanned_at=datetime.now(tz=timezone.utc),
+        scanned_at=datetime.now(tz=UTC),
         source="test",
         total_tokens=0,
     )

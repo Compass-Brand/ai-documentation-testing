@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agent_evals.taguchi.analysis import compute_sn_ratios
 from agent_evals.taguchi.factors import (
     TaguchiDesign,
     TaguchiExperimentRow,
     TaguchiFactorDef,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

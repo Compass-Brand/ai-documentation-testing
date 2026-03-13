@@ -5,11 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import yaml
-
 from agent_evals.datasets.base import DatasetAdapter
-
 
 # ---------------------------------------------------------------------------
 # Mock HF record helpers
@@ -396,8 +393,7 @@ class TestCodeRAGExpectedFilesMatchDocTree:
 
 class TestCodeRAGRegistration:
     def test_registered_in_dataset_registry(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
-
         import agent_evals.datasets.code_rag_bench  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
 
         assert "code-rag-bench" in DATASET_REGISTRY

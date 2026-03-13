@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from agent_evals.observatory.model_cli import (
     apply_cli_filters,
     format_model_detail,
@@ -15,7 +13,6 @@ from agent_evals.observatory.model_cli import (
     fuzzy_search,
     sort_models,
 )
-
 
 SAMPLE_MODELS = [
     {"id": "a/cheap", "name": "Cheap", "prompt_price": 0.0,

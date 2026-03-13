@@ -28,6 +28,9 @@ def stratified_split(
     Returns:
         Tuple of (train_tasks, test_tasks).
     """
+    if not 0.0 < train_ratio < 1.0:
+        raise ValueError(f"train_ratio must be in (0.0, 1.0), got {train_ratio}")
+
     if not tasks:
         return [], []
 

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from agent_evals.datasets.source import load_from_source
 
 
@@ -81,9 +79,8 @@ class TestMixedSourceLoader:
     def test_mixed_source_merges_doc_trees(self):
         """MixedSourceLoader merges DocTrees from multiple adapters,
         namespacing files as {adapter_name}/{rel_path}."""
-        from agent_index.models import DocFile, DocTree
-
         from agent_evals.datasets.source import MixedSourceLoader
+        from agent_index.models import DocFile, DocTree
 
         tree_a = DocTree(
             files={

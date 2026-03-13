@@ -123,9 +123,10 @@ def load_doc_tree_for_source(source: str = DEFAULT_SOURCE) -> Any:
 
     from datetime import UTC, datetime
 
+    from agent_index.models import DocTree
+
     from agent_evals.datasets import load_all as _load_all_datasets
     from agent_evals.datasets.cache import DatasetCache
-    from agent_index.models import DocTree
 
     _load_all_datasets()
     cache = DatasetCache()

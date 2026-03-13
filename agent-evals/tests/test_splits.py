@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_evals.splits import stratified_split
 from agent_evals.tasks.base import TaskDefinition
-from agent_evals.tasks.retrieval import RetrievalTask
 from agent_evals.tasks.code_generation import CodeGenerationTask
 from agent_evals.tasks.fact_extraction import FactExtractionTask
+from agent_evals.tasks.retrieval import RetrievalTask
 
 
 @pytest.fixture
@@ -88,6 +87,17 @@ class TestStratifiedSplit:
         train, test = stratified_split([], train_ratio=0.8, seed=42)
         assert train == []
         assert test == []
+
+    def test_invalid_train_ratio_raises(self):
+        """train_ratio outside (0.0, 1.0) raises ValueError."""
+        with pytest.raises(ValueError, match="train_ratio must be in"):
+            stratified_split([], train_ratio=0.0)
+        with pytest.raises(ValueError, match="train_ratio must be in"):
+            stratified_split([], train_ratio=1.0)
+        with pytest.raises(ValueError, match="train_ratio must be in"):
+            stratified_split([], train_ratio=1.5)
+        with pytest.raises(ValueError, match="train_ratio must be in"):
+            stratified_split([], train_ratio=-0.1)
 
     def test_single_task_goes_to_train(self):
         """Types with only 1 task go to train set."""

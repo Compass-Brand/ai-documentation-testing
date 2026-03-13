@@ -1,6 +1,5 @@
 """Tests for GitHub repository scanner functionality."""
 
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch

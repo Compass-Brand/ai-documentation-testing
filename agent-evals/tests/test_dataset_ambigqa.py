@@ -166,6 +166,6 @@ class TestAmbigQASingleAnswerFiltering:
 
 class TestAmbigQARegistration:
     def test_registered(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
         import agent_evals.datasets.ambigqa  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
         assert "ambigqa" in DATASET_REGISTRY

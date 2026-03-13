@@ -575,12 +575,11 @@ class TestLoaderUsesConcreteTaskTypes:
 
     def test_loader_registers_all_concrete_types(self) -> None:
         """After loading, TASK_TYPES should contain concrete types for all 11 types."""
-        from agent_evals.tasks.base import TASK_TYPES, GenericTask
-
         # Force registration by importing loader (which should ensure init runs)
         import importlib
 
         import agent_evals.tasks.loader
+        from agent_evals.tasks.base import TASK_TYPES, GenericTask
         importlib.reload(agent_evals.tasks.loader)
 
         # Check that at least some types have been overridden from GenericTask

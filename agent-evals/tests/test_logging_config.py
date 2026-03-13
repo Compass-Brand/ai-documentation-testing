@@ -5,8 +5,6 @@ from __future__ import annotations
 import logging
 import sys
 
-import pytest
-
 from agent_evals.logging_config import configure_logging
 
 

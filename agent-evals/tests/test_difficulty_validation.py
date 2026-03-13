@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agent_evals.analysis.difficulty import (
+    DifficultyReport,
     compute_empirical_difficulty,
     validate_difficulty_labels,
-    DifficultyReport,
 )
 
 

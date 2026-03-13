@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agent_evals.llm.generation_stats import GenerationStats, fetch_generation_stats
 
 

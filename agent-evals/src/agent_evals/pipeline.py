@@ -6,8 +6,8 @@ import copy
 import logging
 import sqlite3
 from collections import defaultdict
-from itertools import product as itertools_product
 from dataclasses import asdict, dataclass, field, fields
+from itertools import product as itertools_product
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 

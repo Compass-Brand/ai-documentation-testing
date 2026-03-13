@@ -7,8 +7,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from agent_evals.observatory.model_catalog import ModelCatalog
 
 

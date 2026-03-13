@@ -5,15 +5,12 @@ from __future__ import annotations
 import statistics
 
 import pytest
-from scipy.stats import t as t_dist
-
 from agent_evals.reports.aggregator import (
     ReportData,
-    VariantSummary,
     aggregate,
 )
 from agent_evals.runner import EvalRunConfig, TrialResult
-
+from scipy.stats import t as t_dist
 
 # ---------------------------------------------------------------------------
 # Helpers

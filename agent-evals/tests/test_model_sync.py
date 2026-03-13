@@ -9,9 +9,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-
 from agent_evals.observatory.model_catalog import ModelCatalog
-from agent_evals.observatory.model_sync import ModelSync, SyncDiff
+from agent_evals.observatory.model_sync import ModelSync
 
 
 class TestSyncDiff:

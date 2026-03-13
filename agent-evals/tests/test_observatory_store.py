@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from agent_evals.observatory.store import (
     ObservatoryStore,
-    RunSummary,
-    TrialRecord,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1667,7 +1664,7 @@ class TestReapZombieRuns:
         # Backdate created_at to simulate a stale run
         with store._connect() as conn:
             old_time = (
-                datetime.now(timezone.utc) - timedelta(hours=2)
+                datetime.now(UTC) - timedelta(hours=2)
             ).isoformat()
             conn.execute(
                 "UPDATE runs SET created_at = ? WHERE run_id = ?",
@@ -1697,7 +1694,7 @@ class TestReapZombieRuns:
         store.finish_run("run_done")
         with store._connect() as conn:
             old_time = (
-                datetime.now(timezone.utc) - timedelta(hours=2)
+                datetime.now(UTC) - timedelta(hours=2)
             ).isoformat()
             conn.execute(
                 "UPDATE runs SET created_at = ? WHERE run_id = ?",

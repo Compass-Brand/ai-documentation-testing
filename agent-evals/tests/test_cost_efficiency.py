@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agent_evals.reports.cost_efficiency import (
     CostEfficiencyRow,
     compute_pareto_frontier,

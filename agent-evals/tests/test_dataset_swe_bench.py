@@ -301,6 +301,6 @@ class TestSWEBenchConvertTasks:
 
 class TestSWEBenchRegistration:
     def test_registered(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
         import agent_evals.datasets.swe_bench  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
         assert "swe-bench" in DATASET_REGISTRY

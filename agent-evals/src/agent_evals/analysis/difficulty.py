@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-
 # Difficulty thresholds based on mean baseline score.
 # These thresholds work for both continuous scores and binary scores.
 # For binary scoring with 10 reps: easy >= 8/10, medium >= 5/10, hard >= 2/10.

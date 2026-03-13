@@ -4,9 +4,7 @@ from collections import Counter
 
 import numpy as np
 import pytest
-
 from agent_evals.taguchi.catalog import (
-    OrthogonalArray,
     get_available_arrays,
     get_oa,
     select_oa,

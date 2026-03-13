@@ -672,7 +672,7 @@ def build_eval_run_config(resolved: dict[str, Any]) -> EvalRunConfig:
         judge_mode=resolved.get("judge_mode", "routine"),
         judge_primary_types=judge_primary_types,
         judge_graduation_enabled=resolved.get("judge_graduation", False),
-        judge_graduation_weight=resolved.get("judge_graduation_weight", 0.3),
+        judge_graduation_weight=resolved.get("judge_graduation_weight") or 0.3,
     )
 
 
@@ -714,7 +714,8 @@ def _run_evaluation(
     """
     # --list-datasets: show available datasets and exit (no model needed)
     if resolved.get("list_datasets"):
-        from agent_evals.datasets import list_available, load_all as load_all_datasets
+        from agent_evals.datasets import list_available
+        from agent_evals.datasets import load_all as load_all_datasets
 
         load_all_datasets()
         available = list_available()
@@ -749,7 +750,8 @@ def _run_evaluation(
                 logger.info("Prepared %d tasks for '%s'", count, name)
             return 0
 
-        from agent_evals.datasets import get_adapter, load_all as load_all_datasets
+        from agent_evals.datasets import get_adapter
+        from agent_evals.datasets import load_all as load_all_datasets
         from agent_evals.datasets.cache import DatasetCache
 
         load_all_datasets()
@@ -865,14 +867,13 @@ def _run_evaluation(
         return 1
 
     # Import heavy dependencies only when actually running
-    from agent_evals.variants.registry import get_variants_for_axis
-
     # Load tasks and doc_tree based on --source
     from agent_evals.source import (
         SourceNotPreparedError,
         load_doc_tree_for_source,
         load_tasks_for_source,
     )
+    from agent_evals.variants.registry import get_variants_for_axis
 
     source = resolved.get("source") or "gold_standard"
 
@@ -1227,7 +1228,7 @@ def _run_pipeline(
         strategy_config=strategy_config,
         judge_primary_types=run_config.judge_primary_types,
         split_ratio=resolved.get("split_ratio"),
-        split_seed=int(resolved.get("split_seed", 42)),
+        split_seed=int(resolved.get("split_seed") or 42),
     )
 
     resume_pipeline_id = resolved.get("resume_pipeline")
@@ -1320,7 +1321,7 @@ def _run_multi_strategy_pipeline(
         strategy_reps=strategy_reps,
         judge_primary_types=run_config.judge_primary_types,
         split_ratio=resolved.get("split_ratio"),
-        split_seed=int(resolved.get("split_seed", 42)),
+        split_seed=int(resolved.get("split_seed") or 42),
     )
 
     resume_pipeline_id = resolved.get("resume_pipeline")

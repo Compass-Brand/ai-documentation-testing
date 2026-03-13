@@ -3,8 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from agent_evals.pipeline import DOEPipeline, PipelineConfig, PhaseResult, PipelineResult
+from agent_evals.pipeline import DOEPipeline, PhaseResult, PipelineConfig, PipelineResult
 
 
 def test_pipeline_config_defaults():
@@ -1020,7 +1019,6 @@ def test_pipeline_refinement_calls_compute_interactions():
 
 def test_pipeline_refinement_populates_interaction_effects():
     """Bug #122: Refinement PhaseResult must contain interaction_effects."""
-    from dataclasses import asdict
     from agent_evals.taguchi.analysis import InteractionEffect
 
     config = PipelineConfig(models=["model-a"], top_k=2)
@@ -1517,8 +1515,9 @@ def test_phase_result_trial_count_defaults_to_none():
 
 def test_confirmation_phase_persists_confirmation_dict():
     """Confirmation dict (within_interval, sigma_deviation) must be persisted."""
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
+
     from agent_evals.observatory.store import ObservatoryStore
 
     with tempfile.TemporaryDirectory() as td:
@@ -1790,7 +1789,6 @@ class TestConfirmationCombinedOptimal:
         E.g., optimal={axis_1: 'axis1_a', axis_3: 'axis3_c'} -> composite has
         components from axis 1 and axis 3.
         """
-        from agent_evals.variants.composite import CompositeVariant
 
         config = PipelineConfig(models=["model-a"])
         orch = _make_mock_orchestrator(score=0.7)

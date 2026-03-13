@@ -7,8 +7,6 @@ from unittest.mock import MagicMock, patch
 
 import yaml
 
-from agent_evals.datasets.base import DatasetAdapter
-
 
 def _make_multihop_record(
     query_id: str = "q001",
@@ -275,8 +273,7 @@ class TestMultiHopRAGBuildDocTreeTokenCount:
 
 class TestMultiHopRAGRegistration:
     def test_registered(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
-
         import agent_evals.datasets.multihop_rag  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
 
         assert "multihop-rag" in DATASET_REGISTRY

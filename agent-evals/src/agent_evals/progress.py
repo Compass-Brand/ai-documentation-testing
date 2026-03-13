@@ -11,34 +11,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _plain_callback(completed: int, total: int, trial: TrialResult) -> None:
-    logger.info(
-        "[%d/%d] %s | %s | score=%.2f",
-        completed,
-        total,
-        trial.task_id,
-        trial.variant_name,
-        trial.score,
-    )
-
-
-def _rich_callback(completed: int, total: int, trial: TrialResult) -> None:
-    pct = (completed / total * 100) if total > 0 else 0
-    bar_width = 20
-    filled = int(bar_width * completed / total) if total > 0 else 0
-    bar = "#" * filled + "-" * (bar_width - filled)
-    logger.info(
-        "[%s] %3.0f%% (%d/%d) %s | %s | %.2f",
-        bar,
-        pct,
-        completed,
-        total,
-        trial.task_id,
-        trial.variant_name,
-        trial.score,
-    )
-
-
 def _make_cost_callback(
     base: str,
     budget: float | None,

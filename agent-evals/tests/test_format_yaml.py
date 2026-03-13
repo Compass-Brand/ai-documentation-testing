@@ -1,7 +1,6 @@
 """Tests for the YAML format variant."""
 
 import yaml
-
 from agent_evals.fixtures import load_sample_doc_tree
 from agent_evals.variants.format_yaml import FormatYaml
 from agent_index.models import DocTree

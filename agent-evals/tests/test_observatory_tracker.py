@@ -6,12 +6,10 @@ Covers E3-S2: Observatory Event Tracker.
 from __future__ import annotations
 
 import threading
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker, TrackerEvent, _ModelStats
 

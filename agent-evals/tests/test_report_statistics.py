@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from agent_evals.reports.statistics import (
     AssumptionsResult,
-    BHResult,
-    EffectSizeResult,
     PowerResult,
-    TukeyResult,
     benjamini_hochberg,
     check_assumptions,
     compute_effect_sizes,

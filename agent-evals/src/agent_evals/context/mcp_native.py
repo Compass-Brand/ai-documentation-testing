@@ -12,6 +12,7 @@ from agent_evals.context.registry import register_strategy
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
+
     from agent_evals.llm.client import GenerationResult, LLMClient
     from agent_evals.tasks.base import EvalTask
 

@@ -10,9 +10,8 @@ from agent_evals.taguchi.factors import (
     TaguchiExperimentRow,
     TaguchiFactorDef,
 )
-from agent_evals.taguchi.runner import TaguchiRunResult, TaguchiRunner
+from agent_evals.taguchi.runner import TaguchiRunner
 from conftest import make_mock_client, make_mock_task, make_mock_variant
-
 
 # ---------------------------------------------------------------------------
 # Helpers: lightweight mocks that avoid hitting real LLMs
@@ -653,7 +652,6 @@ class TestSetupTeardownPerRow:
 
     def test_setup_called_once_per_row_not_per_trial(self):
         """With 3 rows, 2 tasks, 2 reps: setup called 3 times, not 12."""
-        from unittest.mock import call, patch
 
         axes = {1: ["flat", "2tier", "3tier"]}
         design = _make_simple_design(n_rows=3, axes=axes)

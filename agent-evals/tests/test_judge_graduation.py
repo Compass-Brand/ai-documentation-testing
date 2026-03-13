@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_evals.judge_graduation import (
     JudgeGraduationConfig,
     blend_scores,

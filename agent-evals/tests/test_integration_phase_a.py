@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
-
-from agent_evals.datasets import list_available, load_all as load_all_datasets
+from agent_evals.datasets import list_available
+from agent_evals.datasets import load_all as load_all_datasets
 from agent_evals.datasets.source import load_from_source
 from agent_evals.judge.calibrator import build_judge_prompt, parse_judge_response
 from agent_evals.reports.recommendations import (
-    Finding,
     extract_strategy_breakdowns,
     generate_findings,
     render_findings_text,

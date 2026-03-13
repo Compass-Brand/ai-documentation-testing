@@ -1318,7 +1318,7 @@ class TestExtractRelevantDocs:
             scanned_at="2025-01-01T00:00:00Z",
         )
 
-    def _make_task(self, metadata: dict) -> "EvalTask":
+    def _make_task(self, metadata: dict) -> EvalTask:
         """Create a minimal EvalTask with the given metadata."""
         from agent_evals.tasks.base import TASK_TYPES
 

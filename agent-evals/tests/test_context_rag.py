@@ -17,9 +17,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 from conftest import make_mock_client, make_mock_task
-
 
 # ---------------------------------------------------------------------------
 # Chunkers

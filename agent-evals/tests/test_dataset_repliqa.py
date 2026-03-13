@@ -5,11 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import yaml
-
 from agent_evals.datasets.base import DatasetAdapter
-
 
 # ---------------------------------------------------------------------------
 # Mock HF record helpers
@@ -310,9 +307,8 @@ class TestRepliQARegistration:
     """Verify the adapter registers itself."""
 
     def test_registered_in_dataset_registry(self) -> None:
-        from agent_evals.datasets import DATASET_REGISTRY
-
         # Import the module to trigger registration
         import agent_evals.datasets.repliqa  # noqa: F401
+        from agent_evals.datasets import DATASET_REGISTRY
 
         assert "repliqa" in DATASET_REGISTRY

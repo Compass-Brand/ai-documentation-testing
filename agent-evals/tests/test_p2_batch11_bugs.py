@@ -8,14 +8,13 @@ from typing import Any
 
 import pytest
 import yaml
-
 from agent_evals.judge.hallucination import parse_hallucination_result
 from agent_evals.metrics.navigation import _extract_file_reads
 from agent_evals.metrics.operational import TurnMetrics, aggregate_turn_metrics
 from agent_evals.tasks.base import TaskDefinition
 from agent_evals.tasks.code_generation import CodeGenerationTask
 from agent_evals.tasks.compositional import CompositionalTask
-from agent_evals.tasks.disambiguation import DisambiguationTask, _AMBIGUITY_PHRASES
+from agent_evals.tasks.disambiguation import _AMBIGUITY_PHRASES, DisambiguationTask
 from agent_evals.tasks.loader import load_tasks
 from agent_evals.tasks.retrieval import _FILE_PATH_PATTERN
 

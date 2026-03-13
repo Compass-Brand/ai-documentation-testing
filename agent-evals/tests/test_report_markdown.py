@@ -6,7 +6,6 @@ from agent_evals.reports.aggregator import ReportData, VariantSummary
 from agent_evals.reports.md_renderer import render_markdown
 from agent_evals.runner import EvalRunConfig
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

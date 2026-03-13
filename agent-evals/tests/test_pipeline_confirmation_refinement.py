@@ -11,11 +11,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from agent_evals.pipeline import DOEPipeline, PhaseResult, PipelineConfig
 from agent_evals.variants.composite import CompositeVariant
-
 
 # ---------------------------------------------------------------------------
 # Helpers

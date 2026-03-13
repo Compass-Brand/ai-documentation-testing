@@ -17,7 +17,7 @@ from sse_starlette.sse import EventSourceResponse
 from agent_evals.observatory.model_catalog import ModelCatalog
 from agent_evals.observatory.model_groups import ModelGroupManager
 from agent_evals.observatory.model_sync import ModelSync
-from agent_evals.observatory.run_manager import RunConflictError, RunManager, StartRunRequest
+from agent_evals.observatory.run_manager import RunManager, StartRunRequest
 from agent_evals.observatory.store import ObservatoryStore
 from agent_evals.observatory.tracker import EventTracker
 
@@ -426,7 +426,8 @@ def create_router(
     @router.get("/api/datasets")
     async def list_datasets() -> list[dict[str, str]]:
         """Return available dataset sources for the run config form."""
-        from agent_evals.datasets import list_available, load_all as _load_all
+        from agent_evals.datasets import list_available
+        from agent_evals.datasets import load_all as _load_all
 
         _load_all()
         return list_available()

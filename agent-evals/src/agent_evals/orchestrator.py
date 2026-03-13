@@ -17,15 +17,15 @@ from typing import TYPE_CHECKING, Any
 from agent_evals.context.base import StrategyConfig
 from agent_evals.llm.client_pool import LLMClientPool
 from agent_evals.observatory.store import ObservatoryStore, extract_provider
-from agent_evals.observatory.tracker import EventTracker, TrackerEvent
+from agent_evals.observatory.tracker import EventTracker
+from agent_evals.progress import make_progress_callback
 from agent_evals.reports.aggregator import ReportData, aggregate
-from agent_evals.runner import EvalRunConfig, EvalRunResult, EvalRunner, TrialResult
+from agent_evals.runner import EvalRunConfig, EvalRunner, EvalRunResult, TrialResult
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
 
     from agent_evals.taguchi.factors import TaguchiDesign
-    from agent_evals.taguchi.runner import TaguchiRunResult
     from agent_evals.tasks.base import EvalTask
     from agent_evals.variants.base import IndexVariant
 
@@ -274,7 +274,6 @@ class EvalOrchestrator:
         model_name = self.config.models[0] if self.config.models else "unknown"
 
         # Display callback for progress output
-        from agent_evals.progress import make_progress_callback
         display_cb = make_progress_callback(
             eval_config.display_mode, budget=eval_config.budget,
         )

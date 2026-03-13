@@ -3,13 +3,10 @@
 from collections import Counter
 
 import pytest
-
-from agent_evals.taguchi.analysis import compute_main_effects, compute_sn_ratios, run_anova
+from agent_evals.taguchi.analysis import compute_main_effects, run_anova
 from agent_evals.taguchi.factors import (
     DUMMY_LEVEL,
-    TaguchiDesign,
     TaguchiExperimentRow,
-    TaguchiFactorDef,
     build_design,
     build_factors_from_axes,
 )

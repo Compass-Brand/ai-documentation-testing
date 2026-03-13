@@ -8,11 +8,9 @@ recording all work together correctly.
 
 from __future__ import annotations
 
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
-
 from agent_evals.llm.client import GenerationResult, LLMClient
 from agent_evals.llm.client_pool import LLMClientPool
 from agent_evals.observatory.store import ObservatoryStore
@@ -20,7 +18,6 @@ from agent_evals.observatory.tracker import EventTracker
 from agent_evals.orchestrator import EvalOrchestrator, OrchestratorConfig
 from agent_evals.runner import EvalRunConfig
 from agent_evals.taguchi.factors import (
-    TaguchiDesign,
     build_design,
     build_factors_from_axes,
 )
@@ -28,7 +25,6 @@ from agent_evals.taguchi.runner import TaguchiRunner
 from agent_evals.tasks.base import EvalTask, TaskDefinition
 from agent_evals.variants.base import IndexVariant, VariantMetadata
 from agent_evals.variants.composite import CompositeVariant
-
 
 # ---------------------------------------------------------------------------
 # Test helpers
