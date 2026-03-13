@@ -39,7 +39,7 @@ _GENERAL_DEFAULT_LIMIT: int = 100
 # Synthetic adapters and their HF source adapters
 _SYNTHETIC_SOURCES: tuple[tuple[str, str], ...] = (
     ("ibm-techqa", "synthetic-efficiency"),
-    ("code-rag-bench", "perturbation"),
+    ("ibm-techqa", "perturbation"),
 )
 
 # All adapters: 9 HF + 2 synthetic

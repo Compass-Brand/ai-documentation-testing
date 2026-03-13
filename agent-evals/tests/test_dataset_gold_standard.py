@@ -218,16 +218,16 @@ class TestGenerateSyntheticTasks:
         eff_tasks = list((tmp_path / "synthetic-efficiency" / "tasks").glob("*.yaml"))
         assert len(eff_tasks) >= 1
 
-    def test_generates_perturbation_from_code_rag_bench(self, tmp_path):
-        """Perturbation tasks auto-generate from prepared code-rag-bench data."""
-        self._setup_prepared_adapter(tmp_path, "code-rag-bench", [
+    def test_generates_perturbation_from_ibm_techqa(self, tmp_path):
+        """Perturbation tasks auto-generate from prepared ibm-techqa data."""
+        self._setup_prepared_adapter(tmp_path, "ibm-techqa", [
             {
-                "task_id": "coderagbench_retrieval_001",
-                "type": "retrieval",
+                "task_id": "ibmtechqa_fact_extraction_001",
+                "type": "fact_extraction",
                 "question": "How do you configure logging in Flask?",
-                "domain": "library_docs",
+                "domain": "technical_qa",
                 "difficulty": "medium",
-                "tags": ["retrieval"],
+                "tags": ["technical"],
                 "metadata": {
                     "expected_answer": "Use app.logger",
                     "answer_aliases": [],
