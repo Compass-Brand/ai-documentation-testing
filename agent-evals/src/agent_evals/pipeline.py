@@ -22,6 +22,7 @@ from agent_evals.taguchi.analysis import (
     validate_confirmation,
 )
 from agent_evals.taguchi.factors import build_design, build_factorial_design
+from agent_evals.taguchi.multi_objective import run_multi_objective_analysis
 from agent_evals.variants.composite import CompositeVariant
 
 if TYPE_CHECKING:
@@ -110,6 +111,7 @@ class PhaseResult:
     confirmation: dict[str, Any] | None = None
     interaction_effects: list[dict] = field(default_factory=list)
     trial_count: int | None = None
+    multi_objective: dict[str, dict] | None = None
 
 
 @dataclass
@@ -477,6 +479,23 @@ class DOEPipeline:
                 _effective_score(trial, self.config.judge_primary_types)
             )
 
+        # Collect cost and latency per OA row for multi-objective analysis
+        row_costs: dict[int, list[float]] = defaultdict(list)
+        row_latencies: dict[int, list[float]] = defaultdict(list)
+        for trial in result.trials:
+            if trial.error is not None:
+                continue
+            row_id = int(trial.metrics["oa_row_id"])
+            if trial.cost is not None:
+                row_costs[row_id].append(trial.cost)
+            if isinstance(trial.latency_seconds, (int, float)) and trial.latency_seconds >= 0:
+                row_latencies[row_id].append(trial.latency_seconds)
+
+        # Multi-objective analysis (accuracy + cost + latency)
+        multi_obj = run_multi_objective_analysis(
+            design, dict(row_scores), dict(row_costs), dict(row_latencies),
+        )
+
         # 6-9. Statistical analysis
         sn_ratios = compute_sn_ratios(
             dict(row_scores), self.config.quality_type
@@ -508,6 +527,7 @@ class DOEPipeline:
             prediction_interval=optimal.prediction_interval,
             se_prediction=optimal.se_prediction,
             significant_factors=[f.factor_name for f in sig_factors],
+            multi_objective=multi_obj if multi_obj else None,
         )
 
         if self._store is not None:

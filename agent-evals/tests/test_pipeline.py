@@ -2517,3 +2517,74 @@ class TestEffectiveScore:
 
         result = _effective_score(trial, frozenset())
         assert result == 0.5
+
+
+@patch("agent_evals.pipeline.run_multi_objective_analysis")
+@patch("agent_evals.pipeline.predict_optimal")
+@patch("agent_evals.pipeline.run_anova")
+@patch("agent_evals.pipeline.compute_main_effects")
+@patch("agent_evals.pipeline.compute_sn_ratios")
+@patch("agent_evals.pipeline.build_design")
+def test_screening_populates_multi_objective(
+    mock_build, mock_sn, mock_me, mock_anova, mock_pred, mock_mo,
+):
+    """Screening phase calls run_multi_objective_analysis with row costs/latencies."""
+    mock_build.return_value = MagicMock()
+    mock_sn.return_value = {0: 10.0}
+    mock_me.return_value = {}
+    mock_anova.return_value = MagicMock(factors=[])
+    mock_pred.return_value = MagicMock(optimal_assignment={})
+    mock_mo.return_value = {
+        "accuracy": {"sn_ratios": {0: 10.0}},
+        "cost": {"sn_ratios": {0: -5.0}},
+        "latency": {"sn_ratios": {0: -3.0}},
+    }
+
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    # Ensure mock trials have cost and latency data
+    for trial in orch.run.return_value.trials:
+        trial.cost = 0.05
+        trial.latency_seconds = 1.5
+        trial.error = None
+
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+    result = pipeline.run_screening(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    mock_mo.assert_called_once()
+    assert result.multi_objective is not None
+
+
+@patch("agent_evals.pipeline.run_multi_objective_analysis")
+@patch("agent_evals.pipeline.predict_optimal")
+@patch("agent_evals.pipeline.run_anova")
+@patch("agent_evals.pipeline.compute_main_effects")
+@patch("agent_evals.pipeline.compute_sn_ratios")
+@patch("agent_evals.pipeline.build_design")
+def test_screening_multi_objective_skips_empty_cost(
+    mock_build, mock_sn, mock_me, mock_anova, mock_pred, mock_mo,
+):
+    """Multi-objective still called when cost is None (accuracy-only result)."""
+    mock_build.return_value = MagicMock()
+    mock_sn.return_value = {0: 10.0}
+    mock_me.return_value = {}
+    mock_anova.return_value = MagicMock(factors=[])
+    mock_pred.return_value = MagicMock(optimal_assignment={})
+    mock_mo.return_value = {"accuracy": {"sn_ratios": {0: 10.0}}}
+
+    config = PipelineConfig(models=["model-a"])
+    orch = _make_mock_orchestrator()
+    for trial in orch.run.return_value.trials:
+        trial.cost = None
+        trial.latency_seconds = 0.0
+        trial.error = None
+
+    pipeline = DOEPipeline(config=config, orchestrator=orch)
+    result = pipeline.run_screening(
+        tasks=[], variants=_make_variants(), doc_tree=MagicMock(),
+    )
+
+    mock_mo.assert_called_once()
+    assert result.multi_objective is not None

@@ -109,6 +109,7 @@ class TestPipelineIntegration:
         pipeline = DOEPipeline(config=config, orchestrator=orch)
 
         with patch("agent_evals.pipeline.build_design"), \
+             patch("agent_evals.pipeline.run_multi_objective_analysis"), \
              patch("agent_evals.pipeline.compute_sn_ratios") as mock_sn, \
              patch("agent_evals.pipeline.compute_main_effects") as mock_me, \
              patch("agent_evals.pipeline.run_anova") as mock_anova, \

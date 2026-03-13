@@ -198,6 +198,7 @@ class TestScreeningReportFile:
         assert "optimal" in data
         assert "significant_factors" in data
 
+    @patch("agent_evals.pipeline.run_multi_objective_analysis")
     @patch("agent_evals.pipeline.predict_optimal")
     @patch("agent_evals.pipeline.run_anova")
     @patch("agent_evals.pipeline.compute_main_effects")
@@ -210,6 +211,7 @@ class TestScreeningReportFile:
         mock_me,
         mock_anova,
         mock_pred,
+        mock_mo,
         tmp_path: Path,
     ) -> None:
         """run_screening must call _save_phase_report when store is present."""
