@@ -89,6 +89,8 @@ class PipelineConfig:
     strategy_config: StrategyConfig = field(default_factory=StrategyConfig)
     strategy_reps: dict[str, int] = field(default_factory=dict)
     judge_primary_types: frozenset[str] = field(default_factory=frozenset)
+    split_ratio: float | None = None
+    split_seed: int = 42
 
 
 @dataclass
@@ -145,6 +147,7 @@ class DOEPipeline:
         self._orchestrator = orchestrator
         self._pipeline_id = pipeline_id or uuid4().hex[:12]
         self._store = orchestrator.store
+        self._test_tasks: list[Any] = []
 
     def _save_phase_report(self, phase_result: PhaseResult) -> None:
         """Save a DOE-enriched report artifact for a pipeline phase."""
@@ -456,6 +459,19 @@ class DOEPipeline:
         # 3. Build variant lookup
         variant_lookup = {v.metadata().name: v for v in variants}
 
+        # Train/test split for generalization validation
+        if self.config.split_ratio is not None:
+            from agent_evals.splits import stratified_split
+            tasks, self._test_tasks = stratified_split(
+                tasks,
+                train_ratio=self.config.split_ratio,
+                seed=self.config.split_seed,
+            )
+            logger.info(
+                "Train/test split: %d train, %d test (ratio=%.2f)",
+                len(tasks), len(self._test_tasks), self.config.split_ratio,
+            )
+
         # 4. Run trials via orchestrator
         result = self._orchestrator.run(
             tasks,
@@ -597,6 +613,14 @@ class DOEPipeline:
         variant_lookup = {
             v.metadata().name: v for v in filtered_variants
         }
+
+        # Use held-out test tasks for confirmation if train/test split was used
+        if self._test_tasks:
+            logger.info(
+                "Using %d held-out test tasks for confirmation",
+                len(self._test_tasks),
+            )
+            tasks = self._test_tasks
 
         # Run combined optimal config trials via orchestrator (full mode)
         result = self._orchestrator.run(

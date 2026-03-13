@@ -266,6 +266,19 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         help="Significance threshold for ANOVA",
     )
     parser.add_argument(
+        "--split-ratio",
+        type=float,
+        default=None,
+        help="Train/test split ratio (e.g., 0.8 = 80%% train, 20%% test). "
+             "When set, Taguchi screening uses train split, confirmation validates on test split.",
+    )
+    parser.add_argument(
+        "--split-seed",
+        type=int,
+        default=None,
+        help="Random seed for train/test split reproducibility (default: 42).",
+    )
+    parser.add_argument(
         "--report",
         choices=["html", "markdown", "both", "none"],
         default=None,
@@ -546,6 +559,8 @@ _CONFIG_KEYS: dict[str, type] = {
     "judge_primary_types": str,
     "judge_graduation": bool,
     "judge_graduation_weight": float,
+    "split_ratio": float,
+    "split_seed": int,
     "resume": str,
     "resume_pipeline": str,
     "dashboard": bool,
@@ -1211,6 +1226,8 @@ def _run_pipeline(
         model_budgets=model_budgets,
         strategy_config=strategy_config,
         judge_primary_types=run_config.judge_primary_types,
+        split_ratio=resolved.get("split_ratio"),
+        split_seed=int(resolved.get("split_seed", 42)),
     )
 
     resume_pipeline_id = resolved.get("resume_pipeline")
@@ -1302,6 +1319,8 @@ def _run_multi_strategy_pipeline(
         strategy_config=strategy_config,
         strategy_reps=strategy_reps,
         judge_primary_types=run_config.judge_primary_types,
+        split_ratio=resolved.get("split_ratio"),
+        split_seed=int(resolved.get("split_seed", 42)),
     )
 
     resume_pipeline_id = resolved.get("resume_pipeline")
