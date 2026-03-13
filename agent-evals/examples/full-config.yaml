@@ -1,31 +1,87 @@
-# full-config.yaml - All configuration options
+# full-config.yaml — All configuration options for agent-evals
 # Usage: agent-evals --config examples/full-config.yaml
+#
+# Precedence: CLI args > environment variables (AGENT_EVALS_ prefix) > this file > defaults
+# Commented-out lines show defaults or optional settings.
 
 # === LLM Settings ===
 model: openrouter/anthropic/claude-sonnet-4.5  # Required: provider/model format
-judge_model: openrouter/openai/gpt-4o          # Model for LLM-as-judge scoring
 temperature: 0.3                                # Sampling temperature (0.0-1.0)
-max_tokens: 2048                                # Max tokens per LLM completion (config-file only)
+max_tokens: 2048                                # Max tokens per completion (YAML-only)
 
 # === Evaluation Scope ===
-# axis: 1                   # Run only variants for axis N (1-10)
-# tasks: retrieval,agentic  # Filter to specific task types (comma-separated)
-# task_id: retrieval_001    # Run a single task by ID (debugging)
-# variant: scale_50         # Run a single variant by name (debugging)
-# limit: 5                  # Max tasks per type (quick iteration)
+# axis: 1                       # Run only variants for axis N (1-10)
+# tasks: retrieval,agentic      # Filter to specific task types (comma-separated)
+# task_id: retrieval_001        # Run a single task by ID (debugging)
+# variant: scale_50             # Run a single variant by name (debugging)
+# limit: 5                      # Max tasks per type
 
 # === Execution ===
-repetitions: 10             # Trials per (task, variant) pair
-max_connections: 10         # Concurrent API connections
-max_tasks: 1                # Parallel task evaluation
-continue_on_error: false    # Skip failed trials instead of aborting
+repetitions: 10                  # Trials per (task, variant) pair
+max_connections: 10              # Concurrent API connections
+max_tasks: 1                     # Parallel task evaluation threads
+continue_on_error: false         # Skip failed trials instead of aborting
+# dry_run: false                 # Estimate tokens and cost without API calls
+
+# === Mode & Design ===
+mode: taguchi                    # taguchi (default) or full (Cartesian product)
+# oa_type: L121                  # Force specific orthogonal array (e.g., L50, L54, L121)
+
+# === Multi-Model ===
+# models: openrouter/anthropic/claude-sonnet-4.5,openrouter/openai/gpt-4o
+#   # Comma-separated list. In taguchi mode, "model" becomes a design factor.
+# model_group: fast-models       # Logical group name for reporting
+
+# === Pipeline (DOE phases) ===
+# Requires mode: taguchi
+# pipeline: auto                 # auto (3-phase) or semi (pause between phases)
+# quality_type: larger_is_better # larger_is_better | smaller_is_better | nominal_is_best
+# top_k: 3                       # Top N factors for Phase 3 refinement
+# alpha: 0.05                    # ANOVA significance threshold
+# split_ratio: 0.8               # Train/test split ratio (screening=train, confirmation=test)
+# split_seed: 42                 # Random seed for split reproducibility
+
+# === Data Sources ===
+source: gold_standard            # gold_standard | legacy | adapter name | comma-list
+# dataset_limit: 100             # Max tasks per dataset source
+# dataset_cache_dir: /data/huggingface  # Override HF cache directory
 
 # === Cost Control ===
-# max_cost: 5.00            # Budget cap in dollars
-use_cache: true             # Cache LLM responses for reruns (CLI: --no-cache to disable)
-cache_dir: .agent-evals-cache  # (config-file only)
+# budget: 5.00                   # Total cost cap in dollars
+# model_budgets: "openrouter/anthropic/claude-sonnet-4.5=3.00,openrouter/openai/gpt-4o=2.00"
+# no_cache: false                 # Disable LLM response caching (CLI: --no-cache)
+cache_dir: .agent-evals-cache    # Cache directory (YAML-only)
+
+# === Judge (LLM-as-Judge) ===
+# judge_enabled: true            # Enable LLM-as-judge scoring
+# judge_model: openrouter/openai/gpt-4o-mini  # Judge model
+# judge_mode: routine            # routine (single model) or poll (3-model panel)
+# judge_sample_rate: 20          # 1-in-N trials sent to judge (20 = 5%)
+# judge_primary_types: code_generation,agentic  # Types using judge as primary scorer
+# judge_graduation: false        # Blend judge scores into trial.score (requires judge_enabled)
+# judge_graduation_weight: 0.3   # Judge weight in blended scoring (0.0=heuristic, 1.0=judge)
+
+# === Context Strategy ===
+# context_strategy: full_context  # full_context | system_prompt | rag | tool_based
+# strategies: "full_context,rag,tool_based"  # Multi-strategy pipeline (comma-separated)
+# strategy_reps: "rag=5,tool_based=3"        # Per-strategy rep overrides
+#
+# Strategy sub-parameters (YAML-only, not available via CLI):
+# strategy_config:
+#   token_budget: 4096
+#   chunk_method: semantic
+#   chunk_size: 512
+#   top_k_chunks: 5
 
 # === Output ===
-output_dir: reports         # Directory for results
-output_format: both         # json, csv, or both (default: both)
-display: rich               # Progress display: rich, plain, or none
+output_dir: reports              # Directory for results
+output_format: both              # json | csv | both
+display: rich                    # Progress display: rich | plain | none
+# report: both                   # html | markdown | both | none
+
+# === Observatory ===
+# store_traces: true             # Store prompt/response in SQLite DB
+
+# === Resume ===
+# resume: "abc123"               # Resume a crashed run by run_id
+# resume_pipeline: "pipe456"     # Resume a pipeline by pipeline_id
