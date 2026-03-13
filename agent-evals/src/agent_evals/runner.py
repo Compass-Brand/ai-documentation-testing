@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from agent_index.models import DocTree
 
+    from agent_evals.judge.calibrator import JudgeScore
     from agent_evals.tasks.base import EvalTask
     from agent_evals.variants.base import IndexVariant
 
