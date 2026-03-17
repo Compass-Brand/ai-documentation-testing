@@ -484,9 +484,12 @@ class DOEPipeline:
             resume_run_id=resume_run_id,
         )
 
-        # 5. Group trial scores by OA row (exclude error trials — they are
-        #    not real measurements and would bias S/N and ANOVA with 0.0).
+        # 5. Group scores, cost, and latency by OA row in a single pass.
+        #    Exclude error trials — they are not real measurements and would
+        #    bias S/N and ANOVA with 0.0.
         row_scores: dict[int, list[float]] = defaultdict(list)
+        row_costs: dict[int, list[float]] = defaultdict(list)
+        row_latencies: dict[int, list[float]] = defaultdict(list)
         for trial in result.trials:
             if trial.error is not None:
                 continue
@@ -494,14 +497,6 @@ class DOEPipeline:
             row_scores[row_id].append(
                 _effective_score(trial, self.config.judge_primary_types)
             )
-
-        # Collect cost and latency per OA row for multi-objective analysis
-        row_costs: dict[int, list[float]] = defaultdict(list)
-        row_latencies: dict[int, list[float]] = defaultdict(list)
-        for trial in result.trials:
-            if trial.error is not None:
-                continue
-            row_id = int(trial.metrics["oa_row_id"])
             if trial.cost is not None:
                 row_costs[row_id].append(trial.cost)
             if isinstance(trial.latency_seconds, (int, float)) and trial.latency_seconds >= 0:

@@ -234,12 +234,18 @@ def run_anova(
     Returns:
         ANOVAResult with per-factor statistics and error terms.
     """
-    # Use ALL rows for grand mean and SS_total.  In Taguchi mixed-level
-    # designs, dummy levels are a bookkeeping device — each OA row is still
-    # a real experimental run whose S/N ratio is a valid observation.
+    # Use rows that have S/N data for grand mean and SS_total.  Rows whose
+    # all trials errored are absent from sn_ratios and are excluded so that
+    # a missing row does not raise KeyError.  In Taguchi mixed-level designs,
+    # dummy levels are a bookkeeping device — each valid OA row is still a
+    # real experimental run whose S/N ratio is a valid observation.
     # Per-factor SS excludes only rows where THAT SPECIFIC factor is at a
     # dummy level, so the unmodelled dummy-level variance flows into SS_error.
-    all_sn = [sn_ratios[row.run_id] for row in design.rows]
+    all_sn = [
+        sn_ratios[row.run_id]
+        for row in design.rows
+        if row.run_id in sn_ratios
+    ]
     n = len(all_sn)
     grand_mean = sum(all_sn) / n
 
@@ -258,6 +264,8 @@ def run_anova(
             level: [] for level in factor.level_names
         }
         for row in design.rows:
+            if row.run_id not in sn_ratios:
+                continue
             if factor.name in row.dummy_factors:
                 continue
             level_name = row.assignments[factor.name]

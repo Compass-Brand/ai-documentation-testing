@@ -203,19 +203,25 @@ class TaguchiRunner:
                     work_iter = iter(work_items)
                     max_inflight = self._config.max_connections
 
+                    def _submit_one(
+                        row: TaguchiExperimentRow,
+                        task: EvalTask,
+                        rep: int,
+                    ) -> None:
+                        future = executor.submit(
+                            self._run_trial, row, task,
+                            row_composites[row.run_id],
+                            doc_tree, rep, source, phase,
+                            strategy=row_strategies[row.run_id],
+                            rendered_index=row_rendered[row.run_id],
+                        )
+                        future_to_item[future] = (row, task, rep)
+
                     # Seed initial batch of futures.
                     for row, task, rep in work_iter:
                         if shutdown_requested.is_set():
                             break
-                        composite = row_composites[row.run_id]
-                        strat = row_strategies[row.run_id]
-                        rendered = row_rendered[row.run_id]
-                        future = executor.submit(
-                            self._run_trial, row, task, composite,
-                            doc_tree, rep, source, phase,
-                            strategy=strat, rendered_index=rendered,
-                        )
-                        future_to_item[future] = (row, task, rep)
+                        _submit_one(row, task, rep)
                         if len(future_to_item) >= max_inflight:
                             break
 
@@ -301,15 +307,7 @@ class TaguchiRunner:
                                     break
                                 if shutdown_requested.is_set():
                                     break
-                                composite = row_composites[row.run_id]
-                                strat = row_strategies[row.run_id]
-                                rendered = row_rendered[row.run_id]
-                                future = executor.submit(
-                                    self._run_trial, row, task, composite,
-                                    doc_tree, rep, source, phase,
-                                    strategy=strat, rendered_index=rendered,
-                                )
-                                future_to_item[future] = (row, task, rep)
+                                _submit_one(row, task, rep)
 
                     if shutdown_requested.is_set():
                         was_shutdown = True

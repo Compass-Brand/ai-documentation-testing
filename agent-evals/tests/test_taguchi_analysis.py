@@ -1405,16 +1405,12 @@ class TestComputeMainEffectsMissingRows:
         assert "axis_1" in effects
         assert "axis_2" in effects
 
-    def test_pipeline_row_scores_conversion_produces_int(self):
-        """The pipeline fix: int(trial.metrics['oa_row_id']) yields an int key.
-
-        This regression guard verifies that the explicit cast in pipeline.py
-        produces an int-keyed dict compatible with sn_ratios lookup.
-        """
-        raw_oa_row_id = 3.0  # float as stored by taguchi/runner.py
-        row_id_int = int(raw_oa_row_id)
-        assert type(row_id_int) is int  # noqa: E721
-        assert row_id_int == 3
-
+    def test_run_anova_with_missing_row_does_not_raise(self):
+        """run_anova must also tolerate rows absent from sn_ratios."""
+        from agent_evals.taguchi.analysis import run_anova
         design = _make_design_2factor()
-        assert any(row.run_id == row_id_int for row in design.rows)
+        # Row 9 missing — all trials for it errored
+        sn_ratios_partial = {i: float(i) for i in range(1, 9)}
+        # Should not raise
+        result = run_anova(design, sn_ratios_partial)
+        assert result.grand_mean > 0
