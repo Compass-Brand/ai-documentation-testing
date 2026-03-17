@@ -490,7 +490,7 @@ class DOEPipeline:
         for trial in result.trials:
             if trial.error is not None:
                 continue
-            row_id = trial.metrics["oa_row_id"]
+            row_id = int(trial.metrics["oa_row_id"])
             row_scores[row_id].append(
                 _effective_score(trial, self.config.judge_primary_types)
             )

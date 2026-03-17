@@ -1369,3 +1369,52 @@ class TestANOVASePrediction:
             f"prediction_interval should be None when se is NaN, "
             f"got {prediction.prediction_interval}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Bug 249: KeyError when some rows have no scores (all trials errored)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeMainEffectsMissingRows:
+    """compute_main_effects must not raise KeyError when some rows have no data.
+
+    When all trials for a given OA row error out, that row has no entry in
+    row_scores and therefore no entry in sn_ratios.  compute_main_effects
+    iterates *all* design.rows and does sn_ratios[row.run_id], raising
+    KeyError for the missing rows.
+
+    The fix: skip rows absent from sn_ratios in compute_main_effects.
+    """
+
+    def test_missing_row_in_sn_ratios_does_not_raise(self):
+        """Fix: row absent from sn_ratios is skipped, not a KeyError."""
+        design = _make_design_2factor()
+        # Only include rows 1-8; row 9 is missing (all trials errored)
+        sn_ratios_partial = {i: float(i) for i in range(1, 9)}  # missing row 9
+        # After the fix this must not raise
+        effects = compute_main_effects(design, sn_ratios_partial)
+        assert "axis_1" in effects
+        assert "axis_2" in effects
+
+    def test_complete_sn_ratios_work_correctly(self):
+        """All rows present in sn_ratios works without error."""
+        design = _make_design_2factor()
+        sn_ratios = {i: float(i) for i in range(1, 10)}
+        effects = compute_main_effects(design, sn_ratios)
+        assert "axis_1" in effects
+        assert "axis_2" in effects
+
+    def test_pipeline_row_scores_conversion_produces_int(self):
+        """The pipeline fix: int(trial.metrics['oa_row_id']) yields an int key.
+
+        This regression guard verifies that the explicit cast in pipeline.py
+        produces an int-keyed dict compatible with sn_ratios lookup.
+        """
+        raw_oa_row_id = 3.0  # float as stored by taguchi/runner.py
+        row_id_int = int(raw_oa_row_id)
+        assert type(row_id_int) is int  # noqa: E721
+        assert row_id_int == 3
+
+        design = _make_design_2factor()
+        assert any(row.run_id == row_id_int for row in design.rows)

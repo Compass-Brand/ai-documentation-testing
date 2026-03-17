@@ -195,6 +195,9 @@ def compute_main_effects(
         }
 
     for row in design.rows:
+        if row.run_id not in sn_ratios:
+            # All trials for this row errored; skip to avoid KeyError.
+            continue
         sn_val = sn_ratios[row.run_id]
         for factor in design.factors:
             if factor.name in row.dummy_factors:
