@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from agent_evals.context.base import ContextStrategy
 from agent_evals.context.full import FullContextStrategy
+from agent_evals.cost import CostTracker
 from agent_evals.diagnostics import DiagnosticTracker
 from agent_evals.runner import EvalRunConfig, TrialResult
 from agent_evals.taguchi.factors import TaguchiDesign, TaguchiExperimentRow
@@ -185,14 +186,25 @@ class TaguchiRunner:
             row.run_id: 0 for row in self._design.rows
         }
 
+        cost_tracker = CostTracker(budget=self._config.budget)
+
+        # Check up-front if budget is already exceeded (e.g. budget=0.0).
+        if self._config.budget is not None and self._config.budget <= 0.0:
+            shutdown_requested.set()
+
         try:
-            if total > 0:
+            if total > 0 and not shutdown_requested.is_set():
                 with ThreadPoolExecutor(
                     max_workers=self._config.max_connections,
                 ) as executor:
-                    # Submit work in batches, checking for shutdown between.
-                    futures = {}
-                    for row, task, rep in work_items:
+                    # Submit work incrementally so budget can be enforced
+                    # between batches.  This mirrors EvalRunner's approach.
+                    future_to_item: dict = {}
+                    work_iter = iter(work_items)
+                    max_inflight = self._config.max_connections
+
+                    # Seed initial batch of futures.
+                    for row, task, rep in work_iter:
                         if shutdown_requested.is_set():
                             break
                         composite = row_composites[row.run_id]
@@ -203,57 +215,101 @@ class TaguchiRunner:
                             doc_tree, rep, source, phase,
                             strategy=strat, rendered_index=rendered,
                         )
-                        futures[future] = (row, task, rep)
+                        future_to_item[future] = (row, task, rep)
+                        if len(future_to_item) >= max_inflight:
+                            break
 
-                    for future in as_completed(futures):
-                        trial = future.result()
-                        all_trials.append(trial)
-                        completed += 1
-                        if trial.error:
-                            error_count += 1
-                        tracker.record_trial(
-                            tokens=trial.total_tokens,
-                            cost=trial.cost,
-                            retries=int(trial.metrics.get("retry_count", 0)),
-                            api_ms=trial.metrics.get("api_call_ms", 0.0),
-                            trial_ms=trial.latency_seconds * 1000,
-                            error=trial.error is not None,
-                            rate_limited=False,
-                        )
-
-                        # Track per-row progress.
-                        oa_row_id = trial.metrics.get("oa_row_id")
-                        if oa_row_id is not None:
-                            row_id = int(oa_row_id)
-                            row_completed_counts[row_id] = (
-                                row_completed_counts.get(row_id, 0) + 1
+                    while future_to_item:
+                        done_futures: set = set()
+                        for future in as_completed(future_to_item):
+                            done_futures.add(future)
+                            trial = future.result()
+                            all_trials.append(trial)
+                            completed += 1
+                            if trial.error:
+                                error_count += 1
+                            cost_tracker.record(trial.cost or 0.0)
+                            tracker.record_trial(
+                                tokens=trial.total_tokens,
+                                cost=trial.cost,
+                                retries=int(trial.metrics.get("retry_count", 0)),
+                                api_ms=trial.metrics.get("api_call_ms", 0.0),
+                                trial_ms=trial.latency_seconds * 1000,
+                                error=trial.error is not None,
+                                rate_limited=False,
                             )
-                            if row_completed_counts[row_id] == trials_per_row:
-                                completed_rows = sum(
-                                    1 for c in row_completed_counts.values()
-                                    if c >= trials_per_row
-                                )
-                                logger.info(
-                                    "Row %d/%d complete: %d/%d trials (%.1f%%), %d errors",
-                                    completed_rows,
-                                    total_rows,
-                                    completed,
-                                    total,
-                                    100.0 * completed / total,
-                                    error_count,
-                                )
-                                # Flush WAL to disk after each row.
-                                if self._store is not None:
-                                    try:
-                                        self._store.checkpoint_wal()
-                                    except Exception:
-                                        logger.debug(
-                                            "WAL checkpoint failed",
-                                            exc_info=True,
-                                        )
 
-                        if progress_callback is not None:
-                            progress_callback(completed, total, trial)
+                            # Track per-row progress.
+                            oa_row_id = trial.metrics.get("oa_row_id")
+                            if oa_row_id is not None:
+                                row_id = int(oa_row_id)
+                                row_completed_counts[row_id] = (
+                                    row_completed_counts.get(row_id, 0) + 1
+                                )
+                                if row_completed_counts[row_id] == trials_per_row:
+                                    completed_rows = sum(
+                                        1 for c in row_completed_counts.values()
+                                        if c >= trials_per_row
+                                    )
+                                    logger.info(
+                                        "Row %d/%d complete: %d/%d trials "
+                                        "(%.1f%%), %d errors",
+                                        completed_rows,
+                                        total_rows,
+                                        completed,
+                                        total,
+                                        100.0 * completed / total,
+                                        error_count,
+                                    )
+                                    # Flush WAL to disk after each row.
+                                    if self._store is not None:
+                                        try:
+                                            self._store.checkpoint_wal()
+                                        except Exception:
+                                            logger.debug(
+                                                "WAL checkpoint failed",
+                                                exc_info=True,
+                                            )
+
+                            if progress_callback is not None:
+                                progress_callback(completed, total, trial)
+
+                            # Budget check after each completed trial.
+                            if cost_tracker.should_pause(original_total):
+                                logger.warning(
+                                    "Budget exceeded: accumulated $%.4f, "
+                                    "projected $%.4f > 2x budget $%.4f. "
+                                    "Stopping new submissions.",
+                                    cost_tracker.total_cost,
+                                    cost_tracker.projected_cost(original_total),
+                                    (self._config.budget or 0) * 2,
+                                )
+                                shutdown_requested.set()
+                                break
+
+                        # Remove completed futures.
+                        for f in done_futures:
+                            del future_to_item[f]
+
+                        # Submit more work if budget/shutdown allow.
+                        if not shutdown_requested.is_set():
+                            slots = max_inflight - len(future_to_item)
+                            for _ in range(slots):
+                                try:
+                                    row, task, rep = next(work_iter)
+                                except StopIteration:
+                                    break
+                                if shutdown_requested.is_set():
+                                    break
+                                composite = row_composites[row.run_id]
+                                strat = row_strategies[row.run_id]
+                                rendered = row_rendered[row.run_id]
+                                future = executor.submit(
+                                    self._run_trial, row, task, composite,
+                                    doc_tree, rep, source, phase,
+                                    strategy=strat, rendered_index=rendered,
+                                )
+                                future_to_item[future] = (row, task, rep)
 
                     if shutdown_requested.is_set():
                         was_shutdown = True

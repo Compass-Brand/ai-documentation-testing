@@ -487,6 +487,108 @@ class TestTaguchiRunResult:
         assert isinstance(result.elapsed_seconds, float)
         assert result.elapsed_seconds >= 0
 
+
+# ---------------------------------------------------------------------------
+# Bug 248: Budget enforcement in TaguchiRunner
+# ---------------------------------------------------------------------------
+
+
+class TestBudgetEnforcement:
+    """TaguchiRunner stops submitting trials when budget is exceeded."""
+
+    def test_no_budget_runs_all_trials(self):
+        """With no budget limit, all work items are executed."""
+        design = _make_simple_design(n_rows=3)
+        axes = {1: ["flat", "2tier", "3tier"]}
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client(cost=0.001)
+        config = EvalRunConfig(repetitions=2, max_connections=1, budget=None)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+        # 3 rows * 1 task * 2 reps = 6 trials expected
+        assert len(result.trials) == 6
+
+    def test_budget_zero_stops_immediately(self):
+        """A budget of 0.0 stops before any trials execute."""
+        design = _make_simple_design(n_rows=5)
+        axes = {1: ["flat", "2tier", "3tier"]}
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client(cost=0.01)
+        config = EvalRunConfig(repetitions=1, max_connections=1, budget=0.0)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+        # Budget of 0 should stop all execution
+        assert len(result.trials) == 0
+
+    def test_budget_stops_mid_run(self):
+        """Budget enforcement stops the run before all trials complete."""
+        design = _make_simple_design(n_rows=10)
+        axes = {1: ["flat", "2tier", "3tier"]}
+        variants = _make_variant_lookup(axes)
+        # Each trial costs $0.10; budget is $0.25 -> at most 2 trials
+        client = make_mock_client(cost=0.10)
+        config = EvalRunConfig(repetitions=1, max_connections=1, budget=0.25)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+        # Should have stopped before all 10 trials
+        assert len(result.trials) < 10
+        # Should have run at least 1 trial
+        assert len(result.trials) >= 1
+        # Total cost should not exceed budget by more than one trial's cost
+        # (we can't stop mid-trial, only between submissions)
+        assert result.total_cost <= 0.25 + 0.10  # budget + one trial overage
+
+    def test_budget_result_flag_set(self):
+        """graceful_shutdown flag is set when budget causes early stop."""
+        design = _make_simple_design(n_rows=5)
+        axes = {1: ["flat", "2tier", "3tier"]}
+        variants = _make_variant_lookup(axes)
+        client = make_mock_client(cost=1.0)
+        config = EvalRunConfig(repetitions=2, max_connections=1, budget=0.5)
+
+        runner = TaguchiRunner(
+            clients={"mock-model": client},
+            config=config,
+            design=design,
+            variant_lookup=variants,
+        )
+
+        tasks = [make_mock_task()]
+        doc_tree = MagicMock()
+
+        result = runner.run(tasks, doc_tree)
+        assert result.graceful_shutdown is True
+
     def test_trials_carry_strategy_fields(self):
         """Every TaguchiRunner trial must have context_strategy set."""
         design = _make_simple_design(n_rows=2)
