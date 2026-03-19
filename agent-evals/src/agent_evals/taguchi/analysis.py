@@ -247,6 +247,21 @@ def run_anova(
         if row.run_id in sn_ratios
     ]
     n = len(all_sn)
+    if n == 0:
+        # No valid rows — return a zeroed-out ANOVA result.
+        # This can happen in refinement phases when all trials error.
+        return ANOVAResult(
+            factors=[
+                ANOVAFactorResult(
+                    factor_name=f.name, ss=0.0, df=f.n_levels - 1,
+                    ms=0.0, f_ratio=0.0, p_value=1.0,
+                    eta_squared=0.0, omega_squared=0.0,
+                )
+                for f in design.factors
+            ],
+            ss_total=0.0, ss_error=0.0, df_error=1,
+            ms_error=0.0, error_eta_squared=0.0, grand_mean=0.0,
+        )
     grand_mean = sum(all_sn) / n
 
     # Total sum of squares

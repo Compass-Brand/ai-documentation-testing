@@ -2586,3 +2586,60 @@ def test_screening_multi_objective_skips_empty_cost(
 
     mock_mo.assert_called_once()
     assert result.multi_objective is not None
+
+
+class TestPipelineBudgetAcrossPhases:
+    """Budget must be reduced across pipeline phases."""
+
+    def test_budget_reduced_before_each_phase(self):
+        """Each phase should see remaining budget, not original."""
+        config = PipelineConfig(
+            models=["model-a"],
+            global_budget=10.0,
+        )
+        orch = MagicMock()
+        eval_config = MagicMock()
+        eval_config.budget = 10.0
+        orch.config.eval_config = eval_config
+        orch.store = None
+
+        pipeline = DOEPipeline(config=config, orchestrator=orch)
+
+        # Track budget values before each phase
+        budget_before_phase: list[float] = []
+
+        def screening_side_effect(*args, **kwargs):
+            budget_before_phase.append(eval_config.budget)
+            return PhaseResult(
+                run_id="s1", phase="screening", trials=[],
+                total_cost=4.0,
+            )
+
+        def confirmation_side_effect(*args, **kwargs):
+            budget_before_phase.append(eval_config.budget)
+            return PhaseResult(
+                run_id="c1", phase="confirmation", trials=[],
+                total_cost=2.0,
+            )
+
+        def refinement_side_effect(*args, **kwargs):
+            budget_before_phase.append(eval_config.budget)
+            return PhaseResult(
+                run_id="r1", phase="refinement", trials=[],
+                total_cost=1.0,
+            )
+
+        pipeline.run_screening = MagicMock(side_effect=screening_side_effect)
+        pipeline.run_confirmation = MagicMock(
+            side_effect=confirmation_side_effect,
+        )
+        pipeline.run_refinement = MagicMock(
+            side_effect=refinement_side_effect,
+        )
+
+        pipeline.run(tasks=[], variants=[], doc_tree=MagicMock())
+
+        assert len(budget_before_phase) == 3
+        assert budget_before_phase[0] == 10.0    # screening: full budget
+        assert budget_before_phase[1] == 6.0     # confirmation: 10 - 4
+        assert budget_before_phase[2] == 4.0     # refinement: 10 - 4 - 2

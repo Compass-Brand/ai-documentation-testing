@@ -241,6 +241,22 @@ class DOEPipeline:
                 return 0
         return 0
 
+    def _reduce_remaining_budget(self, phase_cost: float) -> None:
+        """Subtract spent cost from eval_config.budget for the next phase.
+
+        Each pipeline phase creates a fresh runner with its own CostTracker.
+        Without this adjustment, each phase would see the full original budget.
+        """
+        eval_config = getattr(
+            self._orchestrator.config, "eval_config", None,
+        )
+        if eval_config is None:
+            return
+        budget = getattr(eval_config, "budget", None)
+        if not isinstance(budget, (int, float)):
+            return
+        eval_config.budget = max(budget - phase_cost, 0.0)
+
     @staticmethod
     def _group_refinement_scores(
         trials: list[Any],
@@ -892,6 +908,9 @@ class DOEPipeline:
                     elapsed_seconds=screening.elapsed_seconds,
                 )
 
+        # Reduce budget for next phase so runner tracks remaining spend.
+        self._reduce_remaining_budget(screening.total_cost)
+
         # Clear cache between phases to prevent cross-phase contamination
         # (bug #236: screening responses replayed in confirmation/refinement).
         self._orchestrator.clear_cache()
@@ -932,6 +951,9 @@ class DOEPipeline:
                     total_cost=screening.total_cost + confirmation.total_cost,
                     elapsed_seconds=screening.elapsed_seconds + confirmation.elapsed_seconds,
                 )
+
+        # Reduce budget for refinement phase.
+        self._reduce_remaining_budget(confirmation.total_cost)
 
         # Clear cache before refinement (bug #236).
         self._orchestrator.clear_cache()

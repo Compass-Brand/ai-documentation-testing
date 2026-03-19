@@ -1414,3 +1414,28 @@ class TestComputeMainEffectsMissingRows:
         # Should not raise
         result = run_anova(design, sn_ratios_partial)
         assert result.grand_mean > 0
+
+    def test_run_anova_with_empty_sn_ratios_returns_zeroed_result(self):
+        """run_anova must not crash when all rows are absent from sn_ratios."""
+        from agent_evals.taguchi.analysis import run_anova
+        design = _make_design_2factor()
+        # No rows have data — all trials errored
+        result = run_anova(design, {})
+        assert result.grand_mean == 0.0
+        assert result.ss_total == 0.0
+        assert result.ss_error == 0.0
+        assert result.df_error == 1  # guard minimum
+        assert result.ms_error == 0.0
+        assert len(result.factors) == len(design.factors)
+        for fr in result.factors:
+            assert fr.p_value == 1.0
+            assert fr.f_ratio == 0.0
+
+    def test_compute_main_effects_with_empty_sn_ratios(self):
+        """compute_main_effects returns NaN levels when sn_ratios is empty."""
+        design = _make_design_2factor()
+        result = compute_main_effects(design, {})
+        import math
+        for factor_name, levels in result.items():
+            for level_name, val in levels.items():
+                assert math.isnan(val)
