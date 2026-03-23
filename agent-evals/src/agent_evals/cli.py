@@ -671,6 +671,7 @@ def build_eval_run_config(resolved: dict[str, Any]) -> EvalRunConfig:
         judge_model=resolved.get("judge_model", "openrouter/openai/gpt-4o-mini"),
         judge_mode=resolved.get("judge_mode", "routine"),
         judge_primary_types=judge_primary_types,
+        budget=resolved.get("budget"),
         judge_graduation_enabled=resolved.get("judge_graduation", False),
         judge_graduation_weight=resolved.get("judge_graduation_weight") or 0.3,
     )

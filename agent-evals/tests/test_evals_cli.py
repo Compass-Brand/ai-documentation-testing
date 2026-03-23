@@ -2274,3 +2274,19 @@ class TestApplyTaskLimit:
         )
         result = _apply_task_limit(tasks, 1)
         assert result[0].definition.type == "a_type"
+
+
+class TestBudgetWiringToEvalRunConfig:
+    """--budget must flow through to EvalRunConfig.budget."""
+
+    def test_budget_set_on_eval_run_config(self) -> None:
+        from agent_evals.cli import build_eval_run_config
+
+        config = build_eval_run_config({"budget": 5.0})
+        assert config.budget == 5.0
+
+    def test_budget_none_when_not_provided(self) -> None:
+        from agent_evals.cli import build_eval_run_config
+
+        config = build_eval_run_config({})
+        assert config.budget is None
