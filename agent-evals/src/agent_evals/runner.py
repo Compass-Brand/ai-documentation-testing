@@ -983,6 +983,7 @@ class EvalRunner:
                     cost=resp_data.get("cost"),
                     model=resp_data.get("model", self._client.model),
                     generation_id=resp_data.get("generation_id"),
+                    tool_calls=resp_data.get("tool_calls"),
                 )
                 strategy_result = StrategyResult(
                     final_response=generation.content,
@@ -1025,6 +1026,7 @@ class EvalRunner:
                         "cost": strategy_result.total_cost,
                         "model": first_gen.model if first_gen else self._client.model,
                         "generation_id": first_gen.generation_id if first_gen else None,
+                        "tool_calls": first_gen.tool_calls if first_gen else None,
                     },
                     model=first_gen.model if first_gen else self._client.model,
                     tokens_used=strategy_result.total_tokens,

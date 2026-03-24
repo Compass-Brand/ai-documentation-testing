@@ -317,6 +317,94 @@ class TestCompressionExecute:
 
         client.complete.assert_called_once_with(
             messages,
+            tools=None,
+            max_tokens=2048,
+            temperature=0.3,
+        )
+
+    def test_execute_passes_tools_to_client_complete(self):
+        """Bug #281: execute() must pass tools=prepared.tools to client.complete().
+
+        When PreparedContext has tools, execute() must forward them so the LLM
+        can use function calling.
+        """
+        from agent_evals.context.base import PreparedContext
+        from agent_evals.context.compression import CompressionStrategy
+        from agent_evals.llm.client import GenerationResult
+
+        strategy = CompressionStrategy()
+        tools = [{"type": "function", "function": {"name": "test_tool"}}]
+        messages = [{"role": "user", "content": "test question"}]
+        prepared = PreparedContext(
+            messages=messages,
+            tools=tools,
+            strategy_metadata={
+                "compression_method": "algorithmic",
+                "original_tokens": 100,
+                "compressed_tokens": 70,
+                "compression_ratio": 0.7,
+            },
+        )
+
+        client = make_mock_client()
+        gen = GenerationResult(
+            content="response",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=0.001,
+            model="mock-model",
+            generation_id="gen-1",
+        )
+        client.complete.return_value = gen
+
+        task = make_mock_task()
+        strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
+
+        client.complete.assert_called_once_with(
+            messages,
+            tools=tools,
+            max_tokens=2048,
+            temperature=0.3,
+        )
+
+    def test_execute_passes_none_tools_to_client_complete(self):
+        """Bug #281: execute() must pass tools=None when PreparedContext has no tools."""
+        from agent_evals.context.base import PreparedContext
+        from agent_evals.context.compression import CompressionStrategy
+        from agent_evals.llm.client import GenerationResult
+
+        strategy = CompressionStrategy()
+        messages = [{"role": "user", "content": "test question"}]
+        prepared = PreparedContext(
+            messages=messages,
+            tools=None,
+            strategy_metadata={
+                "compression_method": "algorithmic",
+                "original_tokens": 100,
+                "compressed_tokens": 70,
+                "compression_ratio": 0.7,
+            },
+        )
+
+        client = make_mock_client()
+        gen = GenerationResult(
+            content="response",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=0.001,
+            model="mock-model",
+            generation_id="gen-1",
+        )
+        client.complete.return_value = gen
+
+        task = make_mock_task()
+        strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
+
+        client.complete.assert_called_once_with(
+            messages,
+            tools=None,
             max_tokens=2048,
             temperature=0.3,
         )
@@ -742,4 +830,44 @@ class TestLLMSummarizeMaxTokens:
         assert actual_max_tokens < 250, (
             f"max_tokens={actual_max_tokens} is based on character count, "
             f"not token count. Should be ~125, not 500."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug #284: _llm_summarize must pass timeout to client.complete
+# ---------------------------------------------------------------------------
+
+
+class TestLLMSummarizeTimeout:
+    """Bug #284: _llm_summarize must pass timeout to prevent hung connections."""
+
+    def test_llm_summarize_passes_timeout(self):
+        """_llm_summarize() must pass timeout=120.0 to client.complete()."""
+        from unittest.mock import MagicMock
+
+        from agent_evals.context.compression import CompressionStrategy
+        from agent_evals.llm.client import GenerationResult
+
+        strategy = CompressionStrategy(method="llm_summarized")
+
+        mock_client = MagicMock()
+        mock_client.complete.return_value = GenerationResult(
+            content="summary",
+            prompt_tokens=100,
+            completion_tokens=50,
+            total_tokens=150,
+            cost=0.01,
+            model="test",
+            generation_id="test-id",
+        )
+
+        strategy._llm_summarize("some documentation text", mock_client)
+
+        call_kwargs = mock_client.complete.call_args
+        actual_timeout = call_kwargs.kwargs.get(
+            "timeout", call_kwargs[1].get("timeout") if len(call_kwargs) > 1 else None
+        )
+        assert actual_timeout == 120.0, (
+            f"_llm_summarize must pass timeout=120.0 to client.complete(), "
+            f"got timeout={actual_timeout} (Bug #284)"
         )

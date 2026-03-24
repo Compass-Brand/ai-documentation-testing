@@ -401,6 +401,7 @@ class TestFullContextStrategy:
 
         client.complete.assert_called_once_with(
             messages,
+            tools=None,
             max_tokens=2048,
             temperature=0.3,
         )
@@ -471,6 +472,84 @@ class TestFullContextStrategy:
         # Raw doc content should NOT be appended (it's the same for both)
         assert "Raw content A" not in flat_content
         assert "Raw content B" not in flat_content
+
+    def test_execute_passes_tools_to_client_complete(self):
+        """Bug #278: execute() must pass tools=prepared.tools to client.complete().
+
+        When PreparedContext has tools (e.g. from tool_based strategy or
+        DynamicToolModifier), execute() must forward them so the LLM can
+        use function calling.
+        """
+        from agent_evals.context.base import PreparedContext
+        from agent_evals.context.full import FullContextStrategy
+        from agent_evals.llm.client import GenerationResult
+
+        strategy = FullContextStrategy()
+        tools = [{"type": "function", "function": {"name": "test_tool"}}]
+        messages = [{"role": "user", "content": "test"}]
+        prepared = PreparedContext(
+            messages=messages,
+            tools=tools,
+            strategy_metadata={},
+        )
+
+        client = make_mock_client()
+        gen = GenerationResult(
+            content="response",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=0.001,
+            model="mock-model",
+            generation_id="gen-1",
+        )
+        client.complete.return_value = gen
+
+        task = make_mock_task()
+        strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
+
+        client.complete.assert_called_once_with(
+            messages,
+            tools=tools,
+            max_tokens=2048,
+            temperature=0.3,
+        )
+
+    def test_execute_passes_none_tools_to_client_complete(self):
+        """Bug #278: execute() must pass tools=None when PreparedContext has no tools."""
+        from agent_evals.context.base import PreparedContext
+        from agent_evals.context.full import FullContextStrategy
+        from agent_evals.llm.client import GenerationResult
+
+        strategy = FullContextStrategy()
+        messages = [{"role": "user", "content": "test"}]
+        prepared = PreparedContext(
+            messages=messages,
+            tools=None,
+            strategy_metadata={},
+        )
+
+        client = make_mock_client()
+        gen = GenerationResult(
+            content="response",
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+            cost=0.001,
+            model="mock-model",
+            generation_id="gen-1",
+        )
+        client.complete.return_value = gen
+
+        task = make_mock_task()
+        strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
+
+        client.complete.assert_called_once_with(
+            messages,
+            tools=None,
+            max_tokens=2048,
+            temperature=0.3,
+        )
 
     def test_setup_teardown_are_noops(self):
         from agent_evals.context.full import FullContextStrategy

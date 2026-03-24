@@ -146,7 +146,8 @@ class CompressionStrategy(ContextStrategy):
                     )
                     break
         generation = client.complete(
-            messages, max_tokens=max_tokens, temperature=temperature,
+            messages, tools=prepared.tools,
+            max_tokens=max_tokens, temperature=temperature,
         )
         return StrategyResult(
             final_response=generation.content,
@@ -185,5 +186,6 @@ class CompressionStrategy(ContextStrategy):
         ]
         generation = client.complete(
             messages, max_tokens=len(text) // 4 // 2, temperature=0.0,
+            timeout=120.0,
         )
         return generation.content or text

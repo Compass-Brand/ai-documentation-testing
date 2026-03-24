@@ -2567,3 +2567,155 @@ class TestRunnerPromptMessagesFullConversation:
 
         # Should fall back to initial messages since strategy_result.messages is empty
         assert result.prompt_messages == initial_messages
+
+
+# ---------------------------------------------------------------------------
+# Bug #283: Cache restore/store must preserve tool_calls
+# ---------------------------------------------------------------------------
+
+
+class TestCacheToolCallsPreservation:
+    """Bug #283: tool_calls must survive cache round-trip (store -> restore)."""
+
+    def test_cache_store_includes_tool_calls(self) -> None:
+        """When a trial result has tool_calls, they must be stored in cache."""
+        from agent_evals.context.base import PreparedContext, StrategyResult
+
+        tool_calls = [
+            {
+                "id": "call_abc123",
+                "type": "function",
+                "function": {"name": "search", "arguments": '{"q": "auth"}'},
+            },
+        ]
+
+        gen = GenerationResult(
+            content="I'll search for that.",
+            prompt_tokens=50,
+            completion_tokens=20,
+            total_tokens=70,
+            cost=0.001,
+            model="openrouter/anthropic/claude-sonnet-4.5",
+            generation_id="gen-tc-1",
+            tool_calls=tool_calls,
+        )
+
+        strategy_result = StrategyResult(
+            final_response="I'll search for that.",
+            generations=[gen],
+            total_prompt_tokens=50,
+            total_completion_tokens=20,
+            total_tokens=70,
+            total_cost=0.001,
+            messages=[{"role": "user", "content": "Find auth docs"}],
+            strategy_metadata={},
+        )
+
+        mock_strategy = MagicMock()
+        mock_strategy.name.return_value = "full_context"
+        mock_strategy.supports_caching.return_value = True
+        mock_strategy.prepare.return_value = PreparedContext(
+            messages=[{"role": "user", "content": "Find auth docs"}],
+            tools=None,
+            strategy_metadata={},
+        )
+        mock_strategy.execute.return_value = strategy_result
+
+        cache = MagicMock(spec=ResponseCache)
+        cache.make_key.return_value = "test-tc-key"
+        cache.get.return_value = None  # cache miss
+
+        client = _make_mock_client()
+        config = EvalRunConfig(repetitions=1, use_cache=True)
+        runner = EvalRunner(client=client, config=config, cache=cache)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        runner._run_trial(task, variant, doc_tree, 1, strategy=mock_strategy)
+
+        # Verify cache.put was called with tool_calls in the stored dict
+        cache.put.assert_called_once()
+        stored_dict = cache.put.call_args[0][1]
+        assert "tool_calls" in stored_dict, (
+            "Cache PUT must include 'tool_calls' field (Bug #283)"
+        )
+        assert stored_dict["tool_calls"] == tool_calls
+
+    def test_cache_restore_preserves_tool_calls(self) -> None:
+        """When restoring from cache, tool_calls must be set on GenerationResult."""
+        tool_calls = [
+            {
+                "id": "call_xyz789",
+                "type": "function",
+                "function": {"name": "read_file", "arguments": '{"path": "auth.md"}'},
+            },
+        ]
+
+        client = _make_mock_client()
+        cache = MagicMock(spec=ResponseCache)
+        cache.make_key.return_value = "test-tc-restore-key"
+        cache.get.return_value = CacheEntry(
+            key="test-tc-restore-key",
+            response={
+                "content": "cached tool call response",
+                "prompt_tokens": 30,
+                "completion_tokens": 10,
+                "total_tokens": 40,
+                "cost": 0.0005,
+                "model": "openrouter/anthropic/claude-sonnet-4.5",
+                "generation_id": "gen-cached-tc",
+                "tool_calls": tool_calls,
+            },
+            created_at=1700000000.0,
+            model="openrouter/anthropic/claude-sonnet-4.5",
+            tokens_used=40,
+            cache_version=1,
+        )
+
+        config = EvalRunConfig(repetitions=1, use_cache=True)
+        runner = EvalRunner(client=client, config=config, cache=cache)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, 1)
+
+        # LLM was NOT called (cache hit)
+        client.complete.assert_not_called()
+        assert result.cached is True
+
+    def test_cache_round_trip_tool_calls_none(self) -> None:
+        """When tool_calls is None, cache round-trip should preserve None."""
+        client = _make_mock_client()
+        cache = MagicMock(spec=ResponseCache)
+        cache.make_key.return_value = "test-no-tc-key"
+        cache.get.return_value = CacheEntry(
+            key="test-no-tc-key",
+            response={
+                "content": "plain response",
+                "prompt_tokens": 30,
+                "completion_tokens": 10,
+                "total_tokens": 40,
+                "cost": 0.0005,
+                "model": "openrouter/anthropic/claude-sonnet-4.5",
+                "generation_id": "gen-no-tc",
+            },
+            created_at=1700000000.0,
+            model="openrouter/anthropic/claude-sonnet-4.5",
+            tokens_used=40,
+            cache_version=1,
+        )
+
+        config = EvalRunConfig(repetitions=1, use_cache=True)
+        runner = EvalRunner(client=client, config=config, cache=cache)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, 1)
+
+        assert result.cached is True

@@ -19,6 +19,7 @@ Tests cover:
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from unittest.mock import MagicMock
 
@@ -895,3 +896,61 @@ class TestMaxTurnsZero:
         # Must not raise IndexError or loop forever
         result = strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
         assert result.final_response is not None
+
+
+# ---------------------------------------------------------------------------
+# Bug #277: Shared _doc_tree/_rendered_index not thread-safe (P2)
+# ---------------------------------------------------------------------------
+
+
+class TestThreadSafety:
+    """Bug #277: setup/teardown/execute must be safe under concurrent access."""
+
+    def test_concurrent_setup_and_execute_tool_no_crash(self):
+        """Concurrent setup() and _execute_tool() calls must not crash."""
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy()
+        doc_tree = _make_doc_tree()
+        errors: list[Exception] = []
+
+        def setup_loop() -> None:
+            """Repeatedly call setup/teardown."""
+            try:
+                for _ in range(50):
+                    strategy.setup("# Index content", doc_tree)
+                    strategy.teardown()
+            except Exception as exc:
+                errors.append(exc)
+
+        def execute_tool_loop() -> None:
+            """Repeatedly call _execute_tool (reads shared state)."""
+            try:
+                for _ in range(50):
+                    # These may return error strings if teardown clears state
+                    # mid-flight, but must never raise an unhandled exception.
+                    strategy._execute_tool("list_docs", {})
+                    strategy._execute_tool("read_doc", {"path": "guides/auth.md"})
+                    strategy._execute_tool("search_docs", {"query": "JWT"})
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = []
+        for _ in range(4):
+            threads.append(threading.Thread(target=setup_loop))
+            threads.append(threading.Thread(target=execute_tool_loop))
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert not errors, f"Thread-safety errors: {errors}"
+
+    def test_has_lock_attribute(self):
+        """Strategy must have a threading lock for shared state protection."""
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy()
+        assert hasattr(strategy, "_lock"), "ToolBasedStrategy must have a _lock attribute"
+        assert isinstance(strategy._lock, type(threading.Lock()))

@@ -369,3 +369,57 @@ class TestPhaseBasedExecuteLoop:
         )
         assert result.final_response == "Answer."
         assert result.strategy_metadata["tool_calls_made"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Bug #282: DynamicToolModifier wrapping non-tool-aware strategies
+# ---------------------------------------------------------------------------
+
+
+class TestDynamicToolModifierToolsPassthrough:
+    """Bug #282: DynamicToolModifier delegates to inner.execute() which must
+    pass tools=prepared.tools through to client.complete().
+
+    With bugs #278-281 fixed, the inner strategies (FullContextStrategy, etc.)
+    now correctly pass tools from PreparedContext. This test confirms the
+    end-to-end flow: DynamicToolModifier.prepare() sets tools on PreparedContext,
+    then the inner strategy's execute() passes them to client.complete().
+    """
+
+    def test_full_context_wrapped_passes_tools_to_client(self):
+        """Wrapping FullContextStrategy with DynamicToolModifier must pass
+        tools through to client.complete() in non-phase-based modes."""
+        from agent_evals.context.full import FullContextStrategy
+        from agent_evals.context.modifiers.dynamic_tools import DynamicToolModifier
+
+        inner = FullContextStrategy()
+        modifier = DynamicToolModifier(inner, mode="full")
+
+        task = make_mock_task()
+        doc_tree = _make_doc_tree()
+
+        # modifier.prepare() delegates to inner.prepare() and then filters tools.
+        # Since FullContextStrategy.prepare() returns tools=None, we test with
+        # a PreparedContext that has tools set (simulating a composite workflow).
+        prepared = PreparedContext(
+            messages=[{"role": "user", "content": "test?"}],
+            tools=list(ALL_TOOLS),
+            strategy_metadata={"dynamic_tools_mode": "full"},
+        )
+
+        gen = _make_generation_result(content="The answer.", tool_calls=None)
+        client = MagicMock()
+        client.complete.return_value = gen
+
+        result = modifier.execute(
+            prepared, task, client, max_tokens=2048, temperature=0.3,
+        )
+
+        # The inner FullContextStrategy.execute() should pass tools through
+        client.complete.assert_called_once_with(
+            prepared.messages,
+            tools=list(ALL_TOOLS),
+            max_tokens=2048,
+            temperature=0.3,
+        )
+        assert result.final_response == "The answer."

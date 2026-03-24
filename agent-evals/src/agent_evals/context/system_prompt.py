@@ -19,6 +19,7 @@ from agent_evals.context.base import (
     StrategyConfig,
     StrategyResult,
 )
+from agent_evals.context.registry import register_strategy
 from agent_evals.llm.token_counter import count_tokens
 
 if TYPE_CHECKING:
@@ -30,11 +31,17 @@ if TYPE_CHECKING:
 _log = logging.getLogger(__name__)
 
 
+@register_strategy
 class SystemPromptStrategy(ContextStrategy):
     """Truncates the rendered index to fit within a token budget."""
 
     def __init__(self, config: StrategyConfig | None = None) -> None:
         self._config = config or StrategyConfig()
+        if self._config.token_budget is None:
+            _log.warning(
+                "SystemPromptStrategy: no token_budget set; content will be "
+                "passed through without truncation",
+            )
 
     def name(self) -> str:
         return "system_prompt"
@@ -106,6 +113,7 @@ class SystemPromptStrategy(ContextStrategy):
     ) -> StrategyResult:
         generation = client.complete(
             prepared.messages,
+            tools=prepared.tools,
             max_tokens=max_tokens,
             temperature=temperature,
         )

@@ -344,6 +344,80 @@ class TestExecute:
 
         client.complete.assert_called_once_with(
             messages,
+            tools=None,
+            max_tokens=2048,
+            temperature=0.3,
+        )
+
+    def test_execute_passes_tools_to_client_complete(self):
+        """Bug #279: execute() must pass tools=prepared.tools to client.complete().
+
+        When PreparedContext has tools, execute() must forward them so the LLM
+        can use function calling.
+        """
+        config = StrategyConfig()
+        strategy = SystemPromptStrategy(config)
+
+        tools = [{"type": "function", "function": {"name": "test_tool"}}]
+        messages = [{"role": "user", "content": "test"}]
+        prepared = PreparedContext(
+            messages=messages,
+            tools=tools,
+            strategy_metadata={"truncation_method": "hard"},
+        )
+
+        gen = GenerationResult(
+            content="LLM answer",
+            prompt_tokens=50,
+            completion_tokens=20,
+            total_tokens=70,
+            cost=0.002,
+            model="test-model",
+            generation_id="gen-1",
+        )
+        client = make_mock_client()
+        client.complete.return_value = gen
+
+        task = make_mock_task()
+        strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
+
+        client.complete.assert_called_once_with(
+            messages,
+            tools=tools,
+            max_tokens=2048,
+            temperature=0.3,
+        )
+
+    def test_execute_passes_none_tools_to_client_complete(self):
+        """Bug #279: execute() must pass tools=None when PreparedContext has no tools."""
+        config = StrategyConfig()
+        strategy = SystemPromptStrategy(config)
+
+        messages = [{"role": "user", "content": "test"}]
+        prepared = PreparedContext(
+            messages=messages,
+            tools=None,
+            strategy_metadata={"truncation_method": "hard"},
+        )
+
+        gen = GenerationResult(
+            content="LLM answer",
+            prompt_tokens=50,
+            completion_tokens=20,
+            total_tokens=70,
+            cost=0.002,
+            model="test-model",
+            generation_id="gen-1",
+        )
+        client = make_mock_client()
+        client.complete.return_value = gen
+
+        task = make_mock_task()
+        strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
+
+        client.complete.assert_called_once_with(
+            messages,
+            tools=None,
             max_tokens=2048,
             temperature=0.3,
         )
@@ -375,7 +449,7 @@ class TestSystemMessageValidation:
 
     def test_no_warning_when_system_message_present(self, caplog):
         """No warning is emitted when build_prompt returns a system message."""
-        config = StrategyConfig()
+        config = StrategyConfig(token_budget=5000)
         strategy = SystemPromptStrategy(config)
         task = make_mock_task(
             prompt=[
@@ -533,3 +607,81 @@ class TestNoneRenderedIndexGuard:
 
         call_args = task.build_prompt.call_args[0][0]
         assert call_args == "", "None must be coerced to '' even with no budget constraint"
+
+
+# ---------------------------------------------------------------------------
+# Bug #271: Missing @register_strategy decorator
+# ---------------------------------------------------------------------------
+
+
+class TestRegisterStrategyDecorator:
+    """Bug #271: SystemPromptStrategy must be decorated with @register_strategy
+    so it is discoverable without calling load_all()."""
+
+    def test_discoverable_without_load_all(self):
+        """Importing the module must register the strategy via the decorator.
+
+        get_strategy_by_name("system_prompt") must succeed after importing the
+        module -- without calling load_all() first.
+        """
+        from agent_evals.context.registry import clear_registry, get_strategy_by_name
+
+        clear_registry()
+
+        # Re-import the module to trigger decorator-based registration.
+        import importlib
+
+        import agent_evals.context.system_prompt as sp_mod
+
+        importlib.reload(sp_mod)
+
+        strategy = get_strategy_by_name("system_prompt")
+        assert strategy is not None, (
+            "SystemPromptStrategy must be discoverable via get_strategy_by_name "
+            "without calling load_all(). Add @register_strategy decorator. (Bug #271)"
+        )
+        assert strategy.name() == "system_prompt"
+
+
+# ---------------------------------------------------------------------------
+# Bug #272: Silent no-op when StrategyConfig has no token_budget
+# ---------------------------------------------------------------------------
+
+
+class TestTokenBudgetWarning:
+    """Bug #272: __init__ must log a warning when config is None or
+    config.token_budget is None so that the pass-through behaviour is explicit
+    rather than a silent no-op."""
+
+    def test_warning_when_config_is_none(self, caplog):
+        """A WARNING must be logged when config is None."""
+        with caplog.at_level(logging.WARNING, logger="agent_evals.context.system_prompt"):
+            SystemPromptStrategy(config=None)
+
+        warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("truncation" in m.lower() or "token_budget" in m.lower() for m in warning_msgs), (
+            "Expected a WARNING mentioning truncation/token_budget when config is None (Bug #272)"
+        )
+
+    def test_warning_when_token_budget_is_none(self, caplog):
+        """A WARNING must be logged when config.token_budget is None."""
+        config = StrategyConfig(token_budget=None)
+        with caplog.at_level(logging.WARNING, logger="agent_evals.context.system_prompt"):
+            SystemPromptStrategy(config=config)
+
+        warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("truncation" in m.lower() or "token_budget" in m.lower() for m in warning_msgs), (
+            "Expected a WARNING mentioning truncation/token_budget when token_budget is None (Bug #272)"
+        )
+
+    def test_no_warning_when_token_budget_is_set(self, caplog):
+        """No budget warning when a valid token_budget is provided."""
+        config = StrategyConfig(token_budget=5000)
+        with caplog.at_level(logging.WARNING, logger="agent_evals.context.system_prompt"):
+            SystemPromptStrategy(config=config)
+
+        warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        budget_warnings = [m for m in warning_msgs if "truncation" in m.lower() or "token_budget" in m.lower()]
+        assert not budget_warnings, (
+            "Should NOT warn about missing token_budget when one is set (Bug #272)"
+        )

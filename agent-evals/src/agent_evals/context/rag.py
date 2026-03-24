@@ -6,10 +6,14 @@ then retrieves top-K similar chunks per task question at prepare time.
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import threading
 from typing import TYPE_CHECKING
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from agent_evals.context.base import ContextStrategy, PreparedContext, StrategyResult
 from agent_evals.context.chunkers import fixed_size_chunks, heading_chunks
@@ -35,7 +39,7 @@ class RAGStrategy(ContextStrategy):
         embedding_model: str = "text-embedding-3-small",
     ) -> None:
         self._chunk_method = chunk_method
-        self._top_k = top_k
+        self._top_k = max(top_k, 1)
         self._embedding_model = embedding_model
         self._embedder: Embedder | None = None
         self._store: InMemoryVectorStore | None = None
@@ -99,6 +103,9 @@ class RAGStrategy(ContextStrategy):
         chunk_texts = [text for text, _ in results]
         chunk_scores = [score for _, score in results]
 
+        if not chunk_texts:
+            logger.warning("No relevant chunks found for query")
+
         # Build prompt with retrieved context
         context = "\n\n".join(chunk_texts)
         messages = task.build_prompt(context)
@@ -123,6 +130,7 @@ class RAGStrategy(ContextStrategy):
     ) -> StrategyResult:
         generation = client.complete(
             prepared.messages,
+            tools=prepared.tools,
             max_tokens=max_tokens,
             temperature=temperature,
         )
@@ -147,6 +155,9 @@ class RAGStrategy(ContextStrategy):
         Handles multi-modal content lists (bug #265): if ``content`` is a list,
         join the ``text`` fields of each part rather than returning the list raw,
         which would raise ``TypeError`` when used as a dict key.
+
+        If no user message is found (bug #274), returns a hash-based fallback
+        derived from the full message list to avoid cache collisions.
         """
         messages = task.build_prompt("")
         for msg in reversed(messages):
@@ -160,4 +171,7 @@ class RAGStrategy(ContextStrategy):
                     ]
                     return " ".join(parts)
                 return content if isinstance(content, str) else str(content)
-        return ""
+        # Bug #274: no user message found -- return a unique fallback instead of ""
+        logger.warning("No user message found in task; using fallback cache key")
+        fallback = hashlib.sha256(str(messages).encode()).hexdigest()[:16]
+        return f"__no_user_msg_{fallback}"

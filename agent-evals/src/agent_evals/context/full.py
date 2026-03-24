@@ -63,6 +63,7 @@ class FullContextStrategy(ContextStrategy):
     ) -> StrategyResult:
         generation = client.complete(
             prepared.messages,
+            tools=prepared.tools,
             max_tokens=max_tokens,
             temperature=temperature,
         )

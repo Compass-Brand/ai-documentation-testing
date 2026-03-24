@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from typing import TYPE_CHECKING, Any
 
 from agent_evals.context.base import ContextStrategy, PreparedContext, StrategyResult
@@ -91,6 +92,7 @@ class ToolBasedStrategy(ContextStrategy):
         self._max_turns = max(max_turns, 1)
         self._rendered_index: str = ""
         self._doc_tree: DocTree | None = None
+        self._lock = threading.Lock()
 
     def name(self) -> str:
         return "tool_based"
@@ -99,12 +101,14 @@ class ToolBasedStrategy(ContextStrategy):
         return False
 
     def setup(self, rendered_index: str, doc_tree: DocTree) -> None:
-        self._rendered_index = rendered_index
-        self._doc_tree = doc_tree
+        with self._lock:
+            self._rendered_index = rendered_index
+            self._doc_tree = doc_tree
 
     def teardown(self) -> None:
-        self._doc_tree = None
-        self._rendered_index = ""
+        with self._lock:
+            self._doc_tree = None
+            self._rendered_index = ""
 
     def prepare(
         self, rendered_index: str, task: EvalTask, doc_tree: DocTree,
@@ -113,7 +117,7 @@ class ToolBasedStrategy(ContextStrategy):
         if question is None:
             question = "Answer the following task based on the available documentation."
 
-        messages: list[dict[str, str]] = [
+        messages: list[dict[str, Any]] = [
             {
                 "role": "system",
                 "content": (
@@ -225,20 +229,21 @@ class ToolBasedStrategy(ContextStrategy):
 
     def _execute_tool(self, name: str, arguments: dict[str, Any]) -> str:
         """Execute a tool by name and return its string result."""
-        if name == "list_docs":
-            return self._rendered_index
+        with self._lock:
+            if name == "list_docs":
+                return self._rendered_index
 
-        if name == "read_doc":
-            path = arguments.get("path", "")
-            if self._doc_tree and path in self._doc_tree.files:
-                return self._doc_tree.files[path].content
-            return f"Error: file not found at path '{path}'"
+            if name == "read_doc":
+                path = arguments.get("path", "")
+                if self._doc_tree and path in self._doc_tree.files:
+                    return self._doc_tree.files[path].content
+                return f"Error: file not found at path '{path}'"
 
-        if name == "search_docs":
-            query = arguments.get("query", "")
-            return self._search(query)
+            if name == "search_docs":
+                query = arguments.get("query", "")
+                return self._search(query)
 
-        return f"Error: unknown tool '{name}'"
+            return f"Error: unknown tool '{name}'"
 
     _MAX_SEARCH_RESULTS = 20
 

@@ -450,12 +450,104 @@ class TestRAGStrategy:
 
         client.complete.assert_called_once_with(
             messages,
+            tools=None,
             max_tokens=1024,
             temperature=0.3,
         )
         assert result.final_response == "answer"
         assert result.total_tokens == 75
         assert len(result.generations) == 1
+
+    @patch("agent_evals.context.rag.Embedder")
+    def test_execute_passes_tools_to_client_complete(self, MockEmbedder):
+        """Bug #280: execute() must pass tools=prepared.tools to client.complete().
+
+        When PreparedContext has tools, execute() must forward them so the LLM
+        can use function calling.
+        """
+        from agent_evals.context.base import PreparedContext
+        from agent_evals.llm.client import GenerationResult
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_batch.return_value = [np.array([1.0, 0.0])]
+        mock_embedder.embed.return_value = np.array([1.0, 0.0])
+        MockEmbedder.return_value = mock_embedder
+
+        strategy = self._make_rag_strategy(top_k=1)
+        strategy.setup("# Section\nContent", MagicMock())
+
+        tools = [{"type": "function", "function": {"name": "test_tool"}}]
+        messages = [{"role": "user", "content": "test"}]
+        prepared = PreparedContext(
+            messages=messages,
+            tools=tools,
+            strategy_metadata={"chunks_retrieved": 1, "total_chunks": 1, "chunk_scores": [1.0]},
+        )
+
+        client = make_mock_client()
+        gen = GenerationResult(
+            content="answer",
+            prompt_tokens=50,
+            completion_tokens=25,
+            total_tokens=75,
+            cost=0.002,
+            model="mock-model",
+            generation_id="gen-1",
+        )
+        client.complete.return_value = gen
+
+        task = make_mock_task()
+        strategy.execute(prepared, task, client, max_tokens=1024, temperature=0.3)
+
+        client.complete.assert_called_once_with(
+            messages,
+            tools=tools,
+            max_tokens=1024,
+            temperature=0.3,
+        )
+
+    @patch("agent_evals.context.rag.Embedder")
+    def test_execute_passes_none_tools_to_client_complete(self, MockEmbedder):
+        """Bug #280: execute() must pass tools=None when PreparedContext has no tools."""
+        from agent_evals.context.base import PreparedContext
+        from agent_evals.llm.client import GenerationResult
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_batch.return_value = [np.array([1.0, 0.0])]
+        mock_embedder.embed.return_value = np.array([1.0, 0.0])
+        MockEmbedder.return_value = mock_embedder
+
+        strategy = self._make_rag_strategy(top_k=1)
+        strategy.setup("# Section\nContent", MagicMock())
+
+        messages = [{"role": "user", "content": "test"}]
+        prepared = PreparedContext(
+            messages=messages,
+            tools=None,
+            strategy_metadata={"chunks_retrieved": 1, "total_chunks": 1, "chunk_scores": [1.0]},
+        )
+
+        client = make_mock_client()
+        gen = GenerationResult(
+            content="answer",
+            prompt_tokens=50,
+            completion_tokens=25,
+            total_tokens=75,
+            cost=0.002,
+            model="mock-model",
+            generation_id="gen-1",
+        )
+        client.complete.return_value = gen
+
+        task = make_mock_task()
+        strategy.execute(prepared, task, client, max_tokens=1024, temperature=0.3)
+
+        client.complete.assert_called_once_with(
+            messages,
+            tools=None,
+            max_tokens=1024,
+            temperature=0.3,
+        )
 
     @patch("agent_evals.context.rag.Embedder")
     def test_setup_with_fixed_size_chunking(self, MockEmbedder):
@@ -765,3 +857,133 @@ class TestEmbedBatchPartialFailure:
         assert len(vecs) == 2
         np.testing.assert_array_almost_equal(vecs[0], [0.1, 0.2])
         np.testing.assert_array_almost_equal(vecs[1], [0.3, 0.4])
+
+
+# ---------------------------------------------------------------------------
+# Bug #273: top_k <= 0 not validated
+# ---------------------------------------------------------------------------
+
+
+class TestRAGTopKValidation:
+    """Bug #273 (P2): top_k <= 0 not validated -- should clamp to 1."""
+
+    def test_top_k_zero_clamped_to_one(self):
+        """RAGStrategy(top_k=0) must clamp _top_k to 1."""
+        from agent_evals.context.rag import RAGStrategy
+
+        strategy = RAGStrategy(top_k=0)
+        assert strategy._top_k == 1, (
+            f"top_k=0 should be clamped to 1, got {strategy._top_k}"
+        )
+
+    def test_top_k_negative_clamped_to_one(self):
+        """RAGStrategy(top_k=-5) must clamp _top_k to 1."""
+        from agent_evals.context.rag import RAGStrategy
+
+        strategy = RAGStrategy(top_k=-5)
+        assert strategy._top_k == 1, (
+            f"top_k=-5 should be clamped to 1, got {strategy._top_k}"
+        )
+
+    def test_top_k_positive_unchanged(self):
+        """RAGStrategy(top_k=3) must keep _top_k as 3."""
+        from agent_evals.context.rag import RAGStrategy
+
+        strategy = RAGStrategy(top_k=3)
+        assert strategy._top_k == 3
+
+
+# ---------------------------------------------------------------------------
+# Bug #274: _extract_question empty-string cache collision
+# ---------------------------------------------------------------------------
+
+
+class TestRAGExtractQuestionEmptyFallback:
+    """Bug #274 (P2): _extract_question returns '' for all no-user-message tasks."""
+
+    def test_no_user_message_returns_nonempty_fallback(self):
+        """When no user message exists, _extract_question must not return ''."""
+        from agent_evals.context.rag import RAGStrategy
+
+        task = MagicMock()
+        task.build_prompt.return_value = [
+            {"role": "system", "content": "You are a helper."},
+        ]
+
+        result = RAGStrategy._extract_question(task)
+        assert result != "", (
+            "_extract_question must not return '' when no user message exists"
+        )
+
+    def test_two_different_tasks_no_user_message_different_keys(self):
+        """Two distinct tasks without user messages must produce different cache keys."""
+        from agent_evals.context.rag import RAGStrategy
+
+        task_a = MagicMock()
+        task_a.build_prompt.return_value = [
+            {"role": "system", "content": "System A"},
+        ]
+
+        task_b = MagicMock()
+        task_b.build_prompt.return_value = [
+            {"role": "system", "content": "System B"},
+        ]
+
+        key_a = RAGStrategy._extract_question(task_a)
+        key_b = RAGStrategy._extract_question(task_b)
+        assert key_a != key_b, (
+            f"Different tasks must produce different cache keys, both got: {key_a!r}"
+        )
+
+    def test_no_user_message_logs_warning(self):
+        """When no user message is found, a warning must be logged."""
+        import logging
+
+        from agent_evals.context.rag import RAGStrategy
+
+        task = MagicMock()
+        task.build_prompt.return_value = [
+            {"role": "system", "content": "System only"},
+        ]
+
+        with patch("agent_evals.context.rag.logger") as mock_logger:
+            RAGStrategy._extract_question(task)
+            mock_logger.warning.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Bug #275: Empty chunk retrieval produces empty context without warning
+# ---------------------------------------------------------------------------
+
+
+class TestRAGEmptyChunkWarning:
+    """Bug #275 (P2): Empty chunk retrieval produces empty context without warning."""
+
+    @patch("agent_evals.context.rag.Embedder")
+    def test_empty_chunks_logs_warning(self, MockEmbedder):
+        """prepare() must log a warning when no relevant chunks are found."""
+        from agent_evals.context.rag import RAGStrategy
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_batch.return_value = [
+            np.array([1.0, 0.0]),
+        ]
+        # Query embedding that won't match anything well doesn't matter --
+        # we'll make the store return empty results by mocking search.
+        mock_embedder.embed.return_value = np.array([0.5, 0.5])
+        MockEmbedder.return_value = mock_embedder
+
+        strategy = RAGStrategy(top_k=1)
+        strategy.setup("# Only\nOne chunk here", MagicMock())
+
+        # Mock the store's search to return empty results
+        strategy._store = MagicMock()
+        strategy._store.search.return_value = []
+
+        task = make_mock_task()
+
+        with patch("agent_evals.context.rag.logger") as mock_logger:
+            strategy.prepare("index", task, MagicMock())
+            mock_logger.warning.assert_called_once_with(
+                "No relevant chunks found for query"
+            )
