@@ -2266,3 +2266,304 @@ class TestBudgetEnforcement:
         result = runner.run([task], [variant], doc_tree)
         assert len(result.trials) == 3
         assert result.graceful_shutdown is False
+
+
+# ---------------------------------------------------------------------------
+# Bug #260: Runner metrics only capture first generation turn (bead #260, P1)
+# ---------------------------------------------------------------------------
+
+
+class TestRunnerMetricsMultiTurn:
+    """Runner metrics must aggregate all generation turns, not just the first."""
+
+    def _make_multi_turn_strategy_result(self) -> "StrategyResult":
+        """Build a StrategyResult with two generations."""
+        from agent_evals.context.base import StrategyResult
+        from agent_evals.llm.client import GenerationResult
+
+        gen1 = GenerationResult(
+            content=None,
+            prompt_tokens=30,
+            completion_tokens=10,
+            total_tokens=40,
+            cost=0.0004,
+            model="openrouter/test/model",
+            generation_id="gen-1",
+            api_call_ms=200.0,
+            total_api_ms=210.0,
+            retry_count=1,
+            reasoning_tokens=5,
+            cached_tokens=3,
+            cache_write_tokens=2,
+            provider="test-provider",
+        )
+        gen2 = GenerationResult(
+            content="Final answer.",
+            prompt_tokens=20,
+            completion_tokens=15,
+            total_tokens=35,
+            cost=0.0003,
+            model="openrouter/test/model",
+            generation_id="gen-2",
+            api_call_ms=150.0,
+            total_api_ms=160.0,
+            retry_count=0,
+            reasoning_tokens=8,
+            cached_tokens=4,
+            cache_write_tokens=1,
+            provider="test-provider",
+        )
+        return StrategyResult(
+            final_response="Final answer.",
+            generations=[gen1, gen2],
+            total_prompt_tokens=50,
+            total_completion_tokens=25,
+            total_tokens=75,
+            total_cost=0.0007,
+            messages=[{"role": "user", "content": "Q"}],
+            strategy_metadata={"turns": 2},
+        )
+
+    def _make_mock_strategy(self, strategy_result: "StrategyResult") -> MagicMock:
+        """Build a mock strategy that returns the given StrategyResult."""
+        from agent_evals.context.base import PreparedContext
+
+        mock_strategy = MagicMock()
+        mock_strategy.name.return_value = "tool_based"
+        mock_strategy.supports_caching.return_value = False
+        mock_strategy.prepare.return_value = PreparedContext(
+            messages=[{"role": "user", "content": "Q"}],
+            tools=[],
+            strategy_metadata={},
+        )
+        mock_strategy.execute.return_value = strategy_result
+        mock_strategy.setup = MagicMock()
+        mock_strategy.teardown = MagicMock()
+        return mock_strategy
+
+    def test_api_call_ms_sums_all_generations(self) -> None:
+        """Bug #260: api_call_ms should sum all turns (200+150=350), not just first (200)."""
+        strategy_result = self._make_multi_turn_strategy_result()
+        mock_strategy = self._make_mock_strategy(strategy_result)
+
+        client = _make_mock_client()
+        config = EvalRunConfig(use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, repetition=1, strategy=mock_strategy)
+
+        # api_call_ms should be sum of all generations: 200 + 150 = 350
+        assert result.metrics["api_call_ms"] == pytest.approx(350.0, abs=0.5), (
+            f"api_call_ms should sum all generations (350), got {result.metrics['api_call_ms']}"
+        )
+
+    def test_total_api_ms_sums_all_generations(self) -> None:
+        """Bug #260: total_api_ms should sum all turns (210+160=370), not just first (210)."""
+        strategy_result = self._make_multi_turn_strategy_result()
+        mock_strategy = self._make_mock_strategy(strategy_result)
+
+        client = _make_mock_client()
+        config = EvalRunConfig(use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, repetition=1, strategy=mock_strategy)
+
+        assert result.metrics["total_api_ms"] == pytest.approx(370.0, abs=0.5), (
+            f"total_api_ms should sum all generations (370), got {result.metrics['total_api_ms']}"
+        )
+
+    def test_reasoning_tokens_sums_all_generations(self) -> None:
+        """Bug #260: reasoning_tokens should sum all generations (5+8=13), not just first (5)."""
+        strategy_result = self._make_multi_turn_strategy_result()
+        mock_strategy = self._make_mock_strategy(strategy_result)
+
+        client = _make_mock_client()
+        config = EvalRunConfig(use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, repetition=1, strategy=mock_strategy)
+        cost_metrics = result.metrics["cost_metrics"]
+
+        assert cost_metrics["reasoning_tokens"] == 13, (
+            f"reasoning_tokens should sum all generations (13), got {cost_metrics['reasoning_tokens']}"
+        )
+
+    def test_cached_tokens_sums_all_generations(self) -> None:
+        """Bug #260: cached_tokens should sum all generations (3+4=7), not just first (3)."""
+        strategy_result = self._make_multi_turn_strategy_result()
+        mock_strategy = self._make_mock_strategy(strategy_result)
+
+        client = _make_mock_client()
+        config = EvalRunConfig(use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, repetition=1, strategy=mock_strategy)
+        cost_metrics = result.metrics["cost_metrics"]
+
+        assert cost_metrics["cached_tokens"] == 7, (
+            f"cached_tokens should sum all generations (7), got {cost_metrics['cached_tokens']}"
+        )
+
+    def test_generation_id_from_first_generation(self) -> None:
+        """Bug #260: generation_id should come from first generation (model-level field)."""
+        strategy_result = self._make_multi_turn_strategy_result()
+        mock_strategy = self._make_mock_strategy(strategy_result)
+
+        client = _make_mock_client()
+        config = EvalRunConfig(use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, repetition=1, strategy=mock_strategy)
+        cost_metrics = result.metrics["cost_metrics"]
+
+        assert cost_metrics["generation_id"] == "gen-1", (
+            "generation_id should come from the first generation"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug #261: prompt_messages stores initial messages only (bead #261, P1)
+# ---------------------------------------------------------------------------
+
+
+class TestRunnerPromptMessagesFullConversation:
+    """prompt_messages must contain the full conversation for tool_based strategy."""
+
+    def test_prompt_messages_contains_full_conversation_for_tool_based(self) -> None:
+        """Bug #261: prompt_messages should be strategy_result.messages for tool_based."""
+        from agent_evals.context.base import PreparedContext, StrategyResult
+        from agent_evals.llm.client import GenerationResult
+
+        # Full conversation: initial + tool call + tool result + final
+        full_conversation = [
+            {"role": "system", "content": "You are a doc assistant."},
+            {"role": "user", "content": "What is auth?"},
+            {"role": "assistant", "content": None, "tool_calls": [{"id": "c1"}]},
+            {"role": "tool", "content": "# Auth docs", "tool_call_id": "c1"},
+            {"role": "assistant", "content": "Auth uses OAuth."},
+        ]
+
+        # initial messages (only 2 messages) — this is what prepared.messages has
+        initial_messages = [
+            {"role": "system", "content": "You are a doc assistant."},
+            {"role": "user", "content": "What is auth?"},
+        ]
+
+        gen1 = GenerationResult(
+            content="Auth uses OAuth.",
+            prompt_tokens=50,
+            completion_tokens=20,
+            total_tokens=70,
+            cost=0.001,
+            model="openrouter/test/model",
+            generation_id="gen-1",
+        )
+        strategy_result = StrategyResult(
+            final_response="Auth uses OAuth.",
+            generations=[gen1],
+            total_prompt_tokens=50,
+            total_completion_tokens=20,
+            total_tokens=70,
+            total_cost=0.001,
+            messages=full_conversation,  # full multi-turn conversation
+            strategy_metadata={"turns": 2},
+        )
+
+        mock_strategy = MagicMock()
+        mock_strategy.name.return_value = "tool_based"
+        mock_strategy.supports_caching.return_value = False
+        mock_strategy.prepare.return_value = PreparedContext(
+            messages=initial_messages,
+            tools=[],
+            strategy_metadata={},
+        )
+        mock_strategy.execute.return_value = strategy_result
+
+        client = _make_mock_client()
+        config = EvalRunConfig(use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, repetition=1, strategy=mock_strategy)
+
+        # prompt_messages should be the full conversation, not just the initial 2 messages
+        assert result.prompt_messages == full_conversation, (
+            f"prompt_messages should contain full conversation ({len(full_conversation)} messages), "
+            f"got {len(result.prompt_messages) if result.prompt_messages else 0} messages"
+        )
+
+    def test_prompt_messages_falls_back_to_initial_when_strategy_result_messages_empty(self) -> None:
+        """If strategy_result.messages is empty/None, fall back to prepared.messages."""
+        from agent_evals.context.base import PreparedContext, StrategyResult
+        from agent_evals.llm.client import GenerationResult
+
+        initial_messages = [
+            {"role": "system", "content": "Use this index."},
+            {"role": "user", "content": "What is auth?"},
+        ]
+
+        gen1 = GenerationResult(
+            content="OAuth.",
+            prompt_tokens=50,
+            completion_tokens=20,
+            total_tokens=70,
+            cost=0.001,
+            model="openrouter/test/model",
+            generation_id="gen-1",
+        )
+        strategy_result = StrategyResult(
+            final_response="OAuth.",
+            generations=[gen1],
+            total_prompt_tokens=50,
+            total_completion_tokens=20,
+            total_tokens=70,
+            total_cost=0.001,
+            messages=[],  # empty — should fall back to initial
+            strategy_metadata={},
+        )
+
+        mock_strategy = MagicMock()
+        mock_strategy.name.return_value = "full_context"
+        mock_strategy.supports_caching.return_value = False
+        mock_strategy.prepare.return_value = PreparedContext(
+            messages=initial_messages,
+            tools=[],
+            strategy_metadata={},
+        )
+        mock_strategy.execute.return_value = strategy_result
+
+        client = _make_mock_client()
+        config = EvalRunConfig(use_cache=False)
+        runner = EvalRunner(client=client, config=config)
+
+        task = _make_mock_task()
+        variant = _make_mock_variant()
+        doc_tree = _make_sample_doc_tree()
+
+        result = runner._run_trial(task, variant, doc_tree, repetition=1, strategy=mock_strategy)
+
+        # Should fall back to initial messages since strategy_result.messages is empty
+        assert result.prompt_messages == initial_messages

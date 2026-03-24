@@ -75,8 +75,10 @@ _TOOL_DEFINITIONS: list[dict[str, Any]] = [
 ]
 
 # Regex to strip trailing tool-call JSON artifacts from final responses.
+# Uses [\s\S]*? (any character including newlines, non-greedy) to handle
+# nested braces in tool_calls JSON like {"tool_calls": [{"id": "..."}]}.
 _TOOL_ARTIFACT_RE = re.compile(
-    r"\s*```(?:json)?\s*\{[^}]*\"?tool_calls\"?[^}]*\}\s*```\s*$",
+    r"\s*```(?:json)?\s*\{[\s\S]*?\"tool_calls\"[\s\S]*?\}\s*```\s*$",
     re.DOTALL,
 )
 
@@ -86,7 +88,7 @@ class ToolBasedStrategy(ContextStrategy):
     """Multi-turn agentic strategy with documentation tools."""
 
     def __init__(self, max_turns: int = DEFAULT_MAX_TURNS) -> None:
-        self._max_turns = max_turns
+        self._max_turns = max(max_turns, 1)
         self._rendered_index: str = ""
         self._doc_tree: DocTree | None = None
 
@@ -182,6 +184,21 @@ class ToolBasedStrategy(ContextStrategy):
                 })
 
         num_turns = len(generations)
+        if not generations:
+            return StrategyResult(
+                final_response="",
+                generations=[],
+                total_prompt_tokens=0,
+                total_completion_tokens=0,
+                total_tokens=0,
+                total_cost=None,
+                messages=messages,
+                strategy_metadata={
+                    "turns": 0,
+                    "tool_calls_made": total_tool_calls,
+                    "tools_used": sorted(tools_used),
+                },
+            )
         last_gen = generations[-1]
         final_text = self._clean_response(last_gen.content or "")
 

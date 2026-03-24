@@ -1002,6 +1002,11 @@ class EvalRunner:
                 max_tokens=self._config.max_tokens,
                 temperature=self._config.temperature,
             )
+            # For multi-turn strategies (e.g. tool_based), the full conversation
+            # is in strategy_result.messages. Use it when non-empty so that
+            # prompt_messages captures the complete conversation history.
+            if strategy_result.messages:
+                messages = strategy_result.messages
 
             # Store in cache
             if self._config.use_cache and strategy.supports_caching():
@@ -1032,17 +1037,17 @@ class EvalRunner:
 
         latency = time.monotonic() - trial_start
 
-        # Extract timing from first generation if available
-        first_gen = (
-            strategy_result.generations[0]
-            if strategy_result.generations
-            else None
-        )
+        # Extract timing aggregated across all generations.
+        # api_call_ms and total_api_ms are summed across turns (multi-turn strategies
+        # like tool_based make multiple LLM calls). generation_id and provider come
+        # from the first generation (they're model-level identifiers, not turn-level).
+        gens = strategy_result.generations
+        first_gen = gens[0] if gens else None
         metrics: dict[str, float] = {
             "scoring_ms": round(scoring_ms, 2),
             "prompt_build_ms": round(prompt_build_ms, 2),
-            "api_call_ms": round(first_gen.api_call_ms, 1) if first_gen else 0.0,
-            "total_api_ms": round(first_gen.total_api_ms, 1) if first_gen else 0.0,
+            "api_call_ms": round(sum(g.api_call_ms for g in gens), 1) if gens else 0.0,
+            "total_api_ms": round(sum(g.total_api_ms for g in gens), 1) if gens else 0.0,
             "retry_count": float(first_gen.retry_count) if first_gen else 0.0,
         }
 
@@ -1052,9 +1057,9 @@ class EvalRunner:
         cost_metrics = CostMetrics(
             prompt_tokens=strategy_result.total_prompt_tokens,
             completion_tokens=strategy_result.total_completion_tokens,
-            reasoning_tokens=first_gen.reasoning_tokens if first_gen else 0,
-            cached_tokens=first_gen.cached_tokens if first_gen else 0,
-            cache_write_tokens=first_gen.cache_write_tokens if first_gen else 0,
+            reasoning_tokens=sum(g.reasoning_tokens for g in gens) if gens else 0,
+            cached_tokens=sum(g.cached_tokens for g in gens) if gens else 0,
+            cache_write_tokens=sum(g.cache_write_tokens for g in gens) if gens else 0,
             total_cost_usd=strategy_result.total_cost,
             cache_discount_usd=None,
             latency_ms=first_gen.api_call_ms if first_gen else None,

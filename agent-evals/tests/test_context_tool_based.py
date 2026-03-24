@@ -787,3 +787,111 @@ class TestRegistryDiscovery:
         strategy = get_strategy_by_name("tool_based")
         assert strategy is not None
         assert strategy.name() == "tool_based"
+
+
+# ---------------------------------------------------------------------------
+# Bug #258: _TOOL_ARTIFACT_RE regex misses nested JSON (bead #258, P1)
+# ---------------------------------------------------------------------------
+
+
+class TestCleanResponseNestedJson:
+    """_clean_response must strip tool_calls JSON with nested braces."""
+
+    def test_clean_response_strips_nested_tool_calls_json(self):
+        """Bug #258: regex [^}]* cannot match nested braces in tool_calls JSON."""
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy()
+        # Nested JSON like {"tool_calls": [{"id": "call_1"}]} has nested braces
+        raw = 'The answer is JWT.\n\n```json\n{"tool_calls": [{"id": "call_1", "type": "function"}]}\n```'
+        cleaned = strategy._clean_response(raw)
+        assert "tool_calls" not in cleaned, (
+            "Nested tool_calls JSON artifact should be stripped"
+        )
+        assert "JWT" in cleaned, "Actual content should be preserved"
+
+    def test_clean_response_strips_deeply_nested_tool_calls(self):
+        """Multi-level nesting should also be stripped."""
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy()
+        raw = (
+            "Use OAuth for auth.\n\n"
+            "```json\n"
+            '{"tool_calls": [{"id": "c1", "function": {"name": "search_docs", "arguments": "{}"}}]}\n'
+            "```"
+        )
+        cleaned = strategy._clean_response(raw)
+        assert "tool_calls" not in cleaned
+        assert "OAuth" in cleaned
+
+    def test_clean_response_strips_plain_code_block_with_tool_calls(self):
+        """Plain ``` code block (no 'json' label) with tool_calls should be stripped."""
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy()
+        raw = 'Answer: yes.\n\n```\n{"tool_calls": [{"id": "x"}]}\n```'
+        cleaned = strategy._clean_response(raw)
+        assert "tool_calls" not in cleaned
+        assert "Answer: yes." in cleaned
+
+
+# ---------------------------------------------------------------------------
+# Bug #263: max_turns=0 causes IndexError (bead #263, P2)
+# ---------------------------------------------------------------------------
+
+
+class TestMaxTurnsZero:
+    """max_turns <= 0 must not cause IndexError or infinite loops."""
+
+    def test_max_turns_zero_returns_valid_result(self):
+        """Bug #263: max_turns=0 caused IndexError at generations[-1]."""
+        from agent_evals.context.base import PreparedContext
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy(max_turns=0)
+        doc_tree = _make_doc_tree()
+        strategy.setup("# Index", doc_tree)
+
+        task = make_mock_task()
+        client = MagicMock()
+        # Client should NOT be called at all if max_turns=0 yields no iterations
+        # OR it should be called once and return a valid response
+        client.complete.return_value = _make_generation_result(
+            content="Fallback answer.", tool_calls=None,
+        )
+
+        prepared = PreparedContext(
+            messages=[{"role": "user", "content": "What is auth?"}],
+            tools=[],
+            strategy_metadata={},
+        )
+
+        # Must not raise IndexError
+        result = strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
+        assert result.final_response is not None
+
+    def test_max_turns_negative_returns_valid_result(self):
+        """Negative max_turns should also be handled gracefully."""
+        from agent_evals.context.base import PreparedContext
+        from agent_evals.context.tool_based import ToolBasedStrategy
+
+        strategy = ToolBasedStrategy(max_turns=-5)
+        doc_tree = _make_doc_tree()
+        strategy.setup("# Index", doc_tree)
+
+        task = make_mock_task()
+        client = MagicMock()
+        client.complete.return_value = _make_generation_result(
+            content="Fallback.", tool_calls=None,
+        )
+
+        prepared = PreparedContext(
+            messages=[{"role": "user", "content": "Q"}],
+            tools=[],
+            strategy_metadata={},
+        )
+
+        # Must not raise IndexError or loop forever
+        result = strategy.execute(prepared, task, client, max_tokens=2048, temperature=0.3)
+        assert result.final_response is not None
