@@ -343,7 +343,12 @@ class TestFullContextStrategy:
         assert call_args == "my custom index"
 
     def test_prepare_strategy_metadata(self):
-        """strategy_metadata should include index token stats."""
+        """strategy_metadata should include index token stats but NOT max_content_tokens.
+
+        max_content_tokens was removed (Bug #264) because it implied a truncation
+        guarantee that FullContextStrategy does not enforce — truncation is
+        SystemPromptStrategy's job. FullContextStrategy passes everything through.
+        """
         from agent_evals.context.full import FullContextStrategy
 
         strategy = FullContextStrategy(max_content_tokens=1000)
@@ -356,7 +361,7 @@ class TestFullContextStrategy:
         prepared = strategy.prepare("the index", task, doc_tree)
 
         assert "index_tokens" in prepared.strategy_metadata
-        assert prepared.strategy_metadata["max_content_tokens"] == 1000
+        assert "max_content_tokens" not in prepared.strategy_metadata
 
     def test_default_max_content_tokens(self):
         """Default max_content_tokens should be 50000."""
@@ -546,3 +551,99 @@ class TestPublicAPI:
         assert PreparedContext is not None
         assert StrategyResult is not None
         assert StrategyConfig is not None
+
+
+# ---------------------------------------------------------------------------
+# Bug #268: No None guard on rendered_index in FullContextStrategy
+# ---------------------------------------------------------------------------
+
+
+class TestFullContextStrategyNoneGuard:
+    """Bug #268: FullContextStrategy.prepare() must coerce None rendered_index
+    to empty string instead of raising TypeError."""
+
+    def test_none_rendered_index_does_not_raise(self):
+        """prepare() must not raise TypeError when rendered_index is None."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy()
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({})
+
+        # Must not raise
+        prepared = strategy.prepare(None, task, doc_tree)  # type: ignore[arg-type]
+
+        # build_prompt must be called with empty string, not None
+        call_args = task.build_prompt.call_args[0][0]
+        assert call_args == "", (
+            "None rendered_index must be coerced to '' before passing to "
+            "build_prompt (Bug #268)"
+        )
+
+    def test_none_rendered_index_metadata_is_zero_tokens(self):
+        """When rendered_index is None, index_tokens metadata must be 0."""
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy()
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({})
+
+        prepared = strategy.prepare(None, task, doc_tree)  # type: ignore[arg-type]
+
+        assert prepared.strategy_metadata["index_tokens"] == 0, (
+            "index_tokens must be 0 when rendered_index is None (Bug #268)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug #256: @register_strategy decorator missing from FullContextStrategy
+# ---------------------------------------------------------------------------
+
+
+class TestFullContextStrategyRegistration:
+    """FullContextStrategy must be registered via @register_strategy so it is
+    discoverable without relying on load_all()'s __subclasses__ fallback."""
+
+    def test_full_context_registered_on_import_without_load_all(self):
+        """Importing full.py alone should register FullContextStrategy.
+
+        The @register_strategy decorator must be present on the class so that
+        get_strategy_by_name('full_context') works immediately after import
+        without requiring a separate load_all() call.
+        """
+        from agent_evals.context.registry import clear_registry, get_strategy_by_name
+
+        # Clear so we start fresh (no load_all() residue)
+        clear_registry()
+
+        # Import the module — the decorator should fire at import time
+        import importlib
+
+        import agent_evals.context.full as full_mod
+        importlib.reload(full_mod)
+
+        strategy = get_strategy_by_name("full_context")
+        assert strategy is not None, (
+            "FullContextStrategy not found in registry after importing full.py. "
+            "Add @register_strategy decorator to FullContextStrategy."
+        )
+        assert strategy.name() == "full_context"
+
+    def test_full_context_strategy_metadata_has_no_max_content_tokens(self):
+        """strategy_metadata must NOT include max_content_tokens (Bug #264).
+
+        max_content_tokens was stored in metadata but never enforced, implying
+        a truncation guarantee that does not exist. It must be removed to avoid
+        misleading callers.
+        """
+        from agent_evals.context.full import FullContextStrategy
+
+        strategy = FullContextStrategy()
+        task = make_mock_task()
+        doc_tree = _make_doc_tree({"a.md": ("content", 10)})
+        prepared = strategy.prepare("index content", task, doc_tree)
+
+        assert "max_content_tokens" not in prepared.strategy_metadata, (
+            "max_content_tokens must be removed from strategy_metadata — it implies "
+            "a truncation guarantee that FullContextStrategy does not enforce (Bug #264)."
+        )

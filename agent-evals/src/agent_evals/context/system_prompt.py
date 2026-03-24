@@ -1,14 +1,16 @@
 """System prompt strategy -- truncates rendered index to a token budget.
 
-Supports two truncation methods:
-- "hard": Simple token-count cutoff.
-- "priority": Uses doc_tree tier metadata and sort_files_bluf() to keep
-  required-tier content first, filling remaining budget with lower-priority
-  content.
+Supports one truncation method:
+- "hard": Simple token-count cutoff (binary search).
+
+Note: "priority" truncation was removed (#267) — it was dead code that
+delegated entirely to hard truncation. Any config with truncation="priority"
+now falls through to hard truncation automatically.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from agent_evals.context.base import (
@@ -24,6 +26,8 @@ if TYPE_CHECKING:
 
     from agent_evals.llm.client import LLMClient
     from agent_evals.tasks.base import EvalTask
+
+_log = logging.getLogger(__name__)
 
 
 class SystemPromptStrategy(ContextStrategy):
@@ -41,6 +45,9 @@ class SystemPromptStrategy(ContextStrategy):
     def prepare(
         self, rendered_index: str, task: EvalTask, doc_tree: DocTree,
     ) -> PreparedContext:
+        # Guard against None from variant.render() returning None (#268).
+        rendered_index = rendered_index or ""
+
         budget = self._config.token_budget
         method = self._config.truncation
 
@@ -53,16 +60,30 @@ class SystemPromptStrategy(ContextStrategy):
             truncated = ""
             original_tokens = count_tokens(rendered_index)
             truncated_tokens = 0
-        elif method == "priority" and doc_tree.files:
-            truncated, original_tokens, truncated_tokens = self._priority_truncate(
-                rendered_index, budget, doc_tree,
-            )
         else:
+            # Both "hard" and "priority" use hard truncation.
+            # _priority_truncate was removed (#267) -- it was identical to hard.
             truncated, original_tokens, truncated_tokens = self._hard_truncate(
                 rendered_index, budget,
             )
 
         messages = task.build_prompt(truncated)
+
+        # Validate that output contains a system-role message (#262).
+        # The strategy's purpose is to deliver doc context via the system prompt;
+        # warn if the task's build_prompt did not produce one.
+        has_system = any(
+            isinstance(m, dict) and m.get("role") == "system"
+            for m in messages
+        )
+        if not has_system:
+            _log.warning(
+                "SystemPromptStrategy: build_prompt output contains no "
+                "system-role message. Doc context may not be in the system "
+                "prompt. Task: %s",
+                getattr(getattr(task, "definition", None), "task_id", "<unknown>"),
+            )
+
         return PreparedContext(
             messages=messages,
             tools=None,
@@ -71,6 +92,7 @@ class SystemPromptStrategy(ContextStrategy):
                 "truncated_tokens": truncated_tokens,
                 "truncation_method": method,
                 "token_budget": budget,
+                "system_prompt_enforced": has_system,
             },
         )
 
@@ -121,19 +143,3 @@ class SystemPromptStrategy(ContextStrategy):
         truncated = text[:lo]
         truncated_tokens = count_tokens(truncated)
         return truncated, original_tokens, truncated_tokens
-
-    def _priority_truncate(
-        self, rendered_index: str, budget: int, doc_tree: DocTree,
-    ) -> tuple[str, int, int]:
-        """Truncate the rendered index using hard cutoff.
-
-        Priority ordering is the responsibility of the variant renderer
-        (which already sorts by tier/priority via sort_files_bluf). The
-        strategy simply truncates the variant-rendered text to fit the
-        budget, preserving whatever ordering the variant applied.
-
-        Previous implementation assembled raw doc_tree content instead
-        of truncating the rendered index, which meant all variants got
-        identical content regardless of their axis settings (#183).
-        """
-        return self._hard_truncate(rendered_index, budget)

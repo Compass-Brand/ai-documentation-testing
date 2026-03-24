@@ -551,3 +551,217 @@ class TestRAGRegistryIntegration:
         strategy = get_strategy_by_name("rag")
         assert strategy is not None
         assert strategy.name() == "rag"
+
+    def test_rag_registered_on_import_without_load_all(self):
+        """Importing rag.py alone should register RAGStrategy (Bug #256).
+
+        The @register_strategy decorator must be present so get_strategy_by_name
+        works immediately after import without a separate load_all() call.
+        """
+        from agent_evals.context.registry import clear_registry, get_strategy_by_name
+
+        clear_registry()
+
+        import importlib
+
+        import agent_evals.context.rag as rag_mod
+        importlib.reload(rag_mod)
+
+        strategy = get_strategy_by_name("rag")
+        assert strategy is not None, (
+            "RAGStrategy not found in registry after importing rag.py. "
+            "Add @register_strategy decorator to RAGStrategy."
+        )
+        assert strategy.name() == "rag"
+
+
+# ---------------------------------------------------------------------------
+# Bug #257: _query_cache not thread-safe
+# ---------------------------------------------------------------------------
+
+
+class TestRAGQueryCacheThreadSafety:
+    """Bug #257 (P1): _query_cache is a plain dict accessed without a lock."""
+
+    @patch("agent_evals.context.rag.Embedder")
+    def test_query_cache_protected_by_lock(self, MockEmbedder):
+        """RAGStrategy must have a lock that guards _query_cache access."""
+        import threading
+
+        from agent_evals.context.rag import RAGStrategy
+
+        strategy = RAGStrategy(top_k=1)
+        assert hasattr(strategy, "_cache_lock"), (
+            "RAGStrategy must have a _cache_lock attribute (threading.Lock)"
+        )
+        assert isinstance(strategy._cache_lock, type(threading.Lock())), (
+            "_cache_lock must be a threading.Lock instance"
+        )
+
+    @patch("agent_evals.context.rag.Embedder")
+    def test_concurrent_prepare_does_not_raise(self, MockEmbedder):
+        """Concurrent prepare() calls with the same question must not raise."""
+        import threading
+
+        from agent_evals.context.rag import RAGStrategy
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_batch.return_value = [
+            np.array([1.0, 0.0]),
+            np.array([0.0, 1.0]),
+        ]
+
+        def slow_embed(text):
+            import time
+            time.sleep(0.01)
+            return np.array([0.5, 0.5])
+
+        mock_embedder.embed.side_effect = slow_embed
+        MockEmbedder.return_value = mock_embedder
+
+        strategy = RAGStrategy(top_k=1)
+        strategy.setup("# A\nText A\n# B\nText B", MagicMock())
+
+        errors: list[Exception] = []
+
+        def worker():
+            task = make_mock_task()
+            try:
+                strategy.prepare("index", task, MagicMock())
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=worker) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Thread-safety errors: {errors}"
+
+
+# ---------------------------------------------------------------------------
+# Bug #265: _extract_question TypeError if task content is a list
+# ---------------------------------------------------------------------------
+
+
+class TestRAGExtractQuestionListContent:
+    """Bug #265 (P2): _extract_question raises TypeError when content is a list."""
+
+    def test_extract_question_returns_str_when_content_is_list(self):
+        """_extract_question must return a str even when message content is a list."""
+        from agent_evals.context.rag import RAGStrategy
+
+        task = MagicMock()
+        task.build_prompt.return_value = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "What is the capital of France?"},
+                    {"type": "image_url", "image_url": "http://example.com/img.png"},
+                ],
+            }
+        ]
+
+        result = RAGStrategy._extract_question(task)
+        assert isinstance(result, str), (
+            f"_extract_question must return str, got {type(result)}"
+        )
+        # Must be hashable (usable as a dict key)
+        _ = {result: "value"}
+
+    def test_extract_question_list_content_used_as_cache_key(self):
+        """When content is a list, prepare() must not raise TypeError on cache lookup."""
+        import threading
+
+        from agent_evals.context.rag import RAGStrategy
+
+        strategy = RAGStrategy.__new__(RAGStrategy)
+        strategy._query_cache = {}
+        strategy._cache_lock = threading.Lock()
+
+        task = MagicMock()
+        task.build_prompt.return_value = [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "Paris?"}],
+            }
+        ]
+
+        question = RAGStrategy._extract_question(task)
+        try:
+            _ = strategy._query_cache[question]
+        except KeyError:
+            pass  # Expected — key not in cache yet
+        except TypeError as exc:
+            raise AssertionError(
+                f"_extract_question returned unhashable type: {exc}"
+            ) from exc
+
+
+# ---------------------------------------------------------------------------
+# Bug #266: embed_batch silently drops embeddings on partial API failure
+# ---------------------------------------------------------------------------
+
+
+class TestEmbedBatchPartialFailure:
+    """Bug #266 (P2): embed_batch silently drops None embeddings causing length mismatch."""
+
+    def test_embed_batch_raises_on_partial_none(self):
+        """embed_batch must raise ValueError if API returns fewer vectors than texts."""
+        import threading
+
+        import pytest as _pytest
+
+        from agent_evals.context.embedder import Embedder
+
+        embedder = Embedder.__new__(Embedder)
+        embedder._model = "text-embedding-3-small"
+        embedder._memory_cache = {}
+        embedder._lock = threading.Lock()
+        embedder._cache_dir = None
+
+        with patch.object(
+            embedder, "_call_api_batch", return_value=[np.array([0.1, 0.2])]
+        ):
+            with _pytest.raises((ValueError, AssertionError)):
+                embedder.embed_batch(["text one", "text two"])
+
+    def test_embed_batch_raises_clear_message_on_length_mismatch(self):
+        """The error raised for a length mismatch must have a non-empty message."""
+        import threading
+
+        from agent_evals.context.embedder import Embedder
+
+        embedder = Embedder.__new__(Embedder)
+        embedder._model = "text-embedding-3-small"
+        embedder._memory_cache = {}
+        embedder._lock = threading.Lock()
+        embedder._cache_dir = None
+
+        with patch.object(
+            embedder, "_call_api_batch", return_value=[np.array([0.1, 0.2])]
+        ):
+            try:
+                embedder.embed_batch(["text one", "text two"])
+                raise AssertionError("embed_batch should have raised on partial API result")
+            except (ValueError, AssertionError) as exc:
+                assert str(exc), "Error must have a non-empty message"
+
+    def test_embed_batch_full_success_unchanged(self):
+        """embed_batch with all embeddings present must still work correctly."""
+        from agent_evals.context.embedder import Embedder
+
+        mock_response = MagicMock()
+        mock_response.data = [
+            MagicMock(embedding=[0.1, 0.2]),
+            MagicMock(embedding=[0.3, 0.4]),
+        ]
+
+        with patch("agent_evals.context.embedder.litellm.embedding", return_value=mock_response):
+            embedder = Embedder(model="text-embedding-3-small")
+            vecs = embedder.embed_batch(["hello", "world"])
+
+        assert len(vecs) == 2
+        np.testing.assert_array_almost_equal(vecs[0], [0.1, 0.2])
+        np.testing.assert_array_almost_equal(vecs[1], [0.3, 0.4])

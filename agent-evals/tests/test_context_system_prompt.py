@@ -10,10 +10,14 @@ Tests cover:
 - execute() wraps response correctly
 - name() returns "system_prompt"
 - supports_caching() returns True
+- Bug #262: system message presence is validated and logged (observability)
+- Bug #267: _priority_truncate method is removed; priority calls hard truncate
+- Bug #268: None rendered_index is coerced to empty string (no TypeError)
 """
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from unittest.mock import patch
 
@@ -358,3 +362,174 @@ class TestRegistryDiscovery:
         strategy = get_strategy_by_name("system_prompt")
         assert strategy is not None
         assert strategy.name() == "system_prompt"
+
+
+# ---------------------------------------------------------------------------
+# Bug #262: system message validation / observability
+# ---------------------------------------------------------------------------
+
+
+class TestSystemMessageValidation:
+    """Bug #262: prepare() must verify the output messages contain a system
+    message and emit a warning when they don't."""
+
+    def test_no_warning_when_system_message_present(self, caplog):
+        """No warning is emitted when build_prompt returns a system message."""
+        config = StrategyConfig()
+        strategy = SystemPromptStrategy(config)
+        task = make_mock_task(
+            prompt=[
+                {"role": "system", "content": "Doc context here"},
+                {"role": "user", "content": "What is X?"},
+            ],
+        )
+        doc_tree = _make_doc_tree()
+
+        with caplog.at_level(logging.WARNING, logger="agent_evals.context.system_prompt"):
+            strategy.prepare("doc content", task, doc_tree)
+
+        warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert not any("system" in m.lower() for m in warning_msgs), (
+            "Should NOT warn when a system message is present"
+        )
+
+    def test_warning_when_no_system_message(self, caplog):
+        """A WARNING is logged when build_prompt returns no system-role message."""
+        config = StrategyConfig()
+        strategy = SystemPromptStrategy(config)
+        # build_prompt returns only a user message — no system role
+        task = make_mock_task(
+            prompt=[
+                {"role": "user", "content": "What is X?"},
+            ],
+        )
+        doc_tree = _make_doc_tree()
+
+        with caplog.at_level(logging.WARNING, logger="agent_evals.context.system_prompt"):
+            strategy.prepare("doc content", task, doc_tree)
+
+        warning_msgs = [r.message for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("system" in m.lower() for m in warning_msgs), (
+            "Expected a WARNING mentioning 'system' when no system-role message is present"
+        )
+
+    def test_metadata_flag_system_prompt_enforced_true(self):
+        """strategy_metadata contains system_prompt_enforced=True when a system
+        message IS present in the output."""
+        config = StrategyConfig()
+        strategy = SystemPromptStrategy(config)
+        task = make_mock_task(
+            prompt=[
+                {"role": "system", "content": "Index goes here"},
+                {"role": "user", "content": "Question?"},
+            ],
+        )
+        doc_tree = _make_doc_tree()
+
+        prepared = strategy.prepare("index", task, doc_tree)
+
+        assert prepared.strategy_metadata.get("system_prompt_enforced") is True, (
+            "strategy_metadata must include system_prompt_enforced=True when "
+            "messages contain a system-role entry (Bug #262)"
+        )
+
+    def test_metadata_flag_system_prompt_enforced_false_when_missing(self):
+        """strategy_metadata contains system_prompt_enforced=False when no system
+        message is found in the output."""
+        config = StrategyConfig()
+        strategy = SystemPromptStrategy(config)
+        task = make_mock_task(
+            prompt=[
+                {"role": "user", "content": "Question without system context"},
+            ],
+        )
+        doc_tree = _make_doc_tree()
+
+        prepared = strategy.prepare("index", task, doc_tree)
+
+        assert prepared.strategy_metadata.get("system_prompt_enforced") is False, (
+            "strategy_metadata must include system_prompt_enforced=False when "
+            "no system-role message is present (Bug #262)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug #267: _priority_truncate removed; priority mode uses hard truncation
+# ---------------------------------------------------------------------------
+
+
+class TestPriorityTruncateRemoval:
+    """Bug #267: _priority_truncate is dead code — it always delegated to
+    _hard_truncate. The method must be removed and all priority paths must
+    call _hard_truncate directly."""
+
+    def test_priority_truncate_method_does_not_exist(self):
+        """SystemPromptStrategy must NOT have a _priority_truncate method."""
+        strategy = SystemPromptStrategy(StrategyConfig())
+        assert not hasattr(strategy, "_priority_truncate"), (
+            "_priority_truncate method must be removed (Bug #267). "
+            "Use _hard_truncate directly in prepare()."
+        )
+
+    @patch("agent_evals.context.system_prompt.count_tokens")
+    def test_priority_truncation_mode_still_truncates(self, mock_count):
+        """After removal, truncation='priority' must still truncate correctly
+        by delegating to _hard_truncate."""
+        mock_count.side_effect = lambda text, **kw: len(text) // 4
+
+        config = StrategyConfig(token_budget=10, truncation="priority")
+        strategy = SystemPromptStrategy(config)
+        task = make_mock_task()
+        doc_tree = _make_doc_tree()
+
+        content = "a" * 200  # 50 tokens at 4 chars/token
+        prepared = strategy.prepare(content, task, doc_tree)
+
+        meta = prepared.strategy_metadata
+        assert meta["truncated_tokens"] <= 10, (
+            "priority mode must still truncate to the budget via _hard_truncate"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug #268: None rendered_index guard in SystemPromptStrategy
+# ---------------------------------------------------------------------------
+
+
+class TestNoneRenderedIndexGuard:
+    """Bug #268: prepare() must coerce None rendered_index to empty string
+    instead of raising TypeError."""
+
+    @patch("agent_evals.context.system_prompt.count_tokens")
+    def test_none_rendered_index_does_not_raise(self, mock_count):
+        """prepare() must not raise when rendered_index is None."""
+        mock_count.side_effect = lambda text, **kw: len(text) // 4
+
+        config = StrategyConfig(token_budget=100, truncation="hard")
+        strategy = SystemPromptStrategy(config)
+        task = make_mock_task()
+        doc_tree = _make_doc_tree()
+
+        # Should not raise TypeError
+        prepared = strategy.prepare(None, task, doc_tree)  # type: ignore[arg-type]
+
+        # build_prompt must have been called with empty string, not None
+        call_args = task.build_prompt.call_args[0][0]
+        assert call_args == "", (
+            "None rendered_index must be coerced to '' before passing to build_prompt"
+        )
+
+    @patch("agent_evals.context.system_prompt.count_tokens")
+    def test_none_budget_none_rendered_index_does_not_raise(self, mock_count):
+        """prepare() with no budget constraint must also handle None."""
+        mock_count.side_effect = lambda text, **kw: len(text) // 4
+
+        config = StrategyConfig(token_budget=None)
+        strategy = SystemPromptStrategy(config)
+        task = make_mock_task()
+        doc_tree = _make_doc_tree()
+
+        prepared = strategy.prepare(None, task, doc_tree)  # type: ignore[arg-type]
+
+        call_args = task.build_prompt.call_args[0][0]
+        assert call_args == "", "None must be coerced to '' even with no budget constraint"

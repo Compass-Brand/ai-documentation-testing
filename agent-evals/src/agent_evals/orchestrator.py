@@ -522,7 +522,11 @@ class EvalOrchestrator:
             strategy = create_strategy_by_name(strategy_name)
             if strategy is not None:
                 return strategy
-            # Fallback: import and instantiate directly
+            # Fallback: import and instantiate directly (bug #259: warn).
+            logger.warning(
+                "Unknown strategy '%s'; falling back to FullContextStrategy",
+                strategy_name,
+            )
             from agent_evals.context.full import FullContextStrategy
             return FullContextStrategy()
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from agent_evals.context.base import ContextStrategy, PreparedContext, StrategyResult
+from agent_evals.context.registry import register_strategy
 
 if TYPE_CHECKING:
     from agent_index.models import DocTree
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 DEFAULT_MAX_CONTENT_TOKENS = 50_000
 
 
+@register_strategy
 class FullContextStrategy(ContextStrategy):
     """Passes the variant-rendered index directly to the LLM."""
 
@@ -32,6 +34,8 @@ class FullContextStrategy(ContextStrategy):
     def prepare(
         self, rendered_index: str, task: EvalTask, doc_tree: DocTree,
     ) -> PreparedContext:
+        # Guard against None from variant.render() returning None (#268).
+        rendered_index = rendered_index or ""
         # Use the rendered index directly — it IS the variant-specific content.
         # Appending raw doc_tree content would be identical for all variants,
         # diluting Taguchi axis effects.
@@ -41,7 +45,6 @@ class FullContextStrategy(ContextStrategy):
             tools=None,
             strategy_metadata={
                 "index_tokens": self._estimate_tokens(rendered_index),
-                "max_content_tokens": self._max_content_tokens,
             },
         )
 

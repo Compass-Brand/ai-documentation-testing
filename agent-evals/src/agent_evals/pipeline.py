@@ -1056,8 +1056,20 @@ class MultiStrategyPipeline:
 
     def _build_strategy_configs(self) -> dict[str, PipelineConfig]:
         """Deep-copy PipelineConfig per strategy with rep overrides."""
+        from agent_evals.context.registry import create_strategy_by_name, load_all
+
+        load_all()
+
         configs: dict[str, PipelineConfig] = {}
         for name in self.strategies:
+            # Warn about unrecognized strategy names (bug #259).
+            if create_strategy_by_name(name) is None:
+                logger.warning(
+                    "Unknown strategy name '%s'; it may fall back to "
+                    "FullContextStrategy at runtime",
+                    name,
+                )
+
             cfg = copy.deepcopy(self.config)
             cfg.strategy_config = StrategyConfig(
                 strategy=name,
@@ -1067,11 +1079,14 @@ class MultiStrategyPipeline:
                 rag_top_k=self.config.strategy_config.rag_top_k,
                 embedding_model=self.config.strategy_config.embedding_model,
                 max_turns=self.config.strategy_config.max_turns,
+                compression_method=self.config.strategy_config.compression_method,
             )
             # Override reps from strategy_reps mapping
             if name in self.config.strategy_reps:
-                cfg.screening_reps = self.config.strategy_reps[name]
-                cfg.confirmation_reps = cfg.screening_reps + 2
+                reps = self.config.strategy_reps[name]
+                cfg.screening_reps = reps
+                cfg.confirmation_reps = reps + 2
+                cfg.refinement_reps = reps
             configs[name] = cfg
         return configs
 
@@ -1091,10 +1106,22 @@ class MultiStrategyPipeline:
         total_trials = sum(r.total_trials for r in results.values())
         elapsed = sum(r.elapsed_seconds for r in results.values())
 
+        # Save original budget so each strategy starts fresh (bug #254).
+        original_budget: float | None = None
+        eval_config = getattr(
+            self._orchestrator.config, "eval_config", None,
+        )
+        if eval_config is not None:
+            original_budget = getattr(eval_config, "budget", None)
+
         for name in self.strategies:
             if name in results:
                 logger.info("Strategy %s already completed, skipping", name)
                 continue
+
+            # Restore budget before each strategy (bug #254).
+            if eval_config is not None and original_budget is not None:
+                eval_config.budget = original_budget
 
             logger.info("Running DOEPipeline for strategy: %s", name)
             # Update orchestrator's strategy_config for this strategy
@@ -1105,12 +1132,19 @@ class MultiStrategyPipeline:
                 orchestrator=self._orchestrator,
                 pipeline_id=pipeline_ids[name],
             )
-            result = pipeline.run(
-                tasks=tasks,
-                variants=variants,
-                doc_tree=doc_tree,
-                phase_callback=phase_callback,
-            )
+            try:
+                result = pipeline.run(
+                    tasks=tasks,
+                    variants=variants,
+                    doc_tree=doc_tree,
+                    phase_callback=phase_callback,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "Strategy %s failed, continuing with remaining "
+                    "strategies: %s", name, exc,
+                )
+                continue
             results[name] = result
             self._completed_strategies[name] = result
             total_cost += result.total_cost

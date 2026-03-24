@@ -82,6 +82,16 @@ class Embedder:
 
         if uncached_texts:
             vecs = self._call_api_batch(uncached_texts)
+            # Bug #266: assert the API returned exactly as many vectors as we asked for.
+            # A silent length mismatch would cause np.stack to fail with a cryptic error
+            # inside the caller (rag.py).  Raise early with a clear message instead.
+            if len(vecs) != len(uncached_texts):
+                raise ValueError(
+                    f"embed_batch: API returned {len(vecs)} embeddings for "
+                    f"{len(uncached_texts)} texts — partial failure detected. "
+                    "All embeddings must be present; aborting to prevent "
+                    "silent length mismatch in the caller."
+                )
             with self._lock:
                 for idx, vec, text in zip(uncached_indices, vecs, uncached_texts):
                     key = self._make_key(text)
@@ -89,7 +99,15 @@ class Embedder:
                     self._persist(key, vec)
                     results[idx] = vec
 
-        return [r for r in results if r is not None]
+        # After all slots are filled, verify none remain None (defensive check).
+        none_slots = [i for i, r in enumerate(results) if r is None]
+        if none_slots:
+            raise ValueError(
+                f"embed_batch: embeddings for indices {none_slots} are None "
+                "after processing — this indicates a logic error in caching or "
+                "the API response."
+            )
+        return results  # type: ignore[return-value]  # all elements are np.ndarray
 
     def _make_key(self, text: str) -> str:
         blob = json.dumps(

@@ -1167,3 +1167,38 @@ class TestStoreTracesTaguchi:
         stored_trials = orch.store.get_trials(result.run_id)
         trace = orch.store.get_trace(stored_trials[0].trial_id)
         assert trace is None, "No traces should be stored when store_traces=False"
+
+
+# ---------------------------------------------------------------------------
+# Bug #259: Invalid strategy name silently falls back to FullContextStrategy
+# ---------------------------------------------------------------------------
+
+
+class TestInvalidStrategyNameWarning:
+    """_build_strategy_factory must log a WARNING for unknown strategy names."""
+
+    def test_unknown_strategy_logs_warning(self, tmp_path: Path, caplog) -> None:
+        """Typo in strategy name should produce a WARNING about fallback."""
+        import logging
+
+        from agent_evals.context.base import StrategyConfig
+
+        sc = StrategyConfig(strategy="rga")  # typo for "rag"
+        config = OrchestratorConfig(
+            models=["test/model"],
+            api_key="test-key",
+            strategy_config=sc,
+            db_path=tmp_path / "obs.db",
+        )
+        orch = EvalOrchestrator(config)
+
+        factory = orch._build_strategy_factory()
+        with caplog.at_level(logging.WARNING, logger="agent_evals.orchestrator"):
+            strategy = factory()
+
+        # Should still return a FullContextStrategy (fallback)
+        assert strategy.name() == "full_context"
+        # Must have logged a warning about the unknown strategy name
+        assert any(
+            "rga" in r.message for r in caplog.records if r.levelno >= logging.WARNING
+        )

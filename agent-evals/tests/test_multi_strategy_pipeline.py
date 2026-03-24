@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock, patch
 
 from agent_evals.context.base import StrategyConfig
@@ -13,6 +14,7 @@ from agent_evals.pipeline import (
     PipelineConfig,
     PipelineResult,
 )
+from agent_evals.runner import EvalRunConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -338,7 +340,7 @@ class TestOrchestratorStrategyFactory:
             # EvalRunner should have been called with a strategy_factory kwarg
             MockRunner.assert_called_once()
             call_kwargs = MockRunner.call_args
-            assert "strategy_factory" in call_kwargs.kwargs
+            assert "strategy_factory" in call_kwargs.kwargs  # noqa: E501
 
     def test_run_taguchi_passes_strategy_factory(self) -> None:
         """_run_taguchi creates TaguchiRunner with strategy_factory."""
@@ -377,3 +379,239 @@ class TestOrchestratorStrategyFactory:
             MockRunner.assert_called_once()
             call_kwargs = MockRunner.call_args
             assert "strategy_factory" in call_kwargs.kwargs
+
+
+# ---------------------------------------------------------------------------
+# Bug #254: Budget drains across strategies
+# ---------------------------------------------------------------------------
+
+
+class TestBudgetResetAcrossStrategies:
+    """Budget must be restored at the start of each strategy iteration."""
+
+    def test_budget_not_drained_across_strategies(self) -> None:
+        """Each strategy should see the original budget, not a depleted one.
+
+        _reduce_remaining_budget (called inside DOEPipeline.run) mutates
+        orchestrator.config.eval_config.budget. Without a restore, strategy
+        2 would see a smaller budget than strategy 1.
+        """
+        eval_config = EvalRunConfig(budget=10.0)
+        config = PipelineConfig(models=["m"])
+        orch = _make_mock_orchestrator()
+        orch.config = MagicMock()
+        orch.config.eval_config = eval_config
+        orch.config.strategy_config = StrategyConfig()
+
+        msp = MultiStrategyPipeline(
+            config=config,
+            orchestrator=orch,
+            strategies=["full_context", "rag", "tool_based"],
+        )
+
+        screening = PhaseResult(
+            run_id="r1", phase="screening", trials=[],
+            total_cost=3.0, elapsed_seconds=10.0,
+        )
+        mock_result = PipelineResult(
+            pipeline_id="p1",
+            screening=screening,
+            total_trials=10,
+            total_cost=3.0,
+            elapsed_seconds=10.0,
+        )
+
+        budgets_seen: list[float | None] = []
+
+        def spy_run(self_pipeline, **kwargs):
+            # Record the budget BEFORE this strategy drains it
+            budget = getattr(orch.config.eval_config, "budget", None)
+            budgets_seen.append(budget)
+            # Simulate _reduce_remaining_budget draining 4.0 during the run
+            if budget is not None:
+                orch.config.eval_config.budget = max(budget - 4.0, 0.0)
+            return mock_result
+
+        with patch.object(DOEPipeline, "run", spy_run):
+            msp.run(
+                tasks=[], variants=_make_variants(), doc_tree=MagicMock()
+            )
+
+        # All three strategies should see the original budget (10.0),
+        # NOT a progressively depleted one (10.0, 6.0, 2.0)
+        assert len(budgets_seen) == 3
+        assert budgets_seen[0] == 10.0
+        assert budgets_seen[1] == 10.0
+        assert budgets_seen[2] == 10.0
+
+
+# ---------------------------------------------------------------------------
+# Bug #255: compression_method dropped from StrategyConfig
+# ---------------------------------------------------------------------------
+
+
+class TestCompressionMethodPropagated:
+    """compression_method must be passed through to per-strategy configs."""
+
+    def test_compression_method_preserved_in_strategy_configs(self) -> None:
+        """_build_strategy_configs must include compression_method."""
+        sc = StrategyConfig(
+            strategy="compression",
+            compression_method="semantic",
+        )
+        config = PipelineConfig(
+            models=["m"],
+            strategy_config=sc,
+        )
+        orch = _make_mock_orchestrator()
+        msp = MultiStrategyPipeline(
+            config=config,
+            orchestrator=orch,
+            strategies=["compression", "full_context"],
+        )
+        configs = msp._build_strategy_configs()
+        assert configs["compression"].strategy_config.compression_method == "semantic"
+        assert configs["full_context"].strategy_config.compression_method == "semantic"
+
+
+# ---------------------------------------------------------------------------
+# Bug #269: refinement_reps not overridden by strategy_reps
+# ---------------------------------------------------------------------------
+
+
+class TestRefinementRepsOverride:
+    """strategy_reps must also override refinement_reps."""
+
+    def test_refinement_reps_overridden_by_strategy_reps(self) -> None:
+        """When strategy_reps provides a value, refinement_reps must update."""
+        config = PipelineConfig(
+            models=["m"],
+            screening_reps=3,
+            confirmation_reps=5,
+            refinement_reps=3,
+            strategy_reps={"rag": 7},
+        )
+        orch = _make_mock_orchestrator()
+        msp = MultiStrategyPipeline(
+            config=config,
+            orchestrator=orch,
+            strategies=["full_context", "rag"],
+        )
+        configs = msp._build_strategy_configs()
+        # full_context keeps default
+        assert configs["full_context"].refinement_reps == 3
+        # rag should be overridden to 7
+        assert configs["rag"].refinement_reps == 7
+
+
+# ---------------------------------------------------------------------------
+# Bug #270: No exception handling in strategy loop
+# ---------------------------------------------------------------------------
+
+
+class TestStrategyLoopExceptionHandling:
+    """If one strategy crashes, accumulated results must be preserved."""
+
+    def test_strategy_crash_does_not_lose_results(self) -> None:
+        """A crash in strategy 2 must not discard strategy 1's results."""
+        config = PipelineConfig(models=["m"])
+        orch = _make_mock_orchestrator()
+        orch.config = MagicMock()
+        orch.config.eval_config = EvalRunConfig()
+        orch.config.strategy_config = StrategyConfig()
+
+        msp = MultiStrategyPipeline(
+            config=config,
+            orchestrator=orch,
+            strategies=["full_context", "rag", "tool_based"],
+        )
+
+        screening = PhaseResult(
+            run_id="r1", phase="screening", trials=[],
+            total_cost=1.0, elapsed_seconds=5.0,
+        )
+        good_result = PipelineResult(
+            pipeline_id="p1",
+            screening=screening,
+            total_trials=10,
+            total_cost=1.0,
+            elapsed_seconds=5.0,
+        )
+
+        call_count = 0
+
+        def run_side_effect(self_pipeline, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RuntimeError("Strategy 'rag' exploded")
+            return good_result
+
+        with patch.object(DOEPipeline, "run", run_side_effect):
+            result = msp.run(
+                tasks=[], variants=_make_variants(), doc_tree=MagicMock()
+            )
+
+        # full_context and tool_based should be present; rag missing
+        assert isinstance(result, MultiStrategyResult)
+        assert "full_context" in result.strategy_results
+        assert "rag" not in result.strategy_results
+        assert "tool_based" in result.strategy_results
+
+    def test_strategy_crash_is_logged(self, caplog) -> None:
+        """A crash in one strategy must produce a log message."""
+        config = PipelineConfig(models=["m"])
+        orch = _make_mock_orchestrator()
+        orch.config = MagicMock()
+        orch.config.eval_config = EvalRunConfig()
+        orch.config.strategy_config = StrategyConfig()
+
+        msp = MultiStrategyPipeline(
+            config=config,
+            orchestrator=orch,
+            strategies=["rag"],
+        )
+
+        def crash(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        with patch.object(DOEPipeline, "run", crash), \
+             caplog.at_level(logging.ERROR, logger="agent_evals.pipeline"):
+            result = msp.run(
+                tasks=[], variants=_make_variants(), doc_tree=MagicMock()
+            )
+
+        assert "rag" not in result.strategy_results
+        assert any(
+            "rag" in r.message and "boom" in r.message
+            for r in caplog.records
+        )
+
+
+# ---------------------------------------------------------------------------
+# Bug #259: Unknown strategy name in _build_strategy_configs warns
+# ---------------------------------------------------------------------------
+
+
+class TestUnknownStrategyWarning:
+    """_build_strategy_configs should warn about unknown strategy names."""
+
+    def test_unknown_strategy_name_logs_warning(self, caplog) -> None:
+        """Typo in strategies list should produce a WARNING."""
+        config = PipelineConfig(models=["m"])
+        orch = _make_mock_orchestrator()
+        msp = MultiStrategyPipeline(
+            config=config,
+            orchestrator=orch,
+            strategies=["full_context", "rga"],  # typo
+        )
+        with caplog.at_level(logging.WARNING, logger="agent_evals.pipeline"):
+            configs = msp._build_strategy_configs()
+
+        # Config should still be built (non-blocking)
+        assert "rga" in configs
+        # But a WARNING should have been logged
+        assert any(
+            "rga" in r.message for r in caplog.records
+            if r.levelno >= logging.WARNING
+        )

@@ -6,6 +6,7 @@ then retrieves top-K similar chunks per task question at prepare time.
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -13,6 +14,7 @@ import numpy as np
 from agent_evals.context.base import ContextStrategy, PreparedContext, StrategyResult
 from agent_evals.context.chunkers import fixed_size_chunks, heading_chunks
 from agent_evals.context.embedder import Embedder
+from agent_evals.context.registry import register_strategy
 from agent_evals.context.vector_store import InMemoryVectorStore
 
 if TYPE_CHECKING:
@@ -22,6 +24,7 @@ if TYPE_CHECKING:
     from agent_evals.tasks.base import EvalTask
 
 
+@register_strategy
 class RAGStrategy(ContextStrategy):
     """Retrieve top-K chunks from an embedded index for each task."""
 
@@ -38,6 +41,7 @@ class RAGStrategy(ContextStrategy):
         self._store: InMemoryVectorStore | None = None
         self._total_chunks: int = 0
         self._query_cache: dict[str, np.ndarray] = {}  # bug #188: cache query embeddings
+        self._cache_lock = threading.Lock()  # bug #257: protect _query_cache from concurrent access
 
     def name(self) -> str:
         return "rag"
@@ -81,12 +85,14 @@ class RAGStrategy(ContextStrategy):
             )
 
         # Embed the task question (cached to avoid recomputing per trial, bug #188)
+        # Lock protects _query_cache from concurrent access (bug #257).
         question = self._extract_question(task)
-        if question in self._query_cache:
-            query_vec = self._query_cache[question]
-        else:
+        with self._cache_lock:
+            query_vec = self._query_cache.get(question)
+        if query_vec is None:
             query_vec = self._embedder.embed(question)
-            self._query_cache[question] = query_vec
+            with self._cache_lock:
+                self._query_cache[question] = query_vec
 
         # Retrieve top-K chunks
         results = self._store.search(query_vec, top_k=self._top_k)
@@ -136,8 +142,22 @@ class RAGStrategy(ContextStrategy):
 
     @staticmethod
     def _extract_question(task: EvalTask) -> str:
+        """Extract the user question as a plain string for use as a cache key.
+
+        Handles multi-modal content lists (bug #265): if ``content`` is a list,
+        join the ``text`` fields of each part rather than returning the list raw,
+        which would raise ``TypeError`` when used as a dict key.
+        """
         messages = task.build_prompt("")
         for msg in reversed(messages):
             if msg.get("role") == "user":
-                return msg.get("content", "")
+                content = msg.get("content", "")
+                if isinstance(content, list):
+                    # Multi-modal format: extract text parts and join them
+                    parts = [
+                        part.get("text", "") if isinstance(part, dict) else str(part)
+                        for part in content
+                    ]
+                    return " ".join(parts)
+                return content if isinstance(content, str) else str(content)
         return ""
