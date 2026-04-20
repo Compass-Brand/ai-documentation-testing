@@ -170,7 +170,7 @@ jobs:
 
       - name: Open or update monitoring issue
         if: steps.compare.outputs.sha_mismatch == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           SUBMODULE: ${{ matrix.submodule.path }}
           SUBMODULE_URL: ${{ steps.compare.outputs.submodule_url }}
@@ -332,7 +332,7 @@ jobs:
 
       - name: Close resolved monitoring issue
         if: steps.compare.outputs.sha_mismatch == 'false' && github.event_name != 'pull_request'
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
           SUBMODULE: ${{ matrix.submodule.path }}
           CURRENT_SHA: ${{ steps.compare.outputs.current_sha }}
