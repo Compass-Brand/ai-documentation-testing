@@ -219,7 +219,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 
       - name: Validate JSON/YAML
-        uses: GrantBirki/json-yaml-validate@4b493a196a711807aec01c5ace08147f21b025bd
+        uses: GrantBirki/json-yaml-validate@9bbaa8474e3af4e91f25eda8ac194fdc30564d96
         with:
           json_exclude_regex: '(^|/)fixtures/|(^|/)tests/fixtures/'
           yaml_exclude_regex: '(^|/)fixtures/|(^|/)tests/fixtures/'
