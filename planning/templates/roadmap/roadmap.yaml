@@ -1,0 +1,29 @@
+version: 1
+project: ""
+owner: ""
+last_updated: ""
+repo_type: delivery
+repositories_ref: ../repositories.yaml
+active_phase_id: ""
+phases:
+  - id: ""
+    slug: ""
+    title: ""
+    status: planned
+    execution_scope: repo
+    objective: ""
+    roadmap_order: 1
+    depends_on: []
+    repo_targets: []
+    workstreams: []
+    dependency_edges: []
+    overlap_domains: []
+    integration_gates: []
+    entry_criteria: []
+    exit_criteria: []
+    supporting_docs: []
+    planned_start: ""
+    target_end: ""
+    actual_end: ""
+    snapshot_path: ""
+    lessons_path: ""

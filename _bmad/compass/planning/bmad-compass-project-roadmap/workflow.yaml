@@ -1,0 +1,31 @@
+name: project-roadmap
+description: 'Create or update the authoritative project roadmap from high-level analysis artifacts. Use when the user says "build the roadmap", "update the roadmap", or "set the current phase".'
+author: "Compass"
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/bmm/module.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+planning_root: "{config_source}:planning_root"
+planning_roadmap: "{config_source}:planning_roadmap"
+planning_repositories_file: "{config_source}:planning_repositories_file"
+planning_templates_root: "{config_source}:planning_templates_root"
+roadmap_summary_file: "{config_source}:roadmap_summary_file"
+roadmap_state_file: "{config_source}:roadmap_state_file"
+roadmap_brainstorming_dir: "{config_source}:roadmap_brainstorming_dir"
+roadmap_market_research_dir: "{config_source}:roadmap_market_research_dir"
+roadmap_domain_research_dir: "{config_source}:roadmap_domain_research_dir"
+roadmap_technical_research_dir: "{config_source}:roadmap_technical_research_dir"
+roadmap_strategy_dir: "{config_source}:roadmap_strategy_dir"
+roadmap_storytelling_dir: "{config_source}:roadmap_storytelling_dir"
+roadmap_product_brief_dir: "{config_source}:roadmap_product_brief_dir"
+date: system-generated
+
+# Workflow components
+installed_path: "{project-root}/_bmad/compass/planning/bmad-compass-project-roadmap"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+
+# Output
+roadmap_proposal_file: "{planning_roadmap}/roadmap-update-proposal-{date}.md"
+default_output_file: "{planning_roadmap}/roadmap-update-report-{date}.md"

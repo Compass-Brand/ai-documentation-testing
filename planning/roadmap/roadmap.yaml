@@ -1,0 +1,8 @@
+version: 1
+project: ""
+owner: ""
+last_updated: ""
+repo_type: delivery
+repositories_ref: ../repositories.yaml
+active_phase_id: ""
+phases: []

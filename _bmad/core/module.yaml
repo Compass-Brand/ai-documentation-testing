@@ -1,0 +1,6 @@
+code: core
+name: "BMad Core Module (Compass Customizations)"
+description: "Compass Brand customizations and overrides for the core module"
+
+# Inherits all variables from the native core-skills module.yaml
+# This module contains custom core-skills that override or extend the native versions.

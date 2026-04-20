@@ -1,0 +1,17 @@
+version: 1
+repo_id: ""
+repo_type: orchestration
+last_updated: ""
+active_initiatives:
+  - initiative_id: ""
+    title: ""
+    status: planned
+    execution_scope: orchestration
+    primary_repo_id: ""
+    repo_targets: []
+    blocked_by: []
+    phase_path: ""
+    phase_state_path: ""
+blocked_initiatives: []
+integration_gates: []
+overlap_records: []

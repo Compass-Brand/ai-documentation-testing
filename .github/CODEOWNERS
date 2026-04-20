@@ -1,0 +1,5 @@
+# TODO: Set your team or individual owners below.
+# Example: * @your-org/your-team
+.github/workflows/**
+.github/dependabot.yml
+*

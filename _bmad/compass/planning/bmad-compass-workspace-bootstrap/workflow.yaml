@@ -1,0 +1,30 @@
+name: workspace-bootstrap
+description: 'Bootstrap selected repos from a workspace or orchestration root into the Compass BMAD planning and docs structure. Use when the user says "bootstrap the workspace", "initialize selected repos", or "set up missed repos from the top level".'
+author: "Compass"
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/bmm/module.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+planning_root: "{config_source}:planning_root"
+planning_current: "{config_source}:planning_current"
+planning_repositories_file: "{config_source}:planning_repositories_file"
+planning_initiative_index_file: "{config_source}:planning_initiative_index_file"
+planning_initiatives_root: "{config_source}:planning_initiatives_root"
+roadmap_state_file: "{config_source}:roadmap_state_file"
+phase_snapshot_file: "{config_source}:phase_snapshot_file"
+phase_state_file: "{config_source}:phase_state_file"
+docs_root: "{config_source}:docs_root"
+date: system-generated
+
+# Workflow-local files
+topology_proposal_file: "{planning_current}/repository-topology-proposal-{date}.md"
+bootstrap_selection_file: "{planning_current}/workspace-bootstrap-selection-{date}.md"
+
+# Workflow components
+installed_path: "{project-root}/_bmad/compass/planning/bmad-compass-workspace-bootstrap"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+
+# Output
+default_output_file: "{planning_current}/workspace-bootstrap-report-{date}.md"

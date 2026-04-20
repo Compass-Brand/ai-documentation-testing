@@ -1,0 +1,367 @@
+name: Submodule Security Monitoring
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, reopened, synchronize]
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+  schedule:
+    - cron: '30 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  trivy-submodule-scan:
+    name: Trivy Submodule Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          submodules: recursive
+
+      - name: Run Trivy
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-submodules.sarif
+          exit-code: '0'
+          ignore-unfixed: true
+          skip-dirs: node_modules,dist
+
+      - name: Upload Trivy SARIF
+        id: upload_trivy_sarif
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@bb471cdcf4dda2c934c5b656f554d43c1434ed13
+        with:
+          sarif_file: trivy-submodules.sarif
+          category: submodule-trivy
+
+      - name: Warn when Trivy SARIF upload is unavailable
+        if: steps.upload_trivy_sarif.outcome == 'failure'
+        run: echo "::warning::Trivy SARIF upload was skipped or unavailable; continuing per policy."
+
+  discover-submodules:
+    name: Discover Submodules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.collect.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Build matrix from .gitmodules
+        id: collect
+        run: |
+          set -euo pipefail
+
+          if [ ! -f .gitmodules ]; then
+            echo 'matrix={"submodule":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          mapfile -t SUBMODULE_ENTRIES < <(git config --file .gitmodules --get-regexp '^submodule\..*\.path$')
+
+          if [ "${#SUBMODULE_ENTRIES[@]}" -eq 0 ]; then
+            echo 'matrix={"submodule":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          json="$(
+            printf '%s\n' "${SUBMODULE_ENTRIES[@]}" \
+              | jq -R '
+                split(" ") as $parts
+                | ($parts[0] // "") as $key
+                | ($parts[1:] | join(" ")) as $path
+                | {
+                    name: ($key | sub("^submodule\\."; "") | sub("\\.path$"; "")),
+                    path: $path
+                  }
+              ' \
+              | jq -cs '{submodule: .}'
+          )"
+          echo "matrix=${json}" >> "$GITHUB_OUTPUT"
+
+  monitor-submodule-upstream:
+    name: Monitor submodule upstream drift (${{ matrix.submodule.path }})
+    needs: discover-submodules
+    if: ${{ fromJSON(needs.discover-submodules.outputs.matrix).submodule[0] != null }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-submodules.outputs.matrix) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Compare pinned commit to upstream
+        id: compare
+        run: |
+          set -euo pipefail
+          SUBMODULE_PATH="${{ matrix.submodule.path }}"
+          SUBMODULE_NAME="${{ matrix.submodule.name }}"
+          SUBMODULE_URL="$(git config --file .gitmodules --get "submodule.${SUBMODULE_NAME}.url")"
+          TARGET_BRANCH="$(git config --file .gitmodules --get "submodule.${SUBMODULE_NAME}.branch" || echo main)"
+
+          git -C "$SUBMODULE_PATH" fetch origin "$TARGET_BRANCH"
+
+          CURRENT_SHA="$(git -C "$SUBMODULE_PATH" rev-parse HEAD)"
+          UPSTREAM_SHA="$(git -C "$SUBMODULE_PATH" rev-parse "origin/$TARGET_BRANCH")"
+
+          if [ "$CURRENT_SHA" != "$UPSTREAM_SHA" ]; then
+            SHA_MISMATCH="true"
+          else
+            SHA_MISMATCH="false"
+          fi
+
+          {
+            echo "branch=$TARGET_BRANCH"
+            echo "current_sha=$CURRENT_SHA"
+            echo "upstream_sha=$UPSTREAM_SHA"
+            echo "sha_mismatch=$SHA_MISMATCH"
+            echo "submodule_url=$SUBMODULE_URL"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open or update monitoring issue
+        if: steps.compare.outputs.sha_mismatch == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        env:
+          SUBMODULE: ${{ matrix.submodule.path }}
+          SUBMODULE_URL: ${{ steps.compare.outputs.submodule_url }}
+          TARGET_BRANCH: ${{ steps.compare.outputs.branch }}
+          CURRENT_SHA: ${{ steps.compare.outputs.current_sha }}
+          UPSTREAM_SHA: ${{ steps.compare.outputs.upstream_sha }}
+        with:
+          script: |
+            const submodule = process.env.SUBMODULE;
+            const rawSubmoduleUrl = process.env.SUBMODULE_URL || '';
+            const targetBranch = process.env.TARGET_BRANCH;
+            const currentSha = process.env.CURRENT_SHA;
+            const upstreamSha = process.env.UPSTREAM_SHA;
+            const shortUpstreamSha = upstreamSha.slice(0, 7);
+            const title = `Submodule update available: ${submodule}`;
+            const repoWebUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}`;
+            const baseBranch = context.payload.repository?.default_branch || 'main';
+
+            const normalizeSubmoduleUrl = (url) => {
+              if (!url) return { slug: '', webUrl: '' };
+              if (url.startsWith('https://github.com/')) {
+                const slug = url.replace('https://github.com/', '').replace(/\.git$/, '');
+                return { slug, webUrl: `https://github.com/${slug}` };
+              }
+              if (url.startsWith('http://github.com/')) {
+                const slug = url.replace('http://github.com/', '').replace(/\.git$/, '');
+                return { slug, webUrl: `https://github.com/${slug}` };
+              }
+              if (url.startsWith('git@github.com:')) {
+                const slug = url.replace('git@github.com:', '').replace(/\.git$/, '');
+                return { slug, webUrl: `https://github.com/${slug}` };
+              }
+              if (url.startsWith('ssh://git@github.com/')) {
+                const slug = url.replace('ssh://git@github.com/', '').replace(/\.git$/, '');
+                return { slug, webUrl: `https://github.com/${slug}` };
+              }
+              return { slug: '', webUrl: url };
+            };
+
+            const normalized = normalizeSubmoduleUrl(rawSubmoduleUrl);
+            const submoduleSlug = normalized.slug;
+            const submoduleWebUrl =
+              normalized.webUrl || `https://github.com/search?q=${encodeURIComponent(submodule)}`;
+            const upstreamDiffUrl = normalized.webUrl
+              ? `${normalized.webUrl}/compare/${currentSha}...${upstreamSha}`
+              : '';
+
+            const resolveChangelogUrl = async () => {
+              if (!submoduleSlug || !normalized.webUrl) {
+                return normalized.webUrl ? `${normalized.webUrl}/releases` : '';
+              }
+
+              const [owner, repo] = submoduleSlug.split('/');
+              const candidates = [
+                'CHANGELOG.md',
+                'CHANGELOG',
+                'changelog.md',
+                'docs/CHANGELOG.md',
+                'docs/changelog.md',
+              ];
+
+              for (const path of candidates) {
+                try {
+                  // eslint-disable-next-line no-await-in-loop
+                  await github.rest.repos.getContent({
+                    owner,
+                    repo,
+                    path,
+                    ref: targetBranch,
+                  });
+                  return `${normalized.webUrl}/blob/${targetBranch}/${path}`;
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                }
+              }
+
+              return `${normalized.webUrl}/releases`;
+            };
+
+            const changelogUrl = await resolveChangelogUrl();
+
+            const buildIssueBody = (issueNumber) => {
+              const issueRef = issueNumber ? `#${issueNumber}` : '#<issue-number>';
+              const safeBranchSubmodule = submodule.replace(/[\\/]/g, '-').toLowerCase();
+              const suggestedBranch = `chore/submodule-${safeBranchSubmodule}-${shortUpstreamSha}`;
+              const prCompareUrl = `${repoWebUrl}/compare/${baseBranch}...${suggestedBranch}?expand=1`;
+
+              const lines = [
+                `Automated monitoring detected that \`${submodule}\` does not match upstream.`,
+                '',
+                `- Submodule repo: [${submodule}](${submoduleWebUrl})`,
+                `- Changelog: [View changelog](${changelogUrl})`,
+                `- Upstream diff: [${currentSha.slice(0, 7)}...${shortUpstreamSha}](${upstreamDiffUrl})`,
+                `- Branch: \`${targetBranch}\``,
+                `- Pinned: \`${currentSha.slice(0, 7)}\``,
+                `- Upstream: \`${shortUpstreamSha}\``,
+                '',
+                '### Create PR For This Update',
+                '```bash',
+                `git checkout -b ${suggestedBranch}`,
+                `git submodule update --init --remote ${submodule}`,
+                `git add ${submodule}`,
+                `git commit -m "chore(submodule): bump ${submodule} to ${shortUpstreamSha}"`,
+                `git push -u origin ${suggestedBranch}`,
+                `gh pr create --base ${baseBranch} --head ${suggestedBranch} --title "chore(submodule): bump ${submodule}" --body "Closes ${issueRef}"`,
+                '```',
+                '',
+                `Open PR manually: ${prCompareUrl}`,
+                '',
+                `When merged with \`Closes ${issueRef}\`, this issue will auto-close.`,
+              ];
+
+              return lines.join('\n');
+            };
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+
+            const existing = issues.find((issue) => !issue.pull_request && issue.title === title);
+
+            const extractUpstreamSha = (text) => {
+              const match = text?.match(/- Upstream: `([0-9a-f]{7,40})`/i);
+              return match ? match[1] : null;
+            };
+
+            if (existing) {
+              const lastReportedSha = extractUpstreamSha(existing.body);
+              if (lastReportedSha === upstreamSha || lastReportedSha === shortUpstreamSha) {
+                return;
+              }
+
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: buildIssueBody(existing.number)
+              });
+              return;
+            }
+
+            const created = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: buildIssueBody(),
+              labels: ['dependencies', 'submodule-update']
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: created.data.number,
+              body: buildIssueBody(created.data.number)
+            });
+
+      - name: Close resolved monitoring issue
+        if: steps.compare.outputs.sha_mismatch == 'false' && github.event_name != 'pull_request'
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
+        env:
+          SUBMODULE: ${{ matrix.submodule.path }}
+          CURRENT_SHA: ${{ steps.compare.outputs.current_sha }}
+        with:
+          script: |
+            const submodule = process.env.SUBMODULE;
+            const title = `Submodule update available: ${submodule}`;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+
+            const existing = issues.find((issue) => !issue.pull_request && issue.title === title);
+            if (!existing) {
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existing.number,
+              body: `Closing: \`${submodule}\` is now aligned at \`${process.env.CURRENT_SHA.slice(0, 7)}\`.`
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: existing.number,
+              state: 'closed'
+            });

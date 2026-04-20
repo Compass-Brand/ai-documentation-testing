@@ -1,0 +1,16 @@
+# Legacy compatibility workflow configuration
+name: "document-project"
+version: "2.0.0"
+description: 'Legacy alias for docs initialization. Routes to the Compass docs migration workflow.'
+author: "Compass"
+
+config_source: "{project-root}/_bmad/bmm/module.yaml"
+communication_language: "{config_source}:communication_language"
+docs_root: "{config_source}:docs_root"
+date: system-generated
+
+installed_path: "{project-root}/_bmad/bmm/1-analysis/bmad-document-project"
+instructions: "{installed_path}/instructions.md"
+validation: "{project-root}/_bmad/compass/documentation/bmad-compass-init-docs/checklist.md"
+
+delegated_workflow: "{project-root}/_bmad/compass/documentation/bmad-compass-init-docs/workflow.yaml"

@@ -1,0 +1,24 @@
+[MASTER]
+ignore=node_modules,dist,BMAD-METHOD,.beads
+ignore-paths=^reference/BMAD/research/.*,^.*/fixtures/.*
+jobs=0
+
+[MESSAGES CONTROL]
+disable=
+    missing-module-docstring,
+    missing-class-docstring,
+    missing-function-docstring,
+    invalid-name,
+    too-many-arguments,
+    too-many-branches,
+    too-many-locals,
+    too-many-return-statements,
+    too-many-statements,
+    too-few-public-methods,
+    broad-exception-caught,
+    broad-exception-raised,
+    import-error,
+    consider-using-with
+
+[FORMAT]
+max-line-length=100

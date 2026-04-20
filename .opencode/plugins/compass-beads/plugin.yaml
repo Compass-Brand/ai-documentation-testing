@@ -1,0 +1,11 @@
+id: compass-beads
+name: Compass Beads
+status: pilot
+wrapper_posture: wrap
+runtime_entry: ../compass-beads.ts
+upstream_repo: joshuadavidthomas/opencode-beads
+owner: Compass Brand
+notes:
+  - Keep beads as the task system of record.
+  - Keep BMAD artifacts authoritative.
+  - Scope this pilot to context injection, command registration, and task-agent support.

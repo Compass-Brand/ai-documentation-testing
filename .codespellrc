@@ -1,0 +1,4 @@
+[codespell]
+skip = .git,*.lock,node_modules,dist,.beads,_bmad
+quiet-level = 2
+ignore-words-list = crate,fo,iterm,nd,reate,som,te

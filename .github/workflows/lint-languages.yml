@@ -1,0 +1,197 @@
+name: Linting Languages
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'reference/BMAD/research/**'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - 'reference/BMAD/research/**'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    name: Detect project languages
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      has_docker: ${{ steps.check.outputs.has_docker }}
+      has_terraform: ${{ steps.check.outputs.has_terraform }}
+      has_rust: ${{ steps.check.outputs.has_rust }}
+      has_k8s: ${{ steps.check.outputs.has_k8s }}
+      has_iac: ${{ steps.check.outputs.has_iac }}
+    steps:
+      - name: Checkout (sparse)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          sparse-checkout: .
+          fetch-depth: 1
+
+      - name: Detect languages
+        id: check
+        run: |
+          {
+            echo "has_docker=$(test -n "$(find . -maxdepth 4 -name 'Dockerfile*' 2>/dev/null | head -1)" && echo true || echo false)"
+            echo "has_terraform=$(test -n "$(find . -maxdepth 4 -name '*.tf' 2>/dev/null | head -1)" && echo true || echo false)"
+            echo "has_rust=$(test -f Cargo.toml && echo true || echo false)"
+            echo "has_k8s=$(find . -maxdepth 4 -type f \( -name '*.yaml' -o -name '*.yml' \) 2>/dev/null | grep -qE '(/k8s/|/kubernetes/|/manifests/|/helm/|/charts/)' && echo true || echo false)"
+            echo "has_iac=$(test -n "$(find . -maxdepth 4 \( -name '*.tf' -o -name 'Dockerfile*' \) 2>/dev/null | head -1)" && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+  hadolint:
+    name: hadolint (optional)
+    needs: detect
+    if: needs.detect.outputs.has_docker == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Run hadolint
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5
+        with:
+          recursive: true
+          dockerfile: Dockerfile.*
+          failure-threshold: error
+
+  checkov:
+    name: checkov (optional)
+    needs: detect
+    if: needs.detect.outputs.has_iac == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.11'
+
+      - name: Install Checkov
+        run: python -m pip install --upgrade checkov
+
+      - name: Run Checkov
+        run: checkov -d . --config-file .checkov.yaml --check HIGH,CRITICAL -o sarif --output-file-path checkov-results.sarif
+
+      - name: Upload Checkov SARIF
+        id: upload_checkov_sarif
+        if: always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@bb471cdcf4dda2c934c5b656f554d43c1434ed13
+        with:
+          sarif_file: checkov-results.sarif
+          category: checkov
+
+      - name: Warn when Checkov SARIF upload is unavailable
+        if: steps.upload_checkov_sarif.outcome == 'failure'
+        run: echo "::warning::Checkov SARIF upload was skipped or unavailable; continuing per policy."
+
+  terraform-lint:
+    name: terraform fmt + tflint (optional)
+    needs: detect
+    if: needs.detect.outputs.has_terraform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@5e8dbf3c6d9deaf4193ca7a8fb23f2ac83bb6c85
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@0c688f0e33c43029df9334b85caeff28837a53bd
+
+      - name: Run terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: Run tflint
+        run: |
+          tflint --init
+          tflint --recursive --format compact --minimum-failure-severity=warning
+
+  rust-lint:
+    name: rustfmt + clippy (optional)
+    needs: detect
+    if: needs.detect.outputs.has_rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: stable
+          components: clippy,rustfmt
+
+      - name: Run rustfmt
+        run: cargo fmt --all --check
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  kubeconform:
+    name: kubeconform (optional)
+    needs: detect
+    if: needs.detect.outputs.has_k8s == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Install kubeconform
+        run: |
+          VERSION="v0.7.0"
+          curl -sSL -o /tmp/kubeconform.tar.gz "https://github.com/yannh/kubeconform/releases/download/${VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp kubeconform
+          sudo install /tmp/kubeconform /usr/local/bin/kubeconform
+
+      - name: Run kubeconform
+        run: |
+          find . -type f \( -name "*.yaml" -o -name "*.yml" \) \
+            | grep -E "(/k8s/|/kubernetes/|/manifests/|/helm/|/charts/|\.k8s\.ya?ml$)" \
+            | xargs -r kubeconform -summary -strict -ignore-missing-schemas -n 8

@@ -1,0 +1,163 @@
+version: 1
+phase_id: ""
+slug: ""
+title: ""
+status: planned
+owner: ""
+last_updated: ""
+repo_id: ""
+repo_type: delivery
+execution_scope: repo
+primary_repo_id: ""
+repositories_ref: ../repositories.yaml
+initiative_index_ref: initiative-index.yaml
+upstream_repo_id: ""
+upstream_initiative_id: ""
+upstream_phase_ref: ""
+roadmap_ref: ../roadmap/roadmap.yaml
+phase_doc: phase.md
+in_scope: []
+out_of_scope: []
+dependencies: []
+repo_targets: []
+repo_workstreams: []
+blocked_workstreams: []
+integration_gates: []
+routing_decisions: []
+lane_decisions:
+  storytelling_mode: "off"
+  wds_mode: conditional
+  security_mode: auto
+  security_active: false
+lane_outcomes:
+  storytelling: not_applicable
+  wds: not_applicable
+  security: not_applicable
+approval_markers:
+  roadmap:
+    status: not_requested
+    requested_revision: ""
+    approved_revision: ""
+    reviewed_by: ""
+    reviewed_at: ""
+  prd:
+    status: not_requested
+    requested_revision: ""
+    approved_revision: ""
+    reviewed_by: ""
+    reviewed_at: ""
+  architecture:
+    status: not_requested
+    requested_revision: ""
+    approved_revision: ""
+    reviewed_by: ""
+    reviewed_at: ""
+  readiness:
+    status: not_requested
+    requested_revision: ""
+    approved_revision: ""
+    reviewed_by: ""
+    reviewed_at: ""
+workflow_status:
+  phase_sync: not_started
+  initiative_routing: not_started
+  detailed_analysis: not_started
+  planning_experience: not_started
+  solutioning: not_started
+  implementation: not_started
+  release_gate: not_started
+  closeout: not_started
+review_artifacts:
+  roadmap_gate: ""
+  prd_gate: ""
+  architecture_gate: ""
+  readiness_gate: ""
+beads:
+  parent_issue_id: ""
+  phase_issue_id: ""
+  active_epic_issue_id: ""
+  active_story_issue_id: ""
+  follow_up_issue_ids: []
+  last_synced_at: ""
+artifact_paths:
+  project_context:
+    current: ""
+    canonical: ""
+    draft: ""
+  brief:
+    current: ""
+    canonical: ""
+    draft: ""
+  prd:
+    current: ""
+    canonical: ""
+    draft: ""
+  ux_design:
+    current: ""
+    canonical: ""
+    draft: ""
+  architecture:
+    current: ""
+    canonical: ""
+    draft: ""
+  epics:
+    current: ""
+    canonical: ""
+    draft: ""
+  stories:
+    current: ""
+    canonical: ""
+    draft: ""
+  testing:
+    current: ""
+    canonical: ""
+    draft: ""
+  evidence:
+    current: ""
+    canonical: ""
+    draft: ""
+artifact_revisions:
+  brief:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  prd:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  ux_design:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  architecture:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  epics:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  stories:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  readiness:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+automation_state:
+  last_completed_step: ""
+  last_completed_checkpoint: ""
+  pending_approval: null
+  stale_outputs: []
+  last_failure_report: ""
+  derived_from: {}
+open_risks: []
+next_checkpoint: ""

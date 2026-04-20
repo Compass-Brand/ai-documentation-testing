@@ -1,0 +1,5 @@
+profile: basic
+exclude_paths:
+  - node_modules/
+  - dist/
+  - BMAD-METHOD/

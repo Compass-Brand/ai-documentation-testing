@@ -1,0 +1,4 @@
+module,skill,display-name,menu-code,description,action,args,phase,after,before,required,output-location,outputs
+bmad-builder,bmad-agent-builder,Agent Builder,AB,"Create, edit, and validate BMAD agents with best practices and compliance",,--content,anytime,,,,,
+bmad-builder,bmad-module-builder,Module Builder,MB,"Create, edit, and validate BMAD modules with agents, workflows, and infrastructure",,--content,anytime,,,,,
+bmad-builder,bmad-workflow-builder,Workflow Builder,WB,"Create, edit, validate, and rework BMAD workflows with proper structure",,--content,anytime,,,,,

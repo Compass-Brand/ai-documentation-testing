@@ -1,0 +1,28 @@
+name: validate-docs
+description: 'Validate documentation structure and policy compliance for Compass docs layout. Use when the user says "validate docs" or before phase closeout/release.'
+author: "Compass"
+
+config_source: "{project-root}/_bmad/bmm/module.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+document_output_language: "{config_source}:document_output_language"
+docs_root: "{config_source}:docs_root"
+docs_human_policies_dir: "{config_source}:docs_human_policies_dir"
+docs_human_templates_dir: "{config_source}:docs_human_templates_dir"
+docs_ai_root: "{config_source}:docs_ai_root"
+docs_architecture_dir: "{config_source}:docs_architecture_dir"
+docs_architecture_decisions_dir: "{config_source}:docs_architecture_decisions_dir"
+docs_development_dir: "{config_source}:docs_development_dir"
+docs_getting_started_dir: "{config_source}:docs_getting_started_dir"
+docs_guides_dir: "{config_source}:docs_guides_dir"
+docs_reference_dir: "{config_source}:docs_reference_dir"
+docs_framework_human_policies_dir: "{config_source}:docs_framework_human_policies_dir"
+docs_framework_human_templates_dir: "{config_source}:docs_framework_human_templates_dir"
+docs_human_overrides_file: "{config_source}:docs_human_overrides_file"
+date: system-generated
+
+installed_path: "{project-root}/_bmad/compass/documentation/bmad-compass-validate-docs"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+
+default_output_file: "{docs_reference_dir}/documentation-validation-{date}.md"

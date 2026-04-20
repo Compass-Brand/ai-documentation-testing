@@ -1,0 +1,5 @@
+name: compass
+displayName: Compass Skills
+description: Compass Brand custom agents, workflows, and utilities
+version: "1.0.0"
+type: module

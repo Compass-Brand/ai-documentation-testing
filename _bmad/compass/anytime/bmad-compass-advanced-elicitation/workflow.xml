@@ -1,0 +1,15 @@
+<task id="_bmad/core/bmad-advanced-elicitation/workflow.xml" name="Advanced Elicitation" standalone="false"
+  description="Compatibility shim: delegates XML calls to markdown workflow">
+  <objective>Load and execute the markdown implementation of Advanced Elicitation</objective>
+  <llm critical="true">
+    <i>This XML file is a compatibility shim.</i>
+    <i>Immediately load and execute the bmad-compass-advanced-elicitation skill (./workflow.md)</i>
+    <i>Follow the markdown workflow instructions exactly.</i>
+  </llm>
+  <flow>
+    <step n="1" title="Delegate to Markdown Workflow">
+      <action>Load the bmad-compass-advanced-elicitation skill (./workflow.md)</action>
+      <action>Execute all instructions exactly as written</action>
+    </step>
+  </flow>
+</task>

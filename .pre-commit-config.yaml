@@ -1,0 +1,138 @@
+minimum_pre_commit_version: '3.7.0'
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+default_stages:
+  - pre-commit
+  - pre-push
+exclude: '.*/fixtures/'
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: f1dff44d3a9ae852957f34def96390f28719c232
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1500']
+      - id: check-merge-conflict
+      - id: check-json
+      - id: check-toml
+      - id: check-yaml
+        args: ['--unsafe']
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+
+  - repo: https://github.com/asottile/sync-pre-commit-deps
+    rev: b2964743b1b4a91d552634874cb3ae4b2bd5e7e5
+    hooks:
+      - id: sync-pre-commit-deps
+
+  - repo: https://github.com/asottile/pyupgrade
+    rev: 369aea6489e38ca74a18df494f191857ba484950
+    hooks:
+      - id: pyupgrade
+        args: ['--py311-plus']
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 0839f92796ae388643a08a21640a029b322be5c2
+    hooks:
+      - id: ruff-check
+        args: ['--config=.ruff.toml', '--fix', '--exit-non-zero-on-fix']
+      - id: ruff-format
+        args: ['--config=.ruff.toml']
+
+  - repo: https://github.com/PyCQA/isort
+    rev: b5f06a7b1d53b7b561f00f40f814ef1698864bac
+    hooks:
+      - id: isort
+        args: ['--settings-path=.isort.cfg']
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: 30a25fe087e31d0345be0ffed4360e4651a44b6e
+    hooks:
+      - id: yamllint
+        args: ['-c=.yamllint.yaml', '--strict']
+        types: [yaml]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 8d1f98c7967eb1e79cb44ac6241a124e145d2165
+    hooks:
+      - id: gitleaks
+        args: ['--config=.gitleaks.toml']
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: 583d8796d92eb58e15072db03e5b756be45f638a
+    hooks:
+      - id: codespell
+        args: ['--config=.codespellrc']
+        exclude: '^_bmad/'
+
+  - repo: https://github.com/biomejs/pre-commit
+    rev: 8022786b4bd23c782070145e1052f3a4cd0560ec
+    hooks:
+      - id: biome-ci
+        args: ['--config-path=biome.json']
+        files: "\\.(js|mjs|cjs|jsx|ts|tsx|json|jsonc)$"
+        # exclude: '^path/to/skip/'
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: 61da922d8f906b1e377cf21f0db0a3b2b2c6d311
+    hooks:
+      - id: markdownlint
+        args: ['--config=.markdownlint.yaml']
+
+  - repo: local
+    hooks:
+      - id: pylint
+        name: pylint (system, manual)
+        language: system
+        entry: pylint --errors-only --rcfile=.pylintrc
+        types: [python]
+        stages: [manual]
+
+      - id: dotenv-linter
+        name: dotenv-linter (system, manual)
+        language: system
+        entry: dotenv-linter
+        files: "(^|/)\\.env(\\..*)?$"
+        stages: [manual]
+
+      - id: eslint
+        name: eslint
+        language: node
+        entry: eslint --max-warnings=0 --config .eslint.config.mjs
+        files: "\\.(js|mjs|cjs|jsx)$"
+        exclude: '^reference/'
+        additional_dependencies:
+          - eslint@9.39.1
+
+      - id: prettier
+        name: prettier
+        language: node
+        entry: prettier --check
+        files: "\\.(ya?ml|md)$"
+        additional_dependencies:
+          - prettier@3.6.2
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: 125110ee35450eb98e1585be217a495c12d9666a
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/ansible/ansible-lint
+    rev: ab4190674c046dbb11685c2b35feaf822dc1259e
+    hooks:
+      - id: ansible-lint
+        always_run: false
+        pass_filenames: false
+        language_version: python3
+        args: ['--profile=basic']
+        files: "(^|/)(playbooks|roles|ansible)/|(^|/)ansible\\.cfg$"
+
+  - repo: https://github.com/bridgecrewio/checkov
+    rev: d175b3722045457e23d2701a1ab15ee8f4634f47
+    hooks:
+      - id: checkov
+        pass_filenames: false
+        args: ['-d', '.', '--config-file=.checkov.yaml']
+        stages: [manual]

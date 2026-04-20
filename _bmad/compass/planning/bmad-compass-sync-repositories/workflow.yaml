@@ -1,0 +1,23 @@
+name: sync-repositories
+description: 'Compare planning/repositories.yaml against the current repo-root topology and update the canonical registry after approval. Use when repos are added, removed, moved, or missed.'
+author: "Compass"
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/bmm/module.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+planning_root: "{config_source}:planning_root"
+planning_current: "{config_source}:planning_current"
+planning_repositories_file: "{config_source}:planning_repositories_file"
+date: system-generated
+
+# Workflow-local files
+topology_proposal_file: "{planning_current}/repository-topology-proposal-{date}.md"
+
+# Workflow components
+installed_path: "{project-root}/_bmad/compass/planning/bmad-compass-sync-repositories"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+
+# Output
+default_output_file: "{planning_current}/repository-sync-report-{date}.md"

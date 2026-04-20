@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@nick-vi/type-inject-core": "1.1.1",
+    "@opencode-ai/plugin": "1.2.15",
+    "@opencode-ai/sdk": "1.2.15",
+    "jsonc-parser": "3.3.1",
+    "typescript": "6.0.2",
+    "zod": "4.1.13"
+  }
+}

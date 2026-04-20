@@ -1,0 +1,59 @@
+version: 1
+description: "Conditional security gate criteria for the Compass BMM lane"
+
+activation_conditions:
+  - "auth-heavy or permissions-heavy systems"
+  - "payment, customer, or otherwise sensitive data handling"
+  - "regulated work or contractual security obligations"
+  - "public-facing attack surface or meaningful external integrations"
+  - "explicit security artifact requirements"
+
+gates:
+  readiness:
+    name: "Secure Readiness Gate"
+    phase_boundary: "solutioning -> implementation"
+    required_artifacts:
+      - path: "{current_architecture_dir}/architecture.md"
+        description: "Primary architecture document"
+      - path: "{current_threat_modeling_dir}/*.md"
+        description: "Threat model output"
+      - path: "{current_security_review_dir}/*.md"
+        description: "Security architecture review output"
+      - path: "{current_epics_dir}/*.md"
+        description: "Epics and stories draft or approved decomposition"
+    required_signoffs:
+      - "architect"
+      - "security-architect"
+    blocking_conditions:
+      - "unresolved critical security findings"
+      - "more than three unresolved high-severity security findings"
+      - "missing threat model or security review artifacts"
+    recommendations:
+      - "translate mitigations into stories or explicit acceptance criteria"
+      - "record risk acceptance when blocking issues are not fixed"
+
+  release:
+    name: "Secure Release Gate"
+    phase_boundary: "implementation -> release"
+    required_artifacts:
+      - path: "{current_story_dir}/sprint-status*"
+        description: "Sprint status or release status summary"
+      - path: "{current_testing_reviews_dir}/*.md"
+        description: "Test and security review evidence"
+      - path: "{current_evidence_dir}/*.md"
+        description: "Implementation evidence, traceability, and release notes"
+    recommended_security_evidence:
+      - "penetration test report"
+      - "security scan report"
+      - "monitoring or incident-readiness notes"
+    required_signoffs:
+      - "pm"
+      - "tea"
+      - "security-architect"
+    blocking_conditions:
+      - "unresolved critical penetration-test findings"
+      - "unresolved critical security-scan findings"
+      - "security lane required but no release security evidence exists"
+    recommendations:
+      - "confirm all security stories are complete"
+      - "confirm residual risk is documented and accepted"

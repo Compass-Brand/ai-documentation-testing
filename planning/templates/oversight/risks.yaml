@@ -1,0 +1,14 @@
+# Oversight risk register — agents append draft entries during decision-making workflows.
+# Verification checkpoints surface unreviewed items at gate approvals.
+#
+# Schema:
+#   id: risk-NNN
+#   summary: one-line description
+#   source_workflow: workflow that raised this risk
+#   source_step: step within the workflow
+#   raised_at: YYYY-MM-DD
+#   status: draft | confirmed | mitigated | dismissed
+#   severity: low | medium | high | critical
+#   mitigation: description of mitigation (empty until documented)
+#   resolved_at: YYYY-MM-DD (empty until resolved)
+[]

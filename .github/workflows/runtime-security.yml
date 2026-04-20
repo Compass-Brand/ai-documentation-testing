@@ -1,0 +1,106 @@
+name: Runtime Security (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kube_bench:
+        description: 'Run kube-bench against connected cluster nodes'
+        required: false
+        default: false
+        type: boolean
+      trivy_operator:
+        description: 'Install/upgrade trivy-operator in the connected cluster'
+        required: false
+        default: false
+        type: boolean
+      kubectl_who_can:
+        description: 'Run kubectl-who-can authorization queries'
+        required: false
+        default: false
+        type: boolean
+      tracee:
+        description: 'Attempt Tracee runtime checks (self-hosted Linux runner recommended)'
+        required: false
+        default: false
+        type: boolean
+      siderophile:
+        description: 'Run siderophile static checks'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@c0c8b32d33a5244f1e5947304550403b63930415
+
+      - name: Setup Helm
+        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a
+
+      - name: Setup Go
+        if: inputs.kubectl_who_can == true
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
+        with:
+          go-version: '1.24'
+
+      - name: Setup Rust toolchain
+        if: inputs.siderophile == true
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+
+      - name: Configure kubeconfig
+        id: kubeconfig
+        run: |
+          if [ -z "${{ secrets.KUBECONFIG_B64 }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "KUBECONFIG_B64 secret is not set. Cluster-based checks will be skipped."
+            exit 0
+          fi
+
+          mkdir -p "$HOME/.kube"
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > "$HOME/.kube/config"
+          chmod 600 "$HOME/.kube/config"
+          kubectl cluster-info
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Run kube-bench
+        if: inputs.kube_bench == true && steps.kubeconfig.outputs.configured == 'true'
+        run: |
+          VERSION="0.10.1"
+          curl -sSL -o /tmp/kube-bench.tar.gz "https://github.com/aquasecurity/kube-bench/releases/download/v${VERSION}/kube-bench_${VERSION}_linux_amd64.tar.gz"
+          tar -xzf /tmp/kube-bench.tar.gz -C /tmp
+          sudo install /tmp/kube-bench /usr/local/bin/kube-bench
+          kube-bench run --targets master,node,controlplane
+
+      - name: Install trivy-operator
+        if: inputs.trivy_operator == true && steps.kubeconfig.outputs.configured == 'true'
+        run: |
+          helm repo add aqua https://aquasecurity.github.io/helm-charts/
+          helm repo update
+          helm upgrade --install trivy-operator aqua/trivy-operator --namespace trivy-system --create-namespace
+
+      - name: Run kubectl-who-can
+        if: inputs.kubectl_who_can == true && steps.kubeconfig.outputs.configured == 'true'
+        run: |
+          go install github.com/aquasecurity/kubectl-who-can@latest
+          kubectl-who-can --all-namespaces get pods
+
+      - name: Tracee note
+        if: inputs.tracee == true
+        run: |
+          echo "Tracee requires privileged runtime access and is not supported on standard GitHub-hosted runners."
+          echo "Run Tracee on a privileged self-hosted Linux runner for meaningful results."
+
+      - name: Run siderophile
+        if: inputs.siderophile == true
+        run: |
+          cargo install --locked siderophile || cargo install --git https://github.com/trailofbits/siderophile.git
+          siderophile --help

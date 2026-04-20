@@ -1,0 +1,11 @@
+id: compass-type-inject
+name: Compass Type Inject
+status: pilot
+wrapper_posture: wrap
+runtime_entry: ../compass-type-inject.ts
+upstream_repo: nick-vi/type-inject
+owner: Compass Brand
+notes:
+  - Keep this plugin in the code-intelligence lane.
+  - Preserve TypeScript-aware read injection and lookup utilities.
+  - Add guarded post-write diagnostics without giving the plugin workflow authority.

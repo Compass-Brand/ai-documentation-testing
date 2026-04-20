@@ -1,0 +1,92 @@
+module,skill,display-name,menu-code,description,action,args,phase,after,before,required,output-location,outputs
+bmad-builder,bmad-agent-builder,Agent Builder,AB,"Create, edit, and validate BMAD agents with best practices and compliance",,--content,anytime,,,,,
+bmad-builder,bmad-module-builder,Module Builder,MB,"Create, edit, and validate BMAD modules with agents, workflows, and infrastructure",,--content,anytime,,,,,
+bmad-builder,bmad-workflow-builder,Workflow Builder,WB,"Create, edit, validate, and rework BMAD workflows with proper structure",,--content,anytime,,,,,
+BMad Method,bmad-document-project,Document Project,DP,Analyze an existing project to produce useful documentation.,,anytime,,,false,project-knowledge,*
+BMad Method,bmad-generate-project-context,Generate Project Context,GPC,Scan existing codebase to generate a lean LLM-optimized project-context.md. Essential for brownfield projects.,,anytime,,,false,output_folder,project context
+BMad Method,bmad-quick-dev,Quick Dev,QQ,Unified intent-in code-out workflow: clarify plan implement review and present.,,anytime,,,false,implementation_artifacts,spec and project implementation
+BMad Method,bmad-correct-course,Correct Course,CC,Navigate significant changes. May recommend start over update PRD redo architecture sprint planning or correct epics and stories.,,anytime,,,false,planning_artifacts,change proposal
+BMad Method,bmad-agent-tech-writer,Write Document,WD,"Describe in detail what you want, and the agent will follow documentation best practices. Multi-turn conversation with subprocess for research/review.",write,,anytime,,,false,project-knowledge,document
+BMad Method,bmad-agent-tech-writer,Update Standards,US,Update agent memory documentation-standards.md with your specific preferences if you discover missing document conventions.,update-standards,,anytime,,,false,_bmad/_memory/tech-writer-sidecar,standards
+BMad Method,bmad-agent-tech-writer,Mermaid Generate,MG,Create a Mermaid diagram based on user description. Will suggest diagram types if not specified.,mermaid,,anytime,,,false,planning_artifacts,mermaid diagram
+BMad Method,bmad-agent-tech-writer,Validate Document,VD,Review the specified document against documentation standards and best practices. Returns specific actionable improvement suggestions organized by priority.,validate,[path],anytime,,,false,planning_artifacts,validation report
+BMad Method,bmad-agent-tech-writer,Explain Concept,EC,Create clear technical explanations with examples and diagrams for complex concepts.,explain,[topic],anytime,,,false,project_knowledge,explanation
+BMad Method,bmad-brainstorming,Brainstorm Project,BP,Expert guided facilitation through a single or multiple techniques.,,1-analysis,,,false,planning_artifacts,brainstorming session
+BMad Method,bmad-market-research,Market Research,MR,"Market analysis competitive landscape customer needs and trends.",,1-analysis,,,false,"planning_artifacts|project-knowledge",research documents
+BMad Method,bmad-domain-research,Domain Research,DR,Industry domain deep dive subject matter expertise and terminology.,,1-analysis,,,false,"planning_artifacts|project_knowledge",research documents
+BMad Method,bmad-technical-research,Technical Research,TR,Technical feasibility architecture options and implementation approaches.,,1-analysis,,,false,"planning_artifacts|project_knowledge",research documents
+BMad Method,bmad-product-brief,Create Brief,CB,A guided experience to nail down your product idea.,,1-analysis,,,false,planning_artifacts,product brief
+BMad Method,bmad-prfaq,PRFAQ Challenge,WB,Working Backwards guided experience to forge and stress-test your product concept to ensure you have a great product that users will love and need through the PRFAQ gauntlet to determine feasibility and alignment with user needs. alternative to product brief.,,-H,1-analysis,,,false,planning_artifacts,prfaq document
+BMad Method,bmad-create-prd,Create PRD,CP,Expert led facilitation to produce your Product Requirements Document.,,2-planning,,,true,planning_artifacts,prd
+BMad Method,bmad-validate-prd,Validate PRD,VP,,,[path],2-planning,bmad-create-prd,,false,planning_artifacts,prd validation report
+BMad Method,bmad-edit-prd,Edit PRD,EP,,,[path],2-planning,bmad-validate-prd,,false,planning_artifacts,updated prd
+BMad Method,bmad-create-ux-design,Create UX,CU,"Guidance through realizing the plan for your UX, strongly recommended if a UI is a primary piece of the proposed project.",,2-planning,bmad-create-prd,,false,planning_artifacts,ux design
+BMad Method,bmad-create-architecture,Create Architecture,CA,Guided workflow to document technical decisions.,,3-solutioning,,,true,planning_artifacts,architecture
+BMad Method,bmad-create-epics-and-stories,Create Epics and Stories,CE,,,3-solutioning,bmad-create-architecture,,true,planning_artifacts,epics and stories
+BMad Method,bmad-check-implementation-readiness,Check Implementation Readiness,IR,Ensure PRD UX Architecture and Epics Stories are aligned.,,3-solutioning,bmad-create-epics-and-stories,,true,planning_artifacts,readiness report
+BMad Method,bmad-sprint-planning,Sprint Planning,SP,Kicks off implementation by producing a plan the implementation agents will follow in sequence for every story.,,4-implementation,,,true,implementation_artifacts,sprint status
+BMad Method,bmad-sprint-status,Sprint Status,SS,Anytime: Summarize sprint status and route to next workflow.,,4-implementation,bmad-sprint-planning,,false,,
+BMad Method,bmad-create-story,Create Story,CS,"Story cycle start: Prepare first found story in the sprint plan that is next or a specific epic/story designation.",create,,4-implementation,bmad-sprint-planning,bmad-create-story:validate,true,implementation_artifacts,story
+BMad Method,bmad-create-story,Validate Story,VS,Validates story readiness and completeness before development work begins.,validate,,4-implementation,bmad-create-story:create,bmad-dev-story,false,implementation_artifacts,story validation report
+BMad Method,bmad-dev-story,Dev Story,DS,Story cycle: Execute story implementation tasks and tests then CR then back to DS if fixes needed.,,4-implementation,bmad-create-story:validate,,true,,
+BMad Method,bmad-code-review,Code Review,CR,Story cycle: If issues back to DS if approved then next CS or ER if epic complete.,,4-implementation,bmad-dev-story,,false,,
+BMad Method,bmad-checkpoint-preview,Checkpoint,CK,Guided walkthrough of a change from purpose and context into details. Use for human review of commits branches or PRs.,,4-implementation,,,false,,
+BMad Method,bmad-qa-generate-e2e-tests,QA Automation Test,QA,Generate automated API and E2E tests for implemented code. NOT for code review or story validation — use CR for that.,,4-implementation,bmad-dev-story,,false,implementation_artifacts,test suite
+BMad Method,bmad-retrospective,Retrospective,ER,Optional at epic end: Review completed work lessons learned and next epic or if major issues consider CC.,,4-implementation,bmad-code-review,,false,implementation_artifacts,retrospective
+compass,bmad-compass-oversight-checkpoint,Oversight Checkpoint,OC,"Generate a verification report from the oversight risk and assumption registers",,--content,0-governance,,,false,,
+compass,bmad-compass-phase-closeout,Phase Closeout,PC,"Close the active phase and archive artifacts into previous/ with lessons capture and roadmap updates",,--content,0-governance,,,false,,
+compass,bmad-compass-phase-sync,Phase Sync,PS,"Select and sync the active roadmap slice in planning/current/phase.md and phase-state.yaml",,--content,0-governance,,,true,,
+compass,bmad-agent-design-thinking-coach,Design Thinking Coach,DTC,"Human-centered design expert and empathy architect (Maya persona)",,--content,1-analysis,,,false,,
+compass,bmad-agent-innovation-strategist,Innovation Strategist,ISA,"Business model innovator and strategic disruption expert (Victor persona)",,--content,1-analysis,,,false,,
+compass,bmad-agent-wds-analyst,WDS Analyst,WDA,"Strategic business analyst and product discovery partner for the WDS planning lane (Saga persona)",,--content,1-analysis,,,false,,
+compass,bmad-compass-design-thinking,Design Thinking,DT,"Guide human-centered design processes using empathy-driven methodologies",,--content,1-analysis,,,false,,
+compass,bmad-compass-ingest-whitepapers,Ingest Whitepapers,IW,"Ingest external whitepapers into a condensed digest for downstream BMAD workflows",,--content,1-analysis,,,false,,
+compass,bmad-compass-innovation-strategy,Innovation Strategy,IS,"Identify disruption opportunities and architect business model innovation",,--content,1-analysis,,,false,,
+compass,bmad-compass-vtc-workshop,VTC Workshop,VTC,"Facilitate Vision-Traction-Clarity workshop connecting business goals to user needs",,--content,1-analysis,,,false,,
+compass,bmad-agent-wds-designer,WDS Designer,WDD,"Strategic UX designer for conceptual specifications and design delivery (Freya persona)",,--content,2-plan-workflows,,,false,,
+compass,bmad-compass-conceptual-specs,Conceptual Specs,CSP,"Conceptual specification reference for WDS deliverables and tools",,--content,2-plan-workflows,,,false,,
+compass,bmad-compass-outline-scenarios,Outline Scenarios,OS,"Transform Trigger Maps into UX scenario outlines",,--content,2-plan-workflows,,,false,,
+compass,bmad-compass-trigger-mapping,Trigger Mapping,TM,"Effect Mapping workshop connecting business goals to user psychology",,--content,2-plan-workflows,,,false,,
+compass,bmad-compass-wds-ux-design,WDS UX Design,WUX,"Create WDS UX specifications through scenario-driven design",,--content,2-plan-workflows,,,false,,
+compass,bmad-agent-security-architect,Security Architect,SAA,"Security architect and release-risk reviewer for the conditional CYBERSEC lane (Bastion persona)",,--content,3-solutioning,,,false,,
+compass,bmad-agent-threat-analyst,Threat Analyst,TAA,"Threat modeling specialist for the conditional CYBERSEC lane (Cipher persona)",,--content,3-solutioning,,,false,,
+compass,bmad-compass-security-architecture-review,Security Architecture Review,SAR,"Comprehensive security analysis using STRIDE, control assessment, and zero-trust principles",,--content,3-solutioning,,,false,,
+compass,bmad-compass-threat-modeling,Threat Modeling,TH,"STRIDE-based threat modeling for identifying, assessing, and mitigating security threats",,--content,3-solutioning,,,false,,
+compass,bmad-agent-tea,Test Architect,TEA,"Master test architect and quality advisor specializing in risk-based testing and CI/CD governance (Murat persona)",,--content,4-implementation,,,false,,
+compass,bmad-compass-implementation-brainstorming,Implementation Brainstorming,IB,"Focused brainstorming for active implementation work",,--content,4-implementation,,,false,,
+compass,bmad-compass-implementation-research,Implementation Research,IR,"Targeted research for active implementation decisions",,--content,4-implementation,,,false,,
+compass,bmad-compass-quick-spec,Quick Spec,QS,"Create implementation-ready quick tech specs for small changes or features",,--content,4-implementation,,,false,,
+compass,bmad-compass-secure-gates,Secure Gates,SG,"Evaluate conditional security readiness and release gates for Compass slices",,--content,4-implementation,,,false,,
+compass,bmad-compass-testarch-atdd,ATDD,AT,"Generate failing acceptance tests plus an implementation checklist before development",,--content,4-implementation,,,false,,
+compass,bmad-compass-testarch-automate,Test Automation,TA,"Generate prioritized API/E2E tests, fixtures, and DoD summary for a story or feature",,--content,4-implementation,,,false,,
+compass,bmad-compass-testarch-ci,CI Pipeline,CI,"Recommend and scaffold CI/CD quality pipeline",,--content,4-implementation,,,false,,
+compass,bmad-compass-testarch-framework,Test Framework,TF,"Initialize production-ready test framework architecture",,--content,4-implementation,,,false,,
+compass,bmad-compass-testarch-nfr-assess,NFR Assessment,NR,"Assess non-functional requirements and recommend actions",,--content,4-implementation,,,false,,
+compass,bmad-compass-testarch-teach-me-testing,Teach Me Testing,TMT,"Interactive testing education through 7 progressive sessions",,--content,4-implementation,,,false,,
+compass,bmad-compass-testarch-test-design,Test Design,TD,"Risk assessment plus coverage strategy for system or epic scope",,--content,4-implementation,,,false,,
+compass,bmad-compass-testarch-test-review,Test Review,RV,"Perform a quality check against written tests using comprehensive knowledge base",,--content,4-implementation,,,false,,
+compass,bmad-compass-testarch-trace,Traceability,TR,"Map requirements to tests and make quality gate decision",,--content,4-implementation,,,false,,
+compass,bmad-agent-creative-problem-solver,Problem Solver,PSA,"Systematic problem-solving expert and solutions architect (Dr. Quinn persona)",,--content,anytime,,,false,,
+compass,bmad-compass-advanced-elicitation,Advanced Elicitation,AE,"Push the LLM to reconsider, refine, and improve recent output through iterative elicitation methods",,--content,anytime,,,false,,
+compass,bmad-compass-autonomous-refinement-loop,Autonomous Refinement Loop,ORL,"Run an autonomous agent-team refinement loop combining party-mode and advanced elicitation",,--content,anytime,,,false,,
+compass,bmad-compass-problem-solving,Problem Solving,PS,"Apply systematic problem-solving methodologies to complex challenges",,--content,anytime,,,false,,
+compass,bmad-compass-workflow-map,Workflow Map,WM,"Full ordered map of the Compass BMAD workflow showing every phase, step, required gates, optional lanes, and intentional repetitions",,--content,anytime,,,false,,
+compass,bmad-compass-init-docs,Initialize Docs,DP,"Initialize Compass opinionated docs layout from existing project documentation",,--content,documentation,,,false,,
+compass,bmad-compass-update-docs,Update Docs,DU,"Update documentation to reflect current planning and implementation state",,--content,documentation,,,false,,
+compass,bmad-compass-validate-docs,Validate Docs,DV,"Validate documentation structure and policy compliance for Compass docs layout",,--content,documentation,,,false,,
+compass,bmad-compass-initiative-routing,Initiative Routing,IRT,"Route an approved workspace or orchestration phase into concurrent repo-targeted initiative workstreams",,--content,planning,,,false,,
+compass,bmad-compass-init-planning,Initialize Planning,IP,"Initialize Compass roadmap-driven planning layout from an existing repo or as a clean scaffold",,--content,planning,,,true,,
+compass,bmad-compass-project-roadmap,Project Roadmap,PR,"Create or update the authoritative project roadmap from high-level analysis artifacts",,--content,planning,,,true,,
+compass,bmad-compass-sync-repositories,Sync Repositories,SR,"Compare planning/repositories.yaml against the current repo-root topology and update the registry",,--content,planning,,,false,,
+compass,bmad-compass-workspace-bootstrap,Workspace Bootstrap,WB,"Bootstrap selected repos from a workspace or orchestration root into the Compass BMAD structure",,--content,planning,,,false,,
+Core,bmad-advanced-elicitation,Advanced Elicitation,AE,"Push the LLM to reconsider, refine, and improve its recent output through deeper critique methods",,anytime,,,false,,
+Core,bmad-brainstorming,Brainstorming,BSP,Use early in ideation or when stuck generating ideas.,,anytime,,,false,{output_folder}/brainstorming,brainstorming session
+Core,bmad-party-mode,Party Mode,PM,Orchestrate multi-agent discussions when you need multiple perspectives or want agents to collaborate.,,anytime,,,false,,
+Core,bmad-help,BMad Help,BH,,,anytime,,,false,,
+Core,bmad-index-docs,Index Docs,ID,Use when LLM needs to understand available docs without loading everything.,,anytime,,,false,,
+Core,bmad-shard-doc,Shard Document,SD,Use when doc becomes too large (>500 lines) to manage effectively.,[path],anytime,,,false,,
+Core,bmad-editorial-review-prose,Editorial Review - Prose,EP,Use after drafting to polish written content.,[path],anytime,,,false,report located with target document,three-column markdown table with suggested fixes
+Core,bmad-editorial-review-structure,Editorial Review - Structure,ES,Use when doc produced from multiple subprocesses or needs structural improvement.,[path],anytime,,,false,report located with target document,
+Core,bmad-review-adversarial-general,Adversarial Review,AR,"Use for quality assurance or before finalizing deliverables. Code Review in other modules runs this automatically, but also useful for document reviews.",[path],anytime,,,false,,
+Core,bmad-review-edge-case-hunter,Edge Case Hunter Review,ECH,Use alongside adversarial review for orthogonal coverage — method-driven not attitude-driven.,[path],anytime,,,false,,
+Core,bmad-distillator,Distillator,DG,Use when you need token-efficient distillates that preserve all information for downstream LLM consumption.,[path],anytime,,,false,adjacent to source document or specified output_path,distillate markdown file(s)

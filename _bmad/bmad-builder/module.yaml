@@ -1,0 +1,5 @@
+name: bmad-builder
+displayName: BMAD Builder
+description: Tools for building and modifying BMAD modules, agents, and workflows
+version: "1.0.0"
+type: module
