@@ -1,0 +1,106 @@
+name: CodeQL Security Scanning
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - 'reference/BMAD/research/**'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+  pull_request:
+    branches: [main, develop]
+    paths-ignore:
+      - 'reference/BMAD/research/**'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Check Code Scanning availability
+        id: code_scanning
+        run: |
+          API_URL="https://api.github.com/repos/${{ github.repository }}/code-scanning/alerts?per_page=1"
+          STATUS=$(curl -sS -o /tmp/code-scanning-response.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "$API_URL")
+
+          echo "http_status=$STATUS" >> "$GITHUB_OUTPUT"
+
+          if [ "$STATUS" = "200" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Code scanning API is available."
+          elif [ "$STATUS" = "404" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Code scanning API returned 404. Enable Code scanning in Settings > Security > Code security and analysis."
+          elif [ "$STATUS" = "403" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Code scanning API returned 403. Ensure code scanning is enabled and, for private/internal repos, GitHub Advanced Security is enabled."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Code scanning API returned HTTP $STATUS. CodeQL will be skipped."
+          fi
+
+      - name: Initialize CodeQL
+        if: steps.code_scanning.outputs.enabled == 'true'
+        uses: github/codeql-action/init@bb471cdcf4dda2c934c5b656f554d43c1434ed13
+        with:
+          languages: ${{ matrix.language }}
+          config: |
+            paths-ignore:
+              - reference/BMAD/research/**
+
+      - name: Autobuild
+        if: steps.code_scanning.outputs.enabled == 'true' && matrix.language == 'javascript'
+        uses: github/codeql-action/autobuild@bb471cdcf4dda2c934c5b656f554d43c1434ed13
+
+      - name: Perform CodeQL Analysis
+        if: steps.code_scanning.outputs.enabled == 'true'
+        uses: github/codeql-action/analyze@bb471cdcf4dda2c934c5b656f554d43c1434ed13
+        with:
+          category: '/language:${{ matrix.language }}'
+
+      - name: Skip message
+        if: steps.code_scanning.outputs.enabled != 'true'
+        run: |
+          echo "Code scanning is not enabled for this repository; CodeQL skipped."
+          echo "Code scanning API status: ${{ steps.code_scanning.outputs.http_status }}"
+          echo "Enable Code scanning: https://docs.github.com/en/code-security/code-scanning/enabling-code-scanning-for-a-repository"
+          echo "Private/internal repos also require GHAS: https://docs.github.com/en/get-started/learning-about-github/about-github-advanced-security"

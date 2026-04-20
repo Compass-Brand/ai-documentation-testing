@@ -1,0 +1,34 @@
+{
+  "_comment_permissions": "SECURITY: 'Bash(git:*)' and 'Bash(gh:*)' are permissive and allow any git/gh operation including destructive ones (e.g., repo deletion, secret management). Consider narrowing to specific operations like 'Bash(git:pull)', 'Bash(gh:pr:*)', 'Bash(gh:release:*)' for restricted environments.",
+  "permissions": {
+    "allow": [
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(docker:*)",
+      "Bash(docker compose:*)",
+      "mcp__serena__activate_project",
+      "mcp__forgetful__execute_forgetful_tool"
+    ]
+  },
+  "_comment_enableAllProjectMcpServers": "SECURITY: true enables ALL project MCP servers (broad permission). Acceptable for local dev. Set to false in CI, shared hosts, staging, or production environments where you want to limit network/service exposure. Configure individual servers via enabledMcpjsonServers instead.",
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": ["forgetful", "postgres", "context7", "serena"],
+  "_comment_hooks": "Optional: Enable these hooks for automatic learning detection",
+  "_example_hooks": {
+    "hooks": {
+      "Stop": [
+        {
+          "type": "prompt",
+          "prompt": "Check if the user's last message contains correction signals ('no', 'wrong', 'I meant'). If yes, suggest /reflect."
+        }
+      ],
+      "PreToolUse": [
+        {
+          "matcher": "Skill(*)",
+          "type": "prompt",
+          "prompt": "Before executing this skill, query Forgetful Memory for relevant learnings with tags=['skill-learning']."
+        }
+      ]
+    }
+  }
+}

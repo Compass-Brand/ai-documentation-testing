@@ -1,0 +1,186 @@
+version: 1
+command: auto-plan
+phase_id: "{{phase_id}}"
+run_status: not_started
+
+lane_decisions:
+  storytelling_mode: embedded
+  wds_mode: conditional
+  security_mode: auto
+  security_active: false
+
+lane_outcomes:
+  storytelling: pending
+  wds: not_applicable
+  security: not_applicable
+
+approval_markers:
+  roadmap:
+    status: not_requested
+    requested_revision: ""
+    approved_revision: ""
+    reviewed_by: ""
+    reviewed_at: ""
+  prd:
+    status: not_requested
+    requested_revision: ""
+    approved_revision: ""
+    reviewed_by: ""
+    reviewed_at: ""
+  architecture:
+    status: not_requested
+    requested_revision: ""
+    approved_revision: ""
+    reviewed_by: ""
+    reviewed_at: ""
+  readiness:
+    status: not_requested
+    requested_revision: ""
+    approved_revision: ""
+    reviewed_by: ""
+    reviewed_at: ""
+
+review_artifacts:
+  roadmap_gate: ""
+  prd_gate: ""
+  architecture_gate: ""
+  readiness_gate: ""
+beads:
+  parent_issue_id: ""
+  phase_issue_id: ""
+  active_epic_issue_id: ""
+  active_story_issue_id: ""
+  follow_up_issue_ids: []
+  last_synced_at: ""
+
+artifact_paths:
+  project_context:
+    current: ""
+    canonical: "planning/current/research/project-context/project-context.md"
+    draft: ""
+  brief:
+    current: ""
+    canonical: "planning/current/planning/brief/"
+    draft: ""
+  prd:
+    current: ""
+    canonical: "planning/current/planning/prd/"
+    draft: "planning/current/planning/prd/"
+  ux_design:
+    current: ""
+    canonical: "planning/current/planning/ux-design/"
+    draft: "planning/current/planning/ux-design/"
+  architecture:
+    current: ""
+    canonical: "planning/current/planning/architecture/"
+    draft: "planning/current/planning/architecture/"
+  epics:
+    current: ""
+    canonical: "planning/current/planning/epics/"
+    draft: "planning/current/planning/epics/draft/"
+  stories:
+    current: ""
+    canonical: "planning/current/implementation/stories/"
+    draft: "planning/current/implementation/stories/draft/"
+  testing:
+    current: ""
+    canonical: "planning/current/testing/"
+    draft: "planning/current/testing/"
+  evidence:
+    current: "planning/current/implementation/evidence/"
+    canonical: "planning/current/implementation/evidence/"
+    draft: "planning/current/implementation/evidence/"
+
+artifact_revisions:
+  brief:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  prd:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  ux_design:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  architecture:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  epics:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  stories:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+  readiness:
+    current: ""
+    approved: ""
+    state: not_started
+    updated_at: ""
+
+automation_state:
+  last_completed_step: ""
+  last_completed_checkpoint: ""
+  pending_approval: null
+  stale_outputs: []
+  last_failure_report: ""
+  derived_from: {}
+
+workflow_status:
+  phase_sync: not_started
+  detailed_analysis: not_started
+  planning_experience: not_started
+  solutioning: not_started
+  implementation: not_started
+  release_gate: not_started
+  closeout: not_started
+
+next_checkpoint: ""
+
+draft_artifacts:
+  roadmap_proposal:
+    path: ""
+    revision: ""
+    derived_from: {}
+    status: not_started
+    supersedes: ""
+  prd_gate:
+    path: ""
+    revision: ""
+    derived_from: {}
+    status: not_started
+    supersedes: ""
+  architecture_gate:
+    path: ""
+    revision: ""
+    derived_from: {}
+    status: not_started
+    supersedes: ""
+  epics:
+    path: ""
+    revision: ""
+    derived_from: {}
+    status: not_started
+    supersedes: ""
+  stories:
+    path: ""
+    revision: ""
+    derived_from: {}
+    status: not_started
+    supersedes: ""
+  readiness_gate:
+    path: ""
+    revision: ""
+    derived_from: {}
+    status: not_started
+    supersedes: ""

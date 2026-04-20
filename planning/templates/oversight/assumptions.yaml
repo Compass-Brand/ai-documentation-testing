@@ -1,0 +1,13 @@
+# Oversight assumption register — agents append draft entries during decision-making workflows.
+# Verification checkpoints surface unvalidated assumptions at gate approvals.
+#
+# Schema:
+#   id: assumption-NNN
+#   summary: one-line description
+#   source_workflow: workflow that raised this assumption
+#   source_step: step within the workflow
+#   raised_at: YYYY-MM-DD
+#   status: draft | confirmed | invalidated | dismissed
+#   validated_by: which workflow, test, or evidence confirmed this (empty until validated)
+#   resolved_at: YYYY-MM-DD (empty until resolved)
+[]

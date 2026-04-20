@@ -1,0 +1,38 @@
+# Test Architect workflow: teach-me-testing
+name: testarch-teach-me-testing
+description: "Interactive testing education through 7 progressive sessions. Use when the user says 'lets learn testing' or 'teach me testing'"
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/bmm/module.yaml"
+output_folder: "{config_source}:output_folder"
+test_artifacts: "{config_source}:test_artifacts"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+document_output_language: "{config_source}:document_output_language"
+date: system-generated
+
+# Workflow components
+installed_path: "{project-root}/_bmad/compass/4-implementation/bmad-compass-testarch-teach-me-testing"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+
+# Variables and inputs
+variables:
+  test_dir: "{project-root}/tests" # Root test directory
+
+# Required tools
+required_tools:
+  - read_file # Read session progress, project context
+  - write_file # Save session notes, exercises
+  - list_files # Find existing test files for examples
+
+tags:
+  - qa
+  - education
+  - test-architect
+  - testing-fundamentals
+
+execution_hints:
+  interactive: true # Multi-turn teaching sessions
+  autonomous: false # Requires user participation
+  iterative: true

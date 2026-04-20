@@ -1,39 +1,329 @@
 name: Quality Checks
 
 on:
-  push:
-    branches: [main, develop]
   pull_request:
     branches: [main, develop]
+    types: [opened, synchronize, reopened]
+    paths-ignore:
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+
+env:
+  ALLOWED_LICENSES: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Unlicense, WTFPL, CC0-1.0, CC-BY-3.0, CC-BY-4.0, Python-2.0, PSF-2.0, MPL-2.0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          version: "latest"
-      - run: uv sync --dev
-      - run: uv run ruff check .
-
   test:
+    name: Unit & Integration Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Detect Node.js project
+        id: detect
+        run: |
+          if [ -f package.json ] && [ -f package-lock.json ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.detect.outputs.run == 'true'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
         with:
-          version: "latest"
-      - run: uv sync --dev
-      - name: Run tests with coverage
-        run: >-
-          uv run pytest
-          --cov --cov-report=term-missing
-          --cov-report=html:htmlcov
-          --cov-fail-under=80
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.detect.outputs.run == 'true'
+        run: npm ci
+
+      - name: Check test script presence
+        id: test_script
+        if: steps.detect.outputs.run == 'true'
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts['test:unit'] ? 0 : 1)"; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests
+        if: steps.detect.outputs.run == 'true' && steps.test_script.outputs.present == 'true'
+        run: npm run test:unit
+
+      - name: Skip message
+        if: steps.detect.outputs.run != 'true'
+        run: echo "No package.json / package-lock.json; skipping Node.js unit tests."
+
+  validate:
+    name: Pre-Push Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          name: coverage-report
-          path: htmlcov/
+          fetch-depth: 0
+
+      - name: Basic validation
+        run: |
+          echo "Checking for common issues..."
+          for f in CLAUDE.md .coderabbit.yaml greptile.json; do
+            if [ -f "$f" ]; then
+              echo "✓ $f exists"
+            else
+              echo "::warning::Missing $f"
+            fi
+          done
+
+      - name: Detect Node.js project
+        id: detect
+        run: |
+          if [ -f package.json ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check canonical check script presence
+        id: check_script
+        if: steps.detect.outputs.run == 'true'
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.check ? 0 : 1)" 2>/dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.detect.outputs.run == 'true' && steps.check_script.outputs.present == 'true'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        if: steps.detect.outputs.run == 'true' && steps.check_script.outputs.present == 'true'
+        run: npm install
+
+      - name: Run canonical repository check
+        if: steps.detect.outputs.run == 'true' && steps.check_script.outputs.present == 'true'
+        run: npm run check
+
+      - name: Skip message
+        if: steps.detect.outputs.run != 'true' || steps.check_script.outputs.present != 'true'
+        run: echo "No package.json with a 'check' script; skipping Node.js canonical check (Basic validation above still ran)."
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Check for merge conflict markers
+        run: |
+          # Use anchored patterns to avoid false positives
+          CONFLICT_MATCHES="$(grep -rn "^<<<<<<<\|^=======\$\|^>>>>>>>" --include="*.md" --include="*.py" --include="*.ts" --include="*.js" --include="*.json" . 2>/dev/null || true)"
+          if [ -n "$CONFLICT_MATCHES" ]; then
+            echo "$CONFLICT_MATCHES"
+            echo "::error::Merge conflict markers found"
+            exit 1
+          fi
+          echo "No merge conflict markers found"
+
+      - name: Check for hardcoded secrets
+        run: |
+          echo "Scanning for potential secrets..."
+          FOUND=0
+          SECRET_MATCHES="$(grep -rn "PRIVATE.KEY\|-----BEGIN.*PRIVATE\|sk-[a-zA-Z0-9]\{20,\}\|ghp_[a-zA-Z0-9]\{36\}\|gho_[a-zA-Z0-9]\{36\}\|api[_-]?key.*['\"][a-zA-Z0-9]\{20,\}" --include="*.py" --include="*.ts" --include="*.js" --include="*.json" --include="*.yaml" --include="*.yml" . 2>/dev/null | grep -v node_modules | grep -v ".example" | grep -v "^./test/" | grep -vE '(^|/)\.github/workflows/quality-checks\.yml:' | head -10 || true)"
+          if [ -n "$SECRET_MATCHES" ]; then
+            echo "$SECRET_MATCHES"
+            echo "::warning::Potential hardcoded secrets detected - please review"
+            FOUND=1
+          fi
+
+          AWS_MATCHES="$(grep -rn "AKIA[0-9A-Z]\{16\}" --include="*.py" --include="*.ts" --include="*.js" --include="*.json" . 2>/dev/null | grep -v node_modules | grep -v "test" | grep -v "example" | grep -v "fixture" | grep -v ".github/" | head -5 || true)"
+          if [ -n "$AWS_MATCHES" ]; then
+            echo "$AWS_MATCHES"
+            echo "::warning::AWS access key pattern found - please review"
+            FOUND=1
+          fi
+
+          if [ "$FOUND" -eq 1 ]; then
+            echo "::error::Secret patterns detected - review findings above"
+            exit 1
+          fi
+          echo "Secret scan complete"
+
+  docs-audit:
+    name: Documentation Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Check documentation freshness
+        run: |
+          echo "Checking documentation freshness..."
+          CUTOFF_DATE=$(date -d "30 days ago" +%s 2>/dev/null || date -v-30d +%s)
+          STALE_DOCS=0
+          for file in $(git ls-files "*.md"); do
+            LAST_COMMIT=$(git log -1 --format=%ct -- "$file" 2>/dev/null || echo "0")
+            if [ "$LAST_COMMIT" -lt "$CUTOFF_DATE" ]; then
+              STALE_DOCS=$((STALE_DOCS + 1))
+            fi
+          done
+          echo "Found $STALE_DOCS markdown files not updated in 30+ days"
+          if [ "$STALE_DOCS" -gt 5 ]; then
+            echo "::warning::Found $STALE_DOCS potentially stale documentation files"
+          fi
+
+  syntax-check:
+    name: Syntax Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Validate JSON/YAML
+        uses: GrantBirki/json-yaml-validate@4b493a196a711807aec01c5ace08147f21b025bd
+        with:
+          json_exclude_regex: '(^|/)fixtures/|(^|/)tests/fixtures/'
+          yaml_exclude_regex: '(^|/)fixtures/|(^|/)tests/fixtures/'
+          allow_multiple_documents: "true"
+
+      - name: Lint GitHub Actions workflows
+        uses: rhysd/actionlint@2df6872d4bde2b030214429d65f7aeee79ceee47
+        with:
+          args: -color
+
+  editorconfig-check:
+    name: EditorConfig
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Check EditorConfig
+        uses: editorconfig-checker/action-editorconfig-checker@840e866d93b8e032123c23bac69dece044d4d84c
+
+  license-review:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          submodules: recursive
+
+      - name: Detect dependency manifests
+        id: detect_deps
+        run: |
+          if [ -f package.json ] || [ -f package-lock.json ] || [ -f yarn.lock ] \
+             || [ -f pnpm-lock.yaml ] || [ -f Gemfile ] || [ -f Gemfile.lock ] \
+             || [ -f requirements.txt ] || [ -f pyproject.toml ] || [ -f Pipfile ] \
+             || [ -f Pipfile.lock ] || [ -f Cargo.toml ] || [ -f Cargo.lock ] \
+             || [ -f go.mod ] || [ -f composer.json ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check dependency licenses
+        if: steps.detect_deps.outputs.run == 'true'
+        continue-on-error: true
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48
+        with:
+          allow-licenses: ${{ env.ALLOWED_LICENSES }}
+
+      - name: Skip dependency license review
+        if: steps.detect_deps.outputs.run != 'true'
+        run: echo "No dependency manifests detected; skipping dependency license review."
+
+      - name: Check submodule repository licenses
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f .gitmodules ]; then
+            echo "No .gitmodules file found; skipping submodule license checks."
+            exit 0
+          fi
+
+          ALLOWED_SPDX="${ALLOWED_LICENSES//,/ }"
+          NOASSERTION_ALLOWED_REPOS="bmad-code-org/BMAD-METHOD"
+
+          while read -r _ url; do
+            repo="$url"
+            case "$repo" in
+              https://github.com/*)
+                repo="${repo#https://github.com/}"
+                ;;
+              http://github.com/*)
+                repo="${repo#http://github.com/}"
+                ;;
+              git@github.com:*)
+                repo="${repo#git@github.com:}"
+                ;;
+              ssh://git@github.com/*)
+                repo="${repo#ssh://git@github.com/}"
+                ;;
+              *)
+                echo "::error::Unsupported submodule URL format: ${url}"
+                exit 1
+                ;;
+            esac
+            repo="${repo%.git}"
+            spdx="$(gh api "repos/${repo}" --jq '.license.spdx_id // "NOASSERTION"')"
+
+            echo "${repo}: ${spdx}"
+
+            if [ "$spdx" = "NOASSERTION" ]; then
+              if echo " ${NOASSERTION_ALLOWED_REPOS} " | grep -Fq " ${repo} "; then
+                echo "::warning::License SPDX is NOASSERTION for reviewed submodule ${repo}"
+                continue
+              fi
+            fi
+
+            if ! echo " ${ALLOWED_SPDX} " | grep -Fq " ${spdx} "; then
+              echo "::error::Disallowed submodule license for ${repo}: ${spdx}"
+              exit 1
+            fi
+          done < <(git config --file .gitmodules --get-regexp '^submodule\..*\.url$')

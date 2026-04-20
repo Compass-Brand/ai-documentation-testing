@@ -1,0 +1,45 @@
+name: update-docs
+description: 'Update documentation to reflect current planning and implementation state. Use when the user says "update docs" or after major phase checkpoints.'
+author: "Compass"
+
+config_source: "{project-root}/_bmad/bmm/module.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+document_output_language: "{config_source}:document_output_language"
+current_prd_dir: "{config_source}:current_prd_dir"
+current_ux_dir: "{config_source}:current_ux_dir"
+current_architecture_dir: "{config_source}:current_architecture_dir"
+current_epics_dir: "{config_source}:current_epics_dir"
+current_story_dir: "{config_source}:current_story_dir"
+current_evidence_dir: "{config_source}:current_evidence_dir"
+current_testing_dir: "{config_source}:current_testing_dir"
+current_research_dir: "{config_source}:current_research_dir"
+docs_root: "{config_source}:docs_root"
+docs_human_policies_dir: "{config_source}:docs_human_policies_dir"
+docs_human_templates_dir: "{config_source}:docs_human_templates_dir"
+docs_architecture_dir: "{config_source}:docs_architecture_dir"
+docs_development_dir: "{config_source}:docs_development_dir"
+docs_getting_started_dir: "{config_source}:docs_getting_started_dir"
+docs_guides_dir: "{config_source}:docs_guides_dir"
+docs_reference_dir: "{config_source}:docs_reference_dir"
+docs_framework_human_policies_dir: "{config_source}:docs_framework_human_policies_dir"
+docs_framework_human_templates_dir: "{config_source}:docs_framework_human_templates_dir"
+date: system-generated
+
+installed_path: "{project-root}/_bmad/compass/documentation/bmad-compass-update-docs"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+
+update_scope:
+  prompt: "What documentation scope should be updated?"
+  default: "checkpoint"
+  result: "{value}"
+  single-select:
+    - value: "checkpoint"
+      label: "Checkpoint delta update (Recommended)"
+    - value: "epic"
+      label: "Epic completion update"
+    - value: "release"
+      label: "Release-level update"
+
+default_output_file: "{docs_reference_dir}/documentation-update-report-{date}.md"

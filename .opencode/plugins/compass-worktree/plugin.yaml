@@ -1,0 +1,11 @@
+id: compass-worktree
+name: Compass Worktree
+status: pilot
+wrapper_posture: adopt_as_is
+runtime_entry: ../compass-worktree.ts
+upstream_repo: kdcokenny/opencode-worktree
+owner: Compass Brand
+notes:
+  - Keep worktree_create and worktree_delete behavior aligned to upstream.
+  - Treat this plugin as a workspace utility, not a planning or tracking surface.
+  - Require bash availability when downstream repos configure hook execution on Windows.

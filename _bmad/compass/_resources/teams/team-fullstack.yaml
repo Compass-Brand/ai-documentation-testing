@@ -1,0 +1,12 @@
+# <!-- Powered by BMAD-CORE™ -->
+bundle:
+  name: Team Plan and Architect
+  icon: 🚀
+  description: Team capable of project analysis, design, and architecture.
+agents:
+  - analyst
+  - architect
+  - pm
+  - ux-designer
+  - tea
+party: "./default-party.csv"

@@ -1,0 +1,14 @@
+version: 1
+workspace_id: ""
+owner: ""
+last_updated: ""
+repositories:
+  - id: ""
+    title: ""
+    path: ""
+    repo_type: delivery
+    domain: ""
+    parent_repo_id: ""
+    authoritative_root: true
+    children: []
+    notes: ""

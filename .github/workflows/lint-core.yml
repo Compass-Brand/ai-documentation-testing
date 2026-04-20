@@ -1,0 +1,334 @@
+name: Linting Core
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'reference/BMAD/research/**'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - 'reference/BMAD/research/**'
+      - '**/*.png'
+      - '**/*.jpg'
+      - '**/*.jpeg'
+      - '**/*.gif'
+      - '**/*.svg'
+      - '**/*.ico'
+      - '**/*.webp'
+      - '**/*.pdf'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit:
+    name: pre-commit baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: '20'
+
+      - name: Setup Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417
+        with:
+          go-version: '1.24'
+
+      - name: Cache pre-commit environments
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-py311-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Install pre-commit
+        run: python -m pip install --upgrade pre-commit
+
+      - name: Run pre-commit (PR diff, full on protected push)
+        run: |
+          export SKIP="end-of-file-fixer,trailing-whitespace,pyupgrade,isort,ruff-check,ruff-format,biome-ci,prettier,actionlint,markdownlint"
+
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FROM_REF="${{ github.event.pull_request.base.sha }}"
+            pre-commit run --from-ref "$FROM_REF" --to-ref "${{ github.sha }}" --show-diff-on-failure --color=always
+          else
+            pre-commit run --all-files --show-diff-on-failure --color=always
+          fi
+
+  pylint:
+    name: pylint (python errors-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Detect Python scope
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FROM_REF="${{ github.event.pull_request.base.sha }}"
+            git diff --name-only --diff-filter=ACMR "$FROM_REF" "${{ github.sha }}" \
+              | grep -E '\.py$' \
+              | grep -Ev '^reference/BMAD/research/' \
+              | while IFS= read -r file; do [ -f "$file" ] && echo "$file"; done > /tmp/python-files.txt || true
+          else
+            git ls-files '*.py' \
+              | grep -Ev '^reference/BMAD/research/' \
+              | while IFS= read -r file; do [ -f "$file" ] && echo "$file"; done > /tmp/python-files.txt || true
+          fi
+
+          if [ -s /tmp/python-files.txt ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Python
+        if: steps.detect.outputs.run == 'true'
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.11'
+
+      - name: Install pylint
+        if: steps.detect.outputs.run == 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install pylint
+
+      - name: Run pylint on scoped files
+        if: steps.detect.outputs.run == 'true'
+        run: xargs -r pylint --errors-only --rcfile=.pylintrc < /tmp/python-files.txt
+
+      - name: Skip message
+        if: steps.detect.outputs.run != 'true'
+        run: echo "No Python files in current scope; skipping."
+
+  dotenv-linter:
+    name: dotenv-linter
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Detect dotenv scope
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FROM_REF="${{ github.event.pull_request.base.sha }}"
+            git diff --name-only --diff-filter=ACMR "$FROM_REF" "${{ github.sha }}" \
+              | grep -Ev '^reference/BMAD/research/' \
+              | grep -E '(^|/)\.env(\..*)?$' > /tmp/dotenv-files.txt || true
+          else
+            find . -type f -name ".env*" | grep -v '^./reference/BMAD/research/' > /tmp/dotenv-files.txt || true
+          fi
+
+          if [ -s /tmp/dotenv-files.txt ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run dotenv-linter
+        if: steps.detect.outputs.run == 'true'
+        uses: dotenv-linter/action-dotenv-linter@afde61cfda2ecffe7bea35837b6f20b956c88689
+
+      - name: Skip message
+        if: steps.detect.outputs.run != 'true'
+        run: echo "No dotenv files in current scope; skipping."
+
+  markdownlint-library:
+    name: markdownlint (library)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f
+        with:
+          node-version: '20'
+
+      - name: Detect Markdown scope
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FROM_REF="${{ github.event.pull_request.base.sha }}"
+            git diff --name-only --diff-filter=ACMR "$FROM_REF" "${{ github.sha }}" \
+              | grep -E '\.(md|markdown)$' \
+              | grep -Ev '^reference/BMAD/research/|^\.claude-trace/' \
+              | while IFS= read -r file; do [ -f "$file" ] && echo "$file"; done > /tmp/markdown-files.txt || true
+          else
+            git ls-files '*.md' '*.markdown' \
+              | grep -Ev '^reference/BMAD/research/|^\.claude-trace/' \
+              | while IFS= read -r file; do [ -f "$file" ] && echo "$file"; done > /tmp/markdown-files.txt || true
+          fi
+
+          if [ -s /tmp/markdown-files.txt ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install markdownlint
+        if: steps.detect.outputs.run == 'true'
+        run: npm install --no-save markdownlint@0.39.0
+
+      - name: Run markdownlint library script
+        if: steps.detect.outputs.run == 'true'
+        run: |
+          mapfile -t MARKDOWN_FILES < /tmp/markdown-files.txt
+          node .lint/markdownlint-library.mjs "${MARKDOWN_FILES[@]}"
+
+      - name: Skip message
+        if: steps.detect.outputs.run != 'true'
+        run: echo "No Markdown files in current scope; skipping."
+
+  trivy:
+    name: trivy filesystem scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Detect Trivy scope
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FROM_REF="${{ github.event.pull_request.base.sha }}"
+            CHANGED="$(git diff --name-only --diff-filter=ACMR "$FROM_REF" "${{ github.sha }}" | grep -Ev '^reference/BMAD/research/' || true)"
+            if [ -z "$CHANGED" ]; then
+              echo "run=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            if echo "$CHANGED" | grep -Ev '\.(md|markdown|png|jpg|jpeg|gif|svg|ico|webp|pdf)$' | grep -q .; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # TEMPORARY: continue-on-error during compass-engine adoption period (2026-04).
+      # Consumer repos inherit pre-existing k8s/iac misconfigs (KSV-0014, KSV-0118, etc.)
+      # that aren't the responsibility of workflow-adoption PRs. Findings still surface
+      # in CI logs and SARIF uploads to the Security tab. Revisit this policy once the
+      # workspace-wide cleanup completes and baseline debt is triaged.
+      - name: Run Trivy
+        if: steps.detect.outputs.run == 'true'
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # v0.35.0
+        with:
+          scan-type: fs
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: '1'
+          ignore-unfixed: true
+          skip-dirs: node_modules,dist,.beads,BMAD-METHOD,reference/BMAD/research
+
+      - name: Upload Trivy SARIF
+        id: upload_trivy_sarif
+        if: steps.detect.outputs.run == 'true' && always()
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@bb471cdcf4dda2c934c5b656f554d43c1434ed13
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy
+
+      - name: Warn when Trivy SARIF upload is unavailable
+        if: steps.detect.outputs.run == 'true' && steps.upload_trivy_sarif.outcome == 'failure'
+        run: echo "::warning::Trivy SARIF upload was skipped or unavailable; continuing per policy."
+
+      - name: Skip message
+        if: steps.detect.outputs.run != 'true'
+        run: echo "No Trivy-relevant files in current PR scope; skipping."
+
+  zizmor:
+    name: zizmor (optional)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Detect workflow scope
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FROM_REF="${{ github.event.pull_request.base.sha }}"
+            if git diff --name-only "$FROM_REF" "${{ github.sha }}" | grep -E '^\.github/workflows/.*\.(yml|yaml)$' -q; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            if find .github/workflows -type f \( -name "*.yml" -o -name "*.yaml" \) 2>/dev/null | grep -q .; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Setup Rust toolchain
+        if: steps.detect.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: stable
+
+      - name: Install zizmor
+        if: steps.detect.outputs.run == 'true'
+        run: cargo install --locked zizmor
+
+      - name: Run zizmor
+        if: steps.detect.outputs.run == 'true'
+        continue-on-error: true
+        run: zizmor --format=github .github/workflows
+
+      - name: Skip message
+        if: steps.detect.outputs.run != 'true'
+        run: echo "No workflow changes in current scope; skipping."

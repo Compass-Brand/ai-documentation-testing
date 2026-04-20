@@ -1,0 +1,7 @@
+code: bmm
+name: "BMad Method Agile-AI Driven-Development (Compass Customizations)"
+description: "Compass Brand customizations and overrides for the BMM module"
+default_selected: true
+
+# Inherits all variables from the native bmm module.yaml
+# This module contains custom bmm-skills that override or extend the native versions.

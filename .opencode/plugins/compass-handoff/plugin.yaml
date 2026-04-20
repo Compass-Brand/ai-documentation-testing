@@ -1,0 +1,11 @@
+id: compass-handoff
+name: Compass Handoff
+status: pilot
+wrapper_posture: wrap
+runtime_entry: ../compass-handoff.ts
+upstream_repo: joshuadavidthomas/opencode-handoff
+owner: Compass Brand
+notes:
+  - Preserve the upstream handoff flow while tightening transcript and file boundaries.
+  - Keep session continuity scoped to explicit source-session continuation.
+  - Require repo-local path safety for synthetic file injection.

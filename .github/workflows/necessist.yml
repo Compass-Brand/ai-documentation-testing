@@ -1,0 +1,55 @@
+name: Necessist Deep Analysis
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  necessist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Detect Necessist-compatible project
+        id: detect
+        run: |
+          if [ -f Cargo.toml ] \
+            || [ -f go.mod ] \
+            || [ -f foundry.toml ] \
+            || [ -f Anchor.toml ] \
+            || [ -f hardhat.config.js ] \
+            || [ -f hardhat.config.ts ] \
+            || [ -f vitest.config.js ] \
+            || [ -f vitest.config.ts ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Rust toolchain
+        if: steps.detect.outputs.run == 'true'
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+
+      - name: Install system deps
+        if: steps.detect.outputs.run == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libsqlite3-dev
+
+      - name: Install Necessist
+        if: steps.detect.outputs.run == 'true'
+        run: cargo install --locked necessist
+
+      - name: Run Necessist
+        if: steps.detect.outputs.run == 'true'
+        run: necessist --dump-candidate-counts
+
+      - name: Skip message
+        if: steps.detect.outputs.run != 'true'
+        run: echo "No Necessist-compatible framework detected; skipping."

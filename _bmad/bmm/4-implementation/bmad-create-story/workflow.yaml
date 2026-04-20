@@ -1,0 +1,55 @@
+name: create-story
+description: 'Creates a dedicated story file with all the context the agent will need to implement it later. Use when the user says "create the next story" or "create story [story identifier]"'
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/bmm/module.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+document_output_language: "{config_source}:document_output_language"
+user_skill_level: "{config_source}:user_skill_level"
+date: system-generated
+current_story_dir: "{config_source}:current_story_dir"
+current_epics_dir: "{config_source}:current_epics_dir"
+current_prd_dir: "{config_source}:current_prd_dir"
+current_architecture_dir: "{config_source}:current_architecture_dir"
+current_ux_dir: "{config_source}:current_ux_dir"
+
+# Workflow components
+installed_path: "{project-root}/_bmad/bmm/4-implementation/bmad-create-story"
+template: "{installed_path}/template.md"
+instructions: "{installed_path}/instructions.xml"
+validation: "{installed_path}/checklist.md"
+
+# Variables and inputs
+sprint_status: "{current_story_dir}/sprint-status.yaml" # Primary source for story tracking
+epics_file: "{current_epics_dir}/epics.md" # Enhanced epics+stories with BDD and source hints
+prd_file: "{current_prd_dir}/prd.md" # Fallback for requirements (if not in epics file)
+architecture_file: "{current_architecture_dir}/architecture.md" # Fallback for constraints (if not in epics file)
+ux_file: "{current_ux_dir}/*.md" # Fallback for UX requirements (if not in epics file)
+story_title: "" # Will be elicited if not derivable
+project_context: "**/project-context.md"
+default_output_file: "{current_story_dir}/{{story_key}}.md"
+
+# Smart input file references - Simplified for enhanced approach
+# The epics+stories file should contain everything needed with source hints
+input_file_patterns:
+  prd:
+    description: "PRD (fallback - epics file should have most content)"
+    whole: "{current_prd_dir}/*.md"
+    sharded: "{current_prd_dir}/**/*.md"
+    load_strategy: "SELECTIVE_LOAD" # Only load if needed
+  architecture:
+    description: "Architecture (fallback - epics file should have relevant sections)"
+    whole: "{current_architecture_dir}/*.md"
+    sharded: "{current_architecture_dir}/**/*.md"
+    load_strategy: "SELECTIVE_LOAD" # Only load if needed
+  ux:
+    description: "UX design (fallback - epics file should have relevant sections)"
+    whole: "{current_ux_dir}/*.md"
+    sharded: "{current_ux_dir}/**/*.md"
+    load_strategy: "SELECTIVE_LOAD" # Only load if needed
+  epics:
+    description: "Enhanced epics+stories file with BDD and source hints"
+    whole: "{current_epics_dir}/*.md"
+    sharded: "{current_epics_dir}/**/*.md"
+    load_strategy: "SELECTIVE_LOAD" # Only load needed epic

@@ -1,0 +1,6 @@
+# Workflows available for distribution but not active by default.
+# To enable, remove the entry from this list.
+- workflows/codeql.yml
+- workflows/necessist.yml
+- workflows/runtime-security.yml
+- workflows/lint-languages.yml

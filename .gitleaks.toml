@@ -1,0 +1,9 @@
+title = "Compass Engine gitleaks config"
+
+[allowlist]
+description = "Exclude generated or third-party directories from scans."
+paths = [
+  '''(^|/)dist/''',
+  '''(^|/)BMAD-METHOD/''',
+  '''(^|/)\.beads/'''
+]

@@ -1,0 +1,35 @@
+name: init-planning
+description: 'Initialize Compass roadmap-driven planning layout from an existing repo or as a clean scaffold. Use when the user says "initialize planning", "set up planning", or "migrate planning structure".'
+author: "Compass"
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/bmm/module.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+planning_root: "{config_source}:planning_root"
+planning_current: "{config_source}:planning_current"
+planning_roadmap: "{config_source}:planning_roadmap"
+planning_previous: "{config_source}:planning_previous"
+planning_lessons: "{config_source}:planning_lessons"
+planning_repositories_file: "{config_source}:planning_repositories_file"
+planning_initiatives_root: "{config_source}:planning_initiatives_root"
+planning_initiative_index_file: "{config_source}:planning_initiative_index_file"
+planning_templates_root: "{config_source}:planning_templates_root"
+planning_tmp_migration_root: "{config_source}:planning_tmp_migration_root"
+planning_tmp_cleanup_enabled: "{config_source}:planning_tmp_cleanup_enabled"
+oversight_mode: "{config_source}:oversight_mode"
+current_oversight_dir: "{config_source}:current_oversight_dir"
+roadmap_summary_file: "{config_source}:roadmap_summary_file"
+roadmap_state_file: "{config_source}:roadmap_state_file"
+phase_snapshot_file: "{config_source}:phase_snapshot_file"
+phase_state_file: "{config_source}:phase_state_file"
+date: system-generated
+
+# Workflow components
+installed_path: "{project-root}/_bmad/compass/planning/bmad-compass-init-planning"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+
+# Output
+migration_manifest: "{planning_root}/planning-migration-manifest-{date}.md"
+default_output_file: "{planning_root}/planning-initialization-report-{date}.md"
